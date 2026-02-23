@@ -13,6 +13,10 @@ body{display:flex;flex-direction:column;height:100vh;font-family:'Noto Sans KR',
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
 button{font-family:inherit;cursor:pointer}
 .hd{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:50px;min-height:50px;background:var(--bg2);border-bottom:1px solid var(--bd);z-index:100}
+.mob-menu{display:none;background:none;border:none;color:var(--tx);font-size:20px;padding:4px 8px;border-radius:6px}
+.mob-menu:hover{background:var(--bg3)}
+.mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}
+.mob-overlay.show{display:block}
 .logo{display:flex;align-items:center;gap:10px}
 .logo-i{width:26px;height:26px;background:var(--ac);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#0a0a0a}
 .logo-t{font-weight:700;font-size:15px;letter-spacing:1px}
@@ -233,7 +237,8 @@ button{font-family:inherit;cursor:pointer}
 .ss-title{font-size:14px;font-weight:600;margin:20px 0 10px;display:flex;align-items:center;gap:8px}
 .ss-title img{width:18px;height:18px}
 @media(max-width:768px){
-  .sb{width:0;min-width:0;border:none;position:absolute;z-index:100;background:var(--bg2);height:calc(100vh - 90px)}
+  .mob-menu{display:block}
+  .sb{width:0;min-width:0;border:none;position:fixed;left:0;top:0;z-index:101;background:var(--bg2);height:100vh}
   .sb:not(.collapsed){width:260px;min-width:260px;border-right:1px solid var(--bd);box-shadow:4px 0 20px rgba(0,0,0,.5)}
   .sb.collapsed{width:0;min-width:0;border:none}
   .sb-list span,.sb-hd span{font-size:12px}
@@ -298,7 +303,7 @@ button{font-family:inherit;cursor:pointer}
 </style>
 </head>
 <body>
-<header class="hd"><div class="logo"><div class="logo-i">M</div><span class="logo-t">MOTIVE</span><span class="logo-b">AI Teammate</span></div><div class="hd-user" onclick="switchTab('settings')"><div style="text-align:right"><div class="hd-uname">채희웅 대표님</div><div class="hd-urole">CEO</div></div><div class="hd-uav">채</div></div></header>
+<header class="hd"><button class="mob-menu" id="mobMenu" onclick="toggleSB()">☰</button><div class="logo"><div class="logo-i">M</div><span class="logo-t">MOTIVE</span><span class="logo-b">AI Teammate</span></div><div class="hd-user" onclick="switchTab('settings')"><div style="text-align:right"><div class="hd-uname">채희웅 대표님</div><div class="hd-urole">CEO</div></div><div class="hd-uav">채</div></div></header>
 <div class="tabs" id="tabBar"></div>
 <div class="main">
   <aside class="sb" id="sideBar"><div class="sb-hd"><span class="sb-title">채널</span><button class="sb-toggle" onclick="toggleSB()" title="사이드바 접기/펼치기">◀</button></div><div class="sb-list" id="sbList"></div></aside>
@@ -800,7 +805,12 @@ function toggleSB(){
   const btn=sb.querySelector('.sb-toggle');
   sb.classList.toggle('collapsed',sbCollapsed);
   btn.textContent=sbCollapsed?'▶':'◀';
+  // 모바일 오버레이
+  let ov=document.getElementById('mobOverlay');
+  if(!ov){ov=document.createElement('div');ov.id='mobOverlay';ov.className='mob-overlay';ov.onclick=()=>{if(!sbCollapsed)toggleSB()};document.body.appendChild(ov)}
+  if(isMobile)ov.classList.toggle('show',!sbCollapsed);
 }
+function closeSBMobile(){if(isMobile&&!sbCollapsed)toggleSB()}
 function rSB(){
   let h='<div class="sb-sec" style="padding-top:10px">🏠 프로젝트룸</div>';
   h+=`<div class="sb-item room-item ${curCh==='room'?'on':''}" onclick="selCh('room')"><div style="width:48px;height:48px;border-radius:50%;background:var(--ac);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#0a0a0a;flex-shrink:0">팀</div><div style="flex:1;min-width:0"><div class="sb-name">팀 프로젝트룸</div><div class="sb-role">멀티AI 협업</div>${isGen?'<div class="sb-active"><span class="sb-active-dot"></span>작업 중...</div>':''}</div></div>`;
@@ -808,7 +818,7 @@ function rSB(){
   TM.forEach(m=>{const ac=AI_COLORS[m.ai]||'';h+=`<div class="sb-item ${curCh===m.id?'on':''}" onclick="selCh('${m.id}')"><div style="width:48px;height:48px;flex-shrink:0;border-radius:50%;overflow:hidden">${av(m,48)}</div><div style="flex:1;min-width:0"><div class="sb-name">${m.name} <span class="sb-ai ${ac}">${m.aiLabel}</span></div><div class="sb-role">${m.role}</div></div><div class="sb-dot"></div></div>`});
   document.getElementById('sbList').innerHTML=h;
 }
-function selCh(id){curCh=id;rSB();rChatHd();rMsgs();if(curTab!=='chat'){switchTab('chat');rTabs()}
+function selCh(id){curCh=id;rSB();rChatHd();rMsgs();closeSBMobile();if(curTab!=='chat'){switchTab('chat');rTabs()}
   // Show 🎨 button for creative members
   const imgBtn=document.getElementById('imgGenBtn');
   if(imgBtn)imgBtn.style.display=['design','video','photo'].includes(id)?'inline-flex':'none';
@@ -1149,6 +1159,7 @@ rSB=function(){origRSB();setTimeout(initLazyVids,50)};
 rMsgs=function(){origRMsgs();setTimeout(initLazyVids,50)};
 rChatHd=function(){origRChatHd();setTimeout(initLazyVids,50)};
 init();
+if(isMobile){sbCollapsed=true;document.getElementById('sideBar').classList.add('collapsed')}
 </script>
 </body>
 </html>
