@@ -133,8 +133,10 @@ body{height:100dvh;font-family:'Noto Sans KR',sans-serif;background:var(--bg);co
 <script>
 const CHANNEL = 'ceo-direct';
 let relayUrl = localStorage.getItem('pm-relay') || '';
-let messages = JSON.parse(localStorage.getItem('pm-msgs') || '[]');
+let messages = [];
 let sending = false;
+let syncTimer = null;
+let lastSyncCount = 0;
 
 function now(){const d=new Date();return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0')}
 
@@ -198,7 +200,6 @@ async function send(){
   if(!relayUrl){openSettings();return}
 
   messages.push({role:'user',content:text,time:now()});
-  localStorage.setItem('pm-msgs',JSON.stringify(messages));
   render();
   inp.value='';inp.style.height='auto';
   document.getElementById('sendBtn').disabled=true;
@@ -228,15 +229,16 @@ async function send(){
 
   sending=false;
   document.getElementById('typing').classList.remove('show');
-  localStorage.setItem('pm-msgs',JSON.stringify(messages));
   render();
+  // 서버와 다시 동기화
+  setTimeout(syncFromServer,500);
 }
 
 function clearChat(){
   if(!confirm('대화 내용을 초기화할까요?'))return;
-  messages=[];
-  localStorage.setItem('pm-msgs','[]');
+  messages=[];lastSyncCount=0;
   render();
+  if(relayUrl){fetch(relayUrl.replace(/\/$/,'')+'/api/history/'+CHANNEL,{method:'DELETE',headers:{'Bypass-Tunnel-Reminder':'true'}}).catch(()=>{});}
 }
 
 function openSettings(){document.getElementById('settingsModal').classList.add('show');document.getElementById('relayInput').value=relayUrl}
@@ -245,7 +247,37 @@ function saveSettings(){
   relayUrl=document.getElementById('relayInput').value.trim();
   localStorage.setItem('pm-relay',relayUrl);
   closeSettings();
-  if(!messages.length)render();
+  startSync();
+}
+
+// 서버에서 히스토리 동기화
+async function syncFromServer(){
+  if(!relayUrl||sending)return;
+  try{
+    const r=await fetch(relayUrl.replace(/\/$/,'')+'/api/history/'+CHANNEL,{
+      headers:{'Bypass-Tunnel-Reminder':'true','ngrok-skip-browser-warning':'true'}
+    });
+    const d=await r.json();
+    if(d.ok&&d.history){
+      const serverCount=d.history.length;
+      if(serverCount!==lastSyncCount){
+        lastSyncCount=serverCount;
+        // 서버 히스토리를 로컬 시간 포맷으로 변환
+        messages=d.history.map(m=>{
+          let t='';
+          if(m.time){try{const dt=new Date(m.time);t=dt.getHours()+':'+String(dt.getMinutes()).padStart(2,'0')}catch(e){}}
+          return{role:m.role,content:m.content,time:t||m.time||''};
+        });
+        render();
+      }
+    }
+  }catch(e){}
+}
+
+function startSync(){
+  if(syncTimer)clearInterval(syncTimer);
+  syncFromServer();
+  syncTimer=setInterval(syncFromServer,3000);
 }
 
 // iOS 키보드 대응
@@ -260,7 +292,7 @@ document.getElementById('inp').addEventListener('focus',()=>{
 
 // 초기화
 render();
-if(!relayUrl)setTimeout(openSettings,500);
+if(!relayUrl){setTimeout(openSettings,500)}else{startSync()}
 </script>
 </body>
 </html>
