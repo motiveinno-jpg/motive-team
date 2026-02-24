@@ -1027,7 +1027,7 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
     const isCreative=['design','video','photo'].includes(mid);
 
       text=await callAI(member,
-        `${member.prompt}\n팀 프로젝트 작업 중입니다. 사용자는 채희웅 대표님.\n실제 작업 결과물을 구체적으로 작성하세요(초안, 리스트, 전략서, 스펙, 코드 등).\n이전 팀원 작업물이 있다면 참고하고 자연스럽게 언급하세요. 한국어.`,
+        `${member.prompt}\n\n[업무 수행 원칙]\n당신은 이 분야의 전문가입니다. 미션을 받으면:\n1. 관련 트렌드와 최신 사례를 스스로 조사/참고한 것처럼 전문적으로 작성\n2. 업계 베스트 프랙티스와 프레임워크를 자연스럽게 활용\n3. 참고한 소스나 레퍼런스가 있다면 자연스럽게 언급\n4. 실제 실무 경험이 있는 전문가처럼 구체적 산출물 작성\n5. 이전 팀원 작업물이 있다면 반드시 반영하고 시너지를 내세요\n한국어로 작성.`,
         `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}`
       );
 
@@ -1043,14 +1043,22 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
           genImage=await generateImage('Generate this image: '+mjPrompt.replace(/--[\w\s:.]+/g,'').trim(),member.name);
         }
       }
+    // 실패 시 자동 재시도 (1회, 5초 대기)
     if(!text){
-      const errs=[];
-      Object.entries(apiFailCount).forEach(([k,v])=>{if(v>0){const names={gemPro:'Pro 2.5',gemFlash:'Flash 2.5',gemLite:'Lite 2.5',gem2F:'Flash 2.0',oai:'GPT',cla:'Claude'};errs.push(names[k]||k)}});
-      text=`⚠️ **API 응답 실패**\n\n${member.role} 작업을 수행하지 못했습니다.\n${errs.length?'실패 모델: '+errs.join(', '):''}\n\n💡 **해결방법**: F12→Console 탭에서 [MOTIVE] 로그를 확인하세요.\n잠시 후(1~2분) 다시 시도하거나, 설정에서 API 키를 확인하세요.`;
+      console.log(`[MOTIVE] ${member.name} 1차 실패 → 5초 후 재시도...`);
+      showTyp(`🔄 ${member.name}(${member.role}) 재시도 중...`);
+      await new Promise(r=>setTimeout(r,5000));
+      text=await callAI(member,
+        `${member.prompt}\n전문가로서 구체적 산출물을 작성하세요. 한국어.`,
+        `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}`
+      );
+    }
+    if(!text){
+      text=`⚠️ **${member.name}(${member.role}) 작업 실패**\n\n2회 시도했으나 응답을 받지 못했습니다.\n다른 팀원 작업은 계속 진행됩니다.\n\n💡 잠시 후 이 채널에서 ${member.name}에게 직접 다시 요청해보세요.`;
     }
 
     hideTyp();
-    outputs[mid]={text,mjPrompt,genImage};
+    outputs[mid]={text,mjPrompt,genImage,failed:!text||text.startsWith('⚠️')};
     addM(ch,mid,text,'work',genImage,mjPrompt);rMsgs();
   }
 
@@ -1072,7 +1080,9 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
   showTyp('📋 PM 최종 종합...');
   let summary=null;
     const all=Object.entries(outputs).map(([k,w])=>`[${gm(k).name}/${gm(k).role}/${gm(k).aiLabel}]\n${w.text||''}`).join('\n\n---\n\n');
-    summary=await callAI(gm('pm'),`당신은 PM 하준입니다. 팀원 작업물을 종합하여 최종 보고하세요.\n1. 프로젝트 요약\n2. 각 팀원 핵심 산출물\n3. 종합 실행 계획(타임라인)\n4. 다음 단계\n한국어로 구체적으로.`,`대표님 요청: "${userMsg}"\n\n${all}`,'pmfinal');
+    const failedMembers=Object.entries(outputs).filter(([k,w])=>w.failed).map(([k])=>{const m=gm(k);return`${m.name}(${m.role})`});
+    const failNote=failedMembers.length?`\n\n⚠️ 실패한 팀원: ${failedMembers.join(', ')} — 해당 부분은 보완이 필요합니다.`:'';
+    summary=await callAI(gm('pm'),`당신은 PM 하준입니다. 팀원 작업물을 종합하여 최종 보고하세요.\n1. 프로젝트 요약\n2. 각 팀원 핵심 산출물 (실패한 팀원이 있다면 보완 방안 제시)\n3. 종합 실행 계획(타임라인)\n4. 다음 단계${failNote}\n한국어로 구체적으로.`,`대표님 요청: "${userMsg}"\n\n${all}`,'pmfinal');
   if(!summary)summary=`📋 **종합**\n\n${plan.team.map(id=>{const m=gm(id);return`✅ ${m.name}(${m.role}/${m.aiLabel}): 완료`}).join('\n')}\n\nAPI 키를 설정하면 구체적 실행 계획이 제시됩니다.`;
   hideTyp();addM(ch,'pm',summary,'summary');rMsgs();
 
@@ -1086,7 +1096,7 @@ async function runDirect(userMsg){
   if(!keys.relay&&!keys.gem&&!keys.oai&&!keys.cla){toast('설정에서 API 키 또는 릴레이를 설정하세요');isGen=false;return}
  try{
   showTyp(`${m.name} → ${m.aiLabel} 답변 중...`);
-  let resp=await callAI(m,`${m.prompt}\n사용자는 채희웅 대표님. 한국어. 구체적으로.`,userMsg);
+  let resp=await callAI(m,`${m.prompt}\n\n[전문가 원칙] 당신은 이 분야 최고 전문가입니다. 답변 시:\n- 최신 트렌드와 업계 베스트 프랙티스를 자연스럽게 반영\n- 필요하면 관련 참고 사이트나 도구를 추천\n- 실무 경험 기반의 구체적이고 실행 가능한 답변\n사용자는 채희웅 대표님. 한국어.`,userMsg);
   let mjPrompt=null;let genImage=null;
   if(!resp){
     const downList=[];Object.entries(apiFailCount).forEach(([k,v])=>{if(v>0){const names={gemPro:'Pro 2.5',gemFlash:'Flash 2.5',gemLite:'Lite 2.5',gem2F:'Flash 2.0',oai:'GPT',cla:'Claude'};downList.push(names[k]||k)}});
