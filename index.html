@@ -457,7 +457,7 @@ function ld(){try{chatDB=JSON.parse(localStorage.getItem('v5c')||'{}');todoDB=JS
 // 최초 실행 시 기본 프로젝트 등록
 if(!projDB.length){projDB=[{id:'mktg001',name:'마케팅 구독 서비스',desc:'AI팀 + 마케터 2명 하이브리드 구독형 마케팅 서비스 런칭',status:'progress',progress:25,created:'02/24',team:['pm','marketing','planning','dev','thinking','research'],phases:[{id:'ph0',name:'서비스 기획 및 R&R 정의',status:'done',deliverable:'루나/서연/현우/도윤 1차 작업 완료'},{id:'ph1',name:'서비스 구조 확정 (AI+사람 역할 분리)',status:'progress',deliverable:''},{id:'ph2',name:'가격 정책 및 패키지 설계',status:'todo',deliverable:''},{id:'ph3',name:'영업 자료 / 제안서 제작',status:'todo',deliverable:''},{id:'ph4',name:'베타 런칭 및 첫 고객 확보',status:'todo',deliverable:''}],deliverables:[]}];spp();}}
 function sv(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
-function sc(){sv('v5c',chatDB)}function stt(){sv('v5t',todoDB)}function spp(){sv('v5p',projDB)}function sxx(){sv('v5x',txDB)}function sdd(){sv('v5d',docDB)}function sdl(){sv('v5dl',dealDB)}
+function sc(){try{const tmp=JSON.parse(JSON.stringify(chatDB));Object.values(tmp).forEach(msgs=>msgs.forEach(m=>{if(m.imageUrl&&m.imageUrl.startsWith('data:'))m.imageUrl='[img-session]'}));sv('v5c',tmp)}catch(e){try{sv('v5c',chatDB)}catch(e2){}}}function stt(){sv('v5t',todoDB)}function spp(){sv('v5p',projDB)}function sxx(){sv('v5x',txDB)}function sdd(){sv('v5d',docDB)}function sdl(){sv('v5dl',dealDB)}
 
 /* Utils */
 function now(){const d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')}
@@ -1191,7 +1191,25 @@ chat일 때: reply만 채우고 team은 빈배열
   if(!summary)summary=`📋 **종합**\n\n${plan.team.map(id=>{const m=gm(id);return`✅ ${m.name}(${m.role}/${m.aiLabel}): 완료`}).join('\n')}\n\nAPI 키를 설정하면 구체적 실행 계획이 제시됩니다.`;
   hideTyp();addM(ch,'pm',summary,'summary');rMsgs();
 
- }catch(e){hideTyp();addM(ch,'pm',`⚠️ 프로젝트 실행 중 오류 발생: ${e.message}\n\n다시 시도해주세요.`,'sys');rMsgs();}
+  // === room에서 작업 완료 → 프로젝트방 자동 생성 + 히스토리 이관 + room 리셋 ===
+  if(ch==='room'){
+    const projId=uid();
+    const projName=userMsg.length>30?userMsg.slice(0,30)+'...':userMsg;
+    const proj={id:projId,name:projName,desc:userMsg,status:'progress',progress:100,created:dt(),team:plan.team,phases:[],deliverables:[]};
+    projDB.push(proj);spp();
+    // room 히스토리 전체를 프로젝트 채널로 이관
+    const projCh='proj-'+projId;
+    chatDB[projCh]=[...(chatDB['room']||[])];
+    // room 리셋
+    chatDB['room']=[];
+    sc();
+    // 프로젝트 채널로 이동
+    curCh=projCh;
+    rSB();rChatHd();rMsgs();rProj();
+    toast(`📋 "${proj.name}" 프로젝트방 생성 — 히스토리 이관 완료`);
+  }
+
+ }catch(e){hideTyp();addM(curCh,'pm',`⚠️ 프로젝트 실행 중 오류 발생: ${e.message}\n\n다시 시도해주세요.`,'sys');rMsgs();}
  isGen=false;rSB();
 }
 
@@ -1261,6 +1279,14 @@ function addProj(){
   projDB.push(proj);
   spp();rProj();closeM('projM');toast('프로젝트 추가!');
   document.getElementById('pN').value='';document.getElementById('pD').value='';document.getElementById('pPhases').value='';
+  // room에 대화가 있으면 프로젝트 채널로 이관 + room 리셋
+  if(chatDB['room']?.length>0){
+    const projCh='proj-'+proj.id;
+    chatDB[projCh]=[...(chatDB['room']||[])];
+    addM(projCh,'pm',`📋 **"${n}" 프로젝트로 대화 이관됨**\n\n위 대화를 기반으로 프로젝트를 진행합니다.`,'sys');
+    chatDB['room']=[];
+    sc();rSB();
+  }
   // 릴레이 연결 + 팀원 선택 시 자율실행 시작
   if(keys.relay&&team.length){
     fetch(keys.relay.replace(/\/$/,'')+'/api/project/start',{
@@ -1321,19 +1347,50 @@ function showProjDetail(id){
 }
 function projContinue(id){
   const p=projDB.find(x=>x.id===id);if(!p)return;
-  // 프로젝트 전용 채널로 이동 (없으면 생성)
   const projCh='proj-'+p.id;
   if(!chatDB[projCh]){
     chatDB[projCh]=[];
-    // 기존 프로젝트 정보를 시스템 메시지로 추가
     addM(projCh,'pm',`📋 **프로젝트: ${p.name}**\n\n${p.desc||'설명 없음'}\n\n팀: ${(p.team||[]).map(tid=>{const m=TM.find(t=>t.id===tid);return m?m.name+'('+m.role+')':tid}).join(', ')}\n\n이 채널에서 프로젝트를 이어갑니다.`,'sys');
+    // 자율실행 프로젝트면 릴레이 서버에서 결과 로드
+    if(p.autoId&&keys.relay){
+      loadAutoResults(p.autoId,projCh,p.id);
+    }
   }
   switchTab('chat');rTabs();selCh(projCh);
   const inp=document.getElementById('chatInp');
-  const nextPh=(p.phases||[]).find(ph=>ph.status!=='done');
-  inp.value=nextPh?nextPh.name+' 단계 진행해줘':'추가 지시나 피드백을 입력하세요';
-  inp.focus();inp.dispatchEvent(new Event('input'));
+  inp.placeholder='추가 지시나 피드백을 입력하세요';
+  inp.focus();
   toast(`"${p.name}" 프로젝트 채널`);
+}
+async function loadAutoResults(autoId,projCh,localId){
+  try{
+    const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/project/active',{headers:{'Bypass-Tunnel-Reminder':'true'}});
+    const d=await r.json();if(!d.ok)return;
+    const ap=d.projects.find(p=>p.id===autoId);if(!ap)return;
+    for(const step of ap.steps){
+      if(step.status==='done'&&step.result){
+        const stepKey='_auto_'+autoId+'_'+step.memberId;
+        if(!chatDB[projCh].some(m=>m._autoKey===stepKey)){
+          chatDB[projCh].push({role:'assistant',mid:step.memberId,content:step.result,time:step.completedAt?new Date(step.completedAt).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}):now(),type:'work',_autoKey:stepKey});
+        }
+      }
+    }
+    if(ap.discussions?.length){
+      for(const disc of ap.discussions){
+        const discKey='_auto_'+autoId+'_disc_'+disc.from+'_r'+disc.round;
+        if(!chatDB[projCh].some(m=>m._autoKey===discKey)){
+          chatDB[projCh].push({role:'assistant',mid:disc.from,content:disc.content,time:disc.time?new Date(disc.time).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}):now(),type:'review',_autoKey:discKey});
+        }
+      }
+    }
+    if(ap.summary){
+      const sumKey='_auto_'+autoId+'_summary';
+      if(!chatDB[projCh].some(m=>m._autoKey===sumKey)){
+        chatDB[projCh].push({role:'assistant',mid:'pm',content:ap.summary,time:ap.completedAt?new Date(ap.completedAt).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}):now(),type:'summary',_autoKey:sumKey});
+      }
+    }
+    sc();rMsgs();
+  }catch(e){console.log('[MOTIVE] 자율실행 결과 로드 실패:',e)}
 }
 async function pollActiveProjects(){
   if(!keys.relay)return;
@@ -1357,8 +1414,41 @@ async function pollActiveProjects(){
         if(ap.waitingCeoInput)local.ceoQuestion=ap.waitingCeoInput.question;
       }
       if(ap.summary&&!local.autoSummary){local.autoSummary=ap.summary;changed=true}
+      // === 자율실행 결과를 프로젝트 채널에 메시지로 동기화 ===
+      const projCh='proj-'+local.id;
+      if(!chatDB[projCh])chatDB[projCh]=[];
+      for(const step of ap.steps){
+        if(step.status==='done'&&step.result){
+          const stepKey='_auto_'+ap.id+'_'+step.memberId;
+          const already=chatDB[projCh].some(m=>m._autoKey===stepKey);
+          if(!already){
+            const m=TM.find(t=>t.id===step.memberId);
+            chatDB[projCh].push({role:'assistant',mid:step.memberId,content:step.result,time:step.completedAt?new Date(step.completedAt).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}):now(),type:'work',_autoKey:stepKey});
+            changed=true;
+          }
+        }
+      }
+      if(ap.summary){
+        const sumKey='_auto_'+ap.id+'_summary';
+        const alreadySum=chatDB[projCh].some(m=>m._autoKey===sumKey);
+        if(!alreadySum){
+          chatDB[projCh].push({role:'assistant',mid:'pm',content:ap.summary,time:ap.completedAt?new Date(ap.completedAt).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}):now(),type:'summary',_autoKey:sumKey});
+          changed=true;
+        }
+      }
+      // 토론 결과도 동기화
+      if(ap.discussions?.length){
+        for(const disc of ap.discussions){
+          const discKey='_auto_'+ap.id+'_disc_'+disc.from+'_r'+disc.round;
+          const alreadyDisc=chatDB[projCh].some(m=>m._autoKey===discKey);
+          if(!alreadyDisc){
+            chatDB[projCh].push({role:'assistant',mid:disc.from,content:disc.content,time:disc.time?new Date(disc.time).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'}):now(),type:'review',_autoKey:discKey});
+            changed=true;
+          }
+        }
+      }
     }
-    if(changed){spp();rProj()}
+    if(changed){spp();sc();rProj();if(curCh.startsWith('proj-'))rMsgs()}
   }catch(e){}
 }
 function projAutoSync(){
