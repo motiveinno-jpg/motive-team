@@ -887,6 +887,13 @@ function closeSBMobile(){if(isMobile&&!sbCollapsed)toggleSB()}
 function rSB(){
   let h='<div class="sb-sec" style="padding-top:10px">🏠 프로젝트룸</div>';
   h+=`<div class="sb-item room-item ${curCh==='room'?'on':''}" onclick="selCh('room')"><div style="width:48px;height:48px;border-radius:50%;background:var(--ac);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;color:#0a0a0a;flex-shrink:0">팀</div><div style="flex:1;min-width:0"><div class="sb-name">팀 프로젝트룸</div><div class="sb-role">멀티AI 협업</div>${isGen?'<div class="sb-active"><span class="sb-active-dot"></span>작업 중...</div>':''}</div></div>`;
+  // 프로젝트별 전용 채널
+  const projChannels=projDB.filter(p=>chatDB['proj-'+p.id]?.length>0);
+  if(projChannels.length){
+    projChannels.forEach(p=>{const pch='proj-'+p.id;const msgCnt=chatDB[pch]?.length||0;const statusIcon=p.status==='done'?'✅':p.status==='progress'?'⚡':'📋';
+      h+=`<div class="sb-item ${curCh===pch?'on':''}" onclick="selCh('${pch}')" style="padding-left:20px"><div style="width:36px;height:36px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${statusIcon}</div><div style="flex:1;min-width:0"><div class="sb-name" style="font-size:12px">${esc(p.name)}</div><div class="sb-role" style="font-size:10px">${msgCnt}개 메시지</div></div></div>`;
+    });
+  }
   h+='<div class="sb-sec">👤 1:1</div>';
   TM.forEach(m=>{const ac=AI_COLORS[m.ai]||'';h+=`<div class="sb-item ${curCh===m.id?'on':''}" onclick="selCh('${m.id}')"><div style="width:48px;height:48px;flex-shrink:0;border-radius:50%;overflow:hidden">${av(m,48)}</div><div style="flex:1;min-width:0"><div class="sb-name">${m.name} <span class="sb-ai ${ac}">${m.aiLabel}</span></div><div class="sb-role">${m.role}</div></div><div class="sb-dot"></div></div>`});
   document.getElementById('sbList').innerHTML=h;
@@ -920,6 +927,7 @@ async function quickImgGen(){
 /* Chat Header */
 function rChatHd(){
   if(curCh==='room'){document.getElementById('chatHd').innerHTML=`<div class="chat-hd-l"><div style="width:52px;height:52px;border-radius:50%;background:var(--ac);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#0a0a0a">팀</div><div><div class="chat-hd-name">팀 프로젝트룸 <span class="chat-hd-tag">Smart AI</span></div><div class="chat-hd-info">업무별 최적 AI 자동 배정 · Pro 2.5 + Flash 2.5 + Lite 2.5 + Flash Image · 복잡도 자동 감지</div></div></div><button class="hbtn" onclick="clearCh()">초기화</button>`}
+  else if(curCh.startsWith('proj-')){const pid=curCh.replace('proj-','');const p=projDB.find(x=>x.id===pid);const pname=p?p.name:'프로젝트';const teamStr=p?(p.team||[]).slice(0,4).map(tid=>{const m=TM.find(t=>t.id===tid);return m?m.name:''}).join(', '):'';document.getElementById('chatHd').innerHTML=`<div class="chat-hd-l"><div style="width:52px;height:52px;border-radius:8px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:18px">📋</div><div><div class="chat-hd-name">${esc(pname)} <span class="chat-hd-tag">프로젝트</span></div><div class="chat-hd-info">${teamStr?'팀: '+teamStr:'프로젝트 전용 채널'}</div></div></div><button class="hbtn" onclick="selCh('room')">← 메인룸</button><button class="hbtn" onclick="clearCh()">초기화</button>`}
   else{const m=gm(curCh);document.getElementById('chatHd').innerHTML=`<div class="chat-hd-l"><div style="width:52px;height:52px;border-radius:50%;overflow:hidden">${av(m,52)}</div><div><div class="chat-hd-name">${m.name}·${m.role} <span class="mg-ai-tag ${AI_COLORS[m.ai]}">${m.aiLabel}</span></div><div class="chat-hd-info">${m.desc}</div></div></div><button class="hbtn" onclick="clearCh()">초기화</button>`}
 }
 
@@ -939,7 +947,8 @@ function rMsgs(){
         <div class="ai-map"><div class="ai-map-item"><span class="mg-ai-tag ai-gemini" style="background:#1a2a3a;color:#c8ff00">Pro 2.5</span>PM 종합보고</div><div class="ai-map-item"><span class="mg-ai-tag ai-gemini">Flash 2.5</span>기획·전략·리서치·재무·QA·법무·개발</div><div class="ai-map-item"><span class="mg-ai-tag ai-gemini" style="background:#0d2a2a;color:#26c6da">Lite 2.5</span>마케팅·영업·인사</div><div class="ai-map-item"><span class="mg-ai-tag ai-mj" style="background:#1a2a1a;color:#66bb6a">Flash Image</span>이미지 생성</div><div class="ai-map-item"><span class="mg-ai-tag ai-claude">+Claude/GPT</span>프리미엄 업그레이드</div></div>
         <div class="w-flow"><div class="w-step">📝 업무 지시</div><span class="w-arrow">→</span><div class="w-step">🎯 PM 분석</div><span class="w-arrow">→</span><div class="w-step">⚡ 각자 AI로 작업</div><span class="w-arrow">→</span><div class="w-step">🔊 음성 보고</div><span class="w-arrow">→</span><div class="w-step">✅ PM 종합</div></div>
         <div class="w-acts"><button class="w-btn" onclick="qm('AI SaaS 제품을 기획하고 브랜드 디자인과 런칭 전략까지 전부 만들어줘')">🚀 SaaS 런칭</button><button class="w-btn" onclick="qm('우리 회사 브랜딩 리뉴얼해줘. 로고 컨셉, 브랜드 가이드, 마케팅 비주얼까지.')">🎨 브랜딩</button><button class="w-btn" onclick="qm('모바일 앱 MVP를 설계해줘. 기획, 디자인, 개발 스펙, QA 플랜까지.')">📱 앱 MVP</button></div></div>`;
-    }else{const m=gm(curCh);box.innerHTML=`<div class="welcome"><div style="width:100px;height:100px;border-radius:50%;overflow:hidden;margin:0 auto 14px">${av(m,100,1)}</div><div class="w-title"><b>${m.name}</b> ${m.role}</div><div class="w-sub">${m.desc} · <span class="mg-ai-tag ${AI_COLORS[m.ai]}">${m.aiLabel}</span> 사용</div><div class="w-acts"><button class="w-btn" onclick="qm('현재 업무 현황')">📊 현황</button><button class="w-btn" onclick="qm('전문 의견 줘')">💡 의견</button></div></div>`}
+    }else if(curCh.startsWith('proj-')){const pid=curCh.replace('proj-','');const p=projDB.find(x=>x.id===pid);const pname=p?p.name:'프로젝트';box.innerHTML=`<div class="welcome"><div style="font-size:48px;margin-bottom:12px">📋</div><div class="w-title"><b>${esc(pname)}</b></div><div class="w-sub">${p?esc(p.desc||''):'프로젝트 채널'}</div><div class="w-acts"><button class="w-btn" onclick="qm('현재 진행상황 보고해줘')">📊 현황</button><button class="w-btn" onclick="qm('다음 단계 진행해줘')">⚡ 다음단계</button></div></div>`}
+    else{const m=gm(curCh);box.innerHTML=`<div class="welcome"><div style="width:100px;height:100px;border-radius:50%;overflow:hidden;margin:0 auto 14px">${av(m,100,1)}</div><div class="w-title"><b>${m.name}</b> ${m.role}</div><div class="w-sub">${m.desc} · <span class="mg-ai-tag ${AI_COLORS[m.ai]}">${m.aiLabel}</span> 사용</div><div class="w-acts"><button class="w-btn" onclick="qm('현재 업무 현황')">📊 현황</button><button class="w-btn" onclick="qm('전문 의견 줘')">💡 의견</button></div></div>`}
     return;
   }
   box.innerHTML=hist.map((mg,idx)=>{
@@ -969,14 +978,56 @@ function onFiles(ev){Array.from(ev.target.files).forEach(f=>{const r=new FileRea
 function rFP(){const b=document.getElementById('fpBar');if(!pFiles.length){b.classList.remove('show');b.innerHTML='';return}b.classList.add('show');b.innerHTML=pFiles.map((f,i)=>`<div class="fp-chip">${f.type.startsWith('image/')?`<img src="${f.data}">`:'📎'}<span>${esc(f.name)}</span><span class="fp-x" onclick="pFiles.splice(${i},1);rFP()">&times;</span></div>`).join('')}
 
 /* Send */
-function send(){const inp=document.getElementById('chatInp');const text=inp.value.trim();if((!text&&!pFiles.length)||isGen)return;if(text.startsWith('/')){handleSl(text);inp.value='';inp.style.height='auto';return}if(!chatDB[curCh])chatDB[curCh]=[];chatDB[curCh].push({role:'user',content:text,time:now(),files:pFiles.length?[...pFiles]:undefined});sc();rMsgs();const files=[...pFiles];pFiles=[];rFP();inp.value='';inp.style.height='auto';if(curCh==='room')runCollab(text,files);else runDirect(text,files)}
+function send(){const inp=document.getElementById('chatInp');const text=inp.value.trim();if((!text&&!pFiles.length)||isGen)return;if(text.startsWith('/')){handleSl(text);inp.value='';inp.style.height='auto';return}if(!chatDB[curCh])chatDB[curCh]=[];chatDB[curCh].push({role:'user',content:text,time:now(),files:pFiles.length?[...pFiles]:undefined});sc();rMsgs();const files=[...pFiles];pFiles=[];rFP();inp.value='';inp.style.height='auto';
+  // room 또는 proj- 채널이면 협업 모드
+  if(curCh==='room'||curCh.startsWith('proj-'))runCollab(text,files);else runDirect(text,files)}
 
 /* ===== COLLABORATIVE WORKFLOW WITH MULTI-AI ===== */
 async function runCollab(userMsg,files){
-  isGen=true;rSB();const ch='room';
+  isGen=true;rSB();const ch=curCh; // room 또는 proj-xxx
   const hasAny=keys.relay||keys.gem||keys.oai||keys.cla;
   if(!hasAny){toast('설정에서 Gemini API 키를 입력하세요 (무료)');isGen=false;rSB();return}
  try{
+  // === 이어서 대화 감지: 이미 팀 작업이 있으면 재소집하지 않음 ===
+  const recentMsgs=chatDB[ch]?.slice(-20)||[];
+  const hasTeamWork=recentMsgs.some(m=>m.type==='work'||m.type==='summary'||m.type==='review');
+  if(hasTeamWork){
+    // 이어서 대화 모드 — PM이 맥락 파악하고 직접 답변 + 필요시 특정 팀원만 호출
+    showTyp('💬 하준 PM 응답 중...');
+    const pm=gm('pm');
+    const ctx=recentMsgs.slice(-12).map(m=>{
+      const who=m.role==='user'?'대표님':(m.mid?gm(m.mid)?.name||'PM':'PM');
+      return`${who}: ${(m.content||'').slice(0,200)}`;
+    }).join('\n');
+    const contResp=await callAI(pm,`당신은 PM 하준입니다. 팀이 이미 작업을 진행했거나 완료한 상태입니다.
+대표님의 추가 메시지에 자연스럽게 대응하세요:
+- 질문이면 답변하세요
+- 피드백이면 반영 방향을 설명하세요
+- 추가 작업이 필요하면 어떤 팀원에게 시킬지 설명하세요
+- 대화를 이어가세요 (팀을 처음부터 재소집하지 마세요)
+JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
+    `[진행 중인 대화]\n${ctx}\n\n[대표님 추가 메시지]\n${userMsg}`);
+    hideTyp();
+    const pmReply=contResp||'네 대표님, 확인했습니다. 팀에 전달하겠습니다!';
+    addM(ch,'pm',pmReply,'sys');rMsgs();
+    // PM이 특정 팀원 호출을 언급하면 해당 팀원 1명만 추가 작업
+    const memberMention=pmReply.match(/(수아|루나|서연|지호|하은|민서|현우|시우|도윤|예린|태윤|유나|세진)/);
+    if(memberMention){
+      const nameMap={수아:'design',루나:'marketing',서연:'planning',지호:'finance',하은:'hr',민서:'sales',현우:'thinking',시우:'research',도윤:'dev',예린:'qa',태윤:'video',유나:'photo',세진:'legal'};
+      const mid=nameMap[memberMention[1]];
+      if(mid){
+        const member=gm(mid);
+        await new Promise(r=>setTimeout(r,3000));
+        showTyp(`⚡ ${member.name}(${member.role}) 추가 작업 중...`);
+        const extra=await callAI(member,`${member.prompt}\n이전 작업에 이어서 대표님 추가 요청에 대응하세요. 한국어.`,`[진행 중인 대화]\n${ctx}\n\n[대표님 추가 메시지]\n${userMsg}\n[PM 지시]\n${pmReply}`);
+        hideTyp();
+        if(extra)addM(ch,mid,extra,'work');rMsgs();
+      }
+    }
+    isGen=false;rSB();return;
+  }
+
+  // === 새 프로젝트 모드: 팀 소집 ===
   // STEP 1: PM analyzes intent from conversation context
   showTyp('💬 하준 PM 응답 중...');
   const pm=gm('pm');
@@ -1270,12 +1321,19 @@ function showProjDetail(id){
 }
 function projContinue(id){
   const p=projDB.find(x=>x.id===id);if(!p)return;
-  switchTab('chat');rTabs();selCh('room');
+  // 프로젝트 전용 채널로 이동 (없으면 생성)
+  const projCh='proj-'+p.id;
+  if(!chatDB[projCh]){
+    chatDB[projCh]=[];
+    // 기존 프로젝트 정보를 시스템 메시지로 추가
+    addM(projCh,'pm',`📋 **프로젝트: ${p.name}**\n\n${p.desc||'설명 없음'}\n\n팀: ${(p.team||[]).map(tid=>{const m=TM.find(t=>t.id===tid);return m?m.name+'('+m.role+')':tid}).join(', ')}\n\n이 채널에서 프로젝트를 이어갑니다.`,'sys');
+  }
+  switchTab('chat');rTabs();selCh(projCh);
   const inp=document.getElementById('chatInp');
   const nextPh=(p.phases||[]).find(ph=>ph.status!=='done');
-  inp.value=`[${p.name}] ${nextPh?nextPh.name+' 단계 진행해줘':'다음 단계 진행해줘'}`;
+  inp.value=nextPh?nextPh.name+' 단계 진행해줘':'추가 지시나 피드백을 입력하세요';
   inp.focus();inp.dispatchEvent(new Event('input'));
-  toast(`"${p.name}" — AI팀에 이어서 진행`);
+  toast(`"${p.name}" 프로젝트 채널`);
 }
 async function pollActiveProjects(){
   if(!keys.relay)return;
