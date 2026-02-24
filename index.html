@@ -982,46 +982,57 @@ async function runCollab(userMsg,files){
   const pm=gm('pm');
   const recent=chatDB[ch]?.slice(-8).filter(m=>m.role==='user'||m.type==='sys').map(m=>m.role==='user'?`대표님: ${m.content}`:`하준: ${m.content?.slice(0,200)}`).join('\n')||'';
 
-  const intentResp=await callAI(pm,`당신은 PM 하준입니다. 28세 남성, 밝고 유능한 성격. 사용자는 채희웅 대표님입니다.
+  // 메시지 길이/키워드로 사전 판단: 짧은 인사만 chat, 나머지는 work 시도
+  const chatOnly=/^(안녕|하이|hi|hello|ㅎㅇ|ㅎㅎ|ㅋㅋ|네|응|ㅇㅇ|굿|좋아|오키|고마워|수고|잘했|멋져|대단|바빠\??|뭐해\??|뭐하고.?있어|잘자|좋은.?아침|하준|하준아)$/i.test(userMsg.trim());
 
-## 당신의 역할
-1. 대표님의 메시지를 읽고 의도를 파악합니다
-2. 반드시 아래 JSON 형식으로만 답하세요
+  let intentResp=null;
+  if(!chatOnly){
+    intentResp=await callAI(pm,`당신은 PM 하준입니다. 28세 남성, 밝고 유능한 성격. 사용자는 채희웅 대표님입니다.
+
+## 역할: 여기는 팀 프로젝트 룸입니다. 대표님이 여기서 말씀하시면 대부분 업무 지시입니다.
 
 ## 판단 기준
-- "chat": 인사, 일상대화, 질문, 잡담, 감정표현, 의견 묻기, 피드백 등 → 팀 소집 불필요
-- "work": 구체적인 업무/프로젝트 지시가 있을 때만 → 팀원 투입 필요
-  (예: "앱 만들어줘", "마케팅 전략 짜줘", "IR자료 준비해", "로고 디자인해줘")
+- "chat": 1~2단어 인사, 안부, "고마워", "수고" 같은 짧은 대화만
+- "work": 그 외 모든 것 (질문, 요청, 의견, 지시, 보고 요청 등)
+- **애매하면 반드시 "work"로 판단하세요** — 여기는 프로젝트 룸입니다
 
-## 중요
-- 애매하면 "chat"으로 판단하세요. 대화하다가 업무가 나오면 그때 "work"로 전환하면 됩니다
-- "하준 바빠?", "뭐하고있어", "이거 어떻게 생각해?" 등은 모두 "chat"입니다
-- 대표님이 명확하게 무언가를 만들거나, 준비하거나, 실행해달라고 할 때만 "work"입니다
+반드시 JSON으로만 응답:
+{"intent":"chat또는work","reply":"대표님에게 자연스럽게 답변(1~3문장)","team":["팀원id"],"tasks":{"id":"업무"}}
 
-JSON 형식:
-{"intent":"chat또는work","reply":"대표님에게 자연스럽게 답변(1~3문장, 한국어, 존댓말)","team":["필요시 팀원id"],"tasks":{"id":"업무"}}
-
+work일 때: reply에 팀구성 설명, team에 2~6명(반드시 적합한 팀원), tasks에 각 업무
 chat일 때: reply만 채우고 team은 빈배열
-work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
 
-팀원 목록: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무)`,
-  `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`);
+팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무)`,
+    `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`);
+  }
 
   // Parse PM response
   let intent='chat',reply=null,plan=null;
-  if(intentResp){
+  if(chatOnly){
+    intent='chat';reply=null;
+  }else if(intentResp){
     try{
       const cleaned=intentResp.replace(/```json?\s*/g,'').replace(/```\s*/g,'').trim();
       const json=JSON.parse(cleaned.match(/\{[\s\S]*\}/)?.[0]||cleaned);
-      intent=json.intent||'chat';
+      intent=json.intent||'work'; // 기본값을 work로 변경
       reply=json.reply||null;
-      if(intent==='work'&&json.team?.length){
+      if(json.team?.length){
         plan={analysis:reply||'업무를 분석했습니다.',team:json.team,tasks:json.tasks||{},order:json.team};
+        intent='work';
       }
     }catch(e){
-      // JSON 파싱 실패 → 텍스트 그대로 채팅 응답
-      reply=intentResp;
-      intent='chat';
+      // JSON 파싱 실패 → work로 간주, 전체 팀 투입
+      reply=intentResp||null;
+      intent='work';
+      const autoTeam=['thinking','planning','design','marketing','research','dev'];
+      plan={analysis:reply||'팀을 구성하여 작업을 시작합니다.',team:autoTeam,tasks:{},order:autoTeam};
+    }
+  }else{
+    // API 전부 실패 → 메시지가 짧지 않으면 자동 work 모드
+    if(userMsg.length>10){
+      intent='work';reply='네 대표님! 팀을 구성해서 바로 시작하겠습니다.';
+      const autoTeam=['thinking','planning','design','marketing','research'];
+      plan={analysis:reply,team:autoTeam,tasks:{},order:autoTeam};
     }
   }
 
@@ -1029,7 +1040,7 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
 
   // CHAT MODE: PM just responds naturally
   if(intent==='chat'||!plan){
-    if(!reply)reply='네 대표님, 말씀하세요! 😊';
+    if(!reply)reply='네 대표님, 말씀하세요!';
     addM(ch,'pm',reply,'sys');rMsgs();
     isGen=false;rSB();return;
   }
