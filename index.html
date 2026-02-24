@@ -471,6 +471,12 @@ function fmt(t){let r=esc(t);r=r.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
   r=r.replace(/\[IMAGE:([^\]]+)\]/g,(match,path)=>{const fn=path.split('/').pop();const url=keys.relay?(keys.relay.replace(/\/$/,'')+'/api/assets/'+encodeURIComponent(fn)):path;return`<div class="gen-img-box"><div class="gen-img-label">🖼️ AI 생성 이미지</div><img src="${url}" class="gen-img" onclick="window.open(this.src)" onerror="this.parentElement.innerHTML='⚠️ 이미지 로드 실패: ${esc(fn)}'"><div style="font-size:9px;color:var(--tx3);margin-top:4px">${esc(fn)} · 클릭하면 확대</div></div>`});
   // [FILE:path] → 파일 링크
   r=r.replace(/\[FILE:([^\]]+)\]/g,(match,path)=>{const fn=path.split('/').pop();const url=keys.relay?(keys.relay.replace(/\/$/,'')+'/api/assets/'+encodeURIComponent(fn)):path;const isImg=/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(fn);if(isImg)return`<div class="gen-img-box"><div class="gen-img-label">📎 생성 파일</div><img src="${url}" class="gen-img" onclick="window.open(this.src)" onerror="this.parentElement.innerHTML='⚠️ 파일 로드 실패: ${esc(fn)}'"><div style="font-size:9px;color:var(--tx3);margin-top:4px">${esc(fn)}</div></div>`;return`<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;margin:6px 0"><a href="${url}" target="_blank" style="color:var(--ac);text-decoration:none">📎 ${esc(fn)}</a></div>`});
+  // YouTube 영상 자동 임베드
+  r=r.replace(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)(?:[^\s<]*)/g,function(match,vid){return'<div style="margin:8px 0;border-radius:10px;overflow:hidden;background:#000;position:relative;padding-bottom:56.25%;height:0"><iframe src="https://www.youtube.com/embed/'+vid+'" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none" allowfullscreen></iframe></div><div style="font-size:9px;color:var(--tx3)"><a href="https://youtube.com/watch?v='+vid+'" target="_blank" style="color:var(--ac)">YouTube에서 보기</a></div>';});
+  // 이미지 URL 자동 프리뷰
+  r=r.replace(/(https?:\/\/[^\s<"]+\.(?:png|jpg|jpeg|gif|webp|svg))(?=[<\s]|$)/gi,function(url){return'<div class="gen-img-box" style="margin:6px 0"><img src="'+url+'" class="gen-img" onclick="window.open(this.src)" onerror="this.style.display=\'none\'" style="max-width:300px;border-radius:8px"><div style="font-size:9px;color:var(--tx3);margin-top:4px"><a href="'+url+'" target="_blank" style="color:var(--ac)">원본 보기</a></div></div>';});
+  // 일반 URL 자동 링크 (이미 처리된 것 제외)
+  r=r.replace(/(?<!")(?<!=)(https?:\/\/[^\s<"]+)/g,function(url){if(url.match(/\.(png|jpg|jpeg|gif|webp|svg)$/i))return url;if(url.includes('youtube.com')||url.includes('youtu.be'))return url;return'<a href="'+url+'" target="_blank" style="color:var(--ac);text-decoration:underline">'+url+'</a>';});
   r=r.replace(/\n/g,'<br>');return r}
 function toast(m){const e=document.createElement('div');e.className='toast';e.textContent=m;document.body.appendChild(e);setTimeout(()=>e.remove(),2500)}
 function closeM(id){document.getElementById(id).classList.remove('show')}
@@ -990,15 +996,31 @@ function rMsgs(){
     const badge=m?`<span class="mg-badge" style="background:${m.color}22;color:${m.color}">${m.role}</span>`:'';
     const aiTag=m?`<span class="mg-ai-tag ${AI_COLORS[m.ai]||'ai-gemini'}">${mg.usedAI||m.aiLabel||''}</span>`:'';
     const ttsBtn=m&&keys.el&&m.voice?`<button class="tts-btn" onclick="ttsMsg('${curCh}',${idx})">🔊 듣기</button>`:'';
+    const shareBtn=`<button class="tts-btn" onclick="shareMsg(${idx})" title="공유">📤 공유</button>`;
     const cls=isSm?'mg-bb pm-sum':isWk?'mg-bb work':'mg-bb';
     const bs=isWk&&m?`border-left-color:${m.color}`:'';
     const emo=m?detectEmo(mg.content):0;
-    return`<div class="mg"><div class="mg-av">${m?av(m,54,emo):''}</div><div class="mg-bd"><div class="mg-sn">${m?m.name:''} ${badge} ${aiTag} ${mg.type==='review'?'<span style="font-size:9px;color:var(--orn)">리뷰</span>':''}</div><div class="${cls}" style="${bs}">${fmt(mg.content)}${imgH}${mjH}</div>${ttsBtn}<div class="mg-time">${mg.time}</div></div></div>`;
+    return`<div class="mg"><div class="mg-av">${m?av(m,54,emo):''}</div><div class="mg-bd"><div class="mg-sn">${m?m.name:''} ${badge} ${aiTag} ${mg.type==='review'?'<span style="font-size:9px;color:var(--orn)">리뷰</span>':''}</div><div class="${cls}" style="${bs}">${fmt(mg.content)}${imgH}${mjH}</div><div style="display:flex;gap:4px">${ttsBtn}${shareBtn}</div><div class="mg-time">${mg.time}</div></div></div>`;
   }).join('');
   box.scrollTop=box.scrollHeight;
 }
 function qm(t){document.getElementById('chatInp').value=t;send()}
 function clearCh(){chatDB[curCh]=[];sc();rMsgs();toast('초기화')}
+
+/* 메시지 공유 (클립보드 + Web Share API) */
+function shareMsg(idx){
+  const hist=chatDB[curCh];if(!hist||!hist[idx])return;
+  const mg=hist[idx];const m=mg.mid?gm(mg.mid):null;
+  let text=(m?m.name+' ('+m.role+')\n':'')+(mg.content||'');
+  // 이미지가 있으면 URL 추가
+  if(mg.imageUrl&&mg.imageUrl!=='[img-session]')text+='\n\n🖼️ '+mg.imageUrl;
+  if(mg.files&&mg.files.length)text+='\n\n📎 첨부: '+mg.files.map(f=>f.name).join(', ');
+  if(navigator.share){
+    navigator.share({title:'MOTIVE AI Team',text:text}).catch(()=>{});
+  }else{
+    navigator.clipboard.writeText(text).then(()=>toast('클립보드에 복사됨'));
+  }
+}
 
 /* Files */
 function onFiles(ev){Array.from(ev.target.files).forEach(f=>{const r=new FileReader();r.onload=e=>{pFiles.push({name:f.name,type:f.type,data:e.target.result});rFP()};r.readAsDataURL(f)});ev.target.value=''}
