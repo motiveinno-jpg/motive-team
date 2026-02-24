@@ -1183,9 +1183,19 @@ function rAll(){rTabs();rSB();rChatHd();rMsgs();rProj();rTodo();rFin();rDoc();rB
 let usagePopOpen=false;
 function toggleUsagePop(){usagePopOpen=!usagePopOpen;document.getElementById('usagePop').classList.toggle('show',usagePopOpen);if(usagePopOpen)fetchUsage()}
 async function fetchUsage(){
-  if(!keys.relay)return;
+  if(!keys.relay){
+    document.getElementById('uDot').className='u-dot off';
+    document.getElementById('uNum').textContent='--';
+    document.getElementById('uToday').textContent='릴레이 미설정';
+    document.getElementById('uTotal').textContent='설정 → 릴레이 URL 입력';
+    document.getElementById('uLast').textContent='--';
+    document.getElementById('uUptime').textContent='--';
+    return;
+  }
   try{
     const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/usage',{headers:{'Bypass-Tunnel-Reminder':'true','ngrok-skip-browser-warning':'true'}});
+    const ct=r.headers.get('content-type')||'';
+    if(!ct.includes('json')){document.getElementById('uDot').className='u-dot off';document.getElementById('uNum').textContent='!';return}
     const d=await r.json();
     if(!d.ok)return;
     // 헤더 pill 업데이트
@@ -1206,12 +1216,12 @@ async function fetchUsage(){
     const srcMap={'web':'웹','telegram':'텔레그램','video':'영상학습'};
     const bs=d.today.bySource||{};
     srcEl.innerHTML=Object.entries(bs).map(([k,v])=>`<div class="usage-src-tag"><span style="color:var(--tx2)">${srcMap[k]||k}</span> <span style="color:var(--ac)">${v}</span></div>`).join('')||'<span style="font-size:10px;color:var(--tx3)">아직 없음</span>';
-    // 7일 차트
+    // 7일 차트 (오늘만 있어도 표시)
     const daily=d.daily||[];
     const chartEl=document.getElementById('uChart');
-    if(daily.length){
-      const max=Math.max(...daily.map(d=>d.requests),d.today.requests,1);
-      const allDays=[...daily,{date:d.today.date,requests:d.today.requests}].slice(-7);
+    const allDays=[...daily,{date:d.today.date,requests:d.today.requests}].slice(-7);
+    if(allDays.length){
+      const max=Math.max(...allDays.map(x=>x.requests),1);
       chartEl.innerHTML=allDays.map(day=>{
         const h=Math.max(2,Math.round((day.requests/max)*36));
         const label=day.date.slice(5);
@@ -1220,7 +1230,10 @@ async function fetchUsage(){
     }
   }catch(e){
     document.getElementById('uDot').className='u-dot off';
-    document.getElementById('uNum').textContent='--';
+    document.getElementById('uNum').textContent='!';
+    document.getElementById('uToday').textContent='연결 실패';
+    document.getElementById('uUptime').textContent='--';
+    console.error('[MOTIVE] 사용량 조회 실패:',e.message);
   }
 }
 // 30초마다 사용량 갱신
