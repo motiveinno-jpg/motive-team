@@ -647,14 +647,20 @@ Rules:
   tier='creative'→ Flash 2.5 → Lite 2.5 → Claude → GPT
   tier='pmfinal' → Pro 2.5 (최종보고) → Flash 2.5 → Lite 2.5
 */
-async function callAI(member,sys,userMsg,tierOverride){
-  const relay=()=>callRelay(sys,userMsg);
-  const gP=()=>callGeminiPro(sys,[{role:'user',parts:[{text:userMsg}]}]);
-  const gF=()=>callGeminiFlash(sys,[{role:'user',parts:[{text:userMsg}]}]);
-  const gL=()=>callGeminiLite(sys,[{role:'user',parts:[{text:userMsg}]}]);
-  const g2=()=>callGemini2F(sys,[{role:'user',parts:[{text:userMsg}]}]);
-  const oai=()=>callGPT(sys,userMsg);
-  const cla=()=>callClaude(sys,userMsg);
+async function callAI(member,sys,userMsg,tierOverride,files){
+  // 파일 처리: Gemini는 원본 inlineData, 텍스트 전용 API는 추출 텍스트
+  const gemParts=buildGeminiParts(userMsg,files);
+  const fileDesc=extractFileText(files);
+  const textMsg=fileDesc?userMsg+fileDesc:userMsg;
+  const hasBin=hasBinaryFile(files);
+
+  const relay=()=>callRelay(sys,textMsg);
+  const gP=()=>callGeminiPro(sys,[{role:'user',parts:gemParts}]);
+  const gF=()=>callGeminiFlash(sys,[{role:'user',parts:gemParts}]);
+  const gL=()=>callGeminiLite(sys,[{role:'user',parts:gemParts}]);
+  const g2=()=>callGemini2F(sys,[{role:'user',parts:gemParts}]);
+  const oai=()=>callGPT(sys,textMsg);
+  const cla=()=>callClaude(sys,textMsg);
 
   // 릴레이 사용 가능하면 최우선
   const hasRelay=!!keys.relay;
@@ -662,7 +668,12 @@ async function callAI(member,sys,userMsg,tierOverride){
   let tier=tierOverride||member.tier||'lite';
 
   let chain=[];
-  if(hasRelay){
+  // 바이너리 파일(PDF/이미지/엑셀 등) 있으면 → Gemini 최우선 (원본 파일 분석 가능)
+  if(hasBin&&keys.gem){
+    chain=[{fn:gF,n:'Flash 2.5'},{fn:gP,n:'Pro 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gL,n:'Lite 2.5'}];
+    if(hasRelay)chain.push({fn:relay,n:'Claude Max'});
+    chain.push({fn:oai,n:'GPT-4o'},{fn:cla,n:'Claude'});
+  }else if(hasRelay){
     // 릴레이 모드: Claude Max 최우선 → Gemini 백업 (pmfinal은 Pro 포함)
     if(tier==='pmfinal')chain=[{fn:relay,n:'Claude Max'},{fn:gP,n:'Pro 2.5'},{fn:gF,n:'Flash 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gL,n:'Lite 2.5'}];
     else chain=[{fn:relay,n:'Claude Max'},{fn:gL,n:'Lite 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gF,n:'Flash 2.5'}];
@@ -978,31 +989,64 @@ function clearCh(){chatDB[curCh]=[];sc();rMsgs();toast('초기화')}
 function onFiles(ev){Array.from(ev.target.files).forEach(f=>{const r=new FileReader();r.onload=e=>{pFiles.push({name:f.name,type:f.type,data:e.target.result});rFP()};r.readAsDataURL(f)});ev.target.value=''}
 function rFP(){const b=document.getElementById('fpBar');if(!pFiles.length){b.classList.remove('show');b.innerHTML='';return}b.classList.add('show');b.innerHTML=pFiles.map((f,i)=>`<div class="fp-chip">${f.type.startsWith('image/')?`<img src="${f.data}">`:'📎'}<span>${esc(f.name)}</span><span class="fp-x" onclick="pFiles.splice(${i},1);rFP()">&times;</span></div>`).join('')}
 
-/* 파일 내용 추출 — AI 프롬프트에 포함 */
+/* 파일 처리 유틸리티 */
+function isTextFile(f){
+  if(f.type.startsWith('text/'))return true;
+  if(/\.(txt|csv|json|md|html|xml|js|ts|py|css|yml|yaml|log|ini|cfg|conf|sh|bat|sql|r|rb|php|java|c|cpp|h|swift|kt|go|rs)$/i.test(f.name))return true;
+  return false;
+}
+
+/* 텍스트 전용 API(릴레이/GPT/Claude)를 위한 파일 텍스트 추출 */
 function extractFileText(files){
   if(!files||!files.length)return'';
   const parts=[];
   for(const f of files){
     try{
       if(f.type.startsWith('image/')){
-        parts.push(`[첨부 이미지: ${f.name}] (이미지 파일이 첨부되었습니다. 파일명과 맥락을 참고하여 작업하세요)`);
-      }else{
-        // 텍스트 계열 파일 → 내용 추출
+        parts.push(`[첨부 이미지: ${f.name}] (이미지가 첨부됨 — Gemini API로 분석 가능)`);
+      }else if(isTextFile(f)){
         const base64=f.data.split(',')[1];
         const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
         const text=new TextDecoder('utf-8').decode(bytes);
         if(text&&text.length>0){
-          const preview=text.slice(0,4000);
-          parts.push(`[첨부파일: ${f.name}]\n${preview}${text.length>4000?'\n...(이하 생략)':''}`);
+          parts.push(`[첨부파일: ${f.name}]\n${text.slice(0,4000)}${text.length>4000?'\n...(이하 생략)':''}`);
         }else{
-          parts.push(`[첨부파일: ${f.name}] (내용을 읽을 수 없는 형식)`);
+          parts.push(`[첨부파일: ${f.name}] (빈 파일)`);
         }
+      }else{
+        // PDF, DOCX, XLSX 등 바이너리 — 텍스트 추출 불가, 설명만
+        parts.push(`[첨부파일: ${f.name}] (${f.type||'알 수 없는 형식'} — 파일이 첨부됨. 이 파일의 내용을 기반으로 작업해주세요)`);
       }
     }catch(e){
-      parts.push(`[첨부파일: ${f.name}] (파일 형식: ${f.type||'알 수 없음'})`);
+      parts.push(`[첨부파일: ${f.name}] (읽기 실패)`);
     }
   }
   return parts.length?'\n\n--- 첨부파일 ---\n'+parts.join('\n\n'):'';
+}
+
+/* Gemini API용 — 파일을 inlineData로 직접 전달 (PDF/이미지 원본 분석 가능) */
+function buildGeminiParts(userMsg,files){
+  const parts=[{text:userMsg}];
+  if(!files||!files.length)return parts;
+  for(const f of files){
+    try{
+      const base64=f.data.split(',')[1];
+      if(!base64)continue;
+      const mime=f.type||'application/octet-stream';
+      parts.push({inlineData:{mimeType:mime,data:base64}});
+      // 파일명도 텍스트로 추가 (AI가 파일명 인식하도록)
+      parts.push({text:`[위 파일: ${f.name}]`});
+    }catch(e){
+      parts.push({text:`[첨부파일 ${f.name} 로드 실패]`});
+    }
+  }
+  return parts;
+}
+
+/* 파일에 바이너리(PDF/이미지/DOCX 등)가 있는지 확인 */
+function hasBinaryFile(files){
+  if(!files||!files.length)return false;
+  return files.some(f=>!isTextFile(f));
 }
 
 /* Send */
@@ -1015,9 +1059,6 @@ async function runCollab(userMsg,files){
   isGen=true;rSB();const ch=curCh; // room 또는 proj-xxx
   const hasAny=keys.relay||keys.gem||keys.oai||keys.cla;
   if(!hasAny){toast('설정에서 Gemini API 키를 입력하세요 (무료)');isGen=false;rSB();return}
-  // 첨부파일 내용 추출 → AI 프롬프트에 포함
-  const fileText=extractFileText(files);
-  const fullMsg=fileText?userMsg+fileText:userMsg;
  try{
   // === 이어서 대화 감지: 이미 팀 작업이 있으면 재소집하지 않음 ===
   const recentMsgs=chatDB[ch]?.slice(-20)||[];
@@ -1034,15 +1075,15 @@ async function runCollab(userMsg,files){
 대표님의 추가 메시지에 자연스럽게 대응하세요:
 - 질문이면 답변하세요
 - 피드백이면 반영 방향을 설명하세요
-- 첨부파일이 있으면 내용을 분석하고 구체적으로 답하세요
+- 첨부파일이 있으면 파일 내용을 꼼꼼히 분석하고 구체적으로 답하세요
 - 추가 작업이 필요하면 어떤 팀원에게 시킬지 설명하세요
 - 대화를 이어가세요 (팀을 처음부터 재소집하지 마세요)
 JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
-    `[진행 중인 대화]\n${ctx}\n\n[대표님 추가 메시지]\n${fullMsg}`);
+    `[진행 중인 대화]\n${ctx}\n\n[대표님 추가 메시지]\n${userMsg}`,null,files);
     // 1차 실패 시 재시도
     if(!contResp){
       await new Promise(r=>setTimeout(r,3000));
-      contResp=await callAI(pm,`PM 하준입니다. 대표님 메시지에 구체적으로 답하세요. 한국어 존댓말.`,`${fullMsg}`);
+      contResp=await callAI(pm,`PM 하준입니다. 대표님 메시지에 구체적으로 답하세요. 첨부파일이 있으면 반드시 분석하세요. 한국어 존댓말.`,userMsg,null,files);
     }
     hideTyp();
     // 2차까지 실패 → 새 팀 소집 모드로 전환 (멈추지 않게)
@@ -1060,7 +1101,7 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
           const member=gm(mid);
           await new Promise(r=>setTimeout(r,3000));
           showTyp(`⚡ ${member.name}(${member.role}) 추가 작업 중...`);
-          const extra=await callAI(member,`${member.prompt}\n이전 작업에 이어서 대표님 추가 요청에 대응하세요. 첨부파일이 있으면 내용을 분석하세요. 한국어.`,`[진행 중인 대화]\n${ctx}\n\n[대표님 추가 메시지]\n${fullMsg}\n[PM 지시]\n${contResp}`);
+          const extra=await callAI(member,`${member.prompt}\n이전 작업에 이어서 대표님 추가 요청에 대응하세요. 첨부파일이 있으면 내용을 분석하세요. 한국어.`,`[진행 중인 대화]\n${ctx}\n\n[대표님 추가 메시지]\n${userMsg}\n[PM 지시]\n${contResp}`,null,files);
           hideTyp();
           if(extra)addM(ch,mid,extra,'work');rMsgs();
         }
@@ -1096,7 +1137,7 @@ work일 때: reply에 팀구성 설명, team에 2~6명(반드시 적합한 팀�
 chat일 때: reply만 채우고 team은 빈배열
 
 팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무)`,
-    `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${fullMsg}`);
+    `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`,null,files);
   }
 
   // Parse PM response
@@ -1159,7 +1200,7 @@ chat일 때: reply만 채우고 team은 빈배열
 
       text=await callAI(member,
         `[우리 회사: (주)모티브이노베이션]\n대표: 채희웅 | 설립2021 | 강남구 역삼동 | 2024매출7억\n★핵심=B2G 정부사업: 공공기관 디지털마케팅·SNS운영·정책홍보\n수행중: 소상공인홍보지원(9억,한유원25), SNS활용패키지(6.8억,한유원25), 제조혁신바우처(한엔진공업)\n완료: 임산물브랜딩(9300만,임업진흥원24), 자사몰홍보(1.26억,임업진흥원24), 마케팅PD연계(한유원23)\n2026입찰: 재정경제부SNS(2.8억), 노란우산(20억), 대전관광공사, K리그, 국민연금, 한국관광공사, 부산항만공사, 경북뉴미디어, 수산대전, 서울시민대학, 인천항, 세명대, KOMIR 등 10건+\n민간: 파나소닉(미용기기영상), 쿨샤(컨설팅), 대성에너지, 카카오클래스교육\n\n${member.prompt}\n\n[업무 수행 원칙]\n당신은 (주)모티브이노베이션의 ${member.name}, ${member.role} 전문가입니다.\n1. 관련 트렌드와 최신 사례를 전문적으로 작성\n2. 업계 베스트 프랙티스와 프레임워크 활용\n3. 실제 실무 경험 기반 구체적 산출물 작성\n4. 이전 팀원 작업물 반드시 반영\n5. 절대 대표님에게 직접 하라고 하지 마세요 — 직접 결과물을 만드세요\n6. 우리 회사의 정부사업 이력(9억+6.8억 수행중, 2.8억+20억 입찰 등)을 적극 참고\n7. 첨부파일이 있으면 내용을 꼼꼼히 분석하고 작업에 반영하세요\n한국어로 작성.`,
-        `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}${fileText?'\n'+fileText:''}`
+        `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}`,null,files
       );
 
       // If creative member, generate Midjourney prompt + Gemini Imagen image
@@ -1181,7 +1222,7 @@ chat일 때: reply만 채우고 team은 빈배열
       await new Promise(r=>setTimeout(r,5000));
       text=await callAI(member,
         `${member.prompt}\n전문가로서 구체적 산출물을 직접 작성하세요. 대표님에게 하라고 하지 말고 본인이 직접 하세요. 첨부파일이 있으면 분석하세요. 한국어.`,
-        `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}${fileText?'\n'+fileText:''}`
+        `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}`,null,files
       );
     }
     if(!text){
@@ -1272,11 +1313,9 @@ chat일 때: reply만 채우고 team은 빈배열
 async function runDirect(userMsg,files){
   isGen=true;const m=gm(curCh);
   if(!keys.relay&&!keys.gem&&!keys.oai&&!keys.cla){toast('설정에서 API 키 또는 릴레이를 설정하세요');isGen=false;return}
-  const fileText=extractFileText(files);
-  const fullMsg=fileText?userMsg+fileText:userMsg;
  try{
   showTyp(`${m.name} → ${m.aiLabel} 답변 중...`);
-  let resp=await callAI(m,`[우리 회사: (주)모티브이노베이션] 대표: 채희웅. 사업: 영상제작, 디지털마케팅, SNS운영, 교육, 컨설팅, 정부지원사업. 클라이언트: 파나소닉, 쿨샤, 대성에너지, 노란우산공제, 대전관광공사, KOMIR, 세명대, 한엔진공업 등.\n\n${m.prompt}\n\n[전문가 원칙] 당신은 (주)모티브이노베이션의 ${m.name}, ${m.role} 전문가입니다.\n- 최신 트렌드와 업계 베스트 프랙티스를 반영\n- 우리 회사 사업 이력을 숙지하고 실질적 도움 제공\n- 실무 경험 기반 구체적 답변\n- 첨부파일이 있으면 내용을 분석하고 답변에 반영\n대표: 채희웅 대표님. 한국어.`,fullMsg);
+  let resp=await callAI(m,`[우리 회사: (주)모티브이노베이션] 대표: 채희웅. 사업: 영상제작, 디지털마케팅, SNS운영, 교육, 컨설팅, 정부지원사업. 클라이언트: 파나소닉, 쿨샤, 대성에너지, 노란우산공제, 대전관광공사, KOMIR, 세명대, 한엔진공업 등.\n\n${m.prompt}\n\n[전문가 원칙] 당신은 (주)모티브이노베이션의 ${m.name}, ${m.role} 전문가입니다.\n- 최신 트렌드와 업계 베스트 프랙티스를 반영\n- 우리 회사 사업 이력을 숙지하고 실질적 도움 제공\n- 실무 경험 기반 구체적 답변\n- 첨부파일이 있으면 파일 내용을 꼼꼼히 분석하고 답변에 반영\n대표: 채희웅 대표님. 한국어.`,userMsg,null,files);
   let mjPrompt=null;let genImage=null;
   if(!resp){
     const downList=[];Object.entries(apiFailCount).forEach(([k,v])=>{if(v>0){const names={gemPro:'Pro 2.5',gemFlash:'Flash 2.5',gemLite:'Lite 2.5',gem2F:'Flash 2.0',oai:'GPT',cla:'Claude'};downList.push(names[k]||k)}});
