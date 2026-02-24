@@ -693,7 +693,9 @@ async function callAI(member,sys,userMsg,tierOverride,files){
 
   // ★ 클로드봇 모드: 모든 팀원이 Opus(Claude Code와 동일) 사용
   if(isOpus&&hasRelay){
-    chain=[{fn:relayOpus,n:'Claude Opus'},{fn:relaySonnet,n:'Claude Sonnet'},{fn:gF,n:'Flash 2.5'}];
+    // Opus 모드에서도 PDF가 있으면 Gemini Pro를 2순위로
+    if(hasBin&&keys.gem)chain=[{fn:relayOpus,n:'Claude Opus'},{fn:gP,n:'Pro 2.5'},{fn:relaySonnet,n:'Claude Sonnet'},{fn:gF,n:'Flash 2.5'}];
+    else chain=[{fn:relayOpus,n:'Claude Opus'},{fn:relaySonnet,n:'Claude Sonnet'},{fn:gF,n:'Flash 2.5'}];
   }
   // 바이너리 파일(PDF/이미지/엑셀 등) 있으면 → Gemini 최우선 (원본 파일 분석 가능)
   else if(hasBin&&keys.gem){
@@ -1133,14 +1135,26 @@ async function runCollab(userMsg,files){
   const hasAny=keys.relay||keys.gem||keys.oai||keys.cla;
   if(!hasAny){toast('설정에서 Gemini API 키를 입력하세요 (무료)');isGen=false;rSB();return}
 
-  // ★ 클로드봇 모드 감지: "클로드봇으로", "클로드봇모드", "opus로", "최고급으로" 등
+  // ★ 핵심 프로젝트 자동 최고성능 모드
+  const priorityProjects=['proj-whistle01','proj-alibaba01'];
+  const isPriorityProject=priorityProjects.includes(ch);
+
+  // 클로드봇 모드 감지: "클로드봇으로", "클로드봇모드", "opus로", "최고급으로" 등
   const claudeMaxKeywords=/클로드봇|claude\s*bot|claude\s*max|opus|클로드맥스|최고급|최상위.*모드/i;
-  if(claudeMaxKeywords.test(userMsg)&&keys.relay){
-    window._claudeMaxMode=true;
-    addM(ch,'pm','🧠 **클로드봇 모드 ON** — 모든 팀원이 Claude Opus(최상위 모델)를 사용합니다.\n나(Claude Code)와 동일한 퀄리티로 작업합니다. 시간은 좀 더 걸릴 수 있습니다.','sys');rMsgs();
-    // 키워드 제거하고 실제 요청만 추출
-    userMsg=userMsg.replace(/클로드봇\s*으?로\s*(실행|시작|해줘|진행)?|클로드봇\s*모드\s*으?로?\s*(실행|시작)?|claude\s*(bot|max)\s*(mode)?|opus\s*으?로?\s*(실행)?|최고급\s*으?로?\s*(실행)?|최상위.*모드\s*으?로?\s*(실행)?/gi,'').trim();
-    if(!userMsg)userMsg='이전 대화를 기반으로 최고 품질로 작업해주세요';
+  if((claudeMaxKeywords.test(userMsg)||isPriorityProject)&&keys.relay){
+    if(!window._claudeMaxMode){
+      window._claudeMaxMode=true;
+      if(isPriorityProject){
+        addM(ch,'pm','🧠 **핵심 프로젝트 — 최고성능 모드 자동 적용**\nClaude Opus(최상위) + Gemini Pro 조합으로 작업합니다.','sys');rMsgs();
+      }else{
+        addM(ch,'pm','🧠 **클로드봇 모드 ON** — 모든 팀원이 Claude Opus(최상위 모델)를 사용합니다.\n나(Claude Code)와 동일한 퀄리티로 작업합니다. 시간은 좀 더 걸릴 수 있습니다.','sys');rMsgs();
+      }
+    }
+    // 키워드 제거하고 실제 요청만 추출 (핵심 프로젝트는 키워드 제거 불필요)
+    if(!isPriorityProject){
+      userMsg=userMsg.replace(/클로드봇\s*으?로\s*(실행|시작|해줘|진행)?|클로드봇\s*모드\s*으?로?\s*(실행|시작)?|claude\s*(bot|max)\s*(mode)?|opus\s*으?로?\s*(실행)?|최고급\s*으?로?\s*(실행)?|최상위.*모드\s*으?로?\s*(실행)?/gi,'').trim();
+      if(!userMsg)userMsg='이전 대화를 기반으로 최고 품질로 작업해주세요';
+    }
   }
 
  try{
