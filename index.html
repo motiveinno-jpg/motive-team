@@ -464,7 +464,12 @@ function now(){const d=new Date();return d.getHours().toString().padStart(2,'0')
 function dt(){const d=new Date();return(d.getMonth()+1).toString().padStart(2,'0')+'/'+d.getDate().toString().padStart(2,'0')}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
 function esc(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML}
-function fmt(t){let r=esc(t);r=r.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');r=r.replace(/```(\w*)\n?([\s\S]*?)```/g,'<pre>$2</pre>');r=r.replace(/`([^`]+)`/g,'<code>$1</code>');r=r.replace(/\n/g,'<br>');return r}
+function fmt(t){let r=esc(t);r=r.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');r=r.replace(/```(\w*)\n?([\s\S]*?)```/g,'<pre>$2</pre>');r=r.replace(/`([^`]+)`/g,'<code>$1</code>');
+  // [IMAGE:path] → 이미지 렌더링
+  r=r.replace(/\[IMAGE:([^\]]+)\]/g,(match,path)=>{const fn=path.split('/').pop();const url=keys.relay?(keys.relay.replace(/\/$/,'')+'/api/assets/'+encodeURIComponent(fn)):path;return`<div class="gen-img-box"><div class="gen-img-label">🖼️ AI 생성 이미지</div><img src="${url}" class="gen-img" onclick="window.open(this.src)" onerror="this.parentElement.innerHTML='⚠️ 이미지 로드 실패: ${esc(fn)}'"><div style="font-size:9px;color:var(--tx3);margin-top:4px">${esc(fn)} · 클릭하면 확대</div></div>`});
+  // [FILE:path] → 파일 링크
+  r=r.replace(/\[FILE:([^\]]+)\]/g,(match,path)=>{const fn=path.split('/').pop();const url=keys.relay?(keys.relay.replace(/\/$/,'')+'/api/assets/'+encodeURIComponent(fn)):path;const isImg=/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(fn);if(isImg)return`<div class="gen-img-box"><div class="gen-img-label">📎 생성 파일</div><img src="${url}" class="gen-img" onclick="window.open(this.src)" onerror="this.parentElement.innerHTML='⚠️ 파일 로드 실패: ${esc(fn)}'"><div style="font-size:9px;color:var(--tx3);margin-top:4px">${esc(fn)}</div></div>`;return`<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:8px 12px;margin:6px 0"><a href="${url}" target="_blank" style="color:var(--ac);text-decoration:none">📎 ${esc(fn)}</a></div>`});
+  r=r.replace(/\n/g,'<br>');return r}
 function toast(m){const e=document.createElement('div');e.className='toast';e.textContent=m;document.body.appendChild(e);setTimeout(()=>e.remove(),2500)}
 function closeM(id){document.getElementById(id).classList.remove('show')}
 function openM(id){document.getElementById(id).classList.add('show')}
@@ -1042,14 +1047,14 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
     const prev=Object.entries(outputs).map(([k,w])=>{const pm=gm(k);return`[${pm.name}/${pm.role}]: ${w.text?.slice(0,600)||''}`}).join('\n\n');
 
     showTyp(`⚡ ${member.name}(${member.role}) → ${member.aiLabel} 작업 중...`);
-    // Rate limit: add small delay between API calls to avoid 15 RPM limit
-    if(i>0)await new Promise(r=>setTimeout(r,3000));
+    // Rate limit: add delay between API calls to avoid 15 RPM limit
+    if(i>0)await new Promise(r=>setTimeout(r,5000));
 
     let text=null;let mjPrompt=null;let genImage=null;
     const isCreative=['design','video','photo'].includes(mid);
 
       text=await callAI(member,
-        `${member.prompt}\n\n[업무 수행 원칙]\n당신은 이 분야의 전문가입니다. 미션을 받으면:\n1. 관련 트렌드와 최신 사례를 스스로 조사/참고한 것처럼 전문적으로 작성\n2. 업계 베스트 프랙티스와 프레임워크를 자연스럽게 활용\n3. 참고한 소스나 레퍼런스가 있다면 자연스럽게 언급\n4. 실제 실무 경험이 있는 전문가처럼 구체적 산출물 작성\n5. 이전 팀원 작업물이 있다면 반드시 반영하고 시너지를 내세요\n한국어로 작성.`,
+        `${member.prompt}\n\n[업무 수행 원칙]\n당신은 이 분야의 전문가입니다. 미션을 받으면:\n1. 관련 트렌드와 최신 사례를 스스로 조사/참고한 것처럼 전문적으로 작성\n2. 업계 베스트 프랙티스와 프레임워크를 자연스럽게 활용\n3. 참고한 소스나 레퍼런스가 있다면 자연스럽게 언급\n4. 실제 실무 경험이 있는 전문가처럼 구체적 산출물 작성\n5. 이전 팀원 작업물이 있다면 반드시 반영하고 시너지를 내세요\n6. 절대 대표님에게 직접 도구를 사용하라고 하지 마세요 — 당신이 직접 실행해서 결과물을 만드세요\n7. 이미지/디자인이 필요하면 직접 생성하세요 (Midjourney, Gemini Imagen 등)\n한국어로 작성.`,
         `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}`
       );
 
@@ -1071,7 +1076,7 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
       showTyp(`🔄 ${member.name}(${member.role}) 재시도 중...`);
       await new Promise(r=>setTimeout(r,5000));
       text=await callAI(member,
-        `${member.prompt}\n전문가로서 구체적 산출물을 작성하세요. 한국어.`,
+        `${member.prompt}\n전문가로서 구체적 산출물을 직접 작성하세요. 대표님에게 하라고 하지 말고 본인이 직접 하세요. 한국어.`,
         `대표님 요청: "${userMsg}"\nPM 배정 업무: ${task}\n${prev?'--- 이전 팀원 작업물 ---\n'+prev:''}`
       );
     }
