@@ -6,6 +6,7 @@
 <title>MOTIVE - AI Teammate</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{--bg:#0a0a0a;--bg2:#141414;--bg3:#1a1a1a;--bgi:#111;--bgs:#0e0e0e;--bd:#222;--bd2:#2a2a2a;--tx:#e8e8e8;--tx2:#888;--tx3:#555;--ac:#c8ff00;--ac2:#a0cc00;--red:#ff4d6a;--grn:#00d68f;--orn:#ffaa00;--blu:#00b4d8;--r:12px;--rs:8px;--rx:6px;--sh:0 4px 24px rgba(0,0,0,.4);--t:.2s ease}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -667,7 +668,7 @@ Rules:
 async function callAI(member,sys,userMsg,tierOverride,files){
   // 파일 처리: Gemini는 원본 inlineData, 텍스트 전용 API는 추출 텍스트
   const gemParts=buildGeminiParts(userMsg,files);
-  const fileDesc=extractFileText(files);
+  const fileDesc=await extractFileText(files);
   const textMsg=fileDesc?userMsg+fileDesc:userMsg;
   const hasBin=hasBinaryFile(files);
 
@@ -1038,14 +1039,42 @@ function isTextFile(f){
   return false;
 }
 
+/* PDF 텍스트 추출 (pdf.js) */
+async function extractPdfText(base64Data){
+  try{
+    if(typeof pdfjsLib==='undefined')return null;
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const bytes=Uint8Array.from(atob(base64Data),c=>c.charCodeAt(0));
+    const pdf=await pdfjsLib.getDocument({data:bytes}).promise;
+    const pages=[];
+    const maxPages=Math.min(pdf.numPages,30);
+    for(let i=1;i<=maxPages;i++){
+      const page=await pdf.getPage(i);
+      const tc=await page.getTextContent();
+      const text=tc.items.map(item=>item.str).join(' ');
+      if(text.trim())pages.push(`[p${i}] ${text}`);
+    }
+    if(pdf.numPages>30)pages.push(`... (총 ${pdf.numPages}페이지 중 30페이지까지 추출)`);
+    return pages.join('\n');
+  }catch(e){console.error('[PDF추출]',e);return null}
+}
+
 /* 텍스트 전용 API(릴레이/GPT/Claude)를 위한 파일 텍스트 추출 */
-function extractFileText(files){
+async function extractFileText(files){
   if(!files||!files.length)return'';
   const parts=[];
   for(const f of files){
     try{
       if(f.type.startsWith('image/')){
         parts.push(`[첨부 이미지: ${f.name}] (이미지가 첨부됨 — Gemini API로 분석 가능)`);
+      }else if(f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')){
+        const base64=f.data.split(',')[1];
+        const pdfText=await extractPdfText(base64);
+        if(pdfText&&pdfText.length>10){
+          parts.push(`[PDF 파일: ${f.name}]\n${pdfText.slice(0,8000)}${pdfText.length>8000?'\n...(이하 생략)':''}`);
+        }else{
+          parts.push(`[PDF 파일: ${f.name}] (텍스트 추출 실패 — 스캔/이미지 PDF일 수 있음)`);
+        }
       }else if(isTextFile(f)){
         const base64=f.data.split(',')[1];
         const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
@@ -1056,11 +1085,10 @@ function extractFileText(files){
           parts.push(`[첨부파일: ${f.name}] (빈 파일)`);
         }
       }else{
-        // PDF, DOCX, XLSX 등 바이너리 — 텍스트 추출 불가, 설명만
-        parts.push(`[첨부파일: ${f.name}] (${f.type||'알 수 없는 형식'} — 파일이 첨부됨. 이 파일의 내용을 기반으로 작업해주세요)`);
+        parts.push(`[첨부파일: ${f.name}] (${f.type||'알 수 없는 형식'} — 바이너리 파일, 텍스트 추출 불가)`);
       }
     }catch(e){
-      parts.push(`[첨부파일: ${f.name}] (읽기 실패)`);
+      parts.push(`[첨부파일: ${f.name}] (읽기 실패: ${e.message})`);
     }
   }
   return parts.length?'\n\n--- 첨부파일 ---\n'+parts.join('\n\n'):'';
