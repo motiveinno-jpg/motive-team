@@ -329,17 +329,22 @@ button{font-family:inherit;cursor:pointer}
 <body>
 <header class="hd"><button class="mob-menu" id="mobMenu" onclick="toggleSB()">☰</button><div class="logo"><div class="logo-i">M</div><span class="logo-t">MOTIVE</span><span class="logo-b">AI Teammate</span></div><div style="display:flex;align-items:center;gap:10px"><div class="usage-pill" id="usagePill" onclick="toggleUsagePop()"><div class="u-dot" id="uDot"></div><span class="u-num" id="uNum">--</span><span class="u-txt">req</span></div><div class="hd-user" onclick="switchTab('settings')"><div style="text-align:right"><div class="hd-uname">채희웅 대표님</div><div class="hd-urole">CEO</div></div><div class="hd-uav">채</div></div></div></header>
 <div class="usage-pop" id="usagePop">
-  <div class="usage-pop-hd"><span>사용량 대시보드</span><button onclick="toggleUsagePop()">✕</button></div>
+  <div class="usage-pop-hd"><span>Claude Max 사용량</span><button onclick="toggleUsagePop()">✕</button></div>
   <div class="usage-pop-bd" id="usagePopBd">
-    <div class="usage-row"><span class="u-label">플랜</span><span class="u-val" style="color:var(--ac)">Claude Max</span></div>
+    <div class="usage-row"><span class="u-label">플랜</span><span class="u-val" id="uPlan" style="color:var(--ac)">--</span></div>
+    <div class="usage-sec" style="margin-top:0">이번 달</div>
+    <div class="usage-row"><span class="u-label">월간 요청</span><span class="u-val" style="color:var(--ac)" id="uMonth">--</span></div>
+    <div class="usage-bar-wrap"><div class="usage-bar-fill" id="uMonthBar" style="width:0%"></div></div>
+    <div class="usage-row"><span class="u-label">리셋까지</span><span class="u-val" id="uReset">--</span></div>
+    <div class="usage-sec">오늘</div>
     <div class="usage-row"><span class="u-label">오늘 요청</span><span class="u-val" id="uToday">--</span></div>
-    <div class="usage-row"><span class="u-label">누적 요청</span><span class="u-val" id="uTotal">--</span></div>
-    <div class="usage-row"><span class="u-label">마지막 요청</span><span class="u-val" style="font-size:10px" id="uLast">--</span></div>
+    <div class="usage-row"><span class="u-label">마지막</span><span class="u-val" style="font-size:10px" id="uLast">--</span></div>
     <div class="usage-row"><span class="u-label">서버 가동</span><span class="u-val" id="uUptime">--</span></div>
-    <div class="usage-sec">소스별 (오늘)</div>
+    <div class="usage-sec">소스별 (이번 달)</div>
     <div class="usage-src" id="uSrc"></div>
     <div class="usage-sec">최근 7일</div>
     <div class="usage-chart" id="uChart"></div>
+    <div style="margin-top:8px;font-size:9px;color:var(--tx3);text-align:center">누적 <span id="uTotal">0</span>회 | 매월 1일 리셋</div>
   </div>
 </div>
 <div class="tabs" id="tabBar"></div>
@@ -1198,12 +1203,24 @@ async function fetchUsage(){
     if(!ct.includes('json')){document.getElementById('uDot').className='u-dot off';document.getElementById('uNum').textContent='!';return}
     const d=await r.json();
     if(!d.ok)return;
-    // 헤더 pill 업데이트
-    document.getElementById('uNum').textContent=d.today.requests;
-    document.getElementById('uDot').className='u-dot'; // 서버 연결됨 = green
-    // 팝업 상세
+    // 헤더 pill — 월간 요청 표시
+    const mReq=d.month?.requests||d.today.requests;
+    document.getElementById('uNum').textContent=mReq;
+    document.getElementById('uDot').className='u-dot';
+    // 플랜
+    document.getElementById('uPlan').textContent=d.plan||'Claude Max';
+    // 월간 데이터
+    document.getElementById('uMonth').textContent=(d.month?.requests||0)+'회';
+    // 월간 게이지바 (Max 기준 ~주 500회 = 월 ~2,000회를 유연한 기준으로)
+    const monthPct=Math.min(100,Math.round((d.month?.requests||0)/2000*100));
+    const bar=document.getElementById('uMonthBar');
+    bar.style.width=monthPct+'%';
+    bar.style.background=monthPct>80?'linear-gradient(90deg,var(--orn),var(--red))':'linear-gradient(90deg,var(--ac),var(--grn))';
+    // 리셋까지
+    document.getElementById('uReset').textContent=(d.month?.daysLeft||0)+'일 남음';
+    // 오늘
     document.getElementById('uToday').textContent=d.today.requests+'회';
-    document.getElementById('uTotal').textContent=(d.total||0).toLocaleString()+'회';
+    document.getElementById('uTotal').textContent=(d.total||0).toLocaleString();
     document.getElementById('uUptime').textContent=d.uptime||'--';
     // 마지막 요청 시간
     if(d.lastRequest){
@@ -1211,12 +1228,12 @@ async function fetchUsage(){
       const ago=Math.floor((Date.now()-t)/60000);
       document.getElementById('uLast').textContent=ago<1?'방금':ago<60?ago+'분 전':Math.floor(ago/60)+'시간 전';
     }
-    // 소스별
+    // 소스별 (월간)
     const srcEl=document.getElementById('uSrc');
     const srcMap={'web':'웹','telegram':'텔레그램','video':'영상학습'};
-    const bs=d.today.bySource||{};
+    const bs=d.month?.bySource||d.today.bySource||{};
     srcEl.innerHTML=Object.entries(bs).map(([k,v])=>`<div class="usage-src-tag"><span style="color:var(--tx2)">${srcMap[k]||k}</span> <span style="color:var(--ac)">${v}</span></div>`).join('')||'<span style="font-size:10px;color:var(--tx3)">아직 없음</span>';
-    // 7일 차트 (오늘만 있어도 표시)
+    // 7일 차트
     const daily=d.daily||[];
     const chartEl=document.getElementById('uChart');
     const allDays=[...daily,{date:d.today.date,requests:d.today.requests}].slice(-7);
