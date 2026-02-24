@@ -663,8 +663,9 @@ async function callAI(member,sys,userMsg,tierOverride){
 
   let chain=[];
   if(hasRelay){
-    // 릴레이 모드: Claude Max 최우선 → Gemini 백업
-    chain=[{fn:relay,n:'Claude Max'},{fn:gL,n:'Lite 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gF,n:'Flash 2.5'}];
+    // 릴레이 모드: Claude Max 최우선 → Gemini 백업 (pmfinal은 Pro 포함)
+    if(tier==='pmfinal')chain=[{fn:relay,n:'Claude Max'},{fn:gP,n:'Pro 2.5'},{fn:gF,n:'Flash 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gL,n:'Lite 2.5'}];
+    else chain=[{fn:relay,n:'Claude Max'},{fn:gL,n:'Lite 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gF,n:'Flash 2.5'}];
   }else{
     switch(tier){
       case 'pmfinal':chain=[{fn:gP,n:'Pro 2.5'},{fn:gF,n:'Flash 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gL,n:'Lite 2.5'},{fn:cla,n:'Claude'}];break;
@@ -1184,11 +1185,24 @@ chat일 때: reply만 채우고 team은 빈배열
   await new Promise(r=>setTimeout(r,3000));
   showTyp('📋 PM 최종 종합...');
   let summary=null;
-    const all=Object.entries(outputs).map(([k,w])=>`[${gm(k).name}/${gm(k).role}/${gm(k).aiLabel}]\n${w.text||''}`).join('\n\n---\n\n');
+    // 팀원 출력물 — 각 800자로 제한하여 프롬프트 크기 관리
+    const all=Object.entries(outputs).map(([k,w])=>{const m=gm(k);return`[${m.name}/${m.role}]\n${(w.text||'').slice(0,800)}`}).join('\n\n---\n\n');
     const failedMembers=Object.entries(outputs).filter(([k,w])=>w.failed).map(([k])=>{const m=gm(k);return`${m.name}(${m.role})`});
     const failNote=failedMembers.length?`\n\n⚠️ 실패한 팀원: ${failedMembers.join(', ')} — 해당 부분은 보완이 필요합니다.`:'';
     summary=await callAI(gm('pm'),`당신은 PM 하준입니다. 팀원 작업물을 종합하여 최종 보고하세요.\n1. 프로젝트 요약\n2. 각 팀원 핵심 산출물 (실패한 팀원이 있다면 보완 방안 제시)\n3. 종합 실행 계획(타임라인)\n4. 다음 단계${failNote}\n한국어로 구체적으로.`,`대표님 요청: "${userMsg}"\n\n${all}`,'pmfinal');
-  if(!summary)summary=`📋 **종합**\n\n${plan.team.map(id=>{const m=gm(id);return`✅ ${m.name}(${m.role}/${m.aiLabel}): 완료`}).join('\n')}\n\nAPI 키를 설정하면 구체적 실행 계획이 제시됩니다.`;
+  // 1차 실패 시 프롬프트 축소 후 재시도
+  if(!summary){
+    console.log('[MOTIVE] PM 종합 1차 실패 → 축소 재시도');
+    await new Promise(r=>setTimeout(r,5000));
+    const shortAll=Object.entries(outputs).filter(([k,w])=>!w.failed).map(([k,w])=>{const m=gm(k);return`- ${m.name}(${m.role}): ${(w.text||'').slice(0,300)}`}).join('\n');
+    summary=await callAI(gm('pm'),`PM 하준: 팀 작업 종합 보고. 1.요약 2.핵심산출물 3.다음단계. 한국어 간결하게.`,`요청: "${userMsg}"\n\n${shortAll}`,'pmfinal');
+  }
+  if(!summary){
+    // 최종 폴백: 직접 종합 메시지 생성
+    const memberResults=Object.entries(outputs).filter(([k,w])=>!w.failed).map(([k,w])=>{const m=gm(k);return`✅ **${m.name}**(${m.role}): 작업 완료`});
+    const failResults=failedMembers.map(n=>`⚠️ ${n}: 작업 실패`);
+    summary=`📋 **PM 하준 — 프로젝트 종합**\n\n**요청:** ${userMsg}\n\n**팀원 작업 결과:**\n${[...memberResults,...failResults].join('\n')}\n\n각 팀원의 상세 작업물은 위 메시지를 확인해주세요.\n추가 지시가 있으시면 말씀해주세요!`;
+  }
   hideTyp();addM(ch,'pm',summary,'summary');rMsgs();
 
   // === room에서 작업 완료 → 프로젝트방 자동 생성 + 히스토리 이관 + room 리셋 ===
