@@ -599,16 +599,20 @@ async function callClaude(sys,userMsg){
   return{ok:false,err:'응답 없음',src:'cla'}}catch(e){return{ok:false,err:e.message,src:'cla'}}}
 
 // iMac Relay - Claude Max via relay server (unlimited, 대화 히스토리 지원)
-async function callRelay(sys,userMsg){
+async function callRelay(sys,userMsg,model){
   if(!keys.relay)return{ok:false,err:'릴레이 미설정',src:'relay'};
   try{
-    console.log('[MOTIVE] 릴레이 서버 호출... 채널:',curCh);
+    const label=model==='opus'?'Claude Opus':model==='sonnet'?'Claude Sonnet':'Claude Max';
+    console.log(`[MOTIVE] 릴레이 서버 호출 (${label})... 채널:`,curCh);
     const ctrl=new AbortController();
-    const tm=setTimeout(()=>ctrl.abort(),90000);
-    const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true'},body:JSON.stringify({system:sys,message:userMsg,channelId:curCh||'default'}),signal:ctrl.signal});
+    const timeout=model==='opus'?300000:90000;
+    const tm=setTimeout(()=>ctrl.abort(),timeout);
+    const payload={system:sys,message:userMsg,channelId:curCh||'default'};
+    if(model)payload.model=model;
+    const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true'},body:JSON.stringify(payload),signal:ctrl.signal});
     clearTimeout(tm);
     const d=await r.json();
-    if(d.ok&&d.text)return{ok:true,text:d.text,src:'relay',label:'Claude Max'};
+    if(d.ok&&d.text)return{ok:true,text:d.text,src:'relay',label};
     return{ok:false,err:d.error||'릴레이 응답 없음',src:'relay'};
   }catch(e){console.error('[MOTIVE] 릴레이 에러:',e);return{ok:false,err:'릴레이 연결 실패: '+e.message,src:'relay'}}
 }
@@ -654,6 +658,10 @@ async function callAI(member,sys,userMsg,tierOverride,files){
   const textMsg=fileDesc?userMsg+fileDesc:userMsg;
   const hasBin=hasBinaryFile(files);
 
+  // 클로드봇 모드: Opus(최상위) 사용 — _claudeMaxMode 플래그로 제어
+  const isOpus=!!window._claudeMaxMode;
+  const relayOpus=()=>callRelay(sys,textMsg,'opus');
+  const relaySonnet=()=>callRelay(sys,textMsg,'sonnet');
   const relay=()=>callRelay(sys,textMsg);
   const gP=()=>callGeminiPro(sys,[{role:'user',parts:gemParts}]);
   const gF=()=>callGeminiFlash(sys,[{role:'user',parts:gemParts}]);
@@ -668,8 +676,13 @@ async function callAI(member,sys,userMsg,tierOverride,files){
   let tier=tierOverride||member.tier||'lite';
 
   let chain=[];
+
+  // ★ 클로드봇 모드: 모든 팀원이 Opus(Claude Code와 동일) 사용
+  if(isOpus&&hasRelay){
+    chain=[{fn:relayOpus,n:'Claude Opus'},{fn:relaySonnet,n:'Claude Sonnet'},{fn:gF,n:'Flash 2.5'}];
+  }
   // 바이너리 파일(PDF/이미지/엑셀 등) 있으면 → Gemini 최우선 (원본 파일 분석 가능)
-  if(hasBin&&keys.gem){
+  else if(hasBin&&keys.gem){
     chain=[{fn:gF,n:'Flash 2.5'},{fn:gP,n:'Pro 2.5'},{fn:g2,n:'Flash 2.0'},{fn:gL,n:'Lite 2.5'}];
     if(hasRelay)chain.push({fn:relay,n:'Claude Max'});
     chain.push({fn:oai,n:'GPT-4o'},{fn:cla,n:'Claude'});
@@ -1055,10 +1068,24 @@ function send(){const inp=document.getElementById('chatInp');const text=inp.valu
   if(curCh==='room'||curCh.startsWith('proj-'))runCollab(text,files);else runDirect(text,files)}
 
 /* ===== COLLABORATIVE WORKFLOW WITH MULTI-AI ===== */
+// 클로드봇 모드 전역 플래그
+window._claudeMaxMode=false;
+
 async function runCollab(userMsg,files){
   isGen=true;rSB();const ch=curCh; // room 또는 proj-xxx
   const hasAny=keys.relay||keys.gem||keys.oai||keys.cla;
   if(!hasAny){toast('설정에서 Gemini API 키를 입력하세요 (무료)');isGen=false;rSB();return}
+
+  // ★ 클로드봇 모드 감지: "클로드봇으로", "클로드봇모드", "opus로", "최고급으로" 등
+  const claudeMaxKeywords=/클로드봇|claude\s*bot|claude\s*max|opus|클로드맥스|최고급|최상위.*모드/i;
+  if(claudeMaxKeywords.test(userMsg)&&keys.relay){
+    window._claudeMaxMode=true;
+    addM(ch,'pm','🧠 **클로드봇 모드 ON** — 모든 팀원이 Claude Opus(최상위 모델)를 사용합니다.\n나(Claude Code)와 동일한 퀄리티로 작업합니다. 시간은 좀 더 걸릴 수 있습니다.','sys');rMsgs();
+    // 키워드 제거하고 실제 요청만 추출
+    userMsg=userMsg.replace(/클로드봇\s*으?로\s*(실행|시작|해줘|진행)?|클로드봇\s*모드\s*으?로?\s*(실행|시작)?|claude\s*(bot|max)\s*(mode)?|opus\s*으?로?\s*(실행)?|최고급\s*으?로?\s*(실행)?|최상위.*모드\s*으?로?\s*(실행)?/gi,'').trim();
+    if(!userMsg)userMsg='이전 대화를 기반으로 최고 품질로 작업해주세요';
+  }
+
  try{
   // === 이어서 대화 감지: 이미 팀 작업이 있으면 재소집하지 않음 ===
   const recentMsgs=chatDB[ch]?.slice(-20)||[];
@@ -1306,6 +1333,7 @@ chat일 때: reply만 채우고 team은 빈배열
   }
 
  }catch(e){hideTyp();addM(curCh,'pm',`⚠️ 프로젝트 실행 중 오류 발생: ${e.message}\n\n다시 시도해주세요.`,'sys');rMsgs();}
+ window._claudeMaxMode=false; // 클로드봇 모드 리셋
  isGen=false;rSB();
 }
 
@@ -1313,8 +1341,15 @@ chat일 때: reply만 채우고 team은 빈배열
 async function runDirect(userMsg,files){
   isGen=true;const m=gm(curCh);
   if(!keys.relay&&!keys.gem&&!keys.oai&&!keys.cla){toast('설정에서 API 키 또는 릴레이를 설정하세요');isGen=false;return}
+  // 클로드봇 모드 감지
+  if(/클로드봇|claude\s*bot|claude\s*max|opus|클로드맥스/i.test(userMsg)&&keys.relay){
+    window._claudeMaxMode=true;
+    toast('🧠 클로드봇 모드 ON — Opus 사용');
+    userMsg=userMsg.replace(/클로드봇\s*으?로?\s*(답변|해줘)?|클로드맥스\s*으?로?|opus\s*으?로?/gi,'').trim()||userMsg;
+  }
  try{
-  showTyp(`${m.name} → ${m.aiLabel} 답변 중...`);
+  const aiLabel=window._claudeMaxMode?'Claude Opus':m.aiLabel;
+  showTyp(`${m.name} → ${aiLabel} 답변 중...`);
   let resp=await callAI(m,`[우리 회사: (주)모티브이노베이션] 대표: 채희웅. 사업: 영상제작, 디지털마케팅, SNS운영, 교육, 컨설팅, 정부지원사업. 클라이언트: 파나소닉, 쿨샤, 대성에너지, 노란우산공제, 대전관광공사, KOMIR, 세명대, 한엔진공업 등.\n\n${m.prompt}\n\n[전문가 원칙] 당신은 (주)모티브이노베이션의 ${m.name}, ${m.role} 전문가입니다.\n- 최신 트렌드와 업계 베스트 프랙티스를 반영\n- 우리 회사 사업 이력을 숙지하고 실질적 도움 제공\n- 실무 경험 기반 구체적 답변\n- 첨부파일이 있으면 파일 내용을 꼼꼼히 분석하고 답변에 반영\n대표: 채희웅 대표님. 한국어.`,userMsg,null,files);
   let mjPrompt=null;let genImage=null;
   if(!resp){
@@ -1332,6 +1367,7 @@ async function runDirect(userMsg,files){
   }
   hideTyp();addM(curCh,curCh,resp,null,genImage,mjPrompt);rMsgs();
  }catch(e){hideTyp();addM(curCh,curCh,'⚠️ 오류: '+e.message);rMsgs();}
+ window._claudeMaxMode=false;
  isGen=false;
 }
 
@@ -1387,7 +1423,7 @@ function addProj(){
   if(keys.relay&&team.length){
     fetch(keys.relay.replace(/\/$/,'')+'/api/project/start',{
       method:'POST',headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true'},
-      body:JSON.stringify({name:n,request:desc||n,team})
+      body:JSON.stringify({name:n,request:desc||n,team,claudeMax:!!window._claudeMaxMode})
     }).then(r=>r.json()).then(d=>{
       if(d.ok&&d.project){
         proj.autoId=d.project.id;proj.status='progress';spp();rProj();
