@@ -1089,17 +1089,33 @@ work일 때: reply에 팀 구성 설명, team에 3~6명, tasks에 각 업무
     addM(ch,mid,text,'work',genImage,mjPrompt);rMsgs();
   }
 
-  // PHASE 3: Cross-review
+  // PHASE 3: 팀원 간 토론 — 상호 질문/피드백/논쟁
   if(order.length>=2){
-    await new Promise(r=>setTimeout(r,3000));
-    showTyp('💬 상호 리뷰 중...');
-    const r1=order[order.length-1];const rev=gm(r1);
-    if(rev){
-      const others=Object.entries(outputs).filter(([k])=>k!==r1).map(([k,w])=>`[${gm(k).name}/${gm(k).role}]: ${w.text?.slice(0,400)||''}`).join('\n\n');
-      const review=await callAI(rev,`${rev.prompt}\n다른 팀원 작업물을 리뷰합니다. 보완점이나 연결점을 2-3문장으로. 한국어.`,`팀원 작업물:\n${others}`);
-      if(review){addM(ch,r1,review,'review');rMsgs()}
+    addM(ch,'pm','💬 **팀원 간 토론 시작** — 각자 다른 팀원 작업물을 검토하고 피드백합니다...','sys');rMsgs();
+    const discussions=[];
+    // 라운드1: 각 팀원이 다른 팀원 작업물 검토
+    for(let di=0;di<Math.min(order.length,4);di++){
+      const mid=order[di];const rev=gm(mid);if(!rev||outputs[mid]?.failed)continue;
+      await new Promise(r=>setTimeout(r,5000));
+      showTyp(`💬 ${rev.name}(${rev.role}) 검토 중...`);
+      const others=Object.entries(outputs).filter(([k])=>k!==mid&&!outputs[k]?.failed).map(([k,w])=>`[${gm(k).name}/${gm(k).role}]: ${w.text?.slice(0,400)||''}`).join('\n\n');
+      const fb=await callAI(rev,`${rev.prompt}\n다른 팀원들의 작업물을 전문가 관점에서 솔직하게 검토하세요. 좋은점, 보완점, 다른 의견을 제시하세요. 질문이 있다면 "[이름]에게: 질문" 형식으로. 3~5문장. 한국어.`,`내 작업요약: ${outputs[mid]?.text?.slice(0,200)||''}\n--- 다른 팀원 작업물 ---\n${others}`);
+      if(fb){discussions.push({mid,text:fb});addM(ch,mid,fb,'review');rMsgs()}
     }
     hideTyp();
+    // 라운드2: 피드백에 대한 응답 (최대 3명)
+    if(discussions.length>=2){
+      for(let di=0;di<Math.min(3,order.length);di++){
+        const mid=order[di];const rev=gm(mid);if(!rev||outputs[mid]?.failed)continue;
+        const feedbacks=discussions.filter(d=>d.mid!==mid).map(d=>`[${gm(d.mid).name}]: ${d.text}`).join('\n');
+        if(!feedbacks)continue;
+        await new Promise(r=>setTimeout(r,5000));
+        showTyp(`💬 ${rev.name}(${rev.role}) 응답 중...`);
+        const resp=await callAI(rev,`${rev.prompt}\n동료 피드백에 전문가로서 응답하세요. 수용할 부분은 인정하고, 반대 의견은 근거를 들어 반박하세요. 2~3문장. 한국어.`,`내 작업: ${outputs[mid]?.text?.slice(0,200)||''}\n--- 동료 피드백 ---\n${feedbacks}`);
+        if(resp){addM(ch,mid,resp,'review');rMsgs()}
+      }
+      hideTyp();
+    }
   }
 
   // PHASE 4: PM summary
