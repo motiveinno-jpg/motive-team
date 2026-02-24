@@ -1172,10 +1172,25 @@ function openProjM(){
 function addProj(){
   const n=document.getElementById('pN').value.trim();if(!n){toast('이름을 입력하세요');return}
   const team=Array.from(document.querySelectorAll('.proj-team-cb:checked')).map(c=>c.value);
-  const phases=(document.getElementById('pPhases').value||'').trim().split('\n').filter(x=>x.trim()).map((name,i)=>({id:'ph'+i,name:name.trim(),status:i===0?'todo':'todo',deliverable:''}));
-  projDB.push({id:uid(),name:n,desc:document.getElementById('pD').value,status:document.getElementById('pS').value,progress:0,created:dt(),team,phases,deliverables:[]});
+  const desc=document.getElementById('pD').value;
+  const phases=(document.getElementById('pPhases').value||'').trim().split('\n').filter(x=>x.trim()).map((name,i)=>({id:'ph'+i,name:name.trim(),status:'todo',deliverable:''}));
+  const proj={id:uid(),name:n,desc,status:document.getElementById('pS').value,progress:0,created:dt(),team,phases,deliverables:[]};
+  projDB.push(proj);
   spp();rProj();closeM('projM');toast('프로젝트 추가!');
   document.getElementById('pN').value='';document.getElementById('pD').value='';document.getElementById('pPhases').value='';
+  // 릴레이 연결 + 팀원 선택 시 자율실행 시작
+  if(keys.relay&&team.length){
+    fetch(keys.relay.replace(/\/$/,'')+'/api/project/start',{
+      method:'POST',headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true'},
+      body:JSON.stringify({name:n,request:desc||n,team})
+    }).then(r=>r.json()).then(d=>{
+      if(d.ok&&d.project){
+        proj.autoId=d.project.id;proj.status='progress';spp();rProj();
+        toast('⚡ 자율실행 시작: '+d.project.id);
+        if(!window._projPollOn){window._projPollOn=true;setInterval(pollActiveProjects,10000)}
+      }
+    }).catch(()=>{});
+  }
 }
 function rProj(){
   const g=document.getElementById('projG');
@@ -1185,7 +1200,10 @@ function rProj(){
   g.innerHTML=items.map(p=>{
     const sc=p.status==='progress'?'#1a2400':p.status==='done'?'#0a1a0a':'#1a1a2a';
     const sco=p.status==='progress'?'var(--ac)':p.status==='done'?'var(--grn)':'var(--blu)';
-    const sl=p.status==='progress'?'🟡 진행':p.status==='done'?'🟢 완료':'🔵 기획';
+    const isAuto=!!p.autoId;
+    const sl=isAuto&&p.autoStatus==='running'?'⚡ 자율실행':p.status==='progress'?'🟡 진행':p.status==='done'?'🟢 완료':'🔵 기획';
+    const autoStepHtml=isAuto&&p.autoSteps?p.autoSteps.map(s=>{const m=TM.find(t=>t.id===s.id);const icon=s.status==='done'?'✅':s.status==='running'?'⏳':s.status==='failed'?'❌':'⬜';return m?`<span title="${m.name}(${m.role})" style="font-size:10px">${icon}${m.name[0]}</span>`:''}).join(' '):'';
+    const ceoAlert=p.waitingCeo?`<div style="background:#2a1a00;border:1px solid var(--orn);border-radius:6px;padding:4px 8px;margin:4px 0;font-size:10px;color:var(--orn)">📢 대표님 답변 대기${p.ceoQuestion?' — '+esc(p.ceoQuestion.slice(0,40)):''}</div>`:'';
     const teamHtml=(p.team||[]).slice(0,5).map(id=>{const m=TM.find(t=>t.id===id);return m?`<div class="cd-av" style="background:${m.color}" title="${m.name}·${m.role}">${m.name[0]}</div>`:''}).join('');
     const phases=p.phases||[];
     const phaseBar=phases.map(ph=>`<div class="cd-phase ${ph.status}" title="${ph.name}"></div>`).join('');
@@ -1195,6 +1213,8 @@ function rProj(){
       <div class="cd-top"><span class="cd-badge" style="background:${sc};color:${sco}">${sl}</span><button class="xbtn" onclick="event.stopPropagation();if(confirm('삭제?')){projDB=projDB.filter(x=>x.id!=='${p.id}');spp();rProj()}">✕</button></div>
       <div class="cd-title">${esc(p.name)}</div>
       <div class="cd-desc">${esc(p.desc||'')}</div>
+      ${autoStepHtml?`<div style="font-size:10px;margin:4px 0;display:flex;gap:4px;flex-wrap:wrap">${autoStepHtml}</div>`:''}
+      ${ceoAlert}
       ${phases.length?`<div style="font-size:10px;color:var(--tx3);margin-bottom:4px">${donePh}/${phases.length} 단계 완료</div><div class="cd-phases">${phaseBar}</div>`:''}
       ${teamHtml?`<div class="cd-team">${teamHtml}${(p.team||[]).length>5?`<div style="font-size:9px;color:var(--tx3);margin-left:2px">+${(p.team||[]).length-5}</div>`:''}</div>`:''}
       <div class="cd-bar" style="margin-bottom:4px"><div class="cd-fill" style="width:${p.progress||0}%;background:var(--ac)"></div></div>
@@ -1224,6 +1244,32 @@ function projContinue(id){
   inp.value=`[${p.name}] ${nextPh?nextPh.name+' 단계 진행해줘':'다음 단계 진행해줘'}`;
   inp.focus();inp.dispatchEvent(new Event('input'));
   toast(`"${p.name}" — AI팀에 이어서 진행`);
+}
+async function pollActiveProjects(){
+  if(!keys.relay)return;
+  try{
+    const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/project/active',{headers:{'Bypass-Tunnel-Reminder':'true'}});
+    const d=await r.json();if(!d.ok)return;
+    let changed=false;
+    for(const ap of d.projects){
+      const local=projDB.find(p=>p.autoId===ap.id);
+      if(!local)continue;
+      const doneSteps=ap.steps.filter(s=>s.status==='done').length;
+      const totalSteps=ap.steps.length;
+      const newProgress=totalSteps?Math.round((doneSteps/totalSteps)*100):0;
+      if(ap.status==='done'&&local.status!=='done'){
+        local.status='done';local.progress=100;local.autoStatus='done';changed=true;
+      }else if(ap.status==='running'){
+        if(local.progress!==newProgress){local.progress=newProgress;changed=true}
+        local.autoStatus='running';
+        local.autoSteps=ap.steps.map(s=>({id:s.memberId,status:s.status}));
+        local.waitingCeo=!!ap.waitingCeoInput;
+        if(ap.waitingCeoInput)local.ceoQuestion=ap.waitingCeoInput.question;
+      }
+      if(ap.summary&&!local.autoSummary){local.autoSummary=ap.summary;changed=true}
+    }
+    if(changed){spp();rProj()}
+  }catch(e){}
 }
 function projAutoSync(){
   if(!keys.relay){toast('릴레이 미연결');return}
@@ -1360,7 +1406,7 @@ function startUsageSync(){if(usageTimer)clearInterval(usageTimer);fetchUsage();u
 document.addEventListener('click',e=>{if(usagePopOpen&&!e.target.closest('.usage-pop')&&!e.target.closest('.usage-pill')){usagePopOpen=false;document.getElementById('usagePop').classList.remove('show')}});
 
 async function autoRelay(){try{const r=await fetch('relay-url.txt?t='+Date.now());if(r.ok){const url=(await r.text()).trim();if(url.startsWith('https://')&&url!==keys.relay){keys.relay=url;sv('v5k',keys);document.getElementById('kRelay').value=url;console.log('[MOTIVE] 릴레이 자동연결:',url);updSt();if(!window._usageSyncOn)startUsageSync()}}}catch(e){}}
-function init(){ld();initGemKeys();document.getElementById('kGem').value=keys.gem;document.getElementById('kOai').value=keys.oai;document.getElementById('kCla').value=keys.cla;document.getElementById('kEl').value=keys.el;document.getElementById('kRelay').value=keys.relay||'';updSt();rAll();rSlMenu();setupInp();renderAvGrid();initLazyVids();if(keys.relay){startUsageSync()}autoRelay()}
+function init(){ld();initGemKeys();document.getElementById('kGem').value=keys.gem;document.getElementById('kOai').value=keys.oai;document.getElementById('kCla').value=keys.cla;document.getElementById('kEl').value=keys.el;document.getElementById('kRelay').value=keys.relay||'';updSt();rAll();rSlMenu();setupInp();renderAvGrid();initLazyVids();if(keys.relay){startUsageSync()}autoRelay();if(projDB.some(p=>p.autoId&&p.status!=='done')){window._projPollOn=true;setInterval(pollActiveProjects,10000)}}
 
 /* Lazy video loading */
 const vidObserver=new IntersectionObserver((entries)=>{
