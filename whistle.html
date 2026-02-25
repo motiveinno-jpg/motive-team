@@ -347,10 +347,10 @@ function pgAForm(){
       '<button class="btn btn-ghost btn-sm" onclick="App.addUrl()" style="margin-bottom:14px">+ URL 추가</button>'+
       '<div style="border:2px dashed var(--bd-l);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .15s" onclick="document.getElementById(\'fileUp\').click()" onmouseover="this.style.borderColor=\'var(--pri)\'" onmouseout="this.style.borderColor=\'var(--bd-l)\'">'+
         '<div style="font-size:24px;margin-bottom:4px">📄</div>'+
-        '<div style="font-size:12px;color:var(--w40)">클릭하여 파일 첨부 (PDF, 이미지, Excel, HWP)</div>'+
-        '<input type="file" id="fileUp" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.hwp,.doc,.docx" style="display:none" onchange="App.addFiles(this.files)">'+
+        '<div style="font-size:12px;color:var(--w40)">클릭하여 파일 첨부 (PDF, 이미지, Excel, CSV, 텍스트, HWP)</div>'+
+        '<input type="file" id="fileUp" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.xlsx,.xls,.csv,.txt,.hwp,.doc,.docx" style="display:none" onchange="App.addFiles(this.files)">'+
       '</div>'+
-      (d.files.length?'<div style="margin-top:10px">'+d.files.map(function(f,i){var icons={pdf:'📕',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',xlsx:'📊',docx:'📝',hwp:'📄'};var ext=(f.name||'').split('.').pop().toLowerCase();return '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;background:var(--w08);margin-bottom:4px"><span>'+(icons[ext]||'📎')+'</span><span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+f.name+'</span><span style="font-size:11px;color:var(--w20)">'+(f.size/1024).toFixed(0)+'KB</span><button class="btn btn-danger btn-sm" onclick="App.rmFile('+i+')" style="padding:2px 6px">✕</button></div>';}).join('')+'</div>':'')+
+      (d.files.length?'<div style="margin-top:10px">'+d.files.map(function(f,i){var icons={pdf:'📕',jpg:'🖼️',jpeg:'🖼️',png:'🖼️',gif:'🖼️',webp:'🖼️',xlsx:'📊',xls:'📊',csv:'📊',txt:'📄',docx:'📝',doc:'📝',hwp:'📄'};var ext=(f.name||'').split('.').pop().toLowerCase();return '<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;background:var(--w08);margin-bottom:4px"><span>'+(icons[ext]||'📎')+'</span><span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+f.name+'</span><span style="font-size:11px;color:var(--w20)">'+(f.size/1024).toFixed(0)+'KB</span><button class="btn btn-danger btn-sm" onclick="App.rmFile('+i+')" style="padding:2px 6px">✕</button></div>';}).join('')+'</div>':'')+
     '</div></div>'+
     '<div style="display:flex;justify-content:space-between;margin-top:20px"><div></div><div style="display:flex;gap:8px"><button class="btn btn-ghost" onclick="App.aStep(2)">추가 정보 입력 →</button><button class="btn btn-pri btn-lg" onclick="App.submitA()">🔬 바로 분석 시작</button></div></div>';
   }else{
@@ -397,7 +397,20 @@ function addUrl(){S.analysisData.urls.push('');render();}
 function rmUrl(i){S.analysisData.urls.splice(i,1);render();}
 function addSP(){S.analysisData.selling_points.push('');render();}
 function rmSP(i){S.analysisData.selling_points.splice(i,1);render();}
-function addFiles(fl){for(var i=0;i<fl.length;i++)S.analysisData.files.push(fl[i]);render();}
+function addFiles(fl){
+  for(var i=0;i<fl.length;i++){
+    var f=fl[i];
+    // base64 변환하여 저장
+    (function(file){
+      var reader=new FileReader();
+      reader.onload=function(e){
+        S.analysisData.files.push({name:file.name,size:file.size,type:file.type,data:e.target.result});
+        render();
+      };
+      reader.readAsDataURL(file);
+    })(f);
+  }
+}
 function rmFile(i){S.analysisData.files.splice(i,1);render();}
 function toggleMkt(m){var d=S.analysisData;if(!d.target_markets)d.target_markets=[];var i=d.target_markets.indexOf(m);if(i>=0)d.target_markets.splice(i,1);else d.target_markets.push(m);render();}
 function toggleCert(c){var d=S.analysisData;if(!d.existing_certs)d.existing_certs=[];var i=d.existing_certs.indexOf(c);if(i>=0)d.existing_certs.splice(i,1);else d.existing_certs.push(c);render();}
@@ -421,12 +434,14 @@ function submitA(){
   if(!d||!d.product_name){UI.toast('제품명을 입력하세요','warn');return;}
   var urls=d.urls.filter(function(u){return u;});
   var sp=d.selling_points.filter(function(s){return s;});
-  sb.from('analyses').insert({user_id:S.user.id,product_name:d.product_name,product_url:urls[0]||null,analysis_type:d.analysis_type||'free',status:'analyzing',ai_result:{input_data:{product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:urls,files:d.files.map(function(f){return f.name;}),selling_points:sp,target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements}}}).select().single().then(function(r){
+  sb.from('analyses').insert({user_id:S.user.id,product_name:d.product_name,product_url:urls[0]||null,analysis_type:d.analysis_type||'free',status:'analyzing',ai_result:{input_data:{product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:urls,files:(d.files||[]).map(function(f){return f.name||'file';}),selling_points:sp,target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements}}}).select().single().then(function(r){
     if(r.error){UI.toast('실패: '+r.error.message,'err');return;}
     S.analyses.unshift(r.data);S.analysisStep=0;S.analysisData=null;
     set({currentAnalysis:r.data});UI.toast('AI가 실제 수출 분석 중입니다... (30초~1분 소요)','info');
     /* AI 분석 API 호출 */
-    fetch(RELAY_URL+'/api/whistle/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),files:(d.files||[]).map(function(f){return f.name||f;}),selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements})}).then(function(resp){return resp.json();}).then(function(data){
+    /* 파일 base64 데이터 준비 */
+    var fileData=(d.files||[]).map(function(f){return f.data||f;}).filter(function(f){return typeof f==='string'&&f.startsWith('data:');});
+    fetch(RELAY_URL+'/api/whistle/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),files:fileData,selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements})}).then(function(resp){return resp.json();}).then(function(data){
       if(!data.ok)throw new Error(data.error||'분석 실패');
       var res=data.result;
       res.input_data={product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),files:(d.files||[]).map(function(f){return f.name||f;}),selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer};
