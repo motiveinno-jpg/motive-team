@@ -223,7 +223,7 @@ function reqExpertReview(docId){
 }
 
 /* === STATE === */
-var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
+var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
 window._exRate=1400;
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -255,7 +255,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders()]).then(function(){render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications()]).then(function(){render();});
       });
     });
   });
@@ -456,6 +456,7 @@ function submitA(){
         S._submitting=false;
         autoCreateProduct(r.data.id,res,d.product_name);
         loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('AI 분석 완료!','ok');});
+        pushNotif('analysis','AI 분석 완료: '+d.product_name,(res.export_score||'')+'점 — 상세 리포트가 준비되었습니다','analysis',null,true);
       });
     }).catch(function(err){
       S._submitting=false;
@@ -739,6 +740,7 @@ function subSvc(){
   var d=UI.fd('#sf');
   sb.from('service_requests').insert({user_id:S.user.id,service_type:d.service_type,priority:d.priority,title:U.sl(d.service_type),details:{text:d.details_text,analysis_id:d.analysis_id||null},project_id:d.project_id||null}).then(function(r){
     if(r.error){UI.toast('실패','err');return;}closeModal('sm');loadSR().then(function(){render();UI.toast('서비스 신청 완료','ok');});
+    pushNotif('service','서비스 신청: '+U.sl(d.service_type),d.details_text?d.details_text.substring(0,50):'','services',null,true);
   });
 }
 
@@ -1400,6 +1402,7 @@ function sendE(){
       UI.toast(data.method==='resend'?'이메일 발송 완료!':'이메일 기록 저장 (API키 미설정 → 메일앱으로 발송)','ok');
       if(data.method==='logged_only')window.open('mailto:'+d.to+'?subject='+encodeURIComponent(d.subject||'')+'&body='+encodeURIComponent(d.body||''));
       loadEmailLogs();
+      pushNotif('email','이메일 발송: '+(d.subject||'(제목없음)').substring(0,30),'수신: '+d.to,'emailhub');
     }else{UI.toast('발송 실패: '+(data.error||''),'err');window.open('mailto:'+d.to+'?subject='+encodeURIComponent(d.subject||'')+'&body='+encodeURIComponent(d.body||''));}
     closeModal('em');
   }).catch(function(){
@@ -1418,6 +1421,9 @@ function loadTariffRates(){
 }
 function loadOrders(){
   sb.from('orders').select('*').order('created_at',{ascending:false}).then(function(r){S.orders=r.data||[];});
+}
+function loadNotifications(){
+  sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(30).then(function(r){S.notifications=r.data||[];});
 }
 
 function pgCost(){
@@ -1902,6 +1908,7 @@ function saveOrder(){
   sb.from('orders').insert(data).then(function(r){
     if(r.error){UI.toast('저장 실패: '+r.error.message,'err');return;}
     closeModal('om');loadOrders().then(function(){render();UI.toast('주문 등록!','ok');});
+    pushNotif('order','새 주문 등록: '+d.order_number,'총액 $'+(parseFloat(d.total_amount)||0).toLocaleString(),'orders',null,true);
   });
 }
 
@@ -1964,6 +1971,8 @@ function setOrderStatus(orderId,status){
     if(r.error){UI.toast('실패','err');return;}
     var o=S.orders.find(function(x){return x.id===orderId;});if(o)o.status=status;
     closeModal('od');render();UI.toast('상태: '+status,'ok');
+    var stL={confirmed:'확정',production:'생산중',inspection:'검수',shipping:'선적',delivered:'배송중',completed:'완료'};
+    pushNotif('order','주문 상태 변경: '+(o?o.order_number:''),stL[status]||status,'orders',null,status==='shipping'||status==='completed');
   });
 }
 
@@ -2071,6 +2080,7 @@ function findBuyersAI(){
     });
     h+='</div></div>';
     document.getElementById('ai-buyers-result').innerHTML=h;
+    pushNotif('buyer','AI 바이어 '+data.buyers.length+'건 발굴 완료',d.target_market+' 시장 매칭 바이어를 확인하세요','buyers');
   }).catch(function(e){
     document.getElementById('ai-buyers-result').innerHTML='<div style="padding:16px;color:var(--err)">서버 연결 실패</div>';
   });
@@ -2287,14 +2297,83 @@ function render(){
   var app=document.getElementById('app');
   if(S.loading){app.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div class="spinner" style="width:40px;height:40px;border-width:4px;margin:0 auto 16px"></div><div style="font-size:14px;color:var(--w40)">로딩 중...</div></div></div>';return;}
   if(!S.user){app.innerHTML=pgAuth();return;}
-  var ps=S.serviceRequests.filter(function(s){return s.status==='pending'||s.status==='processing';}).length;
-  app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div></div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(S.currency==='KRW'?'\u20A9 KRW':'\u0024 USD')+' \u21C4</button><div style="position:relative;cursor:pointer" onclick="App.nav(\'services\')" title="서비스 현황"><span style="font-size:16px">🔔</span>'+(ps>0?'<span class="notif-dot"></span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+S.user.email+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div><div class="page-content">'+renderPage()+'</div></div></div>';
+  var unreadN=S.notifications.filter(function(n){return !n.is_read;}).length;
+  app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div></div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(S.currency==='KRW'?'\u20A9 KRW':'\u0024 USD')+' \u21C4</button><div style="position:relative;cursor:pointer" onclick="App.toggleNotif(event)" title="알림"><span style="font-size:16px">🔔</span>'+(unreadN>0?'<span class="notif-dot"></span><span style="position:absolute;top:-6px;right:-8px;font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 4px;font-weight:700;min-width:14px;text-align:center">'+unreadN+'</span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+S.user.email+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div>'+(S.notifOpen?renderNotifPanel():'')+'<div class="page-content">'+renderPage()+'</div></div></div>';
+}
+
+function renderNotifPanel(){
+  var ICONS={order:'📋',email:'✉️',buyer:'🤝',service:'💼',cert:'📜',analysis:'🔬',system:'🔔'};
+  var list=S.notifications.slice(0,20);
+  var unread=list.filter(function(n){return !n.is_read;}).length;
+  var h='<div style="position:absolute;top:52px;right:16px;z-index:500;width:380px;max-height:480px;background:var(--card);border:1px solid var(--bd-l);border-radius:var(--r);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden">';
+  h+='<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between"><span style="font-size:14px;font-weight:700">알림</span><div style="display:flex;gap:8px">';
+  if(unread>0)h+='<button class="btn btn-ghost btn-sm" onclick="App.markAllRead()" style="font-size:11px;padding:3px 8px">모두 읽음</button>';
+  h+='<button class="btn btn-ghost btn-sm" onclick="App.toggleNotif()" style="font-size:11px;padding:3px 8px">✕</button></div></div>';
+  h+='<div style="flex:1;overflow-y:auto;max-height:400px">';
+  if(list.length===0){
+    h+='<div style="padding:40px 16px;text-align:center;color:var(--w40)"><div style="font-size:28px;margin-bottom:8px">🔔</div><div style="font-size:13px">알림이 없습니다</div></div>';
+  }else{
+    list.forEach(function(n){
+      var ago=_timeAgo(n.created_at);
+      var bg=n.is_read?'transparent':'rgba(0,212,255,.04)';
+      var dot=n.is_read?'':'<div style="width:6px;height:6px;border-radius:3px;background:var(--pri);flex-shrink:0;margin-top:6px"></div>';
+      h+='<div onclick="App.clickNotif(\''+n.id+'\',\''+(n.link_page||'')+'\')" style="padding:10px 16px;border-bottom:1px solid var(--w08);background:'+bg+';cursor:pointer;display:flex;gap:10px;align-items:flex-start;transition:background .15s" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\''+bg+'\'">';
+      h+='<span style="font-size:18px;flex-shrink:0;margin-top:1px">'+(ICONS[n.type]||'🔔')+'</span>';
+      h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:'+(n.is_read?'400':'600')+';color:'+(n.is_read?'var(--w70)':'var(--w90)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+n.title+'</div>';
+      if(n.body)h+='<div style="font-size:11px;color:var(--w40);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+n.body+'</div>';
+      h+='<div style="font-size:10px;color:var(--w20);margin-top:3px">'+ago+'</div></div>'+dot+'</div>';
+    });
+  }
+  h+='</div></div>';
+  return h;
+}
+
+function _timeAgo(d){
+  var s=Math.floor((Date.now()-new Date(d).getTime())/1000);
+  if(s<60)return '방금 전';if(s<3600)return Math.floor(s/60)+'분 전';
+  if(s<86400)return Math.floor(s/3600)+'시간 전';if(s<604800)return Math.floor(s/86400)+'일 전';
+  return new Date(d).toLocaleDateString('ko-KR');
+}
+
+function toggleNotif(e){
+  if(e)e.stopPropagation();
+  S.notifOpen=!S.notifOpen;render();
+  if(S.notifOpen){
+    var fn=function(ev){if(!ev.target.closest||!ev.target.closest('[style*="z-index:500"]')){S.notifOpen=false;render();document.removeEventListener('click',fn);}};
+    setTimeout(function(){document.addEventListener('click',fn);},100);
+  }
+}
+
+function clickNotif(id,page){
+  sb.from('notifications').update({is_read:true}).eq('id',id).then(function(){
+    var n=S.notifications.find(function(x){return x.id===id;});if(n)n.is_read=true;
+  });
+  S.notifOpen=false;
+  if(page)S.page=page;
+  render();
+}
+
+function markAllRead(){
+  var ids=S.notifications.filter(function(n){return !n.is_read;}).map(function(n){return n.id;});
+  if(ids.length===0)return;
+  sb.from('notifications').update({is_read:true}).in('id',ids).then(function(){
+    S.notifications.forEach(function(n){n.is_read=true;});render();
+  });
+}
+
+function pushNotif(type,title,body,linkPage,linkId,telegram){
+  if(!S.user)return;
+  var n={id:'temp-'+Date.now(),user_id:S.user.id,type:type,title:title,body:body||null,link_page:linkPage||null,link_id:linkId||null,is_read:false,created_at:new Date().toISOString()};
+  S.notifications.unshift(n);
+  if(S.notifications.length>30)S.notifications.pop();
+  render();
+  fetch(RELAY+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:S.user.id,type:type,title:title,body:body||'',linkPage:linkPage||'',linkId:linkId||'',telegram:!!telegram})}).then(function(r){return r.json();}).then(function(d){if(d.ok&&d.id)n.id=d.id;}).catch(function(){});
 }
 
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif};
 loadUser();
 })();
 </script>
