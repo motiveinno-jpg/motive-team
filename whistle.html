@@ -291,16 +291,115 @@ function pgAuth(){
 
 function pgDash(){
   var u=S.user,ac=S.analyses.length,pc=S.products.length;
-  var ap=S.projects.filter(function(p){return p.status!=='completed';}).length;
+  var ap=S.projects.filter(function(p){return p.status!=='completed'&&p.status!=='paused';}).length;
   var ps=S.serviceRequests.filter(function(s){return s.status==='pending'||s.status==='processing';}).length;
+  var oc=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length;
+  var bc=S.buyers.length;
+  var ec=S.emailLogs.length;
   var ga=_planGate('analysis'),gp=_planGate('product'),gj=_planGate('project');
   var cur=u.plan||'free';
+  /* 7일 이내 활동 수 */
+  var w7=Date.now()-7*86400000;
+  var weekEmails=S.emailLogs.filter(function(e){return new Date(e.created_at).getTime()>w7;}).length;
+  var weekOrders=S.orders.filter(function(o){return new Date(o.created_at).getTime()>w7;}).length;
+  /* 수출 여정 진행률 */
+  var journeyPct=0,journeyStage='시작 전';
+  if(S.projects.length>0){
+    var jp=S.projects[0];
+    var jStages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
+    var jLabels=['계획수립','인증/규제','바이어 발굴','협상','생산','선적','완료'];
+    var jIdx=jStages.indexOf(jp.status);
+    journeyPct=jIdx>=0?Math.round((jIdx/(jStages.length-1))*100):0;
+    journeyStage=jLabels[jIdx>=0?jIdx:0];
+  }
+  /* quota */
   var quotaHtml='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
   if(ga.max&&ga.max!==-1)quotaHtml+='<span style="font-size:11px;padding:4px 10px;border-radius:6px;background:var(--w08);color:'+(ga.blocked?'var(--err)':'var(--w60)')+'">분석 '+(ga.used||0)+'/'+ga.max+'</span>';
   if(gp.max&&gp.max!==-1)quotaHtml+='<span style="font-size:11px;padding:4px 10px;border-radius:6px;background:var(--w08);color:'+(gp.blocked?'var(--err)':'var(--w60)')+'">제품 '+(gp.used||0)+'/'+gp.max+'</span>';
   if(gj.max&&gj.max!==-1)quotaHtml+='<span style="font-size:11px;padding:4px 10px;border-radius:6px;background:var(--w08);color:'+(gj.blocked?'var(--err)':'var(--w60)')+'">프로젝트 '+(gj.used||0)+'/'+gj.max+'</span>';
   quotaHtml+='</div>';
-  return '<div class="dash-hero"><div class="dash-welcome">안녕하세요, '+(u.company_name||u.display_name||'사장님')+' 👋</div><div class="dash-company" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+(S.company?S.company.name_ko:'회사 정보를 설정해주세요')+' '+UI.pb(cur)+'</div>'+quotaHtml+'<div class="quick-grid"><div class="quick-card" onclick="App.nav(\'analysis\')"><div class="quick-icon">🔬</div><div class="quick-label">AI 분석</div></div><div class="quick-card" onclick="App.nav(\'products\')"><div class="quick-icon">📦</div><div class="quick-label">제품 등록</div></div><div class="quick-card" onclick="App.nav(\'services\')"><div class="quick-icon">💼</div><div class="quick-label">서비스 신청</div></div><div class="quick-card" onclick="App.nav(\'docgen\')"><div class="quick-icon">📄</div><div class="quick-label">서류 만들기</div></div></div></div><div class="grid-4" style="margin-bottom:20px">'+UI.stat('AI 분석',ac,ac?'최근: '+U.fd(S.analyses[0]&&S.analyses[0].created_at,'rel'):'시작하세요','var(--pri)')+UI.stat('등록 제품',pc,pc?'바이어 노출':'등록하세요','var(--acc)')+UI.stat('프로젝트',ap,ap?'진행 중':'없음','var(--ok)')+UI.stat('서비스',ps,ps?'처리 대기':'완료','var(--purple)')+'</div>'+(!S.company?'<div class="card" style="border-color:rgba(255,184,0,.25);margin-bottom:16px"><div class="card-b" style="display:flex;align-items:center;gap:14px"><span style="font-size:28px">⚠️</span><div style="flex:1"><div style="font-weight:700">셀러 정보를 입력해주세요</div><div style="font-size:12px;color:var(--w40)">PI/CI 서류 자동 생성에 필요</div></div><button class="btn btn-acc btn-sm" onclick="App.nav(\'settings\')">설정 →</button></div></div>':'')+'<div class="grid-2"><div class="card"><div class="card-h">최근 AI 분석</div><div class="card-b">'+(S.analyses.length===0?UI.empty('🔬','분석 없음','첫 분석을 시작하세요'):S.analyses.slice(0,5).map(function(a){return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewA(\''+a.id+'\')"><span style="font-size:20px">📊</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(a.product_name,30)+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(a.created_at,'rel')+'</div></div>'+UI.sb(a.status)+'</div>';}).join(''))+'</div></div><div class="card"><div class="card-h">서비스 현황</div><div class="card-b">'+(S.serviceRequests.length===0?UI.empty('💼','서비스 없음',''):S.serviceRequests.slice(0,5).map(function(sr){return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08)"><span style="font-size:18px">'+U.si(sr.service_type)+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.sl(sr.service_type)+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(sr.created_at,'rel')+'</div></div>'+UI.sb(sr.status)+'</div>';}).join(''))+'</div></div></div>';
+  /* hero */
+  var h='<div class="dash-hero"><div class="dash-welcome">안녕하세요, '+(u.company_name||u.display_name||'사장님')+' 👋</div><div class="dash-company" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+(S.company?S.company.name_ko:'회사 정보를 설정해주세요')+' '+UI.pb(cur)+'</div>'+quotaHtml;
+  h+='<div class="quick-grid"><div class="quick-card" onclick="App.nav(\'analysis\')"><div class="quick-icon">🔬</div><div class="quick-label">AI 분석</div></div><div class="quick-card" onclick="App.nav(\'products\')"><div class="quick-icon">📦</div><div class="quick-label">제품 등록</div></div><div class="quick-card" onclick="App.nav(\'buyers\')"><div class="quick-icon">🤝</div><div class="quick-label">바이어 찾기</div></div><div class="quick-card" onclick="App.nav(\'orders\')"><div class="quick-icon">📋</div><div class="quick-label">주문 관리</div></div></div></div>';
+  /* 주요 지표 8칸 */
+  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">';
+  h+=UI.stat('AI 분석',ac,ac?'최근: '+U.fd(S.analyses[0]&&S.analyses[0].created_at,'rel'):'시작하세요','var(--pri)');
+  h+=UI.stat('등록 제품',pc,pc?'활성 카드':'등록하세요','var(--acc)');
+  h+=UI.stat('바이어',bc,bc?bc+'개사 관리 중':'발굴하세요','#3b82f6');
+  h+=UI.stat('진행 주문',oc,oc?'처리 중':'없음','var(--ok)');
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">';
+  h+=UI.stat('프로젝트',ap,ap?'수출 진행':'없음','var(--purple)');
+  h+=UI.stat('이메일',ec,'이번 주 '+weekEmails+'건','#f59e0b');
+  h+=UI.stat('서비스',ps,ps?'대기중':'완료','#ec4899');
+  h+=UI.stat('주간 주문',weekOrders,weekOrders?weekOrders+'건 신규':'이번 주 없음','#10b981');
+  h+='</div>';
+  /* 회사 정보 미입력 경고 */
+  if(!S.company)h+='<div class="card" style="border-color:rgba(255,184,0,.25);margin-bottom:16px"><div class="card-b" style="display:flex;align-items:center;gap:14px"><span style="font-size:28px">⚠️</span><div style="flex:1"><div style="font-weight:700">셀러 정보를 입력해주세요</div><div style="font-size:12px;color:var(--w40)">PI/CI 서류 자동 생성에 필요</div></div><button class="btn btn-acc btn-sm" onclick="App.nav(\'settings\')">설정 →</button></div></div>';
+  /* 수출 여정 시각화 */
+  if(S.projects.length>0){
+    var jp=S.projects[0];
+    var jStages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
+    var jLabels=['📋 계획','📜 인증','🤝 바이어','💬 협상','🏭 생산','🚢 선적','✅ 완료'];
+    var jIdx=jStages.indexOf(jp.status);if(jIdx<0)jIdx=0;
+    h+='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.15)"><div class="card-h"><span>🗺️ 수출 여정 — '+U.tr(jp.name,30)+'</span><span class="badge badge-pri" style="font-size:12px">'+journeyPct+'%</span></div><div class="card-b">';
+    h+='<div style="display:flex;align-items:center;gap:0;margin-bottom:12px">';
+    jLabels.forEach(function(lb,i){
+      var done=i<jIdx,cur2=i===jIdx,future=i>jIdx;
+      var bg=done?'var(--ok)':cur2?'var(--pri)':'var(--w08)';
+      var col=done?'var(--bg)':cur2?'var(--bg)':'var(--w40)';
+      var fw=cur2?'700':'400';
+      var bdr=cur2?'0 0 0 3px rgba(0,212,255,.2)':'none';
+      h+='<div style="flex:1;text-align:center"><div style="width:28px;height:28px;border-radius:14px;background:'+bg+';color:'+col+';display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;box-shadow:'+bdr+'">'+(done?'✓':(i+1))+'</div><div style="font-size:10px;margin-top:4px;font-weight:'+fw+';color:'+(cur2?'var(--pri)':done?'var(--ok)':'var(--w40)')+'">'+lb+'</div></div>';
+      if(i<jLabels.length-1)h+='<div style="flex:0.5;height:2px;background:'+(i<jIdx?'var(--ok)':'var(--w08)')+';margin-top:-10px"></div>';
+    });
+    h+='</div>';
+    /* 다음 단계 안내 */
+    var nextTips={planning:'제품 분석과 타겟 시장을 선정하세요',certification:'필요 인증(FDA 등)을 확인하고 신청하세요',buyer_search:'AI 바이어 발굴로 잠재 고객을 찾으세요',negotiation:'샘플 발송 후 가격/조건을 협상하세요',production:'주문 확정 후 생산을 시작하세요',shipping:'선적 서류를 준비하고 포워더에 의뢰하세요',completed:'축하합니다! 수출이 완료되었습니다 🎉'};
+    h+='<div style="padding:10px 14px;border-radius:8px;background:var(--w08);display:flex;align-items:center;gap:10px"><span style="font-size:16px">'+(jp.status==='completed'?'🎉':'💡')+'</span><div><div style="font-size:12px;font-weight:600;color:var(--pri)">현재: '+journeyStage+'</div><div style="font-size:11px;color:var(--w40)">'+nextTips[jp.status]+'</div></div><button class="btn btn-ghost btn-sm" onclick="App.viewPj(\''+jp.id+'\')" style="margin-left:auto;font-size:11px">상세 →</button></div>';
+    h+='</div></div>';
+  }
+  /* 활동 타임라인 + 최근 분석/서비스 */
+  h+='<div class="grid-2" style="margin-bottom:16px">';
+  /* 활동 타임라인 */
+  h+='<div class="card"><div class="card-h">🕐 최근 활동</div><div class="card-b" style="max-height:300px;overflow-y:auto">';
+  var timeline=[];
+  S.analyses.slice(0,3).forEach(function(a){timeline.push({t:a.created_at,icon:'🔬',text:'AI 분석: '+U.tr(a.product_name,25),pg:'analysis'});});
+  S.emailLogs.slice(0,3).forEach(function(e){timeline.push({t:e.created_at,icon:'✉️',text:'이메일: '+(e.subject||'').substring(0,25),pg:'emailhub'});});
+  S.orders.slice(0,3).forEach(function(o){timeline.push({t:o.created_at,icon:'📋',text:'주문: '+o.order_number,pg:'orders'});});
+  S.notifications.filter(function(n){return n.type==='buyer'||n.type==='cert';}).slice(0,3).forEach(function(n){timeline.push({t:n.created_at,icon:n.type==='buyer'?'🤝':'📜',text:n.title,pg:n.link_page||'dashboard'});});
+  timeline.sort(function(a,b){return new Date(b.t)-new Date(a.t);});
+  if(timeline.length===0){h+=UI.empty('🕐','활동 없음','분석, 이메일, 주문 등 활동이 여기 표시됩니다');}
+  else{timeline.slice(0,8).forEach(function(ev){
+    h+='<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.nav(\''+ev.pg+'\')">';
+    h+='<span style="font-size:16px">'+ev.icon+'</span><div style="flex:1"><div style="font-size:12px;color:var(--w90)">'+ev.text+'</div><div style="font-size:10px;color:var(--w20)">'+_timeAgo(ev.t)+'</div></div></div>';
+  });}
+  h+='</div></div>';
+  /* 최근 분석 */
+  h+='<div class="card"><div class="card-h">최근 AI 분석</div><div class="card-b">';
+  if(S.analyses.length===0){h+=UI.empty('🔬','분석 없음','첫 분석을 시작하세요');}
+  else{S.analyses.slice(0,5).forEach(function(a){
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewA(\''+a.id+'\')"><span style="font-size:20px">📊</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(a.product_name,30)+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(a.created_at,'rel')+'</div></div>'+UI.sb(a.status)+'</div>';
+  });}
+  h+='</div></div></div>';
+  /* 주문 현황 + 서비스 */
+  h+='<div class="grid-2">';
+  h+='<div class="card"><div class="card-h">📋 주문 현황</div><div class="card-b">';
+  var activeOrders=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';});
+  if(activeOrders.length===0){h+=UI.empty('📋','진행 중인 주문 없음','PI 서류에서 주문을 생성하세요');}
+  else{var stLabel={confirmed:'확정',production:'생산',inspection:'검수',shipping:'선적',delivered:'배송',completed:'완료'};
+    activeOrders.slice(0,5).forEach(function(o){
+      var stCol={confirmed:'var(--pri)',production:'var(--acc)',shipping:'#3b82f6',delivered:'var(--ok)'}[o.status]||'var(--w40)';
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewOrder(\''+o.id+'\')"><div style="width:8px;height:8px;border-radius:4px;background:'+stCol+'"></div><div style="flex:1"><div style="font-size:13px;font-weight:600">'+o.order_number+'</div><div style="font-size:11px;color:var(--w40)">$'+(o.total_amount||0).toLocaleString()+' · '+(stLabel[o.status]||o.status)+'</div></div></div>';
+    });}
+  h+='</div></div>';
+  h+='<div class="card"><div class="card-h">💼 서비스 현황</div><div class="card-b">';
+  if(S.serviceRequests.length===0){h+=UI.empty('💼','서비스 없음','');}
+  else{S.serviceRequests.slice(0,5).forEach(function(sr){
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08)"><span style="font-size:18px">'+U.si(sr.service_type)+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.sl(sr.service_type)+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(sr.created_at,'rel')+'</div></div>'+UI.sb(sr.status)+'</div>';
+  });}
+  h+='</div></div></div>';
+  return h;
 }
 
 /* ── Analysis: page router ── */
