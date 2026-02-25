@@ -1484,9 +1484,15 @@ function calcC(){
   /* 규제 노트 */
   if(notes)h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:12px;color:var(--acc)">⚠️ '+notes+'</div>';
 
+  /* 포워더 RFQ 버튼 */
+  h+='<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-pri btn-sm" onclick="App.genForwarderRFQ()">🚢 포워더 견적 요청서 생성</button><button class="btn btn-ghost btn-sm" onclick="App.reqSvc(\'logistics\')">💼 물류 대행 신청</button></div>';
+  h+='<div id="rfq-result"></div>';
+
   h+='<div style="margin-top:10px;font-size:10px;color:var(--w20)">* 운임은 2026.02 기준 평균 시세. 실제 운임은 포워더 견적 필요. 관세율은 FTA 원산지 증명서 제출 기준.</div>';
   h+='</div></div>';
   document.getElementById('cr').innerHTML=h;
+  /* 계산 데이터 임시 저장 (RFQ용) */
+  window._lastCalc={dest:dest,destName:di.n,ship:ship,fobTotal:fobTotal,qty:qty,wt:wt,cbm:cbm,hs:hs,cifTotal:cifTotal,freight:freight,transitMin:transitMin,transitMax:transitMax};
 }
 
 function calcCCompare(){
@@ -1520,6 +1526,69 @@ function calcCCompare(){
   h+='</tbody></table></div>';
   h+='<div style="margin-top:8px;font-size:10px;color:var(--w20)">* 해상 LCL + 항공만 비교. 실제 견적은 포워더 문의 필요.</div></div>';
   document.getElementById('cr').innerHTML=h;
+}
+
+function genForwarderRFQ(){
+  var c=window._lastCalc;if(!c){UI.toast('먼저 원가 계산을 실행하세요','warn');return;}
+  var comp=S.company||{};var prod=S.products[0]||{};
+  var shipTypeLabel={lcl:'LCL (Less than Container Load)',fcl_20:'FCL 20ft',fcl_40:'FCL 40ft',air:'Air Freight',express:'Express (Courier)'};
+  var today=new Date().toISOString().slice(0,10);
+
+  var rfq='REQUEST FOR QUOTATION — FREIGHT FORWARDING\n'+
+    '═══════════════════════════════════════════\n\n'+
+    'Date: '+today+'\n'+
+    'RFQ No: RFQ-'+today.replace(/-/g,'')+'-'+String(Math.floor(Math.random()*900)+100)+'\n\n'+
+    '1. SHIPPER INFORMATION\n'+
+    '   Company: '+(comp.name_en||comp.name_ko||'[회사명]')+'\n'+
+    '   Contact: '+(comp.ceo_name_en||comp.ceo_name_ko||'[담당자]')+'\n'+
+    '   Tel: '+(comp.phone||'[전화번호]')+'\n'+
+    '   Email: '+(comp.email||S.user.email||'[이메일]')+'\n\n'+
+    '2. CARGO DETAILS\n'+
+    '   Product: '+(prod.name_en||prod.name_ko||'[제품명]')+'\n'+
+    '   HS Code: '+(c.hs||'[HS코드]')+'\n'+
+    '   Quantity: '+U.n(c.qty)+' pcs\n'+
+    '   Gross Weight: '+c.wt+' kg\n'+
+    '   Volume: '+c.cbm+' CBM\n'+
+    '   FOB Value: '+U.fmtUSD(c.fobTotal)+'\n'+
+    '   Dangerous Goods: No\n'+
+    '   Temperature Sensitive: '+(prod.category==='food'||prod.category==='Health Supplement'?'Yes (Cool storage preferred)':'No')+'\n\n'+
+    '3. ROUTING\n'+
+    '   Origin: Busan (KRPUS) / Incheon (KRICN)\n'+
+    '   Destination: '+c.destName+'\n'+
+    '   Preferred Mode: '+(shipTypeLabel[c.ship]||c.ship)+'\n'+
+    '   Required Delivery: [희망 도착일]\n\n'+
+    '4. SERVICES REQUIRED\n'+
+    '   [ ] Customs Clearance (Export)\n'+
+    '   [ ] Customs Clearance (Import)\n'+
+    '   [ ] Cargo Insurance\n'+
+    '   [ ] Door-to-Port / Door-to-Door\n'+
+    '   [ ] Fumigation Certificate\n\n'+
+    '5. ADDITIONAL NOTES\n'+
+    '   - Incoterms: FOB Busan\n'+
+    '   - Please quote all-in rate including THC, BAF, CAF\n'+
+    '   - Please advise transit time and vessel schedule\n\n'+
+    'Please reply with your best quotation by [회신 기한].\n'+
+    'Thank you.\n';
+
+  /* RFQ 표시 + 이메일 전송 버튼 */
+  var h='<div style="margin-top:14px;padding:14px;border-radius:12px;background:var(--w08);border:1px solid var(--bd)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-weight:700;font-size:13px">🚢 Freight RFQ</span>'+
+    '<div style="display:flex;gap:6px"><button class="btn btn-pri btn-sm" onclick="App.sendRFQEmail()">📧 이메일 발송</button><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'rfq-text\').textContent);UI.toast(\'복사됨\',\'ok\')">📋 복사</button></div></div>'+
+    '<pre id="rfq-text" style="font-size:11px;line-height:1.5;color:var(--w60);white-space:pre-wrap;max-height:300px;overflow-y:auto;background:var(--bg);padding:12px;border-radius:8px;border:1px solid var(--bd)">'+rfq+'</pre></div>';
+  document.getElementById('rfq-result').innerHTML=h;
+  window._lastRFQ=rfq;
+}
+
+function sendRFQEmail(){
+  if(!window._lastRFQ){UI.toast('RFQ를 먼저 생성하세요','warn');return;}
+  var email=prompt('포워더 이메일 주소:');if(!email)return;
+  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    to:email,subject:'[RFQ] Freight Quotation Request — '+(S.company&&S.company.name_en||'Korean Manufacturer'),
+    bodyText:window._lastRFQ,userId:S.user.id
+  })}).then(function(r){return r.json();}).then(function(data){
+    if(data.ok)UI.toast('포워더에 견적 요청 발송!','ok');
+    else{window.open('mailto:'+email+'?subject=[RFQ] Freight Quote&body='+encodeURIComponent(window._lastRFQ));UI.toast('mailto로 전환','info');}
+  }).catch(function(){window.open('mailto:'+email+'?subject=[RFQ]&body='+encodeURIComponent(window._lastRFQ));});
 }
 
 function pgSub(){
@@ -2172,7 +2241,7 @@ function render(){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
 loadUser();
 })();
 </script>
