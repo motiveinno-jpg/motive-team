@@ -1210,10 +1210,13 @@ async function runCollab(userMsg,files){
     }
   }
 
-  // === 이어서 대화 감지: 이미 팀 작업이 있으면 재소집하지 않음 ===
+  // === 팀 재소집 명시 요청 감지 ===
+  const forceTeam=/소환|소집|불러|모아|투입|배정|참여|팀.?구성|전원|모두|다같이|수출.?담당|수출.?전문|관세|물류|바이어|제조사/i.test(userMsg);
+
+  // === 이어서 대화 감지: 팀 작업이 있고 + 재소집 명령이 아니면 ===
   const recentMsgs=chatDB[ch]?.slice(-20)||[];
   const hasTeamWork=recentMsgs.some(m=>m.type==='work'||m.type==='summary'||m.type==='review');
-  if(hasTeamWork){
+  if(hasTeamWork&&!forceTeam){
     // 이어서 대화 모드 — PM이 맥락 파악하고 직접 답변 + 필요시 특정 팀원만 호출
     showTyp('💬 하준 PM 응답 중...');
     const pm=gm('pm');
@@ -1221,6 +1224,7 @@ async function runCollab(userMsg,files){
       const who=m.role==='user'?'대표님':(m.mid?gm(m.mid)?.name||'PM':'PM');
       return`${who}: ${(m.content||'').slice(0,200)}`;
     }).join('\n');
+    const _ob2=window._claudeMaxMode;window._claudeMaxMode=false;
     let contResp=await callAI(pm,`당신은 PM 하준입니다. 팀이 이미 작업을 진행했거나 완료한 상태입니다.
 대표님의 추가 메시지에 자연스럽게 대응하세요:
 - 질문이면 답변하세요
@@ -1235,6 +1239,7 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
       await new Promise(r=>setTimeout(r,3000));
       contResp=await callAI(pm,`PM 하준입니다. 대표님 메시지에 구체적으로 답하세요. 첨부파일이 있으면 반드시 분석하세요. 한국어 존댓말.`,userMsg,null,files);
     }
+    window._claudeMaxMode=_ob2;
     hideTyp();
     // 2차까지 실패 → 새 팀 소집 모드로 전환 (멈추지 않게)
     if(!contResp){
@@ -1271,30 +1276,28 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
 
   let intentResp=null;
   if(!chatOnly){
+    // PM intent 분석은 항상 빠른 모델 (Opus여도 Sonnet으로)
+    const _ob=window._claudeMaxMode;window._claudeMaxMode=false;
     intentResp=await callAI(pm,`당신은 PM 하준입니다. 28세 남성, 밝고 유능한 성격. 사용자는 채희웅 대표님입니다.
 
-## 역할: 프로젝트 룸의 PM. 대표님 메시지에 **당신이 직접 충실히 답변**하는 것이 1순위입니다.
-
-## 핵심 원칙
-1. **대부분은 PM인 당신이 직접 답변합니다** — 질문, 의견, 보고 요청, 현황 문의 등
-2. **팀원 배정은 실제 전문 작업이 필요할 때만** — 디자인 시안, 코드 개발, 리서치 보고서, 영상 제작 등 PM이 직접 할 수 없는 전문 산출물이 필요한 경우
-3. **대표님이 특정 팀원을 이름으로 호출하면** 해당 팀원만 배정 (예: "수아야", "도윤아", "@현우")
-4. 팀원을 배정할 때도 **최소 인원(1~3명)**만 — 꼭 필요한 사람만
+## 역할: 프로젝트 룸의 PM.
 
 ## 판단 기준
-- "chat": 인사, 안부, 짧은 대화, 감사, 격려
-- "work": PM이 직접 답변 + 필요 시에만 팀원 배정
-- **애매하면 "work"로 판단하되, team은 빈배열로 PM이 직접 답변**
+- "chat": 1~2단어 인사만 (안녕, 수고, 고마워 등)
+- "work": 그 외 전부 (질문, 요청, 지시, 의견 등)
 
-반드시 JSON으로만 응답:
-{"intent":"chat또는work","reply":"대표님에게 충실하고 구체적으로 답변(필요한 만큼 길게 OK)","team":["팀원id"],"tasks":{"id":"업무"}}
+## 팀원 배정 원칙
+- 대표님이 **"소환/소집/불러/모아/투입/전원"** 등 팀 구성을 요청하면 → **반드시 해당 팀원들 배정**
+- 수출/관세/물류/바이어/제조 관련 → **수출 전문가 포함** (customs, logistics, trader + 필요시 buyer/mfg)
+- 구체적 작업 지시 → 적합한 팀원 1~3명
+- 단순 질문/의견 → PM이 직접 reply, team 빈배열
 
-- PM 직접 답변 시: reply에 충실한 답변, team은 빈배열 []
-- 팀원 필요 시: reply에 간단한 설명, team에 1~3명, tasks에 각 업무
-- chat: reply만, team 빈배열
+반드시 JSON만:
+{"intent":"chat또는work","reply":"답변","team":["팀원id"],"tasks":{"id":"업무"}}
 
 팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무), customs(정관세/관세사), logistics(한물류/물류포워딩), trader(박무역/수출실무), mfg_food(김사장/K-Food제조사), mfg_beauty(이대표/K-Beauty제조사), buyer_us(David Kim/미국바이어), buyer_jp(田中誠/일본바이어), buyer_sea(Nguyen Minh/동남아바이어)`,
     `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`,null,files);
+    window._claudeMaxMode=_ob;
   }
 
   // Parse PM response
@@ -1464,7 +1467,7 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
   }
 
  }catch(e){hideTyp();addM(curCh,'pm',`⚠️ 프로젝트 실행 중 오류 발생: ${e.message}\n\n다시 시도해주세요.`,'sys');rMsgs();}
- window._claudeMaxMode=false; // 클로드봇 모드 리셋
+ // Opus 모드는 토글 버튼으로만 제어 (자동 리셋 안 함)
  isGen=false;rSB();
 }
 
