@@ -105,7 +105,8 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 @keyframes slideInR{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-@media(max-width:768px){.sidebar{display:none}.grid-2,.grid-3,.grid-4,.grid-5{grid-template-columns:1fr}.page-content{padding:16px}}
+@media(max-width:768px){.sidebar{position:fixed;left:-260px;top:0;bottom:0;z-index:100;transition:left .3s}.sidebar.mobile-open{left:0}.mob-toggle{display:block!important}.mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99}.sidebar.mobile-open~.mob-overlay{display:block}.grid-2,.grid-3,.grid-4,.grid-5{grid-template-columns:1fr}.page-content{padding:16px}}
+.mob-toggle{display:none;background:none;border:none;color:var(--w);font-size:20px;cursor:pointer;padding:4px 8px}
 </style>
 </head>
 <body>
@@ -114,6 +115,8 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 (function(){
 "use strict";
 var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0');
+
+var RELAY_URL=location.hostname==='localhost'||location.hostname==='127.0.0.1'?'http://localhost:3456':'https://4f75-211-58-232-170.ngrok-free.app';
 
 /* === UTILS === */
 var U={
@@ -125,7 +128,8 @@ var U={
   si:function(t){return{premium_analysis:'\uD83D\uDD2C',matching:'\uD83E\uDD1D',document:'\uD83D\uDCC4',certification:'\uD83C\uDFC5',logistics:'\uD83D\uDEA2',email_support:'\u2709\uFE0F'}[t]||'\uD83D\uDCCB';},
   cl:function(c){return{US:'\uD83C\uDDFA\uD83C\uDDF8',JP:'\uD83C\uDDEF\uD83C\uDDF5',CN:'\uD83C\uDDE8\uD83C\uDDF3',EU:'\uD83C\uDDEA\uD83C\uDDFA',SEA:'\uD83C\uDF0F'}[c]||c||'';},
   pl:function(p){return{free:['FREE','var(--w40)'],basic:['BASIC','var(--pri)'],pro:['PRO','var(--acc)'],alibaba:['ALIBABA','var(--admin)']}[p]||['FREE','var(--w40)'];},
-  pct:function(n,t){return t?Math.round(n/t*100):0;}
+  pct:function(n,t){return t?Math.round(n/t*100):0;},
+  esc:function(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 };
 
 /* === UI === */
@@ -197,7 +201,7 @@ function doLogin(e){
 function doLogout(){if(confirm('로그아웃?')){sb.auth.signOut().then(function(){S.user=null;render();});}}
 
 /* === HELPER === */
-function getUserName(uid){var u=S.users.find(function(x){return x.id===uid;});return u?(u.company_name||u.display_name||u.email):'알수없음';}
+function getUserName(uid){var u=S.users.find(function(x){return x.id===uid;});return U.esc(u?(u.company_name||u.display_name||u.email):'알수없음');}
 function getCompany(uid){return S.companies.find(function(x){return x.user_id===uid;})||null;}
 function filterBySearch(arr,fields){
   var q=S.searchFilter.toLowerCase().trim();
@@ -311,7 +315,7 @@ function pgUsers(){
   '<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>유저</th><th>회사</th><th>플랜</th><th>상태</th><th>분석</th><th>가입일</th></tr></thead><tbody>'+
   (filtered.length?filtered.map(function(u){
     var ac=S.analyses.filter(function(a){return a.user_id===u.id;}).length;
-    return '<tr onclick="Adm.viewUser(\''+u.id+'\')"><td><div style="display:flex;align-items:center;gap:10px"><div style="width:32px;height:32px;border-radius:8px;background:'+(u.role==='admin'?'var(--admin-g)':'var(--pri-g)')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:'+(u.role==='admin'?'var(--w)':'var(--bg)')+';flex-shrink:0">'+(u.company_name||u.email||'U').charAt(0).toUpperCase()+'</div><div><div style="font-size:13px;font-weight:600">'+(u.display_name||u.email.split('@')[0])+'</div><div style="font-size:11px;color:var(--w40)">'+u.email+'</div></div></div></td><td style="font-size:12px">'+(u.company_name||'\u2014')+'</td><td>'+UI.pb(u.plan||'free')+'</td><td><span class="status-dot '+(u.is_active?'active':'inactive')+'"></span>'+(u.is_active?'활성':'비활성')+'</td><td style="font-family:JetBrains Mono;font-size:12px;text-align:center">'+ac+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(u.created_at)+'</td></tr>';
+    return '<tr onclick="Adm.viewUser(\''+u.id+'\')"><td><div style="display:flex;align-items:center;gap:10px"><div style="width:32px;height:32px;border-radius:8px;background:'+(u.role==='admin'?'var(--admin-g)':'var(--pri-g)')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:'+(u.role==='admin'?'var(--w)':'var(--bg)')+';flex-shrink:0">'+U.esc((u.company_name||u.email||'U').charAt(0).toUpperCase())+'</div><div><div style="font-size:13px;font-weight:600">'+U.esc(u.display_name||u.email.split('@')[0])+'</div><div style="font-size:11px;color:var(--w40)">'+U.esc(u.email)+'</div></div></div></td><td style="font-size:12px">'+U.esc(u.company_name||'\u2014')+'</td><td>'+UI.pb(u.plan||'free')+'</td><td><span class="status-dot '+(u.is_active?'active':'inactive')+'"></span>'+(u.is_active?'활성':'비활성')+'</td><td style="font-family:JetBrains Mono;font-size:12px;text-align:center">'+ac+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(u.created_at)+'</td></tr>';
   }).join(''):'<tr><td colspan="6">'+UI.empty('👥','결과 없음','')+'</td></tr>')+
   '</tbody></table></div></div>';
 }
@@ -335,10 +339,10 @@ function pgUserDetail(){
 
   '<div class="grid-2" style="margin-bottom:16px">'+
     '<div class="card"><div class="card-h">👤 계정 정보</div><div class="card-b">'+
-      '<div class="detail-row"><div class="detail-label">이메일</div><div class="detail-value">'+u.email+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">이름</div><div class="detail-value">'+(u.display_name||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">전화</div><div class="detail-value">'+(u.phone||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">역할</div><div class="detail-value">'+u.role+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">이메일</div><div class="detail-value">'+U.esc(u.email)+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">이름</div><div class="detail-value">'+U.esc(u.display_name||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">전화</div><div class="detail-value">'+U.esc(u.phone||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">역할</div><div class="detail-value">'+U.esc(u.role)+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">플랜</div><div class="detail-value">'+UI.pb(u.plan||'free')+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">가입일</div><div class="detail-value">'+U.fd(u.created_at)+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">마지막 활동</div><div class="detail-value">'+U.fd(u.updated_at,'rel')+'</div></div>'+
@@ -350,12 +354,12 @@ function pgUserDetail(){
     '</div></div>'+
 
     '<div class="card"><div class="card-h">🏢 회사 정보</div><div class="card-b">'+(co?
-      '<div class="detail-row"><div class="detail-label">한글명</div><div class="detail-value">'+(co.name_ko||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">영문명</div><div class="detail-value">'+(co.name_en||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">주소</div><div class="detail-value">'+(co.address_ko||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">대표</div><div class="detail-value">'+(co.ceo_name_ko||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">전화</div><div class="detail-value">'+(co.phone||'\u2014')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">사업자번호</div><div class="detail-value">'+(co.biz_number||'\u2014')+'</div></div>'
+      '<div class="detail-row"><div class="detail-label">한글명</div><div class="detail-value">'+U.esc(co.name_ko||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">영문명</div><div class="detail-value">'+U.esc(co.name_en||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">주소</div><div class="detail-value">'+U.esc(co.address_ko||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">대표</div><div class="detail-value">'+U.esc(co.ceo_name_ko||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">전화</div><div class="detail-value">'+U.esc(co.phone||'\u2014')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">사업자번호</div><div class="detail-value">'+U.esc(co.biz_number||'\u2014')+'</div></div>'
     :'<div style="text-align:center;padding:20px;color:var(--w40)">회사 정보 미등록</div>')+'</div></div>'+
   '</div>'+
 
@@ -398,7 +402,7 @@ function pgAnalysisDetail(){
   var col=sc>=80?'var(--ok)':sc>=60?'var(--acc)':'var(--err)';
   var bar=function(label,val){var pct=Math.min((val||0),100);var c=val>=80?'var(--ok)':val>=60?'var(--acc)':'var(--err)';return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:12px;color:var(--w60)">'+label+'</span><span style="font-size:12px;font-weight:700;color:'+c+'">'+( val||0)+'</span></div><div class="chart-bar" style="height:6px"><div class="chart-bar-fill" style="width:'+pct+'%;background:'+c+'"></div></div></div>';};
 
-  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><button class="btn btn-ghost btn-sm" onclick="Adm.set({selectedAnalysis:null})">← 목록</button><h2 style="font-size:18px;font-weight:800;flex:1">'+a.product_name+'</h2>'+UI.sb(a.status)+UI.badge(a.analysis_type==='premium'?'프리미엄':'무료',a.analysis_type==='premium'?'acc':'ghost')+'</div>'+
+  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><button class="btn btn-ghost btn-sm" onclick="Adm.set({selectedAnalysis:null})">← 목록</button><h2 style="font-size:18px;font-weight:800;flex:1">'+U.esc(a.product_name)+'</h2>'+UI.sb(a.status)+UI.badge(a.analysis_type==='premium'?'프리미엄':'무료',a.analysis_type==='premium'?'acc':'ghost')+'</div>'+
 
   '<div class="grid-2" style="margin-bottom:16px">'+
     '<div class="card"><div class="card-h">📊 점수</div><div class="card-b">'+
@@ -433,19 +437,49 @@ function pgServiceReq(){
   var filtered=filterBySearch(S.serviceRequests,['title','service_type']);
   if(S.tab!=='all')filtered=filtered.filter(function(s){return s.status===S.tab;});
 
-  var tabs=['all','pending','processing','completed'];
-  var tabL={all:'전체',pending:'대기',processing:'처리중',completed:'완료'};
+  var tabs=['all','pending','accepted','processing','completed','cancelled'];
+  var tabL={all:'전체',pending:'접수',accepted:'배정',processing:'처리중',completed:'완료',cancelled:'취소'};
+
+  /* SLA 계산 */
+  var slaHours={urgent:4,high:24,normal:72,low:168};
+  function getSLA(sr){
+    var h=slaHours[sr.priority||'normal']||72;
+    var created=new Date(sr.created_at);var now=new Date();
+    var elapsed=Math.floor((now-created)/(1000*60*60));
+    var remain=h-elapsed;
+    return {total:h,elapsed:elapsed,remain:remain,pct:Math.min(Math.round(elapsed/h*100),100),overdue:remain<0};
+  }
+
+  /* 파이프라인 요약 */
+  var pipeline='<div style="display:flex;gap:6px;margin-bottom:16px">'+
+    [{s:'pending',i:'📥',c:'var(--w40)'},{s:'accepted',i:'👤',c:'var(--pri)'},{s:'processing',i:'⚙️',c:'var(--acc)'},{s:'completed',i:'✅',c:'var(--ok)'}].map(function(st){
+    var cnt=S.serviceRequests.filter(function(x){return x.status===st.s;}).length;
+    return '<div style="flex:1;padding:12px;border-radius:10px;background:var(--w08);text-align:center;border-bottom:3px solid '+(cnt?st.c:'transparent')+'">'+
+    '<div style="font-size:16px">'+st.i+'</div><div style="font-size:10px;color:var(--w40)">'+tabL[st.s]+'</div>'+
+    '<div style="font-size:20px;font-weight:800;color:'+(cnt?st.c:'var(--w20)')+'">'+cnt+'</div></div>';
+  }).join('')+'</div>';
+
+  /* 긴급 SLA 경고 */
+  var urgentSRs=S.serviceRequests.filter(function(sr){return sr.status!=='completed'&&sr.status!=='cancelled'&&getSLA(sr).overdue;});
+  var urgentAlert=urgentSRs.length?'<div style="padding:10px 14px;border-radius:10px;background:rgba(255,82,82,.08);border:1px solid rgba(255,82,82,.2);margin-bottom:12px;font-size:12px;color:var(--err)">⚠️ SLA 초과 '+urgentSRs.length+'건 — 즉시 처리 필요</div>':'';
 
   return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">💼 서비스 요청</h2>'+UI.badge(S.serviceRequests.length+'건','acc')+'</div>'+
+  pipeline+urgentAlert+
   '<div style="display:flex;gap:10px;margin-bottom:16px"><div class="search-box" style="flex:1"><input placeholder="서비스 검색..." value="'+S.searchFilter+'" oninput="Adm.setSearch(this.value)"></div></div>'+
   '<div class="tab-bar">'+tabs.map(function(t){
     var c=t==='all'?S.serviceRequests.length:S.serviceRequests.filter(function(s){return s.status===t;}).length;
     return '<div class="tab-item '+(S.tab===t?'active':'')+'" onclick="Adm.setTab(\''+t+'\')">'+tabL[t]+' <span style="font-size:10px;color:var(--w20)">'+c+'</span></div>';
   }).join('')+'</div>'+
-  '<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>서비스</th><th>유저</th><th>상태</th><th>긴급도</th><th>금액</th><th>날짜</th></tr></thead><tbody>'+
+  '<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>서비스</th><th>유저</th><th>상태</th><th>긴급도</th><th>SLA</th><th>담당</th><th>금액</th></tr></thead><tbody>'+
   (filtered.length?filtered.map(function(sr){
-    return '<tr onclick="Adm.viewSR(\''+sr.id+'\')"><td>'+U.si(sr.service_type)+' '+U.sl(sr.service_type)+'</td><td style="font-size:12px">'+getUserName(sr.user_id)+'</td><td>'+UI.sb(sr.status)+'</td><td>'+UI.badge(sr.priority||'normal',sr.priority==='urgent'?'err':sr.priority==='high'?'acc':'ghost')+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+(sr.price?U.krw(sr.price):'\u2014')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(sr.created_at,'rel')+'</td></tr>';
-  }).join(''):'<tr><td colspan="6">'+UI.empty('💼','결과 없음','')+'</td></tr>')+
+    var sla=getSLA(sr);
+    var slaCol=sla.overdue?'var(--err)':sla.remain<12?'var(--acc)':'var(--ok)';
+    var isDone=sr.status==='completed'||sr.status==='cancelled';
+    return '<tr onclick="Adm.viewSR(\''+sr.id+'\')" style="'+(sla.overdue&&!isDone?'background:rgba(255,82,82,.04)':'')+'"><td>'+U.si(sr.service_type)+' '+U.sl(sr.service_type)+'</td><td style="font-size:12px">'+getUserName(sr.user_id)+'</td><td>'+UI.sb(sr.status)+'</td><td>'+UI.badge(sr.priority||'normal',sr.priority==='urgent'?'err':sr.priority==='high'?'acc':'ghost')+'</td>'+
+    '<td style="font-size:11px;color:'+(isDone?'var(--w20)':slaCol)+'">'+(isDone?'—':(sla.overdue?'초과 '+Math.abs(sla.remain)+'h':sla.remain+'h'))+'</td>'+
+    '<td style="font-size:11px;color:var(--w40)">'+(sr.assigned_to?getUserName(sr.assigned_to):'미배정')+'</td>'+
+    '<td style="font-family:JetBrains Mono;font-size:12px">'+(sr.price?U.krw(sr.price):'\u2014')+'</td></tr>';
+  }).join(''):'<tr><td colspan="7">'+UI.empty('💼','결과 없음','')+'</td></tr>')+
   '</tbody></table></div></div>';
 }
 
@@ -453,27 +487,66 @@ function pgSRDetail(){
   var sr=S.selectedSR;if(!sr)return'';
   var details=sr.details||{};
 
+  /* SLA 계산 */
+  var slaHours={urgent:4,high:24,normal:72,low:168};
+  var slaH=slaHours[sr.priority||'normal']||72;
+  var elapsed=Math.floor((new Date()-new Date(sr.created_at))/(1000*60*60));
+  var remain=slaH-elapsed;var slaPct=Math.min(Math.round(elapsed/slaH*100),100);
+  var isDone=sr.status==='completed'||sr.status==='cancelled';
+  var slaCol=isDone?'var(--ok)':remain<0?'var(--err)':remain<12?'var(--acc)':'var(--pri)';
+
+  /* SLA 바 */
+  var slaBar='<div style="padding:12px;border-radius:10px;background:'+(remain<0&&!isDone?'rgba(255,82,82,.06)':'var(--w08)')+';margin-bottom:16px;border:1px solid '+(remain<0&&!isDone?'rgba(255,82,82,.15)':'var(--bd)')+'">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+    '<span style="font-size:11px;font-weight:700">SLA '+(isDone?'완료':remain<0?'⚠️ 초과 '+Math.abs(remain)+'시간':'잔여 '+remain+'시간')+'</span>'+
+    '<span style="font-size:11px;color:var(--w40)">목표: '+slaH+'h / 경과: '+elapsed+'h</span></div>'+
+    '<div style="height:6px;border-radius:3px;background:var(--w08)"><div style="height:100%;border-radius:3px;background:'+slaCol+';width:'+slaPct+'%;transition:width .3s"></div></div></div>';
+
+  /* 담당자 선택 옵션 */
+  var adminUsers=S.users.filter(function(u){return u.role==='admin';});
+  var assignOpts=[{value:'',label:'-- 미배정 --'}].concat(adminUsers.map(function(u){return {value:u.id,label:U.esc(u.display_name||u.email)};}));
+
+  /* 워크플로우 단계 */
+  var stages=['pending','accepted','processing','review','completed'];
+  var stageL={pending:'접수',accepted:'배정',processing:'처리중',review:'검토',completed:'완료'};
+  var curIdx=stages.indexOf(sr.status);if(curIdx<0)curIdx=0;
+  var stageBar='<div style="display:flex;gap:2px;margin-bottom:16px">'+stages.map(function(st,i){
+    var active=i<=curIdx;
+    return '<div style="flex:1;text-align:center;padding:6px;border-radius:6px;background:'+(active?'rgba(255,107,107,.1)':'var(--w08)')+';cursor:pointer" onclick="Adm.quickSR(\''+sr.id+'\',\''+st+'\')">'+
+    '<div style="font-size:10px;font-weight:'+(active?'700':'400')+';color:'+(active?'var(--admin)':'var(--w20)')+'">'+stageL[st]+'</div></div>';
+  }).join('')+'</div>';
+
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><button class="btn btn-ghost btn-sm" onclick="Adm.set({selectedSR:null})">← 목록</button><h2 style="font-size:18px;font-weight:800;flex:1">'+U.si(sr.service_type)+' '+U.sl(sr.service_type)+'</h2>'+UI.sb(sr.status)+'</div>'+
+
+  slaBar+stageBar+
 
   '<div class="grid-2" style="margin-bottom:16px">'+
     '<div class="card"><div class="card-h">📋 요청 정보</div><div class="card-b">'+
       '<div class="detail-row"><div class="detail-label">서비스</div><div class="detail-value">'+U.sl(sr.service_type)+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">유저</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewUser(\''+sr.user_id+'\')">'+getUserName(sr.user_id)+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">긴급도</div><div class="detail-value">'+UI.badge(sr.priority||'normal',sr.priority==='urgent'?'err':sr.priority==='high'?'acc':'ghost')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">담당자</div><div class="detail-value">'+(sr.assigned_to?getUserName(sr.assigned_to):'<span style="color:var(--err)">미배정</span>')+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">금액</div><div class="detail-value">'+(sr.price?U.krw(sr.price):'미정')+'</div></div>'+
-      '<div class="detail-row"><div class="detail-label">생성일</div><div class="detail-value">'+U.fd(sr.created_at)+'</div></div>'+
-      (details.text?'<div style="margin-top:12px;padding:12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:6px">요청 내용</div><div style="font-size:13px;color:var(--w70);white-space:pre-wrap">'+details.text+'</div></div>':'')+
+      '<div class="detail-row"><div class="detail-label">접수</div><div class="detail-value">'+U.fd(sr.created_at)+'</div></div>'+
+      (sr.started_at?'<div class="detail-row"><div class="detail-label">시작</div><div class="detail-value">'+U.fd(sr.started_at)+'</div></div>':'')+
+      (sr.completed_at?'<div class="detail-row"><div class="detail-label">완료</div><div class="detail-value">'+U.fd(sr.completed_at)+'</div></div>':'')+
+      (details.text?'<div style="margin-top:12px;padding:12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:6px">요청 내용</div><div style="font-size:13px;color:var(--w70);white-space:pre-wrap">'+U.esc(details.text)+'</div></div>':'')+
     '</div></div>'+
 
     '<div class="card"><div class="card-h">⚡ 처리</div><div class="card-b">'+
-      '<div style="margin-bottom:16px">'+
-        UI.sel('sr_status','상태 변경',[{value:'pending',label:'대기'},{value:'processing',label:'처리중'},{value:'completed',label:'완료'},{value:'cancelled',label:'취소'}],sr.status)+
+      '<div class="grid-2" style="margin-bottom:12px">'+
+        UI.sel('sr_status','상태',[{value:'pending',label:'접수'},{value:'accepted',label:'배정'},{value:'processing',label:'처리중'},{value:'review',label:'검토'},{value:'completed',label:'완료'},{value:'cancelled',label:'취소'}],sr.status)+
+        UI.sel('sr_assigned','담당자 배정',assignOpts,sr.assigned_to||'')+
       '</div>'+
-      '<div style="margin-bottom:16px">'+UI.inp('sr_price','금액 (원)',{type:'number',value:sr.price||'',placeholder:'300000'})+'</div>'+
-      UI.ta('sr_note','관리자 메모',{placeholder:'내부 메모...',value:(sr.admin_note||''),rows:4})+
-      '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<div class="grid-2" style="margin-bottom:12px">'+
+        UI.inp('sr_price','금액 (원)',{type:'number',value:sr.price||'',placeholder:'300000'})+
+        UI.sel('sr_priority','긴급도',[{value:'low',label:'낮음'},{value:'normal',label:'일반'},{value:'high',label:'높음'},{value:'urgent',label:'긴급'}],sr.priority||'normal')+
+      '</div>'+
+      UI.ta('sr_note','관리자 메모',{placeholder:'내부 메모...',value:(sr.admin_notes||sr.admin_note||''),rows:3})+
+      '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'+
         '<button class="btn btn-admin" onclick="Adm.updateSR(\''+sr.id+'\')">저장</button>'+
-        '<button class="btn btn-ok btn-sm" onclick="Adm.quickSR(\''+sr.id+'\',\'completed\')">완료 처리</button>'+
+        '<button class="btn btn-ok btn-sm" onclick="Adm.quickSR(\''+sr.id+'\',\'completed\')">완료</button>'+
+        '<button class="btn btn-ghost btn-sm" onclick="Adm.notifySR(\''+sr.id+'\')">📢 텔레그램 알림</button>'+
         '<button class="btn btn-danger btn-sm" onclick="Adm.deleteSR(\''+sr.id+'\')">삭제</button>'+
       '</div>'+
     '</div></div>'+
@@ -620,10 +693,16 @@ function updateSR(id){
   var status=document.querySelector('[name=sr_status]');
   var price=document.querySelector('[name=sr_price]');
   var note=document.querySelector('[name=sr_note]');
-  var data={};
+  var assigned=document.querySelector('[name=sr_assigned]');
+  var priority=document.querySelector('[name=sr_priority]');
+  var data={updated_at:new Date().toISOString()};
   if(status)data.status=status.value;
   if(price&&price.value)data.price=Number(price.value);
-  if(note)data.admin_note=note.value;
+  if(note)data.admin_notes=note.value;
+  if(assigned)data.assigned_to=assigned.value||null;
+  if(priority)data.priority=priority.value;
+  if(data.status==='processing'&&!data.started_at)data.started_at=new Date().toISOString();
+  if(data.status==='completed')data.completed_at=new Date().toISOString();
   sb.from('service_requests').update(data).eq('id',id).then(function(r){
     if(r.error){UI.toast('실패','err');return;}
     var sr=S.serviceRequests.find(function(x){return x.id===id;});
@@ -633,12 +712,22 @@ function updateSR(id){
 }
 
 function quickSR(id,status){
-  sb.from('service_requests').update({status:status}).eq('id',id).then(function(r){
+  var upd={status:status,updated_at:new Date().toISOString()};
+  if(status==='processing')upd.started_at=new Date().toISOString();
+  if(status==='completed')upd.completed_at=new Date().toISOString();
+  sb.from('service_requests').update(upd).eq('id',id).then(function(r){
     if(r.error){UI.toast('실패','err');return;}
     var sr=S.serviceRequests.find(function(x){return x.id===id;});
-    if(sr){sr.status=status;S.selectedSR=sr;}
-    render();UI.toast('상태 변경','ok');
+    if(sr){Object.assign(sr,upd);S.selectedSR=sr;}
+    render();UI.toast('상태: '+status,'ok');
   });
+}
+
+function notifySR(id){
+  var sr=S.serviceRequests.find(function(x){return x.id===id;});if(!sr)return;
+  var stL={pending:'접수',accepted:'배정',processing:'처리중',review:'검토',completed:'완료',cancelled:'취소'};
+  var msg='💼 서비스 요청 업데이트\n'+U.sl(sr.service_type)+'\n상태: '+stL[sr.status]+'\n유저: '+getUserName(sr.user_id)+'\n긴급도: '+(sr.priority||'normal');
+  fetch(RELAY_URL+'/api/telegram/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})}).then(function(){UI.toast('텔레그램 전송','ok');}).catch(function(){UI.toast('전송 실패','err');});
 }
 
 function deleteSR(id){
@@ -719,23 +808,26 @@ function render(){
   var app=document.getElementById('app');
   if(S.loading){app.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><div class="spinner" style="width:40px;height:40px;border-width:4px;margin:0 auto 16px"></div><div style="font-size:14px;color:var(--w40)">Admin 로딩 중...</div></div></div>';return;}
   if(!S.user){app.innerHTML=pgAuth();return;}
-  app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="main-area"><div class="topbar"><div class="topbar-title">'+(PL[S.page]||'')+'<span class="admin-tag">ADMIN</span></div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="Adm.refreshAll()" style="font-size:11px">🔄</button><span style="font-size:13px;color:var(--w40)">'+S.user.email+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--admin-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--w)">A</div></div></div><div class="page-content">'+renderPage()+'</div></div></div>';
+  app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="Adm.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="Adm.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'<span class="admin-tag">ADMIN</span></div></div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="Adm.refreshAll()" style="font-size:11px">🔄</button><span style="font-size:13px;color:var(--w40)">'+S.user.email+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--admin-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--w)">A</div></div></div><div class="page-content">'+renderPage()+'</div></div></div>';
 }
 
 /* === PUBLIC API === */
+function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
+function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
+
 window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,setSearch:setSearch,setTab:setTab,closeModal:closeModal,
-  viewUser:viewUser,viewAnalysis:viewAnalysis,viewSR:viewSR,
+  viewUser:viewUser,viewAnalysis:viewAnalysis,viewSR:viewSR,notifySR:notifySR,
   editUserPlan:editUserPlan,editUserRole:editUserRole,toggleUserActive:toggleUserActive,
   updateAStatus:updateAStatus,deleteAnalysis:deleteAnalysis,
   updateSR:updateSR,quickSR:quickSR,deleteSR:deleteSR,
-  exportCSV:exportCSV,refreshAll:refreshAll};
+  exportCSV:exportCSV,refreshAll:refreshAll,toggleMob:toggleMob,closeMob:closeMob};
 loadUser();
 })();
 </script>
 <!-- 실시간 문의 채팅 위젯 -->
 <script>
 (function(){
-  var RELAY='https://uncommanded-brooke-truculent.ngrok-free.dev';
+  var RELAY=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'https://uncommanded-brooke-truculent.ngrok-free.dev';
   var PAGE='admin';
   var open=false,step=0,msgs=[],info={name:'',email:'',phone:''};
   var el=document.createElement('div');el.id='wc-root';document.body.appendChild(el);
