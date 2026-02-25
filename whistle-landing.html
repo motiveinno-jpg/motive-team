@@ -23,6 +23,7 @@
 <meta name="twitter:description" content="사진 한 장이면 수출이 시작됩니다. AI 기반 수출 통합 관리 솔루션.">
 <!-- JSON-LD Structured Data -->
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Whistle AI","applicationCategory":"BusinessApplication","description":"한국 제조사를 위한 AI 수출 통합 관리 솔루션","operatingSystem":"Web","offers":{"@type":"AggregateOffer","lowPrice":"0","highPrice":"1000000","priceCurrency":"KRW"},"provider":{"@type":"Organization","name":"MOTIVE Innovation","url":"https://whistle-ai.com"}}</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
@@ -76,6 +77,7 @@ const Fade = ({ children, delay = 0, style = {} }) => { const [ref, v] = useInVi
 const GlowLine = () => <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.pri}40, transparent)`, margin: "0 auto", maxWidth: 600 }} />;
 
 function App() {
+  const [mobileMenu, setMobileMenu] = useState(false);
   const [page, setPage] = useState("home");
   const [scrollY, setScrollY] = useState(0);
   const [faqOpen, setFaqOpen] = useState(null);
@@ -86,13 +88,14 @@ function App() {
   const [vBiz, setVBiz] = useState(""); const [vRev, setVRev] = useState(""); const [vExp, setVExp] = useState(""); const [vResult, setVResult] = useState(null);
   const [pForm, setPForm] = useState({ type: "", company: "", name: "", email: "", phone: "", desc: "" }); const [pSent, setPSent] = useState(false);
   const [anonUrl, setAnonUrl] = useState(""); const [anonLoading, setAnonLoading] = useState(false); const [anonResult, setAnonResult] = useState(null);
-  const [anonTab, setAnonTab] = useState("url"); const [anonFile, setAnonFile] = useState(null); const [anonFilePreview, setAnonFilePreview] = useState(null);
+  const [anonTab, setAnonTab] = useState("file"); const [anonFile, setAnonFile] = useState(null); const [anonFilePreview, setAnonFilePreview] = useState(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false); const [analysisStage, setAnalysisStage] = useState(0);
   const [countdown, setCountdown] = useState(30); const [countdownActive, setCountdownActive] = useState(false); const [analysisExpired, setAnalysisExpired] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
   const countdownRef = useRef(null);
-  const RELAY = "https://uncommanded-brooke-truculent.ngrok-free.dev";
+  const RELAY = (location.hostname === "localhost" || location.hostname === "127.0.0.1") ? "http://localhost:3456" : "https://uncommanded-brooke-truculent.ngrok-free.dev";
+  const sb = window.supabase.createClient("https://lylktgxngrlxmsldxdqj.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0");
 
   const ALLOWED_TYPES = ["image/jpeg","image/png","image/gif","image/webp","application/pdf","text/csv","text/plain","application/vnd.ms-excel","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
   const ALLOWED_EXT = [".jpg",".jpeg",".png",".gif",".webp",".pdf",".csv",".txt",".xlsx",".xls"];
@@ -114,9 +117,11 @@ function App() {
     setAnonLoading(true); setAnonResult(null); setShowAnalysisModal(true); setAnalysisStage(0); setAnalysisExpired(false); setCountdownActive(false);
     const stages = [800, 2200, 4000, 6000]; stages.forEach((ms, i) => setTimeout(() => setAnalysisStage(i + 1), ms));
     const doFetch = (bodyData) => {
-      fetch(RELAY + "/api/whistle/analyze-anonymous", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyData) })
-        .then(r => r.json()).then(d => { setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); startCountdown(); } else { alert(d.error || "분석 실패"); setShowAnalysisModal(false); } })
-        .catch(() => { setAnonLoading(false); alert("서버 연결 실패"); setShowAnalysisModal(false); });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 90000);
+      fetch(RELAY + "/api/whistle/analyze-anonymous", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyData), signal: ctrl.signal })
+        .then(r => r.json()).then(d => { clearTimeout(timer); setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); startCountdown(); } else { alert(d.error || "분석 실패"); setShowAnalysisModal(false); } })
+        .catch((e) => { clearTimeout(timer); setAnonLoading(false); alert(e.name === "AbortError" ? "분석 시간이 초과되었습니다. 다시 시도해주세요." : "서버 연결 실패"); setShowAnalysisModal(false); });
     };
     if (anonTab === "file" && anonFilePreview) { doFetch({ fileBase64: anonFilePreview }); }
     else { doFetch({ url: anonUrl }); }
@@ -125,9 +130,24 @@ function App() {
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
 
-  const nav = (p, hash) => { setPage(p); if (hash) setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" }), 100); };
+  const nav = (p, hash) => { setPage(p); setMobileMenu(false); if (hash) setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" }), 100); };
   const openSignup = () => { setShowSignup(true); setSignupStep(0); };
-  const handleSignup = () => { const { company, name, email, phone, pw } = signupForm; if (!company || !name || !email || !phone || !pw) { alert("모든 필수 항목을 입력해주세요."); return; } if (pw.length < 6) { alert("비밀번호는 6자 이상이어야 합니다."); return; } setSignupStep(1); };
+  const [signupLoading, setSignupLoading] = useState(false);
+  const handleSignup = async () => {
+    const { company, name, email, phone, pw, product } = signupForm;
+    if (!company || !name || !email || !phone || !pw) { alert("모든 필수 항목을 입력해주세요."); return; }
+    if (pw.length < 6) { alert("비밀번호는 6자 이상이어야 합니다."); return; }
+    setSignupLoading(true);
+    try {
+      const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { full_name: name, company_name: company, phone } } });
+      if (error) { alert(error.message || "회원가입 실패"); setSignupLoading(false); return; }
+      if (data.user) {
+        try { await sb.from("companies").insert({ user_id: data.user.id, name: company, contact_name: name, phone, product_categories: product || null }); } catch(e) {}
+      }
+      setSignupStep(1);
+    } catch(e) { alert("서버 연결 실패. 잠시 후 다시 시도해주세요."); }
+    setSignupLoading(false);
+  };
 
   const s = {
     section: { padding: "100px 24px", maxWidth: 1140, margin: "0 auto" },
@@ -154,14 +174,15 @@ function App() {
     { label: "서비스", action: () => nav("home", "how") },
     { label: "요금제", action: () => nav("home", "pricing") },
     { label: "바우처", badge: true, action: () => nav("voucher") },
-    { label: "파트너", action: () => nav("partner") },
+    { label: "제휴문의", action: () => nav("partner") },
   ];
 
   const header = (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: scrollY > 50 ? "rgba(6,11,24,.92)" : "transparent", backdropFilter: scrollY > 50 ? "blur(16px)" : "none", borderBottom: scrollY > 50 ? `1px solid ${T.border}` : "1px solid transparent", transition: "all .35s" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px" }}>
         <div onClick={() => nav("home")} style={{ cursor: "pointer" }}><Logo size={22} /></div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {/* Desktop nav */}
+        <div className="nav-desktop" style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {navItems.map((n, i) => (
             <div key={i} onClick={n.action} style={{ padding: "6px 14px", fontSize: 14, fontWeight: 600, color: T.w60, cursor: "pointer", position: "relative", borderRadius: 8 }}>
               {n.label}{n.badge && <span style={{ position: "absolute", top: 3, right: 2, width: 6, height: 6, borderRadius: 3, background: T.acc }} />}
@@ -170,7 +191,26 @@ function App() {
           <div style={{ width: 1, height: 24, background: T.w12, margin: "0 10px" }} />
           <div onClick={openSignup} style={s.btn("pri")}>무료 AI 분석</div>
         </div>
+        {/* Mobile hamburger */}
+        <div className="mobile-cta" style={{ display: "none", alignItems: "center", gap: 8 }}>
+          <div onClick={openSignup} style={{ ...s.btn("pri"), padding: "8px 16px", fontSize: 12 }}>무료 분석</div>
+          <div onClick={() => setMobileMenu(!mobileMenu)} style={{ width: 40, height: 40, borderRadius: 10, background: T.w08, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, cursor: "pointer" }}>
+            {mobileMenu ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke={T.w60} strokeWidth="2.5" strokeLinecap="round"/></svg>
+            : <>{[0,1,2].map(i => <div key={i} style={{ width: 18, height: 2, borderRadius: 1, background: T.w60 }} />)}</>}
+          </div>
+        </div>
       </div>
+      {/* Mobile dropdown menu */}
+      {mobileMenu && (
+        <div style={{ background: "rgba(6,11,24,.97)", backdropFilter: "blur(16px)", borderTop: `1px solid ${T.border}`, padding: "12px 24px 16px" }}>
+          {navItems.map((n, i) => (
+            <div key={i} onClick={() => { n.action(); setMobileMenu(false); }} style={{ padding: "12px 0", fontSize: 15, fontWeight: 600, color: T.w60, cursor: "pointer", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              {n.label}{n.badge && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: `${T.acc}15`, color: T.acc, fontWeight: 700 }}>NEW</span>}
+            </div>
+          ))}
+          <div onClick={() => { openSignup(); setMobileMenu(false); }} style={{ ...s.btn("pri"), width: "100%", marginTop: 12, padding: "14px", fontSize: 14 }}>무료 AI 분석 시작</div>
+        </div>
+      )}
     </div>
   );
 
@@ -193,7 +233,7 @@ function App() {
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>비밀번호 *</label><input type="password" value={signupForm.pw} onChange={e => setSignupForm({...signupForm, pw: e.target.value})} placeholder="6자 이상" style={s.input} /></div>
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>연락처 *</label><input type="tel" value={signupForm.phone} onChange={e => setSignupForm({...signupForm, phone: e.target.value})} placeholder="010-1234-5678" style={s.input} /></div>
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>주요 제품 (선택)</label><input value={signupForm.product} onChange={e => setSignupForm({...signupForm, product: e.target.value})} placeholder="예: 스킨케어, 전자부품, 식품 등" style={s.input} /></div>
-              <button onClick={handleSignup} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4 }}>🔬 무료 회원가입 & AI 분석 시작</button>
+              <button onClick={handleSignup} disabled={signupLoading} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: signupLoading ? 0.6 : 1 }}>{signupLoading ? "가입 처리 중..." : "무료 회원가입 & AI 분석 시작"}</button>
             </div>
           </div>
         ) : (
@@ -201,7 +241,7 @@ function App() {
             <div style={{ width: 64, height: 64, borderRadius: 32, background: `${T.ok}15`, border: `2px solid ${T.ok}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 28 }}>✓</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 8 }}>가입이 완료되었습니다!</div>
             <div style={{ fontSize: 14, color: T.w40, lineHeight: 1.6, marginBottom: 24 }}><span style={{ color: T.pri, fontWeight: 700 }}>{signupForm.company}</span>님,<br />지금 바로 AI 수출 분석을 시작해보세요.</div>
-            <button onClick={() => setShowSignup(false)} style={{ ...s.btn("pri"), padding: "16px 40px", fontSize: 15 }}>🔬 첫 번째 AI 분석 시작하기</button>
+            <button onClick={() => { setShowSignup(false); window.location.href = "whistle.html"; }} style={{ ...s.btn("pri"), padding: "16px 40px", fontSize: 15 }}>첫 번째 AI 분석 시작하기</button>
             <div style={{ fontSize: 11, color: T.w20, marginTop: 12 }}>{signupForm.email}로 확인 이메일이 발송되었습니다</div>
           </div>
         )}
@@ -1053,7 +1093,7 @@ function App() {
     <div style={{ paddingTop: 68 }}>
       <div style={{ background: `linear-gradient(160deg, ${T.navy}, #0a2040)`, padding: "80px 24px" }}>
         <div style={{ maxWidth: 700, margin: "0 auto", textAlign: "center" }}>
-          <span style={s.tag(T.pri)}>파트너십</span>
+          <span style={s.tag(T.pri)}>제휴문의</span>
           <h1 style={{ fontSize: 36, fontWeight: 800, color: T.w, margin: "18px 0 14px" }}>Whistle AI와 함께<br />성장하세요</h1>
           <p style={{ fontSize: 16, color: T.w40 }}>AI 수출 플랫폼과 함께 새로운 비즈니스 기회를 만들어갑니다</p>
         </div>
@@ -1071,7 +1111,7 @@ function App() {
           ))}
         </div>
         <Fade delay={0.3}><div style={{ ...s.card, padding: 36, maxWidth: 600, margin: "48px auto 0" }}>
-          <h3 style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 20 }}>파트너 문의</h3>
+          <h3 style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 20 }}>제휴 문의</h3>
           {pSent ? <div style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 40, marginBottom: 12 }}>✅</div><div style={{ fontSize: 18, fontWeight: 700, color: T.w }}>문의가 접수되었습니다</div></div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <select value={pForm.type} onChange={e=>setPForm({...pForm,type:e.target.value})} style={{ ...s.input, cursor: "pointer" }}><option value="">파트너 유형 선택</option>{partnerTypes.map((p,i)=><option key={i} value={p.name}>{p.name}</option>)}</select>
@@ -1091,7 +1131,7 @@ function App() {
       <div style={{ maxWidth: 1140, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 24 }}>
         <div><Logo size={22} /><div style={{ fontSize: 11, color: T.w20, lineHeight: 1.8, marginTop: 10 }}>모티브이노베이션 · 수출바우처 · 제조혁신바우처 공식 수행기관<br />contact@whistleai.co.kr</div></div>
         <div style={{ display: "flex", gap: 32 }}>
-          {[["서비스",[["AI 분석",()=>nav("home","how")],["요금제",()=>nav("home","pricing")]]],["지원",[["바우처 안내",()=>nav("voucher")],["파트너",()=>nav("partner")]]]].map(([t,links],i)=>(
+          {[["서비스",[["AI 분석",()=>nav("home","how")],["요금제",()=>nav("home","pricing")]]],["지원",[["바우처 안내",()=>nav("voucher")],["제휴문의",()=>nav("partner")]]]].map(([t,links],i)=>(
             <div key={i}><div style={{ fontSize: 12, fontWeight: 700, color: T.w20, marginBottom: 8 }}>{t}</div>{links.map(([l,a],j)=><div key={j} onClick={a} style={{ fontSize: 12, color: T.w40, cursor: "pointer", marginBottom: 4 }}>{l}</div>)}</div>
           ))}
         </div>
@@ -1144,7 +1184,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 <!-- 실시간 문의 채팅 위젯 -->
 <script>
 (function(){
-  var RELAY='https://uncommanded-brooke-truculent.ngrok-free.dev';
+  var RELAY=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'https://uncommanded-brooke-truculent.ngrok-free.dev';
   var PAGE='landing';
   var open=false,step=0,msgs=[],info={name:'',email:'',phone:''};
   var el=document.createElement('div');el.id='wc-root';document.body.appendChild(el);
