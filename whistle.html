@@ -986,16 +986,81 @@ function toggleStageItem(pjId,stage,idx){
   });
 }
 
+var CERT_DB={
+  'FDA':{full:'FDA Cosmetic Registration (MoCRA)',cc:'US',url:'https://www.fda.gov/cosmetics/cosmetic-product-listing',costMin:0,costMax:500,timeline:'1-3개월',docs:['시설 등록(Facility Registration)','제품 리스팅(Product Listing)','INCI 성분 목록','제품 라벨(영문)']},
+  'CPNP':{full:'EU Cosmetic Products Notification Portal',cc:'EU',url:'https://ec.europa.eu/growth/tools-databases/cosing/',costMin:2000,costMax:8000,timeline:'2-4개월',docs:['화장품 안전성 보고서(CPSR)','GMP 인증서(ISO 22716)','제품 정보 파일(PIF)','성분 목록(INCI)','라벨링(EU 공식언어)']},
+  'PMDA':{full:'일본 의약품의료기기종합기구 화장품 신고',cc:'JP',url:'https://www.pmda.go.jp/',costMin:300,costMax:1500,timeline:'1-2개월',docs:['화장품 수입 신고서','성분 목록(일본어)','제조판매업 허가증(현지 파트너)','제품 라벨(일본어)']},
+  'NMPA':{full:'중국 국가약품감독관리국',cc:'CN',url:'https://www.nmpa.gov.cn/',costMin:5000,costMax:20000,timeline:'6-12개월',docs:['위생허가 신청서','안전성 시험 보고서','제품 기술 문서','중문 라벨','GMP 인증서']},
+  'CE':{full:'CE Marking (EU)',cc:'EU',url:'https://ec.europa.eu/growth/single-market/ce-marking_en',costMin:1000,costMax:5000,timeline:'2-6개월',docs:['적합성 선언서(DoC)','기술 문서(TD)','시험 보고서','사용설명서(EU 공식언어)']},
+  'KFDA':{full:'한국 식약처 수출용 자유판매증명서',cc:'KR',url:'https://nedrug.mfds.go.kr',costMin:0,costMax:50,timeline:'1-2주',docs:['자유판매증명서 신청서','제조업 등록증','제품 품목보고 확인서']},
+  'HSA':{full:'싱가포르 보건과학청',cc:'SG',url:'https://www.hsa.gov.sg/cosmetic-products',costMin:200,costMax:800,timeline:'1-2개월',docs:['ASEAN Cosmetic Notification','안전성 데이터','제품 라벨(영문)']},
+  'TGA':{full:'호주 치료용품청',cc:'AU',url:'https://www.tga.gov.au/cosmetics',costMin:300,costMax:1500,timeline:'1-3개월',docs:['AICIS 등록','제품 라벨(영문)','안전성 데이터','성분 목록']},
+  'GCC':{full:'걸프 표준화기구',cc:'AE',url:'https://www.gso.org.sa/',costMin:500,costMax:2000,timeline:'2-4개월',docs:['적합성 인증서','아랍어 라벨','할랄 인증(해당시)','시험 보고서']},
+  'MOH_VN':{full:'베트남 보건부 화장품 등록',cc:'VN',url:'https://dichvucong.moh.gov.vn/',costMin:300,costMax:1200,timeline:'1-3개월',docs:['화장품 신고서','자유판매증명서','성분 분석서','베트남어 라벨']}
+};
+
 function pgCertTracker(p){
   var sp=p.stage_progress||{};var certs=sp.certs||[];
   var stCol={pending:'var(--w40)',in_progress:'var(--acc)',submitted:'var(--pri)',approved:'var(--ok)',rejected:'var(--err)'};
   var stLabel={pending:'대기',in_progress:'진행중',submitted:'제출됨',approved:'취득',rejected:'반려'};
   var done=certs.filter(function(c){return c.status==='approved';}).length;var pct=certs.length?Math.round(done/certs.length*100):0;
   var bar='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><div style="flex:1;height:8px;border-radius:4px;background:var(--w08)"><div style="height:100%;border-radius:4px;background:'+(pct===100?'var(--ok)':'var(--acc)')+';width:'+pct+'%;transition:width .3s"></div></div><span style="font-size:12px;font-weight:700;color:'+(pct===100?'var(--ok)':'var(--acc)')+'">'+done+'/'+certs.length+'</span></div>';
-  var list=certs.map(function(c,idx){return '<div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:var(--w08);margin-bottom:6px"><span style="font-size:13px;font-weight:600;flex:1">'+c.name+'</span><select class="form-select" style="width:120px;padding:6px 10px;font-size:12px" onchange="App.setCertStatus(\''+p.id+'\','+idx+',this.value)"><option value="pending"'+(c.status==='pending'?' selected':'')+'> 대기</option><option value="in_progress"'+(c.status==='in_progress'?' selected':'')+'> 진행중</option><option value="submitted"'+(c.status==='submitted'?' selected':'')+'> 제출됨</option><option value="approved"'+(c.status==='approved'?' selected':'')+'> 취득</option><option value="rejected"'+(c.status==='rejected'?' selected':'')+'> 반려</option></select><span style="font-size:11px;color:'+stCol[c.status||'pending']+'">'+stLabel[c.status||'pending']+'</span></div>';}).join('');
-  var addBtn='<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="App.addCertItem(\''+p.id+'\')">+ 인증 추가</button>';
+
+  var list=certs.map(function(c,idx){
+    var db=CERT_DB[c.name]||{};
+    /* 마감일 계산 */
+    var deadlineHtml='';
+    if(c.deadline){
+      var daysLeft=Math.ceil((new Date(c.deadline)-new Date())/(1000*60*60*24));
+      var dlColor=daysLeft<=0?'var(--err)':daysLeft<=7?'var(--err)':daysLeft<=30?'var(--acc)':'var(--w40)';
+      deadlineHtml='<div style="font-size:11px;color:'+dlColor+';font-weight:600">'+(daysLeft<=0?'⏰ 기한 초과 '+Math.abs(daysLeft)+'일':daysLeft<=7?'🔴 D-'+daysLeft:daysLeft<=30?'🟡 D-'+daysLeft:'D-'+daysLeft)+'</div>';
+    }
+    /* 비용 */
+    var costHtml='';
+    if(c.cost_min||c.cost_max||db.costMin){
+      var cMin=c.cost_min||db.costMin||0;var cMax=c.cost_max||db.costMax||0;
+      costHtml='<span style="font-size:10px;color:var(--w40)">$'+cMin+'~$'+cMax+'</span>';
+    }
+    /* 공식 링크 */
+    var linkHtml=db.url?'<a href="'+db.url+'" target="_blank" style="font-size:10px;color:var(--pri);text-decoration:none" title="공식 사이트">🔗 신청</a>':'';
+
+    return '<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:8px;border-left:3px solid '+stCol[c.status||'pending']+'">'+
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+      '<span style="font-size:13px;font-weight:700;flex:1;min-width:100px">'+c.name+(db.full?' <span style="font-size:10px;color:var(--w40);font-weight:400">'+db.full+'</span>':'')+'</span>'+
+      deadlineHtml+costHtml+linkHtml+
+      '<select class="form-select" style="width:110px;padding:4px 8px;font-size:11px" onchange="App.setCertStatus(\''+p.id+'\','+idx+',this.value)">'+
+      '<option value="pending"'+(c.status==='pending'?' selected':'')+'>대기</option>'+
+      '<option value="in_progress"'+(c.status==='in_progress'?' selected':'')+'>진행중</option>'+
+      '<option value="submitted"'+(c.status==='submitted'?' selected':'')+'>제출됨</option>'+
+      '<option value="approved"'+(c.status==='approved'?' selected':'')+'>취득</option>'+
+      '<option value="rejected"'+(c.status==='rejected'?' selected':'')+'>반려</option></select>'+
+      '</div>'+
+      /* 서류 체크리스트 */
+      (db.docs?'<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">'+db.docs.map(function(doc){
+        var uploaded=(c.docs_done||[]).indexOf(doc)>=0;
+        return '<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:'+(uploaded?'rgba(0,200,83,.1)':'var(--w08)')+';color:'+(uploaded?'var(--ok)':'var(--w40)')+';cursor:pointer" onclick="App.toggleCertDoc(\''+p.id+'\','+idx+',\''+doc.replace(/'/g,"\\'")+'\')">'+
+        (uploaded?'✅':'⬜')+' '+doc+'</span>';
+      }).join('')+'</div>':'')+
+      /* 마감일 설정 + AI 가이드 버튼 */
+      '<div style="margin-top:6px;display:flex;gap:6px;align-items:center">'+
+      '<input type="date" value="'+(c.deadline||'')+'" style="font-size:11px;padding:3px 6px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg)" onchange="App.setCertDeadline(\''+p.id+'\','+idx+',this.value)" title="마감일 설정">'+
+      '<button class="btn btn-ghost" style="font-size:10px;padding:3px 8px" onclick="App.getCertGuide(\''+p.id+'\','+idx+')">🤖 AI 가이드</button>'+
+      '<button class="btn btn-ghost" style="font-size:10px;padding:3px 8px;color:var(--err)" onclick="App.rmCertItem(\''+p.id+'\','+idx+')">삭제</button>'+
+      '</div>'+
+      /* AI 가이드 표시 */
+      (c.ai_guide?'<div style="margin-top:8px;padding:10px;border-radius:8px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.1);font-size:12px;line-height:1.6;white-space:pre-wrap;max-height:300px;overflow-y:auto">'+c.ai_guide+'</div>':'')+
+    '</div>';
+  }).join('');
+
+  var addBtn='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+
+    '<button class="btn btn-ghost btn-sm" onclick="App.addCertItem(\''+p.id+'\')">+ 직접 추가</button>'+
+    Object.keys(CERT_DB).slice(0,6).map(function(k){
+      var exists=certs.some(function(c){return c.name===k;});
+      return exists?'':'<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.7" onclick="App.addCertPreset(\''+p.id+'\',\''+k+'\')">+ '+k+'</button>';
+    }).join('')+'</div>';
+
   var checklist=renderStageChecklist(p,'certification');
-  return '<div class="card" style="margin-bottom:14px"><div class="card-h"><span>🏅 인증 추적</span>'+UI.badge(done+'/'+certs.length+' 취득','acc')+'</div><div class="card-b">'+(certs.length?bar+list:' <div style="text-align:center;padding:16px;color:var(--w40)">등록된 인증 없음</div>')+addBtn+'</div></div>'+checklist;
+  return '<div class="card" style="margin-bottom:14px"><div class="card-h"><span>🏅 인증 추적</span>'+UI.badge(done+'/'+certs.length+' 취득','acc')+'</div><div class="card-b">'+(certs.length?bar+list:'<div style="text-align:center;padding:16px;color:var(--w40)">등록된 인증 없음. 아래 버튼으로 추가하세요.</div>')+addBtn+'</div></div>'+checklist;
 }
 
 function setCertStatus(pjId,idx,status){
@@ -1006,15 +1071,70 @@ function setCertStatus(pjId,idx,status){
     if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();
   });
 }
-
-function addCertItem(pjId){
-  var name=prompt('인증명 (예: FDA, CE, CPNP):');if(!name)return;
+function setCertDeadline(pjId,idx,date){
   var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
   var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
-  sp.certs.push({name:name,status:'pending'});
+  sp.certs[idx].deadline=date;
   sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
-    if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();UI.toast('인증 추가','ok');
+    if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();
   });
+}
+function toggleCertDoc(pjId,idx,docName){
+  var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
+  var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
+  var c=sp.certs[idx];if(!c.docs_done)c.docs_done=[];
+  var i=c.docs_done.indexOf(docName);
+  if(i>=0)c.docs_done.splice(i,1);else c.docs_done.push(docName);
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();
+  });
+}
+
+function addCertItem(pjId){
+  var name=prompt('인증명 (예: FDA, CE, CPNP, PMDA, NMPA, HSA, TGA, GCC):');if(!name)return;
+  var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
+  var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
+  var db=CERT_DB[name.toUpperCase()]||{};
+  sp.certs.push({name:name.toUpperCase(),status:'pending',deadline:'',cost_min:db.costMin||0,cost_max:db.costMax||0,docs_done:[],ai_guide:null});
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();UI.toast(name+' 인증 추가','ok');
+  });
+}
+function addCertPreset(pjId,certKey){
+  var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
+  var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
+  var db=CERT_DB[certKey]||{};
+  sp.certs.push({name:certKey,status:'pending',deadline:'',cost_min:db.costMin||0,cost_max:db.costMax||0,docs_done:[],ai_guide:null});
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();UI.toast(certKey+' 추가','ok');
+  });
+}
+function rmCertItem(pjId,idx){
+  if(!confirm('이 인증을 삭제할까요?'))return;
+  var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
+  var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
+  sp.certs.splice(idx,1);
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}p.stage_progress=sp;render();UI.toast('삭제됨','ok');
+  });
+}
+function getCertGuide(pjId,idx){
+  var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
+  var sp=p.stage_progress||{};var cert=sp.certs[idx];if(!cert)return;
+  var tc=(p.target_countries||[])[0]||p.target_market||'US';
+  var prod=S.products.find(function(pr){return pr.id===p.product_id;});
+  var cat=prod?prod.category:'K-Beauty 화장품';
+  UI.toast('AI 가이드 생성 중...','info');
+  fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
+  .then(function(r){return r.json();}).then(function(data){
+    if(data.ok&&data.guide){
+      cert.ai_guide=data.guide;
+      sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+        if(!r.error){p.stage_progress=sp;render();}
+      });
+      UI.toast('AI 가이드 생성 완료','ok');
+    }else{UI.toast('가이드 생성 실패: '+(data.error||''),'err');}
+  }).catch(function(e){UI.toast('서버 연결 실패','err');});
 }
 
 function reqSvcForPj(pjId){
@@ -1768,7 +1888,7 @@ function render(){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,addCertItem:addCertItem,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
 loadUser();
 })();
 </script>
