@@ -85,9 +85,37 @@ function App() {
   const [signupForm, setSignupForm] = useState({ company: "", name: "", email: "", phone: "", pw: "", product: "" });
   const [vBiz, setVBiz] = useState(""); const [vRev, setVRev] = useState(""); const [vExp, setVExp] = useState(""); const [vResult, setVResult] = useState(null);
   const [pForm, setPForm] = useState({ type: "", company: "", name: "", email: "", phone: "", desc: "" }); const [pSent, setPSent] = useState(false);
-  const [anonUrl, setAnonUrl] = useState(""); const [anonLoading, setAnonLoading] = useState(false); const [anonResult, setAnonResult] = useState(null); const [anonEmail, setAnonEmail] = useState("");
+  const [anonUrl, setAnonUrl] = useState(""); const [anonLoading, setAnonLoading] = useState(false); const [anonResult, setAnonResult] = useState(null);
+  const [anonTab, setAnonTab] = useState("url"); const [anonFile, setAnonFile] = useState(null); const [anonFilePreview, setAnonFilePreview] = useState(null);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false); const [analysisStage, setAnalysisStage] = useState(0);
+  const [countdown, setCountdown] = useState(30); const [countdownActive, setCountdownActive] = useState(false); const [analysisExpired, setAnalysisExpired] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef(null);
+  const countdownRef = useRef(null);
   const RELAY = "https://uncommanded-brooke-truculent.ngrok-free.dev";
-  const runAnonAnalysis = () => { if (!anonUrl.trim()) { alert("상품 URL을 입력해주세요."); return; } setAnonLoading(true); setAnonResult(null); fetch(RELAY + "/api/whistle/analyze-anonymous", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: anonUrl }) }).then(r => r.json()).then(d => { setAnonLoading(false); if (d.ok) setAnonResult(d.result); else alert(d.error || "분석 실패. 다시 시도해주세요."); }).catch(() => { setAnonLoading(false); alert("서버 연결 실패. 잠시 후 다시 시도해주세요."); }); };
+
+  const handleFileDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f && f.type.startsWith("image/")) { setAnonFile(f); const reader = new FileReader(); reader.onload = (ev) => setAnonFilePreview(ev.target.result); reader.readAsDataURL(f); } };
+  const handleFileSelect = (e) => { const f = e.target.files[0]; if (f && f.type.startsWith("image/")) { setAnonFile(f); const reader = new FileReader(); reader.onload = (ev) => setAnonFilePreview(ev.target.result); reader.readAsDataURL(f); } };
+
+  const startCountdown = () => { setCountdown(30); setCountdownActive(true); setAnalysisExpired(false);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => { setCountdown(prev => { if (prev <= 1) { clearInterval(countdownRef.current); setCountdownActive(false); setAnalysisExpired(true); return 0; } return prev - 1; }); }, 1000);
+  };
+  useEffect(() => { return () => { if (countdownRef.current) clearInterval(countdownRef.current); }; }, []);
+
+  const runAnonAnalysis = () => {
+    if (anonTab === "url" && !anonUrl.trim()) { alert("상품 URL을 입력해주세요."); return; }
+    if (anonTab === "file" && !anonFile) { alert("제품 이미지를 업로드해주세요."); return; }
+    setAnonLoading(true); setAnonResult(null); setShowAnalysisModal(true); setAnalysisStage(0); setAnalysisExpired(false); setCountdownActive(false);
+    const stages = [800, 2200, 4000, 6000]; stages.forEach((ms, i) => setTimeout(() => setAnalysisStage(i + 1), ms));
+    const doFetch = (bodyData) => {
+      fetch(RELAY + "/api/whistle/analyze-anonymous", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyData) })
+        .then(r => r.json()).then(d => { setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); startCountdown(); } else { alert(d.error || "분석 실패"); setShowAnalysisModal(false); } })
+        .catch(() => { setAnonLoading(false); alert("서버 연결 실패"); setShowAnalysisModal(false); });
+    };
+    if (anonTab === "file" && anonFilePreview) { doFetch({ fileBase64: anonFilePreview }); }
+    else { doFetch({ url: anonUrl }); }
+  };
 
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
@@ -176,6 +204,229 @@ function App() {
     </div>
   );
 
+  /* ═══ ANALYSIS MODAL — Genspark-style 30초 프리뷰 ═══ */
+  const stageLabels = ["웹사이트 접속 중...", "제품 정보 크롤링 중...", "시장 데이터 분석 중...", "수출 전략 수립 중...", "리포트 생성 중...", "분석 완료!"];
+  const analysisModal = showAnalysisModal && (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.85)", backdropFilter: "blur(12px)" }} />
+      <div style={{ position: "relative", width: "100%", height: "100%", maxWidth: 900, maxHeight: "95vh", background: T.bgCard, borderRadius: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        {/* 상단 바 */}
+        <div style={{ padding: "14px 24px", background: T.bgSurface, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: T.priG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill={T.bg} /></svg>
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 700, color: T.w }}>Whistle AI 수출 분석</span>
+            {!anonLoading && anonResult && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12 }}>
+                {countdownActive && <><div style={{ width: 32, height: 32, borderRadius: 16, background: `${T.acc}15`, border: `2px solid ${T.acc}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 900, color: T.acc }}>{countdown}</span>
+                </div><span style={{ fontSize: 11, color: T.acc, fontWeight: 600 }}>초 후 잠금</span></>}
+                {analysisExpired && <span style={{ fontSize: 11, fontWeight: 700, color: T.err, padding: "3px 10px", background: `${T.err}15`, borderRadius: 6 }}>미리보기 종료</span>}
+              </div>
+            )}
+          </div>
+          <div onClick={() => { setShowAnalysisModal(false); if(countdownRef.current) clearInterval(countdownRef.current); }} style={{ width: 32, height: 32, borderRadius: 8, background: T.w08, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: T.w40 }}>✕</div>
+        </div>
+        {/* 본문 — 로딩 or 결과 */}
+        <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
+          {anonLoading ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 40 }}>
+              <div style={{ width: 80, height: 80, borderRadius: 40, border: `4px solid ${T.w08}`, borderTopColor: T.pri, animation: "spin 1s linear infinite", marginBottom: 32 }} />
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeInUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}} @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}`}</style>
+              <div style={{ fontSize: 18, fontWeight: 700, color: T.w, marginBottom: 16 }}>AI가 분석하고 있습니다</div>
+              <div style={{ width: "100%", maxWidth: 400 }}>
+                {stageLabels.slice(0, 5).map((label, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", opacity: analysisStage >= i ? 1 : 0.2, transition: "opacity .5s" }}>
+                    <div style={{ width: 22, height: 22, borderRadius: 11, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                      background: analysisStage > i ? `${T.ok}20` : analysisStage === i ? `${T.pri}20` : T.w08,
+                      border: `2px solid ${analysisStage > i ? T.ok : analysisStage === i ? T.pri : T.w12}` }}>
+                      {analysisStage > i ? <span style={{ fontSize: 10, color: T.ok }}>✓</span> : analysisStage === i ? <div style={{ width: 6, height: 6, borderRadius: 3, background: T.pri, animation: "pulse 1s infinite" }} /> : null}
+                    </div>
+                    <span style={{ fontSize: 13, color: analysisStage >= i ? T.w60 : T.w20, fontWeight: analysisStage === i ? 600 : 400 }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 24, fontSize: 12, color: T.w20 }}>예상 소요시간: 20~40초</div>
+            </div>
+          ) : anonResult ? (
+            <div style={{ position: "relative" }}>
+              {/* 분석 결과 전체 */}
+              <div style={{ padding: "24px 28px", filter: analysisExpired ? "blur(8px)" : "none", userSelect: analysisExpired ? "none" : "auto", pointerEvents: analysisExpired ? "none" : "auto", transition: "filter .5s" }}>
+                {/* 헤더: 점수 + 제품명 */}
+                <div style={{ display: "flex", gap: 20, marginBottom: 24, padding: 20, background: T.bgSurface, borderRadius: 14, border: `1px solid ${T.border}` }}>
+                  <div style={{ width: 80, height: 80, borderRadius: 16, background: `${(anonResult.overall_score||0) >= 70 ? T.ok : (anonResult.overall_score||0) >= 50 ? T.acc : T.err}10`, border: `3px solid ${(anonResult.overall_score||0) >= 70 ? T.ok : (anonResult.overall_score||0) >= 50 ? T.acc : T.err}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <span style={{ fontSize: 30, fontWeight: 900, color: (anonResult.overall_score||0) >= 70 ? T.ok : (anonResult.overall_score||0) >= 50 ? T.acc : T.err }}>{anonResult.overall_score}</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: T.w }}>{anonResult.product_name || "분석 완료"}</span>
+                      {anonResult.category && <span style={s.tag(T.pri)}>{anonResult.category}</span>}
+                    </div>
+                    {anonResult.product_name_en && <div style={{ fontSize: 13, color: T.w20, marginBottom: 6 }}>{anonResult.product_name_en}</div>}
+                    <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.6 }}>{anonResult.summary}</div>
+                  </div>
+                </div>
+
+                {/* 추천 시장 */}
+                {anonResult.recommended_markets && anonResult.recommended_markets.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>🌍</span> 추천 수출 시장</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+                      {anonResult.recommended_markets.map((m, i) => (
+                        <div key={i} style={{ padding: 16, background: T.bgSurface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: T.w }}>{m.name || m.country || m}</span>
+                            {m.score && <span style={{ fontSize: 14, fontWeight: 800, color: m.score >= 80 ? T.ok : T.acc }}>{m.score}점</span>}
+                          </div>
+                          {m.reason && <div style={{ fontSize: 12, color: T.w40, lineHeight: 1.5, marginBottom: 6 }}>{m.reason}</div>}
+                          {(m.market_size || m.growth) && <div style={{ display: "flex", gap: 6 }}>
+                            {m.market_size && <span style={{ fontSize: 10, padding: "2px 6px", background: `${T.pri}10`, borderRadius: 4, color: T.pri }}>{m.market_size}</span>}
+                            {m.growth && <span style={{ fontSize: 10, padding: "2px 6px", background: `${T.ok}10`, borderRadius: 4, color: T.ok }}>+{m.growth}</span>}
+                          </div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 핵심 강점 */}
+                {anonResult.key_strengths && anonResult.key_strengths.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>💪</span> 핵심 강점</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      {anonResult.key_strengths.map((str, i) => (
+                        <div key={i} style={{ padding: "10px 14px", background: `${T.ok}06`, borderRadius: 8, border: `1px solid ${T.ok}15`, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                          <span style={{ color: T.ok, fontSize: 13, flexShrink: 0 }}>✓</span>
+                          <span style={{ fontSize: 12, color: T.w60, lineHeight: 1.5 }}>{typeof str === "string" ? str : str.text || ""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 리스크 */}
+                {anonResult.key_risks && anonResult.key_risks.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>⚠️</span> 리스크 분석</div>
+                    {anonResult.key_risks.map((r, i) => (
+                      <div key={i} style={{ padding: "10px 14px", background: T.bgSurface, borderRadius: 8, marginBottom: 6, border: `1px solid ${T.border}`, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4, flexShrink: 0, background: (r.severity === "높음" ? T.err : r.severity === "중간" ? T.acc : T.ok) + "15", color: r.severity === "높음" ? T.err : r.severity === "중간" ? T.acc : T.ok }}>{r.severity || "중간"}</span>
+                        <div><div style={{ fontSize: 13, fontWeight: 600, color: T.w90 }}>{r.risk}</div>{r.mitigation && <div style={{ fontSize: 11, color: T.w40, marginTop: 2 }}>대응: {r.mitigation}</div>}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 인증 요건 + HS코드 */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+                  {anonResult.certifications && anonResult.certifications.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>📋</span> 필수 인증</div>
+                      {anonResult.certifications.map((c, i) => (
+                        <div key={i} style={{ padding: "8px 12px", background: T.bgSurface, borderRadius: 8, marginBottom: 4, border: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div><div style={{ fontSize: 12, fontWeight: 600, color: T.w90 }}>{c.name}</div><div style={{ fontSize: 10, color: T.w20 }}>{c.market} | {c.time} | {c.cost}</div></div>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: c.difficulty === "상" ? `${T.err}15` : c.difficulty === "중" ? `${T.acc}15` : `${T.ok}15`, color: c.difficulty === "상" ? T.err : c.difficulty === "중" ? T.acc : T.ok }}>{c.difficulty}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div>
+                    {anonResult.hs_code && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 10 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>🏷️</span> HS 코드</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: T.pri, fontFamily: "JetBrains Mono, monospace" }}>{anonResult.hs_code}</div>
+                      {anonResult.hs_description && <div style={{ fontSize: 11, color: T.w40, marginTop: 4 }}>{anonResult.hs_description}</div>}
+                    </div>}
+                    {anonResult.fob_price && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>💰</span> FOB 가격</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: T.acc }}>${anonResult.fob_price.min} ~ ${anonResult.fob_price.max} <span style={{ fontSize: 12, fontWeight: 400, color: T.w40 }}>/ {anonResult.fob_price.unit}</span></div>
+                      {anonResult.fob_price.competitor_avg && <div style={{ fontSize: 11, color: T.w40, marginTop: 4 }}>경쟁사 평균: ${anonResult.fob_price.competitor_avg}</div>}
+                    </div>}
+                  </div>
+                </div>
+
+                {/* 알리바바 적합도 */}
+                {anonResult.alibaba_fit && (
+                  <div style={{ marginBottom: 20, padding: 16, background: `${T.acc}06`, borderRadius: 12, border: `1px solid ${T.acc}20` }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: T.w, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>🏪</span> 알리바바 입점 적합도</div>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: T.acc }}>{anonResult.alibaba_fit.score}점</span>
+                    </div>
+                    {anonResult.alibaba_fit.keyword_suggestion && <div style={{ fontSize: 12, color: T.w60, marginBottom: 4 }}>추천 키워드: <span style={{ color: T.pri, fontWeight: 600 }}>{anonResult.alibaba_fit.keyword_suggestion}</span></div>}
+                    {anonResult.alibaba_fit.listing_strategy && <div style={{ fontSize: 12, color: T.w40 }}>{anonResult.alibaba_fit.listing_strategy}</div>}
+                  </div>
+                )}
+
+                {/* 경쟁사 분석 */}
+                {anonResult.competitor_analysis && (
+                  <div style={{ marginBottom: 20, padding: 16, background: T.bgSurface, borderRadius: 12, border: `1px solid ${T.border}` }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>🔍</span> 경쟁사 분석</div>
+                    <div style={{ fontSize: 12, color: T.w60, lineHeight: 1.6, marginBottom: 8 }}>{typeof anonResult.competitor_analysis === "string" ? anonResult.competitor_analysis : anonResult.competitor_analysis.overview}</div>
+                    {anonResult.competitor_analysis.price_range && <div style={{ display: "flex", gap: 8 }}>
+                      <span style={{ fontSize: 11, padding: "3px 8px", background: T.w08, borderRadius: 4, color: T.w40 }}>가격대: {anonResult.competitor_analysis.price_range}</span>
+                      {anonResult.competitor_analysis.our_advantage && <span style={{ fontSize: 11, padding: "3px 8px", background: `${T.ok}10`, borderRadius: 4, color: T.ok }}>차별화: {anonResult.competitor_analysis.our_advantage}</span>}
+                    </div>}
+                  </div>
+                )}
+
+                {/* 실행 로드맵 */}
+                {anonResult.action_plan && anonResult.action_plan.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>🗺️</span> 수출 실행 로드맵</div>
+                    {anonResult.action_plan.map((a, i) => (
+                      <div key={i} style={{ display: "flex", gap: 12, marginBottom: 8 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 14, background: `${T.pri}15`, border: `2px solid ${T.pri}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 12, fontWeight: 800, color: T.pri }}>{a.step || i + 1}</div>
+                        <div style={{ flex: 1, padding: "10px 14px", background: T.bgSurface, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.w90 }}>{a.title}</span>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {a.timeline && <span style={{ fontSize: 10, color: T.w20, padding: "1px 6px", background: T.w08, borderRadius: 4 }}>{a.timeline}</span>}
+                              {a.cost && <span style={{ fontSize: 10, color: T.acc, padding: "1px 6px", background: `${T.acc}10`, borderRadius: 4 }}>{a.cost}</span>}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 11, color: T.w40, lineHeight: 1.5 }}>{a.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 시장 트렌드 + 가격 전략 + 물류 */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
+                  {anonResult.market_trends && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}><div style={{ fontSize: 13, fontWeight: 700, color: T.pri, marginBottom: 6 }}>📈 시장 트렌드</div><div style={{ fontSize: 11, color: T.w40, lineHeight: 1.6 }}>{anonResult.market_trends}</div></div>}
+                  {anonResult.pricing_strategy && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}><div style={{ fontSize: 13, fontWeight: 700, color: T.acc, marginBottom: 6 }}>💱 가격 전략</div><div style={{ fontSize: 11, color: T.w40, lineHeight: 1.6 }}>{anonResult.pricing_strategy}</div></div>}
+                  {anonResult.logistics_summary && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}><div style={{ fontSize: 13, fontWeight: 700, color: T.purple, marginBottom: 6 }}>🚢 물류 요약</div><div style={{ fontSize: 11, color: T.w40, lineHeight: 1.5 }}>{anonResult.logistics_summary.recommended_method}<br/>{anonResult.logistics_summary.estimated_cost}<br/>{anonResult.logistics_summary.lead_time}</div></div>}
+                </div>
+              </div>
+
+              {/* 30초 후 블러 오버레이 — 회원가입 유도 */}
+              {analysisExpired && (
+                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(6,11,24,.7)", backdropFilter: "blur(4px)", zIndex: 10 }}>
+                  <div style={{ maxWidth: 480, padding: "40px 36px", background: T.bgCard, borderRadius: 20, border: `1px solid ${T.borderL}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", textAlign: "center" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 32, background: `${T.pri}15`, border: `2px solid ${T.pri}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 28 }}>🔒</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 6 }}>미리보기가 종료되었습니다</div>
+                    <div style={{ fontSize: 14, color: T.w40, lineHeight: 1.6, marginBottom: 20 }}>회원가입하시면 <span style={{ color: T.pri, fontWeight: 700 }}>1회 무료 분석</span>과<br/>전체 13개 섹션 리포트를 확인할 수 있습니다</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                      {[{name:"Free",pr:"무료",desc:"AI 분석 3회/월",hi:false},{name:"Starter",pr:"99,000원/월",desc:"분석 10회 + 서류생성",hi:true},{name:"Pro",pr:"299,000원/월",desc:"무제한 + 전담매니저",hi:false}].map((p,i) => (
+                        <div key={i} style={{ flex: 1, padding: "14px 10px", borderRadius: 12, background: p.hi ? `${T.pri}10` : T.bgSurface, border: `1.5px solid ${p.hi ? T.pri : T.border}`, textAlign: "center" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: p.hi ? T.pri : T.w60 }}>{p.name}</div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: T.w, margin: "4px 0 2px" }}>{p.pr}</div>
+                          <div style={{ fontSize: 10, color: T.w20 }}>{p.desc}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={() => { setShowAnalysisModal(false); openSignup(); }} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16 }}>무료 회원가입 & 분석 결과 보기</button>
+                    <div style={{ fontSize: 11, color: T.w20, marginTop: 10 }}>가입 즉시 1회 무료 분석 · 카드 불필요</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
   /* ═══ 1. HERO ═══ */
   const hero = (
     <div style={{ background: T.bg, position: "relative", overflow: "hidden", paddingTop: 68 }}>
@@ -206,42 +457,47 @@ function App() {
             </div>
           ))}
         </div>
-        {/* ANONYMOUS ANALYSIS FORM */}
+        {/* ANONYMOUS ANALYSIS FORM — 탭형 (URL / 파일 업로드) */}
         <Fade delay={0.5}>
           <div style={{ marginTop: 48, maxWidth: 560, margin: "48px auto 0", padding: "24px 28px", background: T.bgCard, borderRadius: 16, border: `1px solid ${T.borderL}`, boxShadow: T.glow }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.w, marginBottom: 4, textAlign: "left" }}>지금 바로 무료 분석 체험</div>
-            <div style={{ fontSize: 12, color: T.w40, marginBottom: 14, textAlign: "left" }}>스마트스토어, 쿠팡, 자사몰 등 상품 URL을 넣으면 AI가 30초 안에 분석합니다</div>
-            {!anonResult ? (
-              <div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input value={anonUrl} onChange={e => setAnonUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") runAnonAnalysis(); }} placeholder="https://smartstore.naver.com/brand/products/..." style={{ ...s.input, flex: 1 }} disabled={anonLoading} />
-                  <button onClick={runAnonAnalysis} disabled={anonLoading} style={{ ...s.btn("pri"), padding: "12px 20px", fontSize: 13, opacity: anonLoading ? 0.6 : 1, whiteSpace: "nowrap" }}>{anonLoading ? "분석 중..." : "무료 분석"}</button>
-                </div>
-                {anonLoading && <div style={{ marginTop: 12, textAlign: "center" }}><div style={{ display: "inline-block", width: 24, height: 24, border: `3px solid ${T.w08}`, borderTopColor: T.pri, borderRadius: "50%", animation: "spin 1s linear infinite" }} /><div style={{ fontSize: 12, color: T.w40, marginTop: 6 }}>AI가 제품을 분석하고 있습니다...</div><style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style></div>}
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 4, textAlign: "left" }}>지금 바로 무료 분석 체험</div>
+            <div style={{ fontSize: 12, color: T.w40, marginBottom: 14, textAlign: "left" }}>URL 또는 제품 이미지를 올리면 AI가 13개 섹션 수출 분석을 즉시 제공합니다</div>
+            {/* 탭 토글 */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 14, background: T.w08, borderRadius: 10, padding: 3 }}>
+              {[["url","🔗 URL 입력"],["file","📷 이미지 업로드"]].map(([k,label]) => (
+                <div key={k} onClick={() => setAnonTab(k)} style={{ flex: 1, padding: "8px 0", textAlign: "center", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .2s", background: anonTab === k ? T.priG : "transparent", color: anonTab === k ? T.bg : T.w40 }}>{label}</div>
+              ))}
+            </div>
+            {/* URL 탭 */}
+            {anonTab === "url" && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={anonUrl} onChange={e => setAnonUrl(e.target.value)} onKeyDown={e => { if (e.key === "Enter") runAnonAnalysis(); }} placeholder="https://smartstore.naver.com/..." style={{ ...s.input, flex: 1 }} disabled={anonLoading} />
+                <button onClick={runAnonAnalysis} disabled={anonLoading} style={{ ...s.btn("pri"), padding: "12px 20px", fontSize: 13, opacity: anonLoading ? 0.6 : 1, whiteSpace: "nowrap" }}>{anonLoading ? "분석 중..." : "무료 분석"}</button>
               </div>
-            ) : (
+            )}
+            {/* 파일 업로드 탭 — 드래그앤드롭 */}
+            {anonTab === "file" && (
               <div>
-                <div style={{ display: "flex", gap: 16, marginBottom: 14 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: 14, background: `${anonResult.overall_score >= 70 ? T.ok : T.acc}15`, border: `2px solid ${anonResult.overall_score >= 70 ? T.ok : T.acc}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <span style={{ fontSize: 22, fontWeight: 900, color: anonResult.overall_score >= 70 ? T.ok : T.acc }}>{anonResult.overall_score}</span>
-                  </div>
-                  <div style={{ flex: 1, textAlign: "left" }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: T.w }}>{anonResult.product_name || "분석 완료"}</div>
-                    <div style={{ fontSize: 12, color: T.w40, marginTop: 2 }}>{anonResult.summary || ""}</div>
-                  </div>
+                <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleFileDrop} onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                  style={{ border: `2px dashed ${dragOver ? T.pri : T.border}`, borderRadius: 12, padding: anonFilePreview ? "12px" : "32px 16px", textAlign: "center", cursor: "pointer", transition: "all .2s", background: dragOver ? `${T.pri}08` : "transparent", marginBottom: 10 }}>
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect} style={{ display: "none" }} />
+                  {anonFilePreview ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <img src={anonFilePreview} style={{ width: 60, height: 60, borderRadius: 10, objectFit: "cover" }} />
+                      <div style={{ flex: 1, textAlign: "left" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: T.w90 }}>{anonFile && anonFile.name}</div>
+                        <div style={{ fontSize: 11, color: T.w20, marginTop: 2 }}>클릭하여 변경</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: dragOver ? T.pri : T.w60 }}>제품 이미지를 드래그하거나 클릭하여 업로드</div>
+                      <div style={{ fontSize: 11, color: T.w20, marginTop: 4 }}>상세페이지 캡처, 제품 사진, 카탈로그 등 (JPG, PNG)</div>
+                    </div>
+                  )}
                 </div>
-                {anonResult.recommended_markets && <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>{anonResult.recommended_markets.map((m, i) => <span key={i} style={s.tag(T.pri)}>{m}</span>)}</div>}
-                {/* BLUR OVERLAY for details */}
-                <div style={{ position: "relative", overflow: "hidden", borderRadius: 12, marginBottom: 14 }}>
-                  <div style={{ padding: 16, background: T.bgSurface, filter: "blur(6px)", userSelect: "none", pointerEvents: "none" }}>
-                    <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.6 }}>타겟 시장별 진출 전략, 필수 인증 요건, FOB 가격 분석, 경쟁사 현황, HS코드, 수출 실행 로드맵, 알리바바 입점 전략 등 13개 섹션의 상세 분석이 준비되어 있습니다...</div>
-                  </div>
-                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(6,11,24,.6)" }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: T.w, marginBottom: 8 }}>전체 리포트를 확인하세요</div>
-                    <div style={{ fontSize: 12, color: T.w40, marginBottom: 14 }}>회원가입 하면 상세 분석 결과를 볼 수 있습니다</div>
-                    <button onClick={openSignup} style={{ ...s.btn("pri"), padding: "12px 24px", fontSize: 13 }}>무료 회원가입 & 전체 보기</button>
-                  </div>
-                </div>
+                <button onClick={runAnonAnalysis} disabled={anonLoading || !anonFile} style={{ ...s.btn("pri"), width: "100%", padding: "14px", fontSize: 14, opacity: (anonLoading || !anonFile) ? 0.5 : 1 }}>{anonLoading ? "분석 중..." : "무료 분석 시작"}</button>
               </div>
             )}
           </div>
@@ -850,6 +1106,7 @@ function App() {
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.bg}}::-webkit-scrollbar-thumb{background:${T.w12};border-radius:3px}
       `}</style>
       {signupModal}
+      {analysisModal}
       {header}
       {page === "home" && <>
         {hero}
