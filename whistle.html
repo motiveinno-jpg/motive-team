@@ -223,7 +223,7 @@ function reqExpertReview(docId){
 }
 
 /* === STATE === */
-var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
+var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
 window._exRate=1400;
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -255,7 +255,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs()]).then(function(){render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates()]).then(function(){render();});
       });
     });
   });
@@ -1237,15 +1237,166 @@ function sendE(){
 function loadEmailLogs(){
   sb.from('email_logs').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(50).then(function(r){S.emailLogs=r.data||[];});
 }
-
-function pgCost(){
-  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🧮 원가 계산기</h2></div><div class="card"><div class="card-h">원가 계산</div><div class="card-b"><form id="cf" onsubmit="event.preventDefault();App.calcC()"><div class="grid-3">'+UI.inp('fob_price','FOB(USD)',{type:'number',placeholder:'4.50'})+UI.inp('quantity','수량',{type:'number',placeholder:'5000'})+UI.inp('weight_kg','중량(kg)',{type:'number',placeholder:'150'})+'</div><div class="grid-2">'+UI.sel('dest','도착지',[{value:'la',label:'🇺🇸 LA'},{value:'tokyo',label:'🇯🇵 도쿄'},{value:'hamburg',label:'🇪🇺 함부르크'}])+UI.sel('ship','운송',[{value:'sea',label:'🚢 해상'},{value:'air',label:'✈️ 항공'}])+'</div><button class="btn btn-pri" type="submit">계산</button></form><div id="cr"></div></div></div>';
+function loadShippingRates(){
+  sb.from('shipping_rates').select('*').then(function(r){S.shippingRates=r.data||[];});
+}
+function loadTariffRates(){
+  sb.from('tariff_rates').select('*').then(function(r){S.tariffRates=r.data||[];});
 }
 
+function pgCost(){
+  var DESTS=[
+    {value:'US_LA',label:'🇺🇸 LA (미서부)',cc:'US'},{value:'US_NY',label:'🇺🇸 뉴욕 (미동부)',cc:'US'},
+    {value:'JP_TYO',label:'🇯🇵 도쿄',cc:'JP'},{value:'JP_OSA',label:'🇯🇵 오사카',cc:'JP'},
+    {value:'DE_HAM',label:'🇩🇪 함부르크 (EU)',cc:'DE'},{value:'CN_SHA',label:'🇨🇳 상해',cc:'CN'},
+    {value:'SG',label:'🇸🇬 싱가포르',cc:'SG'},{value:'VN_HCM',label:'🇻🇳 호치민',cc:'VN'},
+    {value:'AE_DXB',label:'🇦🇪 두바이',cc:'AE'},{value:'AU_SYD',label:'🇦🇺 시드니',cc:'AU'}
+  ];
+  var SHIPS=[
+    {value:'lcl',label:'🚢 해상 LCL (소량)'},{value:'fcl_20',label:'🚢 해상 FCL 20ft'},
+    {value:'fcl_40',label:'🚢 해상 FCL 40ft'},{value:'air',label:'✈️ 항공'},
+    {value:'express',label:'📦 특송 (DHL/FedEx)'}
+  ];
+  var HS_PRESETS=[
+    {value:'',label:'-- 직접 입력 --'},{value:'3304.99',label:'3304.99 스킨케어'},
+    {value:'3304.10',label:'3304.10 립 메이크업'},{value:'3304.20',label:'3304.20 아이 메이크업'},
+    {value:'3304.91',label:'3304.91 파우더'},{value:'3305.10',label:'3305.10 샴푸'},
+    {value:'3305.90',label:'3305.90 기타 헤어케어'},{value:'3307.10',label:'3307.10 향수'},
+    {value:'3307.90',label:'3307.90 방향제/디퓨저'},{value:'3401.11',label:'3401.11 비누/클렌징'},
+    {value:'2106.90',label:'2106.90 건강기능식품'},{value:'2202.99',label:'2202.99 음료'},
+    {value:'6307.90',label:'6307.90 마스크팩'},{value:'8509.80',label:'8509.80 뷰티디바이스'}
+  ];
+  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🧮 Landed Cost 계산기</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">FOB → CIF → 관세 → 부가세 → 통관비 → 내륙운송 = 최종 Landed Cost</p></div>'+
+  '<div class="card"><div class="card-h">제품 + 물류 정보</div><div class="card-b"><form id="cf" onsubmit="event.preventDefault();App.calcC()">'+
+  '<div class="grid-3">'+UI.inp('fob_price','FOB 단가(USD)',{type:'number',step:'0.01',placeholder:'4.50'})+UI.inp('quantity','수량(pcs)',{type:'number',placeholder:'5000'})+UI.inp('weight_kg','총 중량(kg)',{type:'number',placeholder:'150'})+'</div>'+
+  '<div class="grid-3">'+UI.inp('cbm','용적(CBM)',{type:'number',step:'0.01',placeholder:'1.5'})+
+  UI.sel('hs_preset','HS코드 선택',HS_PRESETS,{onchange:'document.getElementById("hs_code").value=this.value'})+
+  UI.inp('hs_code','HS코드 직접입력',{placeholder:'3304.99'})+'</div>'+
+  '<div class="grid-2">'+UI.sel('dest','도착지',DESTS)+UI.sel('ship','운송 방식',SHIPS)+'</div>'+
+  '<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-pri" type="submit" style="flex:1">Landed Cost 계산</button><button class="btn btn-ghost" type="button" onclick="App.calcCCompare()" style="flex:1">전체 노선 비교</button></div>'+
+  '</form><div id="cr"></div></div></div>';
+}
+
+var _COST_DESTS={US_LA:{n:'LA',cc:'US'},US_NY:{n:'뉴욕',cc:'US'},JP_TYO:{n:'도쿄',cc:'JP'},JP_OSA:{n:'오사카',cc:'JP'},DE_HAM:{n:'함부르크',cc:'DE'},CN_SHA:{n:'상해',cc:'CN'},SG:{n:'싱가포르',cc:'SG'},VN_HCM:{n:'호치민',cc:'VN'},AE_DXB:{n:'두바이',cc:'AE'},AU_SYD:{n:'시드니',cc:'AU'}};
+
 function calcC(){
-  var d=UI.fd('#cf');if(!d.fob_price||!d.quantity){UI.toast('입력하세요','warn');return;}
-  var fob=d.fob_price*d.quantity;var fr=d.ship==='air'?(d.weight_kg||100)*4.5:Math.max((d.weight_kg||100)*0.3,150);var ins=fob*.003;var cif=fob+fr+ins+250;
-  document.getElementById('cr').innerHTML='<div style="margin-top:16px;padding:16px;border-radius:12px;background:var(--sf);border:1px solid var(--bd)"><div style="font-weight:700;margin-bottom:12px">📊 결과</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px"><div style="color:var(--w40)">FOB</div><div style="text-align:right;font-weight:600">'+U.fmtUSD(fob)+'</div><div style="color:var(--w40)">운송비</div><div style="text-align:right;font-weight:600">'+U.fmtUSD(fr)+'</div><div style="color:var(--w40)">보험료</div><div style="text-align:right;font-weight:600">'+U.fmtUSD(ins)+'</div><div style="border-top:1px solid var(--bd);padding-top:8px;font-weight:700;color:var(--acc)">CIF 총액</div><div style="border-top:1px solid var(--bd);padding-top:8px;text-align:right;font-weight:800;color:var(--acc);font-size:16px">'+U.fmtUSD(cif)+'</div><div style="color:var(--w40)">CIF 단가</div><div style="text-align:right;font-weight:600;color:var(--pri)">'+U.fmtUSD(cif/d.quantity)+'/pc</div></div></div>';
+  var d=UI.fd('#cf');if(!d.fob_price||!d.quantity){UI.toast('FOB 단가와 수량을 입력하세요','warn');return;}
+  var dest=d.dest||'US_LA';var ship=d.ship||'lcl';var hs=d.hs_code||d.hs_preset||'3304.99';
+  var qty=parseFloat(d.quantity);var fobUnit=parseFloat(d.fob_price);var wt=parseFloat(d.weight_kg)||100;var cbm=parseFloat(d.cbm)||Math.max(wt/500,0.5);
+  var fobTotal=fobUnit*qty;
+  var di=_COST_DESTS[dest]||{n:dest,cc:'US'};
+
+  /* DB에서 운임 조회 */
+  var sr=S.shippingRates||[];var tr=S.tariffRates||[];
+  var rate=sr.find(function(r){return r.destination===dest&&r.shipping_type===ship;});
+  var tariff=tr.find(function(t){return t.destination_country===di.cc&&hs.indexOf(t.hs_code)===0;});
+  if(!tariff)tariff=tr.find(function(t){return t.destination_country===di.cc&&hs.substring(0,4)===t.hs_code.substring(0,4);});
+
+  /* 운임 계산 */
+  var freight=0;var transitMin=0;var transitMax=0;
+  if(rate){
+    transitMin=rate.transit_days_min||0;transitMax=rate.transit_days_max||0;
+    if(rate.unit==='kg')freight=Math.max(rate.rate*wt,rate.min_charge||0);
+    else if(rate.unit==='cbm')freight=Math.max(rate.rate*cbm,rate.min_charge||0);
+    else freight=rate.rate;
+  }else{
+    freight=ship==='air'?wt*5:ship==='express'?wt*8.5:Math.max(cbm*55,180);
+  }
+
+  /* 보험료 (CIF의 0.3%) */
+  var insurance=fobTotal*0.003;
+  var cifTotal=fobTotal+freight+insurance;
+
+  /* 관세 계산 */
+  var dutyRate=0;var ftaRate=null;var ftaName='';var vatRate=0;var notes='';
+  if(tariff){
+    dutyRate=parseFloat(tariff.duty_rate)||0;
+    if(tariff.fta_applicable){ftaRate=parseFloat(tariff.fta_rate);ftaName=tariff.fta_name||'';}
+    vatRate=parseFloat(tariff.vat_rate)||0;
+    notes=tariff.notes||'';
+  }
+  var effectiveDuty=(ftaRate!==null&&ftaRate<dutyRate)?ftaRate:dutyRate;
+  var dutyAmt=cifTotal*(effectiveDuty/100);
+  var vatAmt=(cifTotal+dutyAmt)*(vatRate/100);
+  var ftaSaving=(ftaRate!==null&&ftaRate<dutyRate)?cifTotal*((dutyRate-ftaRate)/100):0;
+
+  /* 통관 + 내륙운송 (고정 추정) */
+  var brokerage=ship==='express'?50:150;
+  var inland=ship==='express'?0:(di.cc==='JP'?80:di.cc==='CN'?60:di.cc==='SG'||di.cc==='VN'?70:di.cc==='AE'?100:di.cc==='AU'?120:150);
+
+  var landed=cifTotal+dutyAmt+vatAmt+brokerage+inland;
+  var landedUnit=landed/qty;
+  var margin30=landedUnit*1.3;var margin50=landedUnit*1.5;
+
+  /* 결과 렌더 */
+  var h='<div style="margin-top:16px">';
+  /* 헤더 */
+  h+='<div style="padding:16px;border-radius:12px 12px 0 0;background:linear-gradient(135deg,#0a1628,#1a2a4a);color:#fff"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:11px;opacity:.7">부산 → '+di.n+'</div><div style="font-size:20px;font-weight:800">Landed Cost: '+U.fmtUSD(landed)+'</div></div><div style="text-align:right"><div style="font-size:11px;opacity:.7">단가</div><div style="font-size:16px;font-weight:700;color:#00d4ff">'+U.fmtUSD(landedUnit)+'/pc</div></div></div></div>';
+
+  /* 상세 내역 */
+  h+='<div style="padding:16px;border-radius:0 0 12px 12px;background:var(--sf);border:1px solid var(--bd);border-top:0">';
+  var rows=[
+    ['FOB 총액 ('+U.fmtUSD(fobUnit)+' × '+U.n(qty)+')',fobTotal,''],
+    ['운임 ('+(rate?rate.notes:ship)+')'+((transitMin||transitMax)?' · '+transitMin+'-'+transitMax+'일':''),freight,''],
+    ['적하보험 (0.3%)',insurance,''],
+    ['<b>CIF 총액</b>',cifTotal,'pri'],
+  ];
+  if(effectiveDuty>0)rows.push(['관세 ('+effectiveDuty+'%'+(ftaName?' · '+ftaName:'')+')'+((ftaSaving>0)?' <span style="color:var(--ok)">FTA 절감 '+U.fmtUSD(ftaSaving)+'</span>':''),dutyAmt,'']);
+  else rows.push(['관세','0 (FTA 0%)','ok']);
+  if(vatRate>0)rows.push(['부가세/GST ('+vatRate+'%)',vatAmt,'']);
+  rows.push(['통관 수수료',brokerage,'']);
+  rows.push(['내륙운송 (추정)',inland,'']);
+  rows.push(['<b>LANDED COST</b>',landed,'acc']);
+
+  h+='<div style="display:grid;grid-template-columns:1fr auto;gap:6px 12px;font-size:13px">';
+  rows.forEach(function(r){
+    var cls=r[2]==='acc'?'border-top:2px solid var(--acc);padding-top:10px;margin-top:6px;font-weight:800;color:var(--acc);font-size:15px':r[2]==='pri'?'border-top:1px solid var(--bd);padding-top:8px;font-weight:700;color:var(--pri)':r[2]==='ok'?'color:var(--ok);font-weight:600':'color:var(--w60)';
+    h+='<div style="'+cls+'">'+r[0]+'</div><div style="text-align:right;'+cls+'">'+(typeof r[1]==='number'?U.fmtUSD(r[1]):r[1])+'</div>';
+  });
+  h+='</div>';
+
+  /* 판매가 가이드 */
+  h+='<div style="margin-top:14px;padding:12px;border-radius:10px;background:var(--w08)"><div style="font-size:12px;font-weight:700;margin-bottom:6px">💡 권장 소비자가 (마진 포함)</div><div style="display:flex;gap:16px;font-size:13px"><div>마진 30%: <b style="color:var(--pri)">'+U.fmtUSD(margin30)+'</b>/pc</div><div>마진 50%: <b style="color:var(--acc)">'+U.fmtUSD(margin50)+'</b>/pc</div></div></div>';
+
+  /* 규제 노트 */
+  if(notes)h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:12px;color:var(--acc)">⚠️ '+notes+'</div>';
+
+  h+='<div style="margin-top:10px;font-size:10px;color:var(--w20)">* 운임은 2026.02 기준 평균 시세. 실제 운임은 포워더 견적 필요. 관세율은 FTA 원산지 증명서 제출 기준.</div>';
+  h+='</div></div>';
+  document.getElementById('cr').innerHTML=h;
+}
+
+function calcCCompare(){
+  var d=UI.fd('#cf');if(!d.fob_price||!d.quantity){UI.toast('FOB 단가와 수량을 입력하세요','warn');return;}
+  var hs=d.hs_code||d.hs_preset||'3304.99';var qty=parseFloat(d.quantity);var fobUnit=parseFloat(d.fob_price);var wt=parseFloat(d.weight_kg)||100;var cbm=parseFloat(d.cbm)||Math.max(wt/500,0.5);
+  var fobTotal=fobUnit*qty;var sr=S.shippingRates||[];var tr=S.tariffRates||[];
+  var results=[];
+  Object.keys(_COST_DESTS).forEach(function(dest){
+    var di=_COST_DESTS[dest];
+    ['lcl','air'].forEach(function(ship){
+      var rate=sr.find(function(r){return r.destination===dest&&r.shipping_type===ship;});
+      if(!rate)return;
+      var freight=rate.unit==='kg'?Math.max(rate.rate*wt,rate.min_charge||0):rate.unit==='cbm'?Math.max(rate.rate*cbm,rate.min_charge||0):rate.rate;
+      var ins=fobTotal*0.003;var cif=fobTotal+freight+ins;
+      var tariff=tr.find(function(t){return t.destination_country===di.cc&&hs.indexOf(t.hs_code)===0;});
+      var eff=0;var fta='';
+      if(tariff){eff=(tariff.fta_applicable&&parseFloat(tariff.fta_rate)<parseFloat(tariff.duty_rate))?parseFloat(tariff.fta_rate):parseFloat(tariff.duty_rate);fta=tariff.fta_name||'';}
+      var duty=cif*(eff/100);var vat=(tariff?(cif+duty)*(parseFloat(tariff.vat_rate)||0)/100:0);
+      var brok=ship==='express'?50:150;var inl=ship==='express'?0:(di.cc==='JP'?80:di.cc==='CN'?60:150);
+      var landed=cif+duty+vat+brok+inl;
+      results.push({dest:dest,name:di.n,ship:ship,freight:freight,cif:cif,duty:eff,fta:fta,landed:landed,unit:landed/qty,transit:(rate.transit_days_min||0)+'-'+(rate.transit_days_max||0)+'일'});
+    });
+  });
+  results.sort(function(a,b){return a.landed-b.landed;});
+  var h='<div style="margin-top:16px"><div style="font-weight:700;margin-bottom:10px;font-size:14px">📊 전체 노선 비교 ('+hs+', '+U.n(qty)+'pcs)</div>';
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--w08);text-align:left"><th style="padding:8px">도착지</th><th>운송</th><th>운임</th><th>관세</th><th>FTA</th><th>소요</th><th style="text-align:right">Landed</th><th style="text-align:right">단가</th></tr></thead><tbody>';
+  results.forEach(function(r,i){
+    var bg=i===0?'background:rgba(0,212,255,.06)':'';
+    h+='<tr style="border-bottom:1px solid var(--bd);'+bg+'"><td style="padding:6px 8px;font-weight:'+(i===0?'700':'400')+'">'+r.name+'</td><td>'+(r.ship==='lcl'?'🚢':'✈️')+'</td><td>'+U.fmtUSD(r.freight)+'</td><td>'+r.duty+'%</td><td style="font-size:10px;color:var(--ok)">'+r.fta+'</td><td>'+r.transit+'</td><td style="text-align:right;font-weight:600">'+U.fmtUSD(r.landed)+'</td><td style="text-align:right;font-weight:700;color:var(--pri)">'+U.fmtUSD(r.unit)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div style="margin-top:8px;font-size:10px;color:var(--w20)">* 해상 LCL + 항공만 비교. 실제 견적은 포워더 문의 필요.</div></div>';
+  document.getElementById('cr').innerHTML=h;
 }
 
 function pgSub(){
@@ -1617,7 +1768,7 @@ function render(){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,addCertItem:addCertItem,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,addCertItem:addCertItem,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
 loadUser();
 })();
 </script>
