@@ -1176,26 +1176,10 @@ async function runCollab(userMsg,files){
   const hasAny=keys.relay||keys.gem||keys.oai||keys.cla;
   if(!hasAny){toast('설정에서 Gemini API 키를 입력하세요 (무료)');isGen=false;rSB();return}
 
-  // ★ 핵심 프로젝트 자동 최고성능 모드
-  const priorityProjects=['proj-whistle01','proj-alibaba01'];
-  const isPriorityProject=priorityProjects.includes(ch);
-
-  // 클로드봇 모드 감지: "클로드봇으로", "클로드봇모드", "opus로", "최고급으로" 등
-  const claudeMaxKeywords=/클로드봇|claude\s*bot|claude\s*max|opus|클로드맥스|최고급|최상위.*모드/i;
-  if((claudeMaxKeywords.test(userMsg)||isPriorityProject)&&keys.relay){
-    if(!window._claudeMaxMode){
-      window._claudeMaxMode=true;
-      if(isPriorityProject){
-        addM(ch,'pm','🧠 **핵심 프로젝트 — 최고성능 모드 자동 적용**\nClaude Opus(최상위) + Gemini Pro 조합으로 작업합니다.','sys');rMsgs();
-      }else{
-        addM(ch,'pm','🧠 **클로드봇 모드 ON** — 모든 팀원이 Claude Opus(최상위 모델)를 사용합니다.\n나(Claude Code)와 동일한 퀄리티로 작업합니다. 시간은 좀 더 걸릴 수 있습니다.','sys');rMsgs();
-      }
-    }
-    // 키워드 제거하고 실제 요청만 추출 (핵심 프로젝트는 키워드 제거 불필요)
-    if(!isPriorityProject){
-      userMsg=userMsg.replace(/클로드봇\s*으?로\s*(실행|시작|해줘|진행)?|클로드봇\s*모드\s*으?로?\s*(실행|시작)?|claude\s*(bot|max)\s*(mode)?|opus\s*으?로?\s*(실행)?|최고급\s*으?로?\s*(실행)?|최상위.*모드\s*으?로?\s*(실행)?/gi,'').trim();
-      if(!userMsg)userMsg='이전 대화를 기반으로 최고 품질로 작업해주세요';
-    }
+  // ★ 모든 프로젝트 Opus 모드 — 릴레이 서버 있으면 자동 적용
+  if(keys.relay&&!window._claudeMaxMode){
+    window._claudeMaxMode=true;
+    addM(ch,'pm','🧠 **Opus 모드 ON** — Claude Opus(최상위) + Gemini Pro 조합으로 작업합니다.','sys');rMsgs();
   }
 
  try{
@@ -1231,8 +1215,6 @@ async function runCollab(userMsg,files){
       const who=m.role==='user'?'대표님':(m.mid?gm(m.mid)?.name||'PM':'PM');
       return`${who}: ${(m.content||'').slice(0,200)}`;
     }).join('\n');
-    // PM 대화 응답은 빠른 모델로 (Opus 비사용)
-    const _opusBak=window._claudeMaxMode;window._claudeMaxMode=false;
     let contResp=await callAI(pm,`당신은 PM 하준입니다. 팀이 이미 작업을 진행했거나 완료한 상태입니다.
 대표님의 추가 메시지에 자연스럽게 대응하세요:
 - 질문이면 답변하세요
@@ -1268,10 +1250,8 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
           if(extra)addM(ch,mid,extra,'work');rMsgs();
         }
       }
-      window._claudeMaxMode=_opusBak;
       isGen=false;rSB();return;
     }
-    window._claudeMaxMode=_opusBak;
   }
 
   // === 새 프로젝트 모드: 팀 소집 ===
@@ -1285,9 +1265,6 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
 
   let intentResp=null;
   if(!chatOnly){
-    // PM intent 분석은 빠른 모델로 (Opus 아님) — Opus는 팀원 실제 작업에만 사용
-    const savedOpus=window._claudeMaxMode;
-    window._claudeMaxMode=false;
     intentResp=await callAI(pm,`당신은 PM 하준입니다. 28세 남성, 밝고 유능한 성격. 사용자는 채희웅 대표님입니다.
 
 ## 역할: 프로젝트 룸의 PM. 대표님 메시지에 **당신이 직접 충실히 답변**하는 것이 1순위입니다.
@@ -1312,7 +1289,6 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
 
 팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무), customs(정관세/관세사), logistics(한물류/물류포워딩), trader(박무역/수출실무), mfg_food(김사장/K-Food제조사), mfg_beauty(이대표/K-Beauty제조사), buyer_us(David Kim/미국바이어), buyer_jp(田中誠/일본바이어), buyer_sea(Nguyen Minh/동남아바이어)`,
     `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`,null,files);
-    window._claudeMaxMode=savedOpus; // Opus 모드 복원
   }
 
   // Parse PM response
@@ -1330,16 +1306,18 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
         intent='work';
       }
     }catch(e){
-      // JSON 파싱 실패 → PM 직접 답변으로 처리
+      // JSON 파싱 실패 → PM 답변 + 기본 팀 배정
       reply=intentResp||null;
       intent='work';
-      plan=null; // 팀원 배정 없이 PM 답변만
+      const autoTeam=['thinking','planning','research'];
+      plan={analysis:reply||'팀을 구성하여 작업합니다.',team:autoTeam,tasks:{},order:autoTeam};
     }
   }else{
-    // API 전부 실패 → PM 기본 답변
+    // API 전부 실패 → 기본 팀 배정
     if(userMsg.length>10){
-      intent='work';reply='네 대표님! 확인하고 답변드리겠습니다.';
-      plan=null;
+      intent='work';reply='네 대표님! 바로 팀 구성해서 시작하겠습니다.';
+      const autoTeam=['thinking','planning','research'];
+      plan={analysis:reply,team:autoTeam,tasks:{},order:autoTeam};
     }
   }
 
