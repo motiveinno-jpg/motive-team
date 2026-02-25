@@ -1175,6 +1175,27 @@ async function runCollab(userMsg,files){
   }
 
  try{
+  // === 대표님이 특정 팀원 직접 호출 감지 ===
+  const directCallMap={수아:'design',루나:'marketing',서연:'planning',지호:'finance',하은:'hr',민서:'sales',현우:'thinking',시우:'research',도윤:'dev',예린:'qa',태윤:'video',유나:'photo',세진:'legal',정관세:'customs',한물류:'logistics',박무역:'trader',김사장:'mfg_food',이대표:'mfg_beauty',David:'buyer_us',田中:'buyer_jp',Nguyen:'buyer_sea'};
+  const directCallMatch=userMsg.match(/@?(수아|루나|서연|지호|하은|민서|현우|시우|도윤|예린|태윤|유나|세진|정관세|한물류|박무역|김사장|이대표|David|田中|Nguyen)[아야님씨]?\s/);
+  if(directCallMatch){
+    const mid=directCallMap[directCallMatch[1]];
+    const member=gm(mid);
+    if(member){
+      showTyp(`⚡ ${member.name}(${member.role}) 작업 중...`);
+      const ctx=chatDB[ch]?.slice(-8).map(m=>{
+        const who=m.role==='user'?'대표님':(m.mid?gm(m.mid)?.name||'PM':'PM');
+        return`${who}: ${(m.content||'').slice(0,200)}`;
+      }).join('\n')||'';
+      const text=await callAI(member,`${member.prompt}\n대표님이 당신을 직접 호출했습니다. 요청에 구체적으로 답하세요. 첨부파일이 있으면 분석하세요. 한국어 존댓말.`,
+        `${ctx?'[최근 대화]\n'+ctx+'\n\n':''}[대표님 메시지]\n${userMsg}`,null,files);
+      hideTyp();
+      if(text)addM(ch,mid,text,'work');
+      else addM(ch,mid,`⚠️ 죄송합니다 대표님, 잠시 후 다시 시도해주세요.`,'sys');
+      rMsgs();isGen=false;rSB();return;
+    }
+  }
+
   // === 이어서 대화 감지: 이미 팀 작업이 있으면 재소집하지 않음 ===
   const recentMsgs=chatDB[ch]?.slice(-20)||[];
   const hasTeamWork=recentMsgs.some(m=>m.type==='work'||m.type==='summary'||m.type==='review');
@@ -1245,24 +1266,27 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
     window._claudeMaxMode=false;
     intentResp=await callAI(pm,`당신은 PM 하준입니다. 28세 남성, 밝고 유능한 성격. 사용자는 채희웅 대표님입니다.
 
-## 역할: 여기는 팀 프로젝트 룸입니다. 대표님이 여기서 말씀하시면 대부분 업무 지시입니다.
+## 역할: 프로젝트 룸의 PM. 대표님 메시지에 **당신이 직접 충실히 답변**하는 것이 1순위입니다.
+
+## 핵심 원칙
+1. **대부분은 PM인 당신이 직접 답변합니다** — 질문, 의견, 보고 요청, 현황 문의 등
+2. **팀원 배정은 실제 전문 작업이 필요할 때만** — 디자인 시안, 코드 개발, 리서치 보고서, 영상 제작 등 PM이 직접 할 수 없는 전문 산출물이 필요한 경우
+3. **대표님이 특정 팀원을 이름으로 호출하면** 해당 팀원만 배정 (예: "수아야", "도윤아", "@현우")
+4. 팀원을 배정할 때도 **최소 인원(1~3명)**만 — 꼭 필요한 사람만
 
 ## 판단 기준
-- "chat": 1~2단어 인사, 안부, "고마워", "수고" 같은 짧은 대화만
-- "work": 그 외 모든 것 (질문, 요청, 의견, 지시, 보고 요청 등)
-- **애매하면 반드시 "work"로 판단하세요** — 여기는 프로젝트 룸입니다
+- "chat": 인사, 안부, 짧은 대화, 감사, 격려
+- "work": PM이 직접 답변 + 필요 시에만 팀원 배정
+- **애매하면 "work"로 판단하되, team은 빈배열로 PM이 직접 답변**
 
 반드시 JSON으로만 응답:
-{"intent":"chat또는work","reply":"대표님에게 자연스럽게 답변(1~3문장)","team":["팀원id"],"tasks":{"id":"업무"}}
+{"intent":"chat또는work","reply":"대표님에게 충실하고 구체적으로 답변(필요한 만큼 길게 OK)","team":["팀원id"],"tasks":{"id":"업무"}}
 
-work일 때: reply에 팀구성 설명, team에 2~6명(반드시 적합한 팀원), tasks에 각 업무
-chat일 때: reply만 채우고 team은 빈배열
+- PM 직접 답변 시: reply에 충실한 답변, team은 빈배열 []
+- 팀원 필요 시: reply에 간단한 설명, team에 1~3명, tasks에 각 업무
+- chat: reply만, team 빈배열
 
-팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무), customs(정관세/관세사), logistics(한물류/물류포워딩), trader(박무역/수출실무), mfg_food(김사장/K-Food제조사), mfg_beauty(이대표/K-Beauty제조사), buyer_us(David Kim/미국바이어), buyer_jp(田中誠/일본바이어), buyer_sea(Nguyen Minh/동남아바이어)
-
-**수출 관련 질문이면 반드시 수출 전문가(customs,logistics,trader)를 포함하세요.**
-**제조사 관점이 필요하면 mfg_food 또는 mfg_beauty를 포함하세요.**
-**바이어/시장 관점이 필요하면 buyer_us, buyer_jp, buyer_sea를 포함하세요.**`,
+팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무), customs(정관세/관세사), logistics(한물류/물류포워딩), trader(박무역/수출실무), mfg_food(김사장/K-Food제조사), mfg_beauty(이대표/K-Beauty제조사), buyer_us(David Kim/미국바이어), buyer_jp(田中誠/일본바이어), buyer_sea(Nguyen Minh/동남아바이어)`,
     `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`,null,files);
     window._claudeMaxMode=savedOpus; // Opus 모드 복원
   }
@@ -1282,33 +1306,32 @@ chat일 때: reply만 채우고 team은 빈배열
         intent='work';
       }
     }catch(e){
-      // JSON 파싱 실패 → work로 간주, 전체 팀 투입
+      // JSON 파싱 실패 → PM 직접 답변으로 처리
       reply=intentResp||null;
       intent='work';
-      const autoTeam=['thinking','planning','design','marketing','research','dev'];
-      plan={analysis:reply||'팀을 구성하여 작업을 시작합니다.',team:autoTeam,tasks:{},order:autoTeam};
+      plan=null; // 팀원 배정 없이 PM 답변만
     }
   }else{
-    // API 전부 실패 → 메시지가 짧지 않으면 자동 work 모드
+    // API 전부 실패 → PM 기본 답변
     if(userMsg.length>10){
-      intent='work';reply='네 대표님! 팀을 구성해서 바로 시작하겠습니다.';
-      const autoTeam=['thinking','planning','design','marketing','research'];
-      plan={analysis:reply,team:autoTeam,tasks:{},order:autoTeam};
+      intent='work';reply='네 대표님! 확인하고 답변드리겠습니다.';
+      plan=null;
     }
   }
 
   hideTyp();
 
-  // CHAT MODE: PM just responds naturally
-  if(intent==='chat'||!plan){
+  // CHAT MODE or PM-only response
+  if(intent==='chat'||!plan||!plan.team?.length){
     if(!reply)reply='네 대표님, 말씀하세요!';
     addM(ch,'pm',reply,'sys');rMsgs();
     isGen=false;rSB();return;
   }
 
-  // WORK MODE: Team collaboration
-  const teamStr=plan.team.map(id=>{const m=gm(id);return m?`**${m.name}**(${m.role}/${m.aiLabel})`:id}).join(', ');
-  addM(ch,'pm',`🎯 **팀 구성 완료**\n\n${plan.analysis}\n\n**투입**: ${teamStr}\n\n각 팀원이 전문 AI를 활용해 실제 작업을 시작합니다...`,'sys');rMsgs();
+  // WORK MODE: PM answers first + minimal team dispatch
+  addM(ch,'pm',reply||'네 대표님, 바로 진행하겠습니다.','sys');rMsgs();
+  const teamStr=plan.team.map(id=>{const m=gm(id);return m?`**${m.name}**(${m.role})`:id}).join(', ');
+  addM(ch,'pm',`📋 **${teamStr}** 작업 시작합니다.`,'sys');rMsgs();
 
   // PHASE 2: Each member works with their AI
   const order=plan.order||plan.team;
