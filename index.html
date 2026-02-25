@@ -640,7 +640,7 @@ async function callRelay(sys,userMsg,model){
     const tm=setTimeout(()=>ctrl.abort(),timeout);
     const payload={system:sys,message:userMsg,channelId:curCh||'default'};
     if(model)payload.model=model;
-    const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true'},body:JSON.stringify(payload),signal:ctrl.signal});
+    const r=await fetch(keys.relay.replace(/\/$/,'')+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true','ngrok-skip-browser-warning':'true'},body:JSON.stringify(payload),signal:ctrl.signal});
     clearTimeout(tm);
     const d=await r.json();
     if(d.ok&&d.text)return{ok:true,text:d.text,src:'relay',label};
@@ -1186,6 +1186,8 @@ async function runCollab(userMsg,files){
       const who=m.role==='user'?'대표님':(m.mid?gm(m.mid)?.name||'PM':'PM');
       return`${who}: ${(m.content||'').slice(0,200)}`;
     }).join('\n');
+    // PM 대화 응답은 빠른 모델로 (Opus 비사용)
+    const _opusBak=window._claudeMaxMode;window._claudeMaxMode=false;
     let contResp=await callAI(pm,`당신은 PM 하준입니다. 팀이 이미 작업을 진행했거나 완료한 상태입니다.
 대표님의 추가 메시지에 자연스럽게 대응하세요:
 - 질문이면 답변하세요
@@ -1208,9 +1210,9 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
     }else{
       addM(ch,'pm',contResp,'sys');rMsgs();
       // PM이 특정 팀원 호출을 언급하면 해당 팀원 1명만 추가 작업
-      const memberMention=contResp.match(/(수아|루나|서연|지호|하은|민서|현우|시우|도윤|예린|태윤|유나|세진)/);
+      const memberMention=contResp.match(/(수아|루나|서연|지호|하은|민서|현우|시우|도윤|예린|태윤|유나|세진|정관세|한물류|박무역|김사장|이대표|David|田中|Nguyen)/);
       if(memberMention){
-        const nameMap={수아:'design',루나:'marketing',서연:'planning',지호:'finance',하은:'hr',민서:'sales',현우:'thinking',시우:'research',도윤:'dev',예린:'qa',태윤:'video',유나:'photo',세진:'legal'};
+        const nameMap={수아:'design',루나:'marketing',서연:'planning',지호:'finance',하은:'hr',민서:'sales',현우:'thinking',시우:'research',도윤:'dev',예린:'qa',태윤:'video',유나:'photo',세진:'legal',정관세:'customs',한물류:'logistics',박무역:'trader',김사장:'mfg_food',이대표:'mfg_beauty',David:'buyer_us',田中:'buyer_jp',Nguyen:'buyer_sea'};
         const mid=nameMap[memberMention[1]];
         if(mid){
           const member=gm(mid);
@@ -1221,8 +1223,10 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
           if(extra)addM(ch,mid,extra,'work');rMsgs();
         }
       }
+      window._claudeMaxMode=_opusBak;
       isGen=false;rSB();return;
     }
+    window._claudeMaxMode=_opusBak;
   }
 
   // === 새 프로젝트 모드: 팀 소집 ===
@@ -1236,6 +1240,9 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
 
   let intentResp=null;
   if(!chatOnly){
+    // PM intent 분석은 빠른 모델로 (Opus 아님) — Opus는 팀원 실제 작업에만 사용
+    const savedOpus=window._claudeMaxMode;
+    window._claudeMaxMode=false;
     intentResp=await callAI(pm,`당신은 PM 하준입니다. 28세 남성, 밝고 유능한 성격. 사용자는 채희웅 대표님입니다.
 
 ## 역할: 여기는 팀 프로젝트 룸입니다. 대표님이 여기서 말씀하시면 대부분 업무 지시입니다.
@@ -1251,8 +1258,13 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
 work일 때: reply에 팀구성 설명, team에 2~6명(반드시 적합한 팀원), tasks에 각 업무
 chat일 때: reply만 채우고 team은 빈배열
 
-팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무)`,
+팀원: design(수아/디자인), marketing(루나/마케팅), planning(서연/기획), finance(지호/재무), hr(하은/인사), sales(민서/영업), thinking(현우/전략), research(시우/리서치), dev(도윤/개발), qa(예린/QA), video(태윤/영상), photo(유나/포토), legal(세진/법무), customs(정관세/관세사), logistics(한물류/물류포워딩), trader(박무역/수출실무), mfg_food(김사장/K-Food제조사), mfg_beauty(이대표/K-Beauty제조사), buyer_us(David Kim/미국바이어), buyer_jp(田中誠/일본바이어), buyer_sea(Nguyen Minh/동남아바이어)
+
+**수출 관련 질문이면 반드시 수출 전문가(customs,logistics,trader)를 포함하세요.**
+**제조사 관점이 필요하면 mfg_food 또는 mfg_beauty를 포함하세요.**
+**바이어/시장 관점이 필요하면 buyer_us, buyer_jp, buyer_sea를 포함하세요.**`,
     `${recent?'[최근 대화]\n'+recent+'\n\n':''}[지금 대표님 메시지]\n${userMsg}`,null,files);
+    window._claudeMaxMode=savedOpus; // Opus 모드 복원
   }
 
   // Parse PM response
