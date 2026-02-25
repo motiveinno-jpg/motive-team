@@ -223,7 +223,7 @@ function reqExpertReview(docId){
 }
 
 /* === STATE === */
-var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
+var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
 window._exRate=1400;
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -255,7 +255,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates()]).then(function(){render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders()]).then(function(){render();});
       });
     });
   });
@@ -1363,6 +1363,9 @@ function loadShippingRates(){
 function loadTariffRates(){
   sb.from('tariff_rates').select('*').then(function(r){S.tariffRates=r.data||[];});
 }
+function loadOrders(){
+  sb.from('orders').select('*').order('created_at',{ascending:false}).then(function(r){S.orders=r.data||[];});
+}
 
 function pgCost(){
   var DESTS=[
@@ -1699,6 +1702,176 @@ function saveSt(){
   });
 }
 
+/* === ORDER MANAGEMENT === */
+function pgOrders(){
+  var stLabel={confirmed:'확정',production:'생산중',inspection:'검수',shipping:'선적',delivered:'배송중',completed:'완료',cancelled:'취소'};
+  var stColor={confirmed:'var(--pri)',production:'var(--acc)',inspection:'var(--purple,#a855f7)',shipping:'#3b82f6',delivered:'var(--ok)',completed:'var(--ok)',cancelled:'var(--err)'};
+  var stIcon={confirmed:'📋',production:'🏭',inspection:'🔍',shipping:'🚢',delivered:'📦',completed:'✅',cancelled:'❌'};
+  var payLabel={unpaid:'미결제',deposit_received:'계약금',partial:'부분결제',paid:'완납',overdue:'연체'};
+  var payColor={unpaid:'var(--w40)',deposit_received:'var(--acc)',partial:'var(--pri)',paid:'var(--ok)',overdue:'var(--err)'};
+
+  /* 파이프라인 */
+  var stages=['confirmed','production','inspection','shipping','delivered','completed'];
+  var pipeline='<div style="display:flex;gap:4px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px">'+stages.map(function(st){
+    var cnt=S.orders.filter(function(o){return o.status===st;}).length;
+    return '<div style="flex:1;min-width:90px;padding:10px;border-radius:10px;background:var(--w08);text-align:center;border-bottom:3px solid '+(cnt?stColor[st]:'transparent')+'">'+
+      '<div style="font-size:18px">'+stIcon[st]+'</div>'+
+      '<div style="font-size:10px;color:var(--w40)">'+stLabel[st]+'</div>'+
+      '<div style="font-size:18px;font-weight:800;color:'+(cnt?stColor[st]:'var(--w20)')+'">'+cnt+'</div></div>';
+  }).join('')+'</div>';
+
+  /* 주문 목록 */
+  var list='';
+  if(S.orders.length){
+    list=S.orders.map(function(o){
+      var buyer=S.buyers.find(function(b){return b.id===o.buyer_id;});
+      var bName=buyer?buyer.company_name:'—';
+      var itemCnt=0;try{itemCnt=(JSON.parse(JSON.stringify(o.items))||[]).length;}catch(e){}
+      var daysAgo=Math.floor((new Date()-new Date(o.created_at))/(1000*60*60*24));
+      return '<div style="padding:14px;border-radius:12px;background:var(--w08);margin-bottom:8px;border-left:4px solid '+stColor[o.status]+';cursor:pointer" onclick="App.viewOrder(\''+o.id+'\')">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'+
+        '<div><div style="font-weight:700;font-size:14px">'+o.order_number+'</div><div style="font-size:12px;color:var(--w40)">'+bName+' · '+U.fmtUSD(o.total_amount)+' · '+(o.incoterms||'FOB')+'</div></div>'+
+        '<div style="display:flex;gap:6px;align-items:center">'+
+        '<span style="font-size:10px;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.1);color:'+payColor[o.payment_status]+'">'+payLabel[o.payment_status]+'</span>'+
+        '<span style="font-size:10px;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.1);color:'+stColor[o.status]+'">'+stIcon[o.status]+' '+stLabel[o.status]+'</span>'+
+        '</div></div></div>';
+    }).join('');
+  }else{
+    list='<div style="padding:30px;text-align:center;color:var(--w40)"><div style="font-size:32px;margin-bottom:8px">📋</div><div>주문이 없습니다</div><div style="font-size:12px;margin-top:4px">PI 서류에서 "주문 전환"하거나 직접 생성하세요</div></div>';
+  }
+
+  /* 통계 */
+  var totalAmt=S.orders.reduce(function(s,o){return s+(parseFloat(o.total_amount)||0);},0);
+  var paidAmt=S.orders.filter(function(o){return o.payment_status==='paid';}).reduce(function(s,o){return s+(parseFloat(o.total_amount)||0);},0);
+  var activeOrd=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length;
+
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">📋 주문 관리</h2></div><button class="btn btn-pri" onclick="App.showOrderForm()">+ 새 주문</button></div>'+
+  '<div class="grid-3" style="margin-bottom:16px">'+
+  UI.stat('총 주문',S.orders.length+'건','누적','var(--pri)')+
+  UI.stat('진행중',activeOrd+'건','현재','var(--acc)')+
+  UI.stat('총 금액',U.fmtUSD(totalAmt),'누적','var(--ok)')+
+  '</div>'+pipeline+
+  '<div class="card"><div class="card-h">주문 내역</div><div class="card-b" style="padding:'+(S.orders.length?'8px':'0')+'">'+list+'</div></div>';
+}
+
+function showOrderForm(){
+  var buyerOpts=S.buyers.map(function(b){return {value:b.id,label:b.company_name};});
+  buyerOpts.unshift({value:'',label:'-- 바이어 선택 --'});
+  var pjOpts=S.projects.map(function(p){return {value:p.id,label:p.name};});
+  pjOpts.unshift({value:'',label:'-- 프로젝트 선택 --'});
+  var orderNum='WO-'+new Date().getFullYear()+'-'+String(S.orders.length+1).padStart(3,'0');
+  var body='<form id="of">'+
+    UI.inp('order_number','주문번호',{value:orderNum})+
+    '<div class="grid-2">'+UI.sel('buyer_id','바이어',buyerOpts)+UI.sel('project_id','프로젝트',pjOpts)+'</div>'+
+    '<div class="grid-3">'+UI.inp('total_amount','총 금액(USD)',{type:'number',step:'0.01'})+
+    UI.sel('payment_terms','결제조건',[{value:'T/T 30% deposit',label:'T/T 30% 선금'},{value:'T/T 50% deposit',label:'T/T 50% 선금'},{value:'T/T 100% advance',label:'T/T 100% 선불'},{value:'L/C at sight',label:'L/C at sight'},{value:'D/P',label:'D/P'},{value:'D/A 30 days',label:'D/A 30일'}])+
+    UI.sel('incoterms','인코텀즈',[{value:'FOB',label:'FOB'},{value:'CIF',label:'CIF'},{value:'CFR',label:'CFR'},{value:'EXW',label:'EXW'},{value:'DDP',label:'DDP'}])+'</div>'+
+    UI.ta('notes_text','메모',{placeholder:'특이사항',rows:2})+
+  '</form>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'om',title:'📋 새 주문 등록',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'om\')">취소</button><button class="btn btn-pri" onclick="App.saveOrder()">등록</button>',width:'520px'}));UI.showModal('om');
+}
+
+function saveOrder(){
+  var d=UI.fd('#of');if(!d.order_number){UI.toast('주문번호 필수','warn');return;}
+  var data={user_id:S.user.id,buyer_id:d.buyer_id||null,project_id:d.project_id||null,
+    order_number:d.order_number,total_amount:parseFloat(d.total_amount)||0,
+    payment_terms:d.payment_terms||'',incoterms:d.incoterms||'FOB',
+    notes:d.notes_text?[{text:d.notes_text,date:new Date().toISOString()}]:[]};
+  sb.from('orders').insert(data).then(function(r){
+    if(r.error){UI.toast('저장 실패: '+r.error.message,'err');return;}
+    closeModal('om');loadOrders().then(function(){render();UI.toast('주문 등록!','ok');});
+  });
+}
+
+function viewOrder(orderId){
+  var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
+  var buyer=S.buyers.find(function(b){return b.id===o.buyer_id;});
+  var stLabel={confirmed:'확정',production:'생산중',inspection:'검수',shipping:'선적',delivered:'배송중',completed:'완료',cancelled:'취소'};
+  var stColor={confirmed:'var(--pri)',production:'var(--acc)',inspection:'var(--purple,#a855f7)',shipping:'#3b82f6',delivered:'var(--ok)',completed:'var(--ok)',cancelled:'var(--err)'};
+  var payLabel={unpaid:'미결제',deposit_received:'계약금',partial:'부분결제',paid:'완납',overdue:'연체'};
+  var stages=['confirmed','production','inspection','shipping','delivered','completed'];
+  var curIdx=stages.indexOf(o.status);
+
+  /* 파이프라인 시각화 */
+  var pipe='<div style="display:flex;gap:2px;margin-bottom:16px">'+stages.map(function(st,i){
+    var active=i<=curIdx;
+    return '<div style="flex:1;height:6px;border-radius:3px;background:'+(active?stColor[o.status]:'var(--w08)')+'"></div>';
+  }).join('')+'</div>';
+
+  /* 상태 변경 버튼 */
+  var nextSt=curIdx<stages.length-1?stages[curIdx+1]:null;
+  var stBtns='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+  stages.forEach(function(st){
+    stBtns+='<button class="btn btn-sm '+(o.status===st?'btn-pri':'btn-ghost')+'" style="font-size:11px" onclick="App.setOrderStatus(\''+orderId+'\',\''+st+'\')">'+stLabel[st]+'</button>';
+  });
+  stBtns+='</div>';
+
+  /* 결제 상태 */
+  var payBtns='<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">결제 상태</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  ['unpaid','deposit_received','partial','paid'].forEach(function(ps){
+    payBtns+='<button class="btn btn-sm '+(o.payment_status===ps?'btn-pri':'btn-ghost')+'" style="font-size:11px" onclick="App.setOrderPay(\''+orderId+'\',\''+ps+'\')">'+payLabel[ps]+'</button>';
+  });
+  payBtns+='</div></div>';
+
+  /* 배송 정보 */
+  var shipInfo='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">배송 정보</div>'+
+    '<div class="grid-2">'+
+    UI.inp('o_tracking','운송장번호',{value:o.tracking_number||'',onchange:'App.updateOrderField(\"'+orderId+'\",\"tracking_number\",this.value)'})+
+    UI.inp('o_ship_date','선적일',{type:'date',value:o.actual_ship_date||o.estimated_ship_date||'',onchange:'App.updateOrderField(\"'+orderId+'\",\"estimated_ship_date\",this.value)'})+
+    '</div></div>';
+
+  var notes=(o.notes||[]).map(function(n){return '<div style="font-size:11px;color:var(--w60);padding:4px 0;border-bottom:1px solid var(--w08)">'+
+    '<span style="color:var(--w20);font-size:10px">'+U.rel(n.date)+'</span> '+n.text+'</div>';}).join('');
+
+  var body=pipe+stBtns+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;font-size:13px">'+
+    '<div><span style="color:var(--w40)">바이어:</span> <b>'+(buyer?buyer.company_name:'—')+'</b></div>'+
+    '<div><span style="color:var(--w40)">금액:</span> <b style="color:var(--acc)">'+U.fmtUSD(o.total_amount)+'</b></div>'+
+    '<div><span style="color:var(--w40)">결제조건:</span> '+(o.payment_terms||'—')+'</div>'+
+    '<div><span style="color:var(--w40)">인코텀즈:</span> '+(o.incoterms||'FOB')+'</div></div>'+
+    payBtns+shipInfo+
+    (notes?'<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:4px">메모</div>'+notes+'</div>':'')+
+    '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="App.addOrderNote(\''+orderId+'\')">+ 메모</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="App.startDoc();App.closeModal(\'od\')" >📄 서류 생성</button></div>';
+
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'od',title:'📋 '+o.order_number,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'od\')">닫기</button>',width:'560px'}));UI.showModal('od');
+}
+
+function setOrderStatus(orderId,status){
+  sb.from('orders').update({status:status,updated_at:new Date().toISOString()}).eq('id',orderId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    var o=S.orders.find(function(x){return x.id===orderId;});if(o)o.status=status;
+    closeModal('od');render();UI.toast('상태: '+status,'ok');
+  });
+}
+
+function setOrderPay(orderId,ps){
+  var upd={payment_status:ps,updated_at:new Date().toISOString()};
+  if(ps==='deposit_received')upd.deposit_received_at=new Date().toISOString();
+  if(ps==='paid')upd.balance_received_at=new Date().toISOString();
+  sb.from('orders').update(upd).eq('id',orderId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    var o=S.orders.find(function(x){return x.id===orderId;});if(o){o.payment_status=ps;}
+    closeModal('od');render();UI.toast('결제: '+ps,'ok');
+  });
+}
+
+function updateOrderField(orderId,field,value){
+  var upd={updated_at:new Date().toISOString()};upd[field]=value;
+  sb.from('orders').update(upd).eq('id',orderId).then(function(r){
+    if(!r.error){var o=S.orders.find(function(x){return x.id===orderId;});if(o)o[field]=value;}
+  });
+}
+
+function addOrderNote(orderId){
+  var text=prompt('메모:');if(!text)return;
+  var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
+  var notes=o.notes||[];notes.push({text:text,date:new Date().toISOString()});
+  sb.from('orders').update({notes:notes,updated_at:new Date().toISOString()}).eq('id',orderId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}o.notes=notes;closeModal('od');viewOrder(orderId);
+  });
+}
+
 function pgBuyers(){
   var typeLabel={distributor:'유통',retailer:'소매',online:'온라인',wholesaler:'도매',chain:'체인',other:'기타'};
   var srcLabel={manual:'직접등록',platform:'플랫폼',ai_generated:'AI 추천',linkedin:'LinkedIn',alibaba:'알리바바',exhibition:'전시회',referral:'소개'};
@@ -1900,7 +2073,7 @@ function saveVoucherReport(){
 function nav(p){S.page=p;S.currentAnalysis=null;S.currentProject=null;S.analysisStep=0;S.analysisData=null;S.docType=null;render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 
-var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 분석',products:'📦 제품 카드',projects:'🚀 프로젝트',services:'💼 서비스',docgen:'📄 서류',emailhub:'✉️ 이메일',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🤝 바이어'};
+var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 분석',products:'📦 제품 카드',projects:'🚀 프로젝트',orders:'📋 주문관리',services:'💼 서비스',docgen:'📄 서류',emailhub:'✉️ 이메일',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🤝 바이어'};
 
 /* === ONBOARDING WIZARD === */
 function pgOnboarding(){
@@ -1980,7 +2153,7 @@ function completeOnboarding(startAnalysis){
 
 function renderPage(){
   if(S.user&&!S.user.onboarding_completed&&!S.company&&S.page==='dashboard')return pgOnboarding();
-  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'emailhub':return pgEmail();case'costsim':return pgCost();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'buyers':return pgBuyers();default:return pgDash();}
+  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'buyers':return pgBuyers();default:return pgDash();}
 }
 
 function renderSidebar(){
@@ -1999,7 +2172,7 @@ function render(){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
 loadUser();
 })();
 </script>
