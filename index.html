@@ -714,11 +714,10 @@ async function callAI(member,sys,userMsg,tierOverride,files){
 
   let chain=[];
 
-  // ★ 클로드봇 모드: 모든 팀원이 Opus(Claude Code와 동일) 사용
+  // ★ Opus 모드: Sonnet 최우선 (빠름) → Opus fallback (Opus는 동시실행 불가라 큐 막힘 방지)
   if(isOpus&&hasRelay){
-    // Opus 모드에서도 PDF가 있으면 Gemini Pro를 2순위로
-    if(hasBin&&keys.gem)chain=[{fn:relayOpus,n:'Claude Opus'},{fn:gP,n:'Pro 2.5'},{fn:relaySonnet,n:'Claude Sonnet'},{fn:gF,n:'Flash 2.5'}];
-    else chain=[{fn:relayOpus,n:'Claude Opus'},{fn:relaySonnet,n:'Claude Sonnet'},{fn:gF,n:'Flash 2.5'}];
+    if(hasBin&&keys.gem)chain=[{fn:relaySonnet,n:'Claude Sonnet'},{fn:gP,n:'Pro 2.5'},{fn:relayOpus,n:'Claude Opus'},{fn:gF,n:'Flash 2.5'}];
+    else chain=[{fn:relaySonnet,n:'Claude Sonnet'},{fn:relayOpus,n:'Claude Opus'},{fn:gF,n:'Flash 2.5'}];
   }
   // 바이너리 파일(PDF/이미지/엑셀 등) 있으면 → Gemini 최우선 (원본 파일 분석 가능)
   else if(hasBin&&keys.gem){
@@ -1178,7 +1177,7 @@ function toggleOpus(){
   const btn=document.getElementById('opusBtn');
   btn.classList.toggle('on',window._claudeMaxMode);
   btn.title=window._claudeMaxMode?'Opus 모드 ON (클릭하면 OFF)':'Opus 모드 OFF (클릭하면 ON)';
-  toast(window._claudeMaxMode?'⚡ Opus 모드 ON — 최고성능':'💨 효율 모드 — 빠른 응답');
+  toast(window._claudeMaxMode?'⚡ MAX 모드 ON — Claude Sonnet(고성능) 우선':'💨 효율 모드 — Gemini 빠른 응답');
 }
 
 async function runCollab(userMsg,files){
@@ -1353,8 +1352,8 @@ JSON이 아닌 자연스러운 한국어로 답하세요. 존댓말.`,
     const prev=Object.entries(outputs).map(([k,w])=>{const pm=gm(k);return`[${pm.name}/${pm.role}]: ${w.text?.slice(0,600)||''}`}).join('\n\n');
 
     showTyp(`⚡ ${member.name}(${member.role}) → ${member.aiLabel} 작업 중...`);
-    // Rate limit: add delay between API calls to avoid 15 RPM limit
-    if(i>0)await new Promise(r=>setTimeout(r,5000));
+    // 릴레이 서버 순차 처리 대기: 이전 팀원 응답 완료 후 다음 호출
+    if(i>0)await new Promise(r=>setTimeout(r,8000));
 
     let text=null;let mjPrompt=null;let genImage=null;
     const isCreative=['design','video','photo'].includes(mid);
