@@ -1700,7 +1700,118 @@ function saveSt(){
 }
 
 function pgBuyers(){
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">🤝 바이어</h2></div><button class="btn btn-pri" onclick="App.showBF()">+ 등록</button></div><div class="card"><div class="card-b" style="padding:0">'+(S.buyers.length===0?'<div style="padding:18px">'+UI.empty('🤝','없음','바이어를 등록하세요')+'</div>':'<table class="tbl"><thead><tr><th>회사</th><th>담당자</th><th>국가</th><th>이메일</th></tr></thead><tbody>'+S.buyers.map(function(b){return '<tr><td style="font-weight:600">'+b.company_name+'</td><td>'+(b.contact_name||'\u2014')+'</td><td>'+U.cl(b.country)+'</td><td style="font-size:12px;color:var(--w40)">'+(b.email||'\u2014')+'</td></tr>';}).join('')+'</tbody></table>')+'</div></div>';
+  var typeLabel={distributor:'유통',retailer:'소매',online:'온라인',wholesaler:'도매',chain:'체인',other:'기타'};
+  var srcLabel={manual:'직접등록',platform:'플랫폼',ai_generated:'AI 추천',linkedin:'LinkedIn',alibaba:'알리바바',exhibition:'전시회',referral:'소개'};
+  var srcColor={ai_generated:'var(--pri)',alibaba:'var(--acc)',exhibition:'var(--ok)',linkedin:'var(--pri)'};
+
+  /* 기존 바이어 목록 */
+  var list='';
+  if(S.buyers.length){
+    list='<table class="tbl"><thead><tr><th>회사</th><th>담당자</th><th>국가</th><th>출처</th><th>신뢰도</th><th>이메일</th></tr></thead><tbody>'+
+    S.buyers.map(function(b){
+      var sc=b.trust_score||0;var scCol=sc>=70?'var(--ok)':sc>=40?'var(--acc)':'var(--w40)';
+      return '<tr><td style="font-weight:600">'+b.company_name+'</td><td>'+(b.contact_name||'\u2014')+'</td><td>'+U.cl(b.country)+'</td>'+
+      '<td><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--w08);color:'+(srcColor[b.source]||'var(--w40)')+'">'+
+      (srcLabel[b.source]||b.source||'직접')+'</span></td>'+
+      '<td style="color:'+scCol+';font-weight:600;font-size:12px">'+sc+'</td>'+
+      '<td>'+(b.email?'<a href="#" onclick="event.preventDefault();App.composeE(\''+b.id+'\')" style="font-size:12px;color:var(--pri)">'+b.email+'</a>':'—')+'</td></tr>';
+    }).join('')+'</tbody></table>';
+  }else{
+    list='<div style="padding:18px">'+UI.empty('🤝','없음','바이어를 등록하거나 AI로 찾아보세요')+'</div>';
+  }
+
+  /* AI 발굴 폼 */
+  var aiForm='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.15)"><div class="card-h">🤖 AI 바이어 발굴</div><div class="card-b">'+
+    '<form id="abf" onsubmit="event.preventDefault();App.findBuyersAI()"><div class="grid-3">'+
+    UI.sel('target_market','목표 시장',[
+      {value:'US',label:'🇺🇸 미국'},{value:'JP',label:'🇯🇵 일본'},{value:'DE',label:'🇩🇪 독일/EU'},
+      {value:'CN',label:'🇨🇳 중국'},{value:'SG',label:'🇸🇬 싱가포르'},{value:'VN',label:'🇻🇳 베트남'},
+      {value:'AE',label:'🇦🇪 두바이/중동'},{value:'AU',label:'🇦🇺 호주'},{value:'TH',label:'🇹🇭 태국'},{value:'ID',label:'🇮🇩 인도네시아'}
+    ])+
+    UI.sel('product_cat','제품 카테고리',[
+      {value:'Skincare',label:'스킨케어'},{value:'Makeup',label:'메이크업'},{value:'Haircare',label:'헤어케어'},
+      {value:'Bodycare',label:'바디케어'},{value:'Fragrance',label:'향수/방향'},{value:'Beauty Device',label:'뷰티디바이스'},
+      {value:'Health Supplement',label:'건강기능식품'},{value:'Food & Beverage',label:'식품/음료'}
+    ])+
+    UI.inp('fob_hint','FOB 단가(USD)',{type:'number',step:'0.01',placeholder:'4.50'})+'</div>'+
+    '<button class="btn btn-pri btn-block" type="submit" style="margin-top:10px">🔍 AI 바이어 후보 찾기</button>'+
+    '</form><div id="ai-buyers-result"></div></div></div>';
+
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">🤝 바이어 관리</h2><p style="font-size:12px;color:var(--w40);margin-top:2px">등록 '+S.buyers.length+'건'+((S.buyers.filter(function(b){return b.source==='ai_generated';}).length)?' · AI 추천 '+S.buyers.filter(function(b){return b.source==='ai_generated';}).length+'건':'')+'</p></div><button class="btn btn-pri" onclick="App.showBF()">+ 직접 등록</button></div>'+
+  aiForm+
+  '<div class="card"><div class="card-h">📋 바이어 목록</div><div class="card-b" style="padding:0">'+list+'</div></div>';
+}
+
+function findBuyersAI(){
+  var d=UI.fd('#abf');if(!d.target_market){UI.toast('목표 시장을 선택하세요','warn');return;}
+  var prod=S.products[0];var certs=[];
+  if(prod&&S.projects.length){var sp=S.projects[0].stage_progress||{};certs=(sp.certs||[]).filter(function(c){return c.status==='approved';}).map(function(c){return c.name;});}
+  document.getElementById('ai-buyers-result').innerHTML='<div style="padding:20px;text-align:center"><div class="spinner" style="margin:0 auto 10px"></div><div style="font-size:13px;color:var(--w40)">AI가 '+d.target_market+' 시장 바이어를 분석중...</div></div>';
+  fetch(RELAY_URL+'/api/whistle/find-buyers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    targetMarket:d.target_market,productCategory:d.product_cat||'Skincare',fobPrice:d.fob_hint||'',
+    productName:prod?prod.name_en||prod.name_ko:'',hsCode:prod?prod.hs_code:'3304.99',
+    certifications:certs.join(', ')||'없음'
+  })}).then(function(r){return r.json();}).then(function(data){
+    if(!data.ok||!data.buyers||!data.buyers.length){
+      document.getElementById('ai-buyers-result').innerHTML='<div style="padding:16px;color:var(--err)">바이어 찾기 실패. 다시 시도해주세요.</div>';return;
+    }
+    var h='<div style="margin-top:16px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-weight:700;font-size:14px">AI 추천 바이어 '+data.buyers.length+'건</span><button class="btn btn-ghost btn-sm" onclick="App.saveAllAIBuyers()">전체 저장</button></div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px">';
+    window._aiBuyers=data.buyers;
+    data.buyers.forEach(function(b,i){
+      var scCol=b.match_score>=80?'var(--ok)':b.match_score>=60?'var(--acc)':'var(--w40)';
+      h+='<div style="padding:14px;border-radius:12px;background:var(--w08);border:1px solid var(--bd)" id="ai-b-'+i+'">'+
+        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px"><div style="font-weight:700;font-size:13px">'+b.company_name+'</div><div style="font-size:20px;font-weight:800;color:'+scCol+'">'+b.match_score+'</div></div>'+
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px">'+
+        '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--w08);color:var(--pri)">'+U.cl(b.country)+' '+(b.city||'')+'</span>'+
+        '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--w08);color:var(--acc)">'+(b.type||'')+'</span>'+
+        '<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--w08);color:var(--w40)">'+(b.scale||'')+'</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--w60);margin-bottom:4px">'+(b.match_reason||'')+'</div>'+
+        '<div style="font-size:11px;color:var(--w40);margin-bottom:8px">MOQ: '+(b.estimated_moq||'미정')+'</div>'+
+        '<details style="margin-bottom:8px"><summary style="font-size:11px;color:var(--pri);cursor:pointer">접근 전략</summary><div style="font-size:11px;color:var(--w60);margin-top:4px;line-height:1.5">'+(b.approach_strategy||'')+'<br><span style="color:var(--w40)">연락: '+(b.contact_hint||'')+'</span></div></details>'+
+        '<div style="display:flex;gap:6px"><button class="btn btn-pri btn-sm" style="flex:1;font-size:11px" onclick="App.saveAIBuyer('+i+')">💾 저장</button>'+
+        (b.website?'<a href="'+b.website+'" target="_blank" class="btn btn-ghost btn-sm" style="font-size:11px">🔗</a>':'')+
+        '</div></div>';
+    });
+    h+='</div></div>';
+    document.getElementById('ai-buyers-result').innerHTML=h;
+  }).catch(function(e){
+    document.getElementById('ai-buyers-result').innerHTML='<div style="padding:16px;color:var(--err)">서버 연결 실패</div>';
+  });
+}
+
+function saveAIBuyer(idx){
+  var b=window._aiBuyers&&window._aiBuyers[idx];if(!b)return;
+  var data={
+    registered_by:S.user.id,source:'ai_generated',company_name:b.company_name,
+    country:b.country||'',city:b.city||'',website:b.website||'',
+    categories:b.categories||[],moq_range:b.estimated_moq||'',
+    trust_score:b.match_score||0,
+    notes:'[AI] '+b.approach_strategy+'\n연락: '+(b.contact_hint||''),
+    tags:[b.type||'',b.scale||''].filter(Boolean)
+  };
+  sb.from('buyers').insert(data).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}
+    var el=document.getElementById('ai-b-'+idx);
+    if(el)el.style.opacity='0.5';
+    loadB().then(function(){UI.toast(b.company_name+' 저장!','ok');});
+  });
+}
+
+function saveAllAIBuyers(){
+  if(!window._aiBuyers||!window._aiBuyers.length)return;
+  var rows=window._aiBuyers.map(function(b){
+    return {registered_by:S.user.id,source:'ai_generated',company_name:b.company_name,
+      country:b.country||'',city:b.city||'',website:b.website||'',
+      categories:b.categories||[],moq_range:b.estimated_moq||'',
+      trust_score:b.match_score||0,notes:'[AI] '+b.approach_strategy+'\n연락: '+(b.contact_hint||''),
+      tags:[b.type||'',b.scale||''].filter(Boolean)};
+  });
+  sb.from('buyers').insert(rows).then(function(r){
+    if(r.error){UI.toast('저장 실패: '+r.error.message,'err');return;}
+    loadB().then(function(){render();UI.toast(rows.length+'건 바이어 저장!','ok');});
+  });
 }
 
 function showBF(){
@@ -1888,7 +1999,7 @@ function render(){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport};
 loadUser();
 })();
 </script>
