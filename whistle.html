@@ -223,7 +223,7 @@ function reqExpertReview(docId){
 }
 
 /* === STATE === */
-var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
+var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],meetings:[],samples:[],shipments:[],paymentMilestones:[],alibabaStores:[],alibabaInquiries:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400};
 window._exRate=1400;
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -255,7 +255,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications()]).then(function(){render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries()]).then(function(){render();});
       });
     });
   });
@@ -383,14 +383,29 @@ function pgDash(){
   });}
   h+='</div></div></div>';
   /* 주문 현황 + 서비스 */
+  /* 미팅 일정 위젯 */
+  h+='<div class="grid-2">';
+  /* 미팅 */
+  h+='<div class="card"><div class="card-h"><span>📅 다가오는 미팅</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'meetings\')" style="font-size:11px">전체보기</button></div><div class="card-b">';
+  var now=new Date();var upMeetings=S.meetings.filter(function(m){return new Date(m.scheduled_at)>=now&&m.status!=='cancelled';}).sort(function(a,b){return new Date(a.scheduled_at)-new Date(b.scheduled_at);}).slice(0,4);
+  if(upMeetings.length===0){h+=UI.empty('📅','예정된 미팅 없음','바이어와 미팅을 잡아보세요');}
+  else{upMeetings.forEach(function(m){
+    var mt=new Date(m.scheduled_at);var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+    var isToday=mt.toDateString()===now.toDateString();
+    var dtStr=isToday?'오늘 '+mt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):U.fd(m.scheduled_at,'short');
+    var typeIcon={video_call:'📹',phone:'📞',in_person:'🤝',trade_show:'🏢',online_demo:'💻'}[m.type]||'📅';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')"><span style="font-size:16px">'+typeIcon+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(m.title,25)+'</div><div style="font-size:11px;color:var(--w40)">'+(buyer?buyer.company_name:'—')+' · '+dtStr+'</div></div>'+(isToday?'<span class="badge badge-acc" style="font-size:10px">오늘</span>':'')+'</div>';
+  });}
+  h+='</div></div></div>';
+  /* 주문+서비스 행 */
   h+='<div class="grid-2">';
   h+='<div class="card"><div class="card-h">📋 주문 현황</div><div class="card-b">';
-  var activeOrders=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';});
-  if(activeOrders.length===0){h+=UI.empty('📋','진행 중인 주문 없음','PI 서류에서 주문을 생성하세요');}
-  else{var stLabel={confirmed:'확정',production:'생산',inspection:'검수',shipping:'선적',delivered:'배송',completed:'완료'};
-    activeOrders.slice(0,5).forEach(function(o){
-      var stCol={confirmed:'var(--pri)',production:'var(--acc)',shipping:'#3b82f6',delivered:'var(--ok)'}[o.status]||'var(--w40)';
-      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewOrder(\''+o.id+'\')"><div style="width:8px;height:8px;border-radius:4px;background:'+stCol+'"></div><div style="flex:1"><div style="font-size:13px;font-weight:600">'+o.order_number+'</div><div style="font-size:11px;color:var(--w40)">$'+(o.total_amount||0).toLocaleString()+' · '+(stLabel[o.status]||o.status)+'</div></div></div>';
+  var activeOrders2=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';});
+  if(activeOrders2.length===0){h+=UI.empty('📋','진행 중인 주문 없음','');}
+  else{var stLabel2={confirmed:'확정',production:'생산',inspection:'검수',shipping:'선적',delivered:'배송'};
+    activeOrders2.slice(0,4).forEach(function(o){
+      var stCol2={confirmed:'var(--pri)',production:'var(--acc)',shipping:'#3b82f6',delivered:'var(--ok)'}[o.status]||'var(--w40)';
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewOrder(\''+o.id+'\')"><div style="width:8px;height:8px;border-radius:4px;background:'+stCol2+'"></div><div style="flex:1"><div style="font-size:13px;font-weight:600">'+o.order_number+'</div><div style="font-size:11px;color:var(--w40)">$'+(o.total_amount||0).toLocaleString()+' · '+(stLabel2[o.status]||o.status)+'</div></div></div>';
     });}
   h+='</div></div>';
   h+='<div class="card"><div class="card-h">💼 서비스 현황</div><div class="card-b">';
@@ -1405,7 +1420,7 @@ function genDoc(){
 
   var rows=items.map(function(x,i){var a=x.qty*x.price;return isPL?'<tr><td>'+(i+1)+'</td><td><b>'+x.name+'</b><br><small>'+x.desc+'</small></td><td style="text-align:center">'+x.qty+' '+x.unit+'</td><td style="text-align:center">'+x.ctn+'</td><td style="text-align:right">'+x.nw.toFixed(1)+'</td><td style="text-align:right">'+x.gw.toFixed(1)+'</td><td>'+x.cbm.toFixed(3)+'</td><td>'+x.dims+'</td></tr>':'<tr><td>'+(i+1)+'</td><td><b>'+x.name+'</b><br><small>'+x.desc+'</small></td><td style="text-align:center">'+x.qty+' '+x.unit+'</td><td style="text-align:right">$'+x.price.toFixed(2)+'</td><td style="text-align:right;font-weight:bold">$'+a.toFixed(2)+'</td></tr>';}).join('');
   var h='<html><head><meta charset="UTF-8"><title>'+tN[S.docType]+'</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto;color:#222;font-size:13px}table{width:100%;border-collapse:collapse;margin:16px 0}th,td{border:1px solid #bbb;padding:8px;font-size:12px}th{background:#eee}small{color:#888}.ttl{font-size:22px;font-weight:bold;text-align:center;margin:20px 0;padding:12px;background:#003366;color:white}.sig{text-align:center;width:45%;border-top:1px solid #333;padding-top:10px;margin-top:60px;font-size:12px}.toolbar{position:fixed;top:0;left:0;right:0;background:#003366;padding:8px 16px;display:flex;gap:8px;z-index:100}.toolbar button{padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600}.toolbar .btn-pdf{background:#FF5252;color:white}.toolbar .btn-print{background:white;color:#003366}@media print{.toolbar{display:none}body{margin:0}}</style></head><body>';
-  h+='<div class="toolbar"><button class="btn-pdf" onclick="window.opener.App.genDocPDF()">📥 PDF 다운로드</button><button class="btn-print" onclick="window.print()">🖨️ 인쇄</button></div><div style="margin-top:50px">';
+  h+='<div class="toolbar"><button class="btn-pdf" onclick="window.opener.App.genDocPDF()">📥 PDF 다운로드</button><button class="btn-print" onclick="window.print()">🖨️ 인쇄</button>'+(S.docType==='pi'?'<button style="background:#00E676;color:#000" onclick="window.opener.App.convertPItoOrder(window._lastDocId)">📋 주문 전환</button>':'')+'</div><div style="margin-top:50px">';
   h+='<div style="padding:10px 16px;background:#FFF8E1;border:1px solid #FFE082;margin-bottom:12px;font-size:11px;color:#6D4C00;line-height:1.6">\u2696\uFE0F '+DISCLAIMER.en+'</div>';
   h+='<div class="ttl">'+tN[S.docType]+'</div>';
   h+='<table><tr><td style="border:none"><b style="font-size:15px">'+(c.name_en||c.name_ko||'COMPANY')+'</b><br>'+(c.address_en||'')+'<br>Tel: '+(c.phone||'')+'</td><td style="border:none;text-align:right"><b>No:</b> '+rd.doc_no+'<br><b>Date:</b> '+rd.doc_date+'</td></tr></table>';
@@ -1424,7 +1439,7 @@ function genDoc(){
   if(!isPL&&!isCO&&c.bank_name){h+='<div style="margin-top:30px;padding:12px;border:1px solid #ccc;font-size:12px;line-height:1.8"><b>BANK:</b> '+c.bank_name+' / A/C: '+(c.bank_account||'')+' / SWIFT: '+(c.swift_code||'')+'</div>';}
   h+='</div></body></html>';
   var w=window.open('','_blank','width=850,height=700');w.document.write(h);w.document.close();
-  sb.from('documents').insert({user_id:S.user.id,doc_type:S.docType,doc_number:rd.doc_no,buyer_name:bd.buyer_company,data:{buyer:bd,ref:rd,items:items,total:tA},status:'draft',disclaimer_shown:true}).then(function(){UI.toast('서류 생성!','ok');});
+  sb.from('documents').insert({user_id:S.user.id,doc_type:S.docType,doc_number:rd.doc_no,buyer_name:bd.buyer_company,data:{buyer:bd,ref:rd,items:items,total:tA},status:'draft',disclaimer_shown:true}).select().then(function(r){UI.toast('서류 생성!','ok');if(r.data&&r.data[0]){_lastDoc.id=r.data[0].id;w._lastDocId=r.data[0].id;}});
 }
 
 function genDocPDF(){
@@ -1630,6 +1645,13 @@ function loadOrders(){
 function loadNotifications(){
   sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(30).then(function(r){S.notifications=r.data||[];});
 }
+function loadMeetings(){return sb.from('meetings').select('*').eq('user_id',S.user.id).order('scheduled_at',{ascending:false}).then(function(r){S.meetings=r.data||[];});}
+function loadSamples(){return sb.from('samples').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){S.samples=r.data||[];});}
+function loadShipments(){return sb.from('shipments').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){S.shipments=r.data||[];});}
+function loadMilestones(){return sb.from('payment_milestones').select('*').eq('user_id',S.user.id).order('created_at',{ascending:true}).then(function(r){S.paymentMilestones=r.data||[];});}
+function loadAlibabaStores(){return sb.from('alibaba_stores').select('*').eq('user_id',S.user.id).then(function(r){S.alibabaStores=r.data||[];});}
+function loadAlibabaInquiries(){return sb.from('alibaba_inquiries').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){S.alibabaInquiries=r.data||[];});}
+
 
 function pgCost(){
   var DESTS=[
@@ -2157,12 +2179,48 @@ function viewOrder(orderId){
   });
   payBtns+='</div></div>';
 
-  /* 배송 정보 */
-  var shipInfo='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">배송 정보</div>'+
-    '<div class="grid-2">'+
+  /* 결제 마일스톤 */
+  var orderMs=S.paymentMilestones.filter(function(pm){return pm.order_id===orderId;});
+  var msHtml='';
+  if(orderMs.length>0){
+    var msLabels={deposit:'계약금',production_balance:'생산잔금',pre_shipment:'선적전',post_shipment:'선적후',final:'최종',lc_opening:'L/C 개설',lc_negotiation:'L/C 네고'};
+    var msColors={pending:'var(--w40)',invoiced:'var(--acc)',paid:'var(--ok)',overdue:'var(--err)',waived:'var(--purple)'};
+    var msSt={pending:'대기',invoiced:'청구',paid:'완납',overdue:'연체',waived:'면제'};
+    msHtml='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">💰 결제 마일스톤</div>';
+    orderMs.forEach(function(pm){
+      msHtml+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--w08)">';
+      msHtml+='<div style="width:8px;height:8px;border-radius:4px;background:'+(msColors[pm.status]||'var(--w40)')+'"></div>';
+      msHtml+='<div style="flex:1;font-size:12px"><b>'+(msLabels[pm.name]||pm.name)+'</b> ('+(pm.percentage||0)+'%)</div>';
+      msHtml+='<div style="font-size:12px;font-weight:700">$'+(pm.amount||0).toLocaleString()+'</div>';
+      msHtml+='<span style="font-size:10px;padding:2px 6px;border-radius:6px;color:'+(msColors[pm.status]||'var(--w40)')+';background:rgba(0,0,0,.1)">'+(msSt[pm.status]||pm.status)+'</span>';
+      if(pm.status==='pending'||pm.status==='invoiced')msHtml+='<button class="btn btn-ok btn-sm" style="font-size:10px;padding:2px 6px" onclick="App.setMilestonePaid(\''+pm.id+'\')">완납</button>';
+      msHtml+='</div>';
+    });
+    msHtml+='</div>';
+  }
+
+  /* 선적 정보 */
+  var orderSh=S.shipments.filter(function(sh){return sh.order_id===orderId;});
+  var shipInfo='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:12px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-size:12px;font-weight:700">🚢 선적 정보</div><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.showShipmentForm(\''+orderId+'\')">+ 선적</button></div>';
+  if(orderSh.length>0){
+    var shStLabel={booked:'부킹',loaded:'선적',departed:'출항',in_transit:'운송중',arrived:'도착',customs_clearance:'통관',delivered:'배달',exception:'이슈'};
+    var shStColor={booked:'var(--w40)',loaded:'var(--acc)',departed:'var(--pri)',in_transit:'#3b82f6',arrived:'var(--purple)',customs_clearance:'var(--acc)',delivered:'var(--ok)',exception:'var(--err)'};
+    orderSh.forEach(function(sh){
+      shipInfo+='<div style="padding:8px;border-radius:8px;background:rgba(0,0,0,.1);margin-bottom:4px">';
+      shipInfo+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(0,0,0,.1);color:'+(shStColor[sh.status]||'var(--w40)')+'">'+(shStLabel[sh.status]||sh.status)+'</span>';
+      shipInfo+='<span style="font-size:12px;font-weight:700">'+(sh.type==='ocean'?'🚢':sh.type==='air'?'✈️':'📦')+' '+(sh.bl_number||sh.awb_number||'TBD')+'</span></div>';
+      shipInfo+='<div style="font-size:11px;color:var(--w40)">'+(sh.port_of_loading||'—')+' → '+(sh.port_of_discharge||'—');
+      if(sh.etd)shipInfo+=' · ETD: '+sh.etd;if(sh.eta)shipInfo+=' · ETA: '+sh.eta;
+      if(sh.forwarder_name)shipInfo+=' · '+sh.forwarder_name;
+      shipInfo+='</div></div>';
+    });
+  }else{
+    shipInfo+='<div class="grid-2">'+
     UI.inp('o_tracking','운송장번호',{value:o.tracking_number||'',onchange:'App.updateOrderField(\"'+orderId+'\",\"tracking_number\",this.value)'})+
     UI.inp('o_ship_date','선적일',{type:'date',value:o.actual_ship_date||o.estimated_ship_date||'',onchange:'App.updateOrderField(\"'+orderId+'\",\"estimated_ship_date\",this.value)'})+
-    '</div></div>';
+    '</div>';
+  }
+  shipInfo+='</div>';
 
   var notes=(o.notes||[]).map(function(n){return '<div style="font-size:11px;color:var(--w60);padding:4px 0;border-bottom:1px solid var(--w08)">'+
     '<span style="color:var(--w20);font-size:10px">'+U.rel(n.date)+'</span> '+n.text+'</div>';}).join('');
@@ -2173,12 +2231,14 @@ function viewOrder(orderId){
     '<div><span style="color:var(--w40)">금액:</span> <b style="color:var(--acc)">'+U.fmtUSD(o.total_amount)+'</b></div>'+
     '<div><span style="color:var(--w40)">결제조건:</span> '+(o.payment_terms||'—')+'</div>'+
     '<div><span style="color:var(--w40)">인코텀즈:</span> '+(o.incoterms||'FOB')+'</div></div>'+
-    payBtns+shipInfo+
+    payBtns+msHtml+shipInfo+
     (notes?'<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:4px">메모</div>'+notes+'</div>':'')+
-    '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="App.addOrderNote(\''+orderId+'\')">+ 메모</button>'+
-    '<button class="btn btn-ghost btn-sm" onclick="App.startDoc();App.closeModal(\'od\')" >📄 서류 생성</button></div>';
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="App.addOrderNote(\''+orderId+'\')">+ 메모</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="App.startDoc();App.closeModal(\'od\')">📄 서류</button>'+
+    (buyer?'<button class="btn btn-ghost btn-sm" onclick="App.showMeetingForm({buyer_id:\''+buyer.id+'\',title:\'주문 '+o.order_number+' 미팅\'});App.closeModal(\'od\')">📅 미팅</button>':'')+
+    '</div>';
 
-  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'od',title:'📋 '+o.order_number,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'od\')">닫기</button>',width:'560px'}));UI.showModal('od');
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'od',title:'📋 '+o.order_number,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'od\')">닫기</button>',width:'600px'}));UI.showModal('od');
 }
 
 function setOrderStatus(orderId,status){
@@ -2226,14 +2286,20 @@ function pgBuyers(){
   /* 기존 바이어 목록 */
   var list='';
   if(S.buyers.length){
-    list='<table class="tbl"><thead><tr><th>회사</th><th>담당자</th><th>국가</th><th>출처</th><th>신뢰도</th><th>이메일</th></tr></thead><tbody>'+
+    list='<table class="tbl"><thead><tr><th>회사</th><th>담당자</th><th>국가</th><th>출처</th><th>신뢰도</th><th>액션</th></tr></thead><tbody>'+
     S.buyers.map(function(b){
       var sc=b.trust_score||0;var scCol=sc>=70?'var(--ok)':sc>=40?'var(--acc)':'var(--w40)';
+      var bSamples=S.samples.filter(function(s){return s.buyer_id===b.id;});
+      var bMeetings=S.meetings.filter(function(m){return m.buyer_id===b.id;});
       return '<tr><td style="font-weight:600">'+b.company_name+'</td><td>'+(b.contact_name||'\u2014')+'</td><td>'+U.cl(b.country)+'</td>'+
       '<td><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:var(--w08);color:'+(srcColor[b.source]||'var(--w40)')+'">'+
       (srcLabel[b.source]||b.source||'직접')+'</span></td>'+
       '<td style="color:'+scCol+';font-weight:600;font-size:12px">'+sc+'</td>'+
-      '<td>'+(b.email?'<a href="#" onclick="event.preventDefault();App.composeE(\''+b.id+'\')" style="font-size:12px;color:var(--pri)">'+b.email+'</a>':'—')+'</td></tr>';
+      '<td style="white-space:nowrap"><div style="display:flex;gap:3px">'+
+      (b.email?'<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();App.composeE(\''+b.id+'\')" title="이메일">✉️</button>':'')+
+      '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();App.showMeetingForm({buyer_id:\''+b.id+'\',title:\''+b.company_name.replace(/'/g,"")+' 미팅\'})" title="미팅">📅</button>'+
+      '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="event.stopPropagation();App.showSampleForm(\''+b.id+'\')" title="샘플">📦'+(bSamples.length?'<sup>'+bSamples.length+'</sup>':'')+'</button>'+
+      '</div></td></tr>';
     }).join('')+'</tbody></table>';
   }else{
     list='<div style="padding:18px">'+UI.empty('🤝','없음','바이어를 등록하거나 AI로 찾아보세요')+'</div>';
@@ -2347,6 +2413,499 @@ function saveBuyer(){
   sb.from('buyers').insert(d).then(function(r){if(r.error){UI.toast('실패','err');return;}closeModal('bm');loadB().then(function(){render();UI.toast('등록!','ok');});});
 }
 
+/* === MEETINGS === */
+function pgMeetings(){
+  var typeIcon={video_call:'📹',phone:'📞',in_person:'🤝',trade_show:'🏢',online_demo:'💻'};
+  var typeLabel={video_call:'화상미팅',phone:'전화',in_person:'대면',trade_show:'전시회',online_demo:'온라인 데모'};
+  var stLabel={scheduled:'예정',confirmed:'확정',completed:'완료',cancelled:'취소',no_show:'불참',rescheduled:'변경'};
+  var stColor={scheduled:'var(--pri)',confirmed:'var(--acc)',completed:'var(--ok)',cancelled:'var(--err)',no_show:'var(--err)',rescheduled:'var(--purple)'};
+  var now=new Date();
+  var upcoming=S.meetings.filter(function(m){return new Date(m.scheduled_at)>=now&&m.status!=='cancelled';}).sort(function(a,b){return new Date(a.scheduled_at)-new Date(b.scheduled_at);});
+  var past=S.meetings.filter(function(m){return new Date(m.scheduled_at)<now||m.status==='completed'||m.status==='cancelled';}).sort(function(a,b){return new Date(b.scheduled_at)-new Date(a.scheduled_at);});
+  var todayMeetings=upcoming.filter(function(m){return new Date(m.scheduled_at).toDateString()===now.toDateString();});
+  var weekMs=upcoming.filter(function(m){var d=new Date(m.scheduled_at);return d-now<7*86400000;});
+  /* stats */
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">📅 일정 관리</h2><p style="font-size:13px;color:var(--w40);margin-top:2px">바이어 미팅, 화상회의, 전시회 일정을 관리합니다</p></div><button class="btn btn-pri" onclick="App.showMeetingForm()">+ 새 미팅</button></div>';
+  h+='<div class="grid-4" style="margin-bottom:16px">'+UI.stat('오늘',todayMeetings.length+'건','미팅','var(--acc)')+UI.stat('이번 주',weekMs.length+'건','예정','var(--pri)')+UI.stat('총 미팅',S.meetings.length+'건','누적','#3b82f6')+UI.stat('완료',S.meetings.filter(function(m){return m.status==='completed';}).length+'건','','var(--ok)')+'</div>';
+  /* 오늘 미팅 하이라이트 */
+  if(todayMeetings.length>0){
+    h+='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.25)"><div class="card-h"><span>🔥 오늘 미팅</span><span class="badge badge-acc">'+todayMeetings.length+'건</span></div><div class="card-b">';
+    todayMeetings.forEach(function(m){
+      var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+      var mt=new Date(m.scheduled_at);
+      h+='<div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;background:var(--w08);margin-bottom:6px;cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')">';
+      h+='<div style="text-align:center;min-width:50px"><div style="font-size:20px;font-weight:800;color:var(--acc)">'+mt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'</div><div style="font-size:10px;color:var(--w40)">'+m.duration_min+'분</div></div>';
+      h+='<div style="flex:1"><div style="font-weight:700;font-size:14px">'+typeIcon[m.type]+' '+m.title+'</div><div style="font-size:12px;color:var(--w40)">'+(buyer?buyer.company_name:'—')+' · '+(typeLabel[m.type]||m.type)+(m.platform?' · '+m.platform:'')+'</div></div>';
+      if(m.meeting_url)h+='<a href="'+m.meeting_url+'" target="_blank" class="btn btn-pri btn-sm" onclick="event.stopPropagation()">입장</a>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
+  /* 예정 미팅 목록 */
+  h+='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>📅 예정 미팅</span></div><div class="card-b" style="padding:'+(upcoming.length?'8px':'0')+'">';
+  if(upcoming.length===0){h+=UI.empty('📅','예정된 미팅이 없습니다','바이어와 미팅을 잡아보세요');}
+  else{upcoming.slice(0,15).forEach(function(m){
+    var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+    var mt=new Date(m.scheduled_at);var isToday=mt.toDateString()===now.toDateString();
+    var diffDays=Math.ceil((mt-now)/(1000*60*60*24));
+    var dtStr=isToday?'오늘 '+mt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):diffDays<=7?diffDays+'일 후 '+mt.toLocaleDateString('ko-KR',{month:'short',day:'numeric'}):U.fd(m.scheduled_at,'short');
+    h+='<div style="padding:10px;border-radius:10px;background:var(--w08);margin-bottom:6px;border-left:4px solid '+stColor[m.status]+';cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">';
+    h+='<div><div style="font-weight:700;font-size:13px">'+typeIcon[m.type]+' '+m.title+'</div><div style="font-size:11px;color:var(--w40)">'+(buyer?buyer.company_name:'—')+' · '+dtStr+' · '+m.duration_min+'분'+(m.platform?' · '+m.platform:'')+'</div></div>';
+    h+='<span style="font-size:10px;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.1);color:'+stColor[m.status]+'">'+stLabel[m.status]+'</span>';
+    h+='</div></div>';
+  });}
+  h+='</div></div>';
+  /* 완료된 미팅 */
+  if(past.length>0){
+    h+='<div class="card"><div class="card-h"><span>✅ 지난 미팅</span><span style="font-size:12px;color:var(--w40)">'+past.length+'건</span></div><div class="card-b" style="padding:8px">';
+    past.slice(0,10).forEach(function(m){
+      var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+      h+='<div style="padding:8px;border-radius:8px;margin-bottom:4px;opacity:.7;cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center">';
+      h+='<div><div style="font-size:13px;font-weight:600">'+typeIcon[m.type]+' '+m.title+'</div><div style="font-size:11px;color:var(--w40)">'+(buyer?buyer.company_name:'—')+' · '+U.fd(m.scheduled_at,'short')+'</div></div>';
+      h+='<span style="font-size:10px;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.1);color:'+stColor[m.status||'completed']+'">'+stLabel[m.status||'completed']+'</span>';
+      h+='</div></div>';
+    });
+    h+='</div></div>';
+  }
+  return h;
+}
+
+function showMeetingForm(prefill){
+  var pf=prefill||{};
+  var buyerOpts=S.buyers.map(function(b){return {value:b.id,label:b.company_name+' ('+(b.country||'')+')'};});
+  buyerOpts.unshift({value:'',label:'-- 바이어 선택 --'});
+  var pjOpts=S.projects.map(function(p){return {value:p.id,label:p.name};});
+  pjOpts.unshift({value:'',label:'-- 프로젝트 --'});
+  var defDate=new Date();defDate.setDate(defDate.getDate()+1);defDate.setHours(10,0,0,0);
+  var dtVal=pf.scheduled_at||defDate.toISOString().slice(0,16);
+  var body='<form id="mtf">'+
+    UI.inp('title','미팅 제목',{value:pf.title||'',placeholder:'예: 첫 화상미팅, 가격 협상 등'})+
+    '<div class="grid-2">'+UI.sel('buyer_id','바이어',buyerOpts,pf.buyer_id)+UI.sel('project_id','프로젝트',pjOpts,pf.project_id)+'</div>'+
+    '<div class="grid-3">'+UI.sel('type','유형',[{value:'video_call',label:'📹 화상미팅'},{value:'phone',label:'📞 전화'},{value:'in_person',label:'🤝 대면'},{value:'trade_show',label:'🏢 전시회'},{value:'online_demo',label:'💻 온라인 데모'}],pf.type)+
+    UI.sel('platform','플랫폼',[{value:'',label:'-- 선택 --'},{value:'zoom',label:'Zoom'},{value:'google_meet',label:'Google Meet'},{value:'teams',label:'MS Teams'},{value:'skype',label:'Skype'},{value:'kakao',label:'카카오톡'},{value:'other',label:'기타'}],pf.platform)+
+    UI.inp('duration_min','소요시간(분)',{type:'number',value:pf.duration_min||60})+'</div>'+
+    '<div class="grid-2">'+UI.inp('scheduled_at','일시',{type:'datetime-local',value:dtVal})+UI.inp('meeting_url','미팅 링크',{placeholder:'https://zoom.us/j/...',value:pf.meeting_url||''})+'</div>'+
+    UI.inp('location','장소',{placeholder:'온라인 또는 장소명',value:pf.location||''})+
+    UI.ta('agenda_text','안건',{placeholder:'논의할 내용 (줄바꿈으로 구분)',rows:3,value:pf.agenda_text||''})+
+  '</form>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'mm',title:'📅 '+(pf.id?'미팅 수정':'새 미팅 등록'),body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'mm\')">취소</button>'+(pf.id?'<button class="btn btn-acc" onclick="App.getMeetingPrep(\''+pf.id+'\')">🤖 AI 브리핑</button>':'')+'<button class="btn btn-pri" onclick="App.saveMeeting('+(pf.id?'\''+pf.id+'\'':'')+')">저장</button>',width:'600px'}));UI.showModal('mm');
+}
+
+function saveMeeting(editId){
+  var d=UI.fd('#mtf');if(!d.title){UI.toast('제목 필수','warn');return;}if(!d.scheduled_at){UI.toast('일시 필수','warn');return;}
+  var agendaArr=d.agenda_text?d.agenda_text.split('\n').filter(function(x){return x.trim();}).map(function(x){return {text:x.trim(),done:false};}):[];
+  var data={user_id:S.user.id,buyer_id:d.buyer_id||null,project_id:d.project_id||null,
+    title:d.title,type:d.type||'video_call',scheduled_at:new Date(d.scheduled_at).toISOString(),
+    duration_min:parseInt(d.duration_min)||60,platform:d.platform||null,
+    meeting_url:d.meeting_url||null,location:d.location||null,agenda:agendaArr};
+  var q=editId?sb.from('meetings').update(data).eq('id',editId):sb.from('meetings').insert(data);
+  q.then(function(r){
+    if(r.error){UI.toast('저장 실패: '+r.error.message,'err');return;}
+    closeModal('mm');loadMeetings().then(function(){render();UI.toast(editId?'수정 완료!':'미팅 등록!','ok');});
+    if(!editId)pushNotif('meeting','미팅 등록: '+d.title,U.fd(d.scheduled_at,'short'),'meetings',null,true);
+  });
+}
+
+function viewMeeting(mid){
+  var m=S.meetings.find(function(x){return x.id===mid;});if(!m)return;
+  var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+  var pj=S.projects.find(function(p){return p.id===m.project_id;});
+  var typeIcon={video_call:'📹',phone:'📞',in_person:'🤝',trade_show:'🏢',online_demo:'💻'};
+  var typeLabel={video_call:'화상미팅',phone:'전화',in_person:'대면',trade_show:'전시회',online_demo:'온라인 데모'};
+  var stLabel={scheduled:'예정',confirmed:'확정',completed:'완료',cancelled:'취소',no_show:'불참',rescheduled:'변경'};
+  var stColor={scheduled:'var(--pri)',confirmed:'var(--acc)',completed:'var(--ok)',cancelled:'var(--err)',no_show:'var(--err)',rescheduled:'var(--purple)'};
+  var mt=new Date(m.scheduled_at);var isPast=mt<new Date();
+  var agenda=m.agenda||[];var actions=m.action_items||[];
+  var h='<div style="margin-bottom:16px">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px"><span class="badge" style="background:rgba(0,0,0,.1);color:'+stColor[m.status]+'">'+stLabel[m.status]+'</span><span class="badge badge-pri">'+(typeLabel[m.type]||m.type)+'</span>'+(m.platform?'<span class="badge badge-purple">'+m.platform+'</span>':'')+'</div>';
+  h+='<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+typeIcon[m.type]+' '+m.title+'</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;color:var(--w60)">';
+  h+='<div>📅 '+mt.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short'})+' '+mt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'</div>';
+  h+='<div>⏱️ '+m.duration_min+'분</div>';
+  if(buyer)h+='<div>🤝 '+buyer.company_name+'</div>';
+  if(pj)h+='<div>🚀 '+pj.name+'</div>';
+  if(m.location)h+='<div>📍 '+m.location+'</div>';
+  h+='</div>';
+  if(m.meeting_url)h+='<div style="margin-top:8px"><a href="'+m.meeting_url+'" target="_blank" class="btn btn-pri btn-sm">🔗 미팅 입장</a></div>';
+  h+='</div>';
+  /* AI 브리핑 */
+  if(m.ai_briefing)h+='<div style="margin-bottom:12px;padding:12px;border-radius:10px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15)"><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:6px">🤖 AI 미팅 브리핑</div><div style="font-size:12px;color:var(--w70);white-space:pre-wrap">'+m.ai_briefing+'</div></div>';
+  /* 안건 */
+  if(agenda.length>0){h+='<div style="margin-bottom:12px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">📋 안건</div>';
+    agenda.forEach(function(a,i){h+='<div style="display:flex;gap:8px;align-items:center;padding:4px 0"><span style="color:var(--w40);font-size:12px">'+(i+1)+'.</span><span style="font-size:13px">'+a.text+'</span></div>';});
+    h+='</div>';
+  }
+  /* 미팅 노트 */
+  h+='<div style="margin-bottom:12px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">📝 미팅 노트</div>';
+  h+='<textarea id="mt_notes" rows="4" style="width:100%;background:var(--w08);border:1px solid var(--bd);border-radius:8px;padding:10px;color:var(--w90);font-size:13px;font-family:inherit">'+(m.notes||'')+'</textarea></div>';
+  /* 액션 아이템 */
+  h+='<div style="margin-bottom:12px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">✅ 액션 아이템</div>';
+  if(actions.length>0){actions.forEach(function(a,i){h+='<div style="display:flex;gap:8px;align-items:center;padding:4px 0"><input type="checkbox" '+(a.done?'checked':'')+' onchange="App.toggleMeetingAction(\''+mid+'\','+i+')" style="cursor:pointer"><span style="font-size:13px;'+(a.done?'text-decoration:line-through;color:var(--w40)':'')+'">'+a.text+'</span></div>';});}
+  h+='<div style="display:flex;gap:6px;margin-top:6px"><input id="mt_new_action" placeholder="새 액션 아이템..." style="flex:1;background:var(--w08);border:1px solid var(--bd);border-radius:6px;padding:6px 10px;color:var(--w90);font-size:12px"><button class="btn btn-ghost btn-sm" onclick="App.addMeetingAction(\''+mid+'\')">추가</button></div></div>';
+  /* 버튼들 */
+  var footer='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  footer+='<button class="btn btn-ghost" onclick="App.closeModal(\'mv\')">닫기</button>';
+  footer+='<button class="btn btn-acc btn-sm" onclick="App.getMeetingPrep(\''+mid+'\')">🤖 AI 브리핑</button>';
+  footer+='<button class="btn btn-pri btn-sm" onclick="App.saveMeetingNotes(\''+mid+'\')">💾 노트 저장</button>';
+  if(!isPast&&m.status!=='completed')footer+='<button class="btn btn-ok btn-sm" onclick="App.completeMeeting(\''+mid+'\')">✅ 완료</button>';
+  footer+='<button class="btn btn-ghost btn-sm" onclick="App.closeModal(\'mv\');App.showMeetingForm({id:\''+mid+'\',title:\''+m.title.replace(/'/g,"\\'")+'\',buyer_id:\''+(m.buyer_id||'')+'\',project_id:\''+(m.project_id||'')+'\',type:\''+m.type+'\',platform:\''+(m.platform||'')+'\',duration_min:'+m.duration_min+',scheduled_at:\''+new Date(m.scheduled_at).toISOString().slice(0,16)+'\',meeting_url:\''+(m.meeting_url||'').replace(/'/g,"\\'")+'\',location:\''+(m.location||'').replace(/'/g,"\\'")+'\'})">✏️ 수정</button>';
+  if(m.status!=='cancelled')footer+='<button class="btn btn-danger btn-sm" onclick="App.setMeetingStatus(\''+mid+'\',\'cancelled\')">취소</button>';
+  footer+='</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'mv',title:'📅 미팅 상세',body:h,footer:footer,width:'600px'}));UI.showModal('mv');
+}
+
+function saveMeetingNotes(mid){
+  var notes=document.getElementById('mt_notes');if(!notes)return;
+  sb.from('meetings').update({notes:notes.value,updated_at:new Date().toISOString()}).eq('id',mid).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}
+    var m=S.meetings.find(function(x){return x.id===mid;});if(m)m.notes=notes.value;
+    UI.toast('노트 저장!','ok');
+  });
+}
+
+function addMeetingAction(mid){
+  var inp=document.getElementById('mt_new_action');if(!inp||!inp.value.trim())return;
+  var m=S.meetings.find(function(x){return x.id===mid;});if(!m)return;
+  var actions=(m.action_items||[]).concat([{text:inp.value.trim(),done:false}]);
+  sb.from('meetings').update({action_items:actions}).eq('id',mid).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    m.action_items=actions;closeModal('mv');viewMeeting(mid);
+  });
+}
+
+function toggleMeetingAction(mid,idx){
+  var m=S.meetings.find(function(x){return x.id===mid;});if(!m)return;
+  var actions=JSON.parse(JSON.stringify(m.action_items||[]));
+  if(actions[idx])actions[idx].done=!actions[idx].done;
+  sb.from('meetings').update({action_items:actions}).eq('id',mid).then(function(r){
+    if(!r.error)m.action_items=actions;
+  });
+}
+
+function setMeetingStatus(mid,status){
+  sb.from('meetings').update({status:status,updated_at:new Date().toISOString()}).eq('id',mid).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    closeModal('mv');loadMeetings().then(function(){render();UI.toast('상태 변경!','ok');});
+  });
+}
+
+function completeMeeting(mid){
+  var notes=document.getElementById('mt_notes');
+  var upd={status:'completed',updated_at:new Date().toISOString()};
+  if(notes)upd.notes=notes.value;
+  sb.from('meetings').update(upd).eq('id',mid).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    closeModal('mv');loadMeetings().then(function(){render();UI.toast('미팅 완료!','ok');});
+    pushNotif('meeting','미팅 완료','meetings',null,true);
+  });
+}
+
+function getMeetingPrep(mid){
+  var m=S.meetings.find(function(x){return x.id===mid;});if(!m){UI.toast('미팅 없음','warn');return;}
+  var buyer=m.buyer_id?S.buyers.find(function(b){return b.id===m.buyer_id;}):null;
+  var product=S.products.length?S.products[0]:null;
+  UI.toast('AI 브리핑 생성 중...','info');
+  fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    meeting:m,buyer:buyer,product:product,company:S.company
+  })}).then(function(r){return r.json();}).then(function(j){
+    if(j.error){UI.toast('실패: '+j.error,'err');return;}
+    sb.from('meetings').update({ai_briefing:j.briefing}).eq('id',mid).then(function(){
+      var mm=S.meetings.find(function(x){return x.id===mid;});if(mm)mm.ai_briefing=j.briefing;
+      closeModal('mv');closeModal('mm');viewMeeting(mid);
+      UI.toast('AI 브리핑 완료!','ok');
+    });
+  }).catch(function(e){UI.toast('서버 오류','err');});
+}
+
+/* === ALIBABA === */
+function pgAlibaba(){
+  var stores=S.alibabaStores;var inqs=S.alibabaInquiries;
+  var newInqs=inqs.filter(function(i){return i.status==='new';}).length;
+  var repliedInqs=inqs.filter(function(i){return i.status==='replied';}).length;
+  var convertedInqs=inqs.filter(function(i){return i.status==='converted';}).length;
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">🏪 알리바바 몰대행</h2><p style="font-size:13px;color:var(--w40);margin-top:2px">알리바바 스토어 관리, 문의 응대, 바이어 전환</p></div><button class="btn btn-pri" onclick="App.showAlibabaStoreForm()">+ 스토어 등록</button></div>';
+  h+='<div class="grid-4" style="margin-bottom:16px">'+UI.stat('스토어',stores.length+'개','등록','var(--pri)')+UI.stat('새 문의',newInqs+'건','응대 필요','var(--err)')+UI.stat('응답 완료',repliedInqs+'건','','var(--acc)')+UI.stat('바이어 전환',convertedInqs+'건','','var(--ok)')+'</div>';
+  /* 스토어 목록 */
+  if(stores.length>0){
+    h+='<div class="card" style="margin-bottom:16px"><div class="card-h">🏪 내 스토어</div><div class="card-b" style="padding:8px">';
+    stores.forEach(function(st){
+      var stColor2={setup:'var(--w40)',active:'var(--ok)',paused:'var(--acc)',suspended:'var(--err)'}[st.status]||'var(--w40)';
+      h+='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:6px;display:flex;align-items:center;gap:12px">';
+      h+='<div style="width:8px;height:8px;border-radius:4px;background:'+stColor2+'"></div>';
+      h+='<div style="flex:1"><div style="font-weight:700;font-size:14px">'+(st.store_name||'미설정')+'</div><div style="font-size:11px;color:var(--w40)">상품 '+(st.products_listed||0)+'개 · 월 조회 '+(st.monthly_views||0)+'회 · 문의 '+(st.monthly_inquiries||0)+'건</div></div>';
+      if(st.store_url)h+='<a href="'+st.store_url+'" target="_blank" class="btn btn-ghost btn-sm">방문</a>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
+  /* 문의 관리 */
+  h+='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>💬 문의 관리</span><button class="btn btn-ghost btn-sm" onclick="App.showAlibabaInquiryForm()">+ 문의 등록</button></div><div class="card-b" style="padding:'+(inqs.length?'8px':'0')+'">';
+  if(inqs.length===0){h+=UI.empty('💬','문의가 없습니다','알리바바에서 받은 문의를 등록하세요');}
+  else{
+    var inqStLabel={new:'🔴 신규',replied:'🟡 응답',qualified:'🟢 유망',sample_sent:'📦 샘플',negotiating:'💬 협상',converted:'✅ 전환',lost:'⛔ 실패',spam:'🚫 스팸'};
+    var inqStColor={new:'var(--err)',replied:'var(--acc)',qualified:'var(--ok)',sample_sent:'var(--pri)',negotiating:'var(--purple)',converted:'var(--ok)',lost:'var(--w40)',spam:'var(--w40)'};
+    inqs.slice(0,20).forEach(function(iq){
+      h+='<div style="padding:10px;border-radius:10px;background:var(--w08);margin-bottom:6px;border-left:4px solid '+inqStColor[iq.status]+';cursor:pointer" onclick="App.viewAlibabaInquiry(\''+iq.id+'\')">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">';
+      h+='<div><div style="font-weight:700;font-size:13px">'+(iq.buyer_company||iq.buyer_name||'Unknown')+'</div><div style="font-size:11px;color:var(--w40)">'+(iq.buyer_country||'')+' · '+(iq.product_interest?U.tr(iq.product_interest,30):'')+' · '+U.fd(iq.created_at,'rel')+'</div></div>';
+      h+='<span style="font-size:10px;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.1);color:'+inqStColor[iq.status]+'">'+(inqStLabel[iq.status]||iq.status)+'</span>';
+      h+='</div></div>';
+    });
+  }
+  h+='</div></div>';
+  /* 플로우 안내 */
+  h+='<div class="card"><div class="card-h">🔄 알리바바 → 수출 플로우</div><div class="card-b">';
+  var steps=['문의 수신','AI 응답','유망 선별','바이어 전환','미팅 제안','PI 발행','주문 확정','선적/배송'];
+  h+='<div style="display:flex;gap:0;flex-wrap:wrap">';
+  steps.forEach(function(st,i){
+    h+='<div style="text-align:center;padding:8px 4px;flex:1;min-width:70px"><div style="width:24px;height:24px;border-radius:12px;background:var(--pri-g);color:var(--bg);display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800">'+(i+1)+'</div><div style="font-size:10px;margin-top:4px;color:var(--w60)">'+st+'</div></div>';
+    if(i<steps.length-1)h+='<div style="display:flex;align-items:center;margin-top:-6px"><span style="color:var(--w20)">→</span></div>';
+  });
+  h+='</div></div></div>';
+  return h;
+}
+
+function showAlibabaStoreForm(){
+  var body='<form id="asf">'+
+    UI.inp('store_name','스토어명',{placeholder:'알리바바 스토어 이름'})+
+    UI.inp('store_url','스토어 URL',{placeholder:'https://korean-store.en.alibaba.com'})+
+    UI.inp('store_id','스토어 ID',{placeholder:'알리바바 스토어 ID (선택)'})+
+    '<div class="grid-2">'+UI.inp('products_listed','등록 상품 수',{type:'number',value:'0'})+UI.inp('monthly_views','월간 조회수',{type:'number',value:'0'})+'</div>'+
+  '</form>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'asm',title:'🏪 알리바바 스토어 등록',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'asm\')">취소</button><button class="btn btn-pri" onclick="App.saveAlibabaStore()">등록</button>',width:'480px'}));UI.showModal('asm');
+}
+
+function saveAlibabaStore(){
+  var d=UI.fd('#asf');if(!d.store_name){UI.toast('스토어명 필수','warn');return;}
+  var data={user_id:S.user.id,store_name:d.store_name,store_url:d.store_url||null,store_id:d.store_id||null,
+    products_listed:parseInt(d.products_listed)||0,monthly_views:parseInt(d.monthly_views)||0,status:'active'};
+  sb.from('alibaba_stores').insert(data).then(function(r){
+    if(r.error){UI.toast('실패: '+r.error.message,'err');return;}
+    closeModal('asm');loadAlibabaStores().then(function(){render();UI.toast('스토어 등록!','ok');});
+  });
+}
+
+function showAlibabaInquiryForm(){
+  var storeOpts=S.alibabaStores.map(function(s){return {value:s.id,label:s.store_name};});
+  storeOpts.unshift({value:'',label:'-- 스토어 선택 --'});
+  var body='<form id="aif">'+
+    UI.sel('store_id','스토어',storeOpts)+
+    '<div class="grid-2">'+UI.inp('buyer_name','바이어명',{placeholder:'담당자'})+UI.inp('buyer_company','회사명',{placeholder:'회사'})+'</div>'+
+    '<div class="grid-3">'+UI.inp('buyer_country','국가',{placeholder:'US, JP, AE...'})+UI.inp('buyer_email','이메일',{placeholder:'이메일'})+UI.inp('quantity_requested','수량',{placeholder:'MOQ/수량'})+'</div>'+
+    UI.inp('product_interest','관심 제품',{placeholder:'어떤 제품에 관심?'})+
+    UI.ta('message','문의 내용',{rows:3,placeholder:'바이어 메시지 원문'})+
+  '</form>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'aim',title:'💬 알리바바 문의 등록',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'aim\')">취소</button><button class="btn btn-pri" onclick="App.saveAlibabaInquiry()">등록</button>',width:'560px'}));UI.showModal('aim');
+}
+
+function saveAlibabaInquiry(){
+  var d=UI.fd('#aif');if(!d.buyer_company&&!d.buyer_name){UI.toast('바이어 정보 필수','warn');return;}
+  var data={user_id:S.user.id,store_id:d.store_id||null,buyer_name:d.buyer_name||null,buyer_company:d.buyer_company||null,
+    buyer_country:d.buyer_country||null,buyer_email:d.buyer_email||null,quantity_requested:d.quantity_requested||null,
+    product_interest:d.product_interest||null,message:d.message||null};
+  sb.from('alibaba_inquiries').insert(data).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    closeModal('aim');loadAlibabaInquiries().then(function(){render();UI.toast('문의 등록!','ok');});
+    pushNotif('alibaba','새 알리바바 문의: '+(d.buyer_company||d.buyer_name),(d.product_interest||'').substring(0,40),'alibaba',null,true);
+  });
+}
+
+function viewAlibabaInquiry(iqId){
+  var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(!iq)return;
+  var inqStLabel={new:'신규',replied:'응답완료',qualified:'유망',sample_sent:'샘플발송',negotiating:'협상중',converted:'전환',lost:'실패',spam:'스팸'};
+  var h='<div style="margin-bottom:12px">';
+  h+='<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(iq.buyer_company||iq.buyer_name||'Unknown')+'</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px;color:var(--w60)">';
+  if(iq.buyer_name)h+='<div>👤 '+iq.buyer_name+'</div>';
+  if(iq.buyer_country)h+='<div>🌍 '+iq.buyer_country+'</div>';
+  if(iq.buyer_email)h+='<div>✉️ '+iq.buyer_email+'</div>';
+  if(iq.quantity_requested)h+='<div>📦 '+iq.quantity_requested+'</div>';
+  h+='</div></div>';
+  if(iq.product_interest)h+='<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;margin-bottom:4px">관심 제품</div><div style="font-size:13px;color:var(--w70)">'+iq.product_interest+'</div></div>';
+  if(iq.message)h+='<div style="margin-bottom:10px;padding:10px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:700;margin-bottom:4px">원문 메시지</div><div style="font-size:13px;color:var(--w70);white-space:pre-wrap">'+iq.message+'</div></div>';
+  /* AI 응답 초안 */
+  if(iq.reply_draft)h+='<div style="margin-bottom:10px;padding:10px;border-radius:8px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15)"><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:4px">🤖 AI 응답 초안</div><div style="font-size:13px;color:var(--w70);white-space:pre-wrap">'+iq.reply_draft+'</div></div>';
+  /* 상태 변경 */
+  h+='<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">상태</div><div style="display:flex;gap:4px;flex-wrap:wrap">';
+  ['new','replied','qualified','sample_sent','negotiating','converted','lost','spam'].forEach(function(st){
+    h+='<button class="btn btn-sm '+(iq.status===st?'btn-pri':'btn-ghost')+'" style="font-size:11px" onclick="App.setAlibabaInquiryStatus(\''+iqId+'\',\''+st+'\')">'+inqStLabel[st]+'</button>';
+  });
+  h+='</div></div>';
+  var footer='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  footer+='<button class="btn btn-ghost" onclick="App.closeModal(\'aiv\')">닫기</button>';
+  footer+='<button class="btn btn-acc btn-sm" onclick="App.getAlibabaReply(\''+iqId+'\')">🤖 AI 응답 생성</button>';
+  if(iq.status!=='converted'&&iq.status!=='lost'&&iq.status!=='spam')footer+='<button class="btn btn-ok btn-sm" onclick="App.convertInquiryToBuyer(\''+iqId+'\')">🤝 바이어 전환</button>';
+  footer+='</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'aiv',title:'💬 문의 상세',body:h,footer:footer,width:'560px'}));UI.showModal('aiv');
+}
+
+function setAlibabaInquiryStatus(iqId,status){
+  sb.from('alibaba_inquiries').update({status:status,updated_at:new Date().toISOString()}).eq('id',iqId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(iq)iq.status=status;
+    closeModal('aiv');viewAlibabaInquiry(iqId);UI.toast('상태 변경!','ok');
+  });
+}
+
+function getAlibabaReply(iqId){
+  var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(!iq)return;
+  var product=S.products.length?S.products[0]:null;
+  UI.toast('AI 응답 생성 중...','info');
+  fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    inquiry:iq,product:product,company:S.company
+  })}).then(function(r){return r.json();}).then(function(j){
+    if(j.error){UI.toast('실패: '+j.error,'err');return;}
+    sb.from('alibaba_inquiries').update({reply_draft:j.reply,status:iq.status==='new'?'replied':iq.status}).eq('id',iqId).then(function(){
+      var i2=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(i2){i2.reply_draft=j.reply;if(i2.status==='new')i2.status='replied';}
+      closeModal('aiv');viewAlibabaInquiry(iqId);UI.toast('AI 응답 생성 완료!','ok');
+    });
+  }).catch(function(e){UI.toast('서버 오류','err');});
+}
+
+function convertInquiryToBuyer(iqId){
+  var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(!iq)return;
+  if(!confirm((iq.buyer_company||iq.buyer_name)+'를 바이어로 전환하시겠습니까?'))return;
+  var buyerData={registered_by:S.user.id,source:'alibaba',company_name:iq.buyer_company||iq.buyer_name||'Alibaba Buyer',
+    contact_name:iq.buyer_name||null,email:iq.buyer_email||null,country:iq.buyer_country||null,
+    categories:S.products.length?[S.products[0].category]:[],notes:'알리바바 문의에서 전환. 관심제품: '+(iq.product_interest||'N/A')};
+  sb.from('buyers').insert(buyerData).select().then(function(r){
+    if(r.error){UI.toast('바이어 등록 실패: '+r.error.message,'err');return;}
+    var newBuyer=r.data&&r.data[0];
+    var upd={status:'converted',converted_to_buyer_id:newBuyer?newBuyer.id:null,updated_at:new Date().toISOString()};
+    sb.from('alibaba_inquiries').update(upd).eq('id',iqId).then(function(){
+      var i2=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(i2){i2.status='converted';i2.converted_to_buyer_id=newBuyer?newBuyer.id:null;}
+      closeModal('aiv');
+      Promise.all([loadB(),loadAlibabaInquiries()]).then(function(){render();
+        UI.toast('바이어 전환 완료!','ok');
+        pushNotif('alibaba','알리바바 → 바이어 전환: '+(iq.buyer_company||iq.buyer_name),'바이어 관리에서 확인하세요','buyers',null,true);
+      });
+    });
+  });
+}
+
+/* === SAMPLES (in buyers page) === */
+function showSampleForm(buyerId){
+  var buyer=S.buyers.find(function(b){return b.id===buyerId;});if(!buyer)return;
+  var prodOpts=S.products.map(function(p){return {value:p.id,label:p.name_ko||p.name_en};});
+  prodOpts.unshift({value:'',label:'-- 제품 선택 --'});
+  var pjOpts=S.projects.map(function(p){return {value:p.id,label:p.name};});
+  pjOpts.unshift({value:'',label:'-- 프로젝트 --'});
+  var body='<form id="sf"><div style="margin-bottom:10px;padding:10px;border-radius:8px;background:var(--w08)"><strong>바이어:</strong> '+buyer.company_name+' ('+(buyer.country||'')+')</div>'+
+    '<div class="grid-2">'+UI.sel('product_id','제품',prodOpts)+UI.sel('project_id','프로젝트',pjOpts)+'</div>'+
+    '<div class="grid-3">'+UI.inp('quantity','수량',{type:'number',value:'1'})+UI.sel('shipping_method','배송방법',[{value:'ems',label:'EMS'},{value:'dhl',label:'DHL'},{value:'fedex',label:'FedEx'},{value:'ups',label:'UPS'},{value:'k_packet',label:'K-Packet'},{value:'other',label:'기타'}])+UI.inp('shipping_cost','배송비(USD)',{type:'number',step:'0.01',value:'0'})+'</div>'+
+    UI.inp('sample_cost','샘플 원가(USD)',{type:'number',step:'0.01',value:'0'})+
+    UI.ta('notes','메모',{rows:2,placeholder:'샘플 구성, 특이사항 등'})+
+  '</form>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'sm',title:'📦 샘플 발송 — '+buyer.company_name,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'sm\')">취소</button><button class="btn btn-pri" onclick="App.saveSample(\''+buyerId+'\')">등록</button>',width:'500px'}));UI.showModal('sm');
+}
+
+function saveSample(buyerId){
+  var d=UI.fd('#sf');
+  var data={user_id:S.user.id,buyer_id:buyerId,product_id:d.product_id||null,project_id:d.project_id||null,
+    quantity:parseInt(d.quantity)||1,shipping_method:d.shipping_method||null,
+    shipping_cost:parseFloat(d.shipping_cost)||0,sample_cost:parseFloat(d.sample_cost)||0,notes:d.notes||null};
+  sb.from('samples').insert(data).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    closeModal('sm');loadSamples().then(function(){render();UI.toast('샘플 등록!','ok');});
+    pushNotif('sample','샘플 발송 등록',(S.buyers.find(function(b){return b.id===buyerId;})||{}).company_name||'','buyers',null,true);
+  });
+}
+
+function updateSampleStatus(sampleId,status){
+  var upd={status:status,updated_at:new Date().toISOString()};
+  if(status==='shipped')upd.shipped_at=new Date().toISOString();
+  if(status==='delivered')upd.delivered_at=new Date().toISOString();
+  sb.from('samples').update(upd).eq('id',sampleId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    loadSamples().then(function(){render();UI.toast('상태 변경!','ok');});
+  });
+}
+
+function updateSampleTracking(sampleId){
+  var val=prompt('운송장 번호를 입력하세요:');if(!val)return;
+  sb.from('samples').update({tracking_number:val,status:'shipped',shipped_at:new Date().toISOString()}).eq('id',sampleId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    loadSamples().then(function(){render();UI.toast('운송장 등록!','ok');});
+  });
+}
+
+/* === SHIPMENT FORM === */
+function showShipmentForm(orderId){
+  var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
+  var body='<form id="shf">'+
+    '<div class="grid-2">'+UI.sel('type','운송방식',[{value:'ocean',label:'🚢 해상'},{value:'air',label:'✈️ 항공'},{value:'express',label:'📦 특급'},{value:'rail',label:'🚂 철도'}])+
+    UI.inp('bl_number','B/L 또는 AWB',{placeholder:'운송장 번호'})+'</div>'+
+    '<div class="grid-2">'+UI.inp('vessel_name','선박/항공편명',{placeholder:'선택'})+UI.inp('container_number','컨테이너번호',{placeholder:'선택'})+'</div>'+
+    '<div class="grid-2">'+UI.inp('port_of_loading','출발항',{value:'Busan, KR'})+UI.inp('port_of_discharge','도착항',{placeholder:'Los Angeles, US'})+'</div>'+
+    '<div class="grid-2">'+UI.inp('etd','출발예정(ETD)',{type:'date'})+UI.inp('eta','도착예정(ETA)',{type:'date'})+'</div>'+
+    '<div class="grid-2">'+UI.inp('forwarder_name','포워더명',{placeholder:'포워더 회사명'})+UI.inp('forwarder_contact','포워더 연락처',{placeholder:'전화/이메일'})+'</div>'+
+    UI.inp('freight_cost','운임(USD)',{type:'number',step:'0.01'})+
+  '</form>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'shm',title:'🚢 선적 등록 — '+o.order_number,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'shm\')">취소</button><button class="btn btn-pri" onclick="App.saveShipment(\''+orderId+'\')">등록</button>',width:'520px'}));UI.showModal('shm');
+}
+
+function saveShipment(orderId){
+  var d=UI.fd('#shf');
+  var data={order_id:orderId,user_id:S.user.id,type:d.type||'ocean',bl_number:d.bl_number||null,
+    vessel_name:d.vessel_name||null,container_number:d.container_number||null,
+    port_of_loading:d.port_of_loading||'Busan, KR',port_of_discharge:d.port_of_discharge||null,
+    etd:d.etd||null,eta:d.eta||null,forwarder_name:d.forwarder_name||null,
+    forwarder_contact:d.forwarder_contact||null,freight_cost:parseFloat(d.freight_cost)||null};
+  sb.from('shipments').insert(data).then(function(r){
+    if(r.error){UI.toast('실패: '+r.error.message,'err');return;}
+    closeModal('shm');closeModal('od');loadShipments().then(function(){viewOrder(orderId);UI.toast('선적 등록!','ok');});
+    pushNotif('shipment','선적 등록',(d.port_of_loading||'')+' → '+(d.port_of_discharge||''),'orders',null,true);
+  });
+}
+
+function setMilestonePaid(msId){
+  sb.from('payment_milestones').update({status:'paid',paid_at:new Date().toISOString()}).eq('id',msId).then(function(r){
+    if(r.error){UI.toast('실패','err');return;}
+    loadMilestones().then(function(){render();UI.toast('결제 완료!','ok');});
+    pushNotif('payment','결제 마일스톤 완납','','orders',null,true);
+  });
+}
+
+/* === PI → ORDER CONVERSION === */
+function convertPItoOrder(docId){
+  var doc=null;
+  sb.from('documents').select('*').eq('id',docId).single().then(function(r){
+    if(r.error||!r.data){UI.toast('서류 없음','err');return;}
+    doc=r.data;var c=doc.content||{};
+    if(!confirm('이 PI를 주문으로 전환하시겠습니까?\n'+c.doc_number+' / $'+(c.total||0).toLocaleString()))return;
+    var orderNum='WO-'+new Date().getFullYear()+'-'+String(S.orders.length+1).padStart(3,'0');
+    var items=c.items||[];
+    var data={user_id:S.user.id,buyer_id:doc.buyer_id||null,project_id:doc.project_id||null,
+      order_number:orderNum,items:items,total_amount:parseFloat(c.total)||0,
+      payment_terms:c.payment_terms||'T/T 30% deposit',incoterms:c.incoterms||'FOB',
+      notes:[{text:'PI #'+c.doc_number+'에서 전환',date:new Date().toISOString()}]};
+    sb.from('orders').insert(data).select().then(function(or){
+      if(or.error){UI.toast('주문 생성 실패: '+or.error.message,'err');return;}
+      var newOrder=or.data&&or.data[0];
+      /* 결제 마일스톤 자동 생성 */
+      if(newOrder&&data.payment_terms){
+        var milestones=[];var total=parseFloat(data.total_amount)||0;
+        if(data.payment_terms.indexOf('30%')!==-1){
+          milestones.push({order_id:newOrder.id,user_id:S.user.id,name:'deposit',percentage:30,amount:Math.round(total*0.3*100)/100,currency:'USD',status:'pending'});
+          milestones.push({order_id:newOrder.id,user_id:S.user.id,name:'pre_shipment',percentage:70,amount:Math.round(total*0.7*100)/100,currency:'USD',status:'pending'});
+        }else if(data.payment_terms.indexOf('50%')!==-1){
+          milestones.push({order_id:newOrder.id,user_id:S.user.id,name:'deposit',percentage:50,amount:Math.round(total*0.5*100)/100,currency:'USD',status:'pending'});
+          milestones.push({order_id:newOrder.id,user_id:S.user.id,name:'pre_shipment',percentage:50,amount:Math.round(total*0.5*100)/100,currency:'USD',status:'pending'});
+        }else if(data.payment_terms.indexOf('100%')!==-1){
+          milestones.push({order_id:newOrder.id,user_id:S.user.id,name:'deposit',percentage:100,amount:total,currency:'USD',status:'pending'});
+        }else if(data.payment_terms.toLowerCase().indexOf('l/c')!==-1){
+          milestones.push({order_id:newOrder.id,user_id:S.user.id,name:'lc_opening',percentage:100,amount:total,currency:'USD',status:'pending'});
+        }
+        if(milestones.length>0)sb.from('payment_milestones').insert(milestones).then(function(){loadMilestones();});
+      }
+      loadOrders().then(function(){render();UI.toast('PI → 주문 전환 완료!','ok');nav('orders');});
+      pushNotif('order','PI→주문 전환: '+orderNum,'$'+total.toLocaleString(),'orders',null,true);
+    });
+  });
+}
+
 /* === VOUCHER REPORT === */
 function pgVoucherReport(){
   var now=new Date();var mm=now.getMonth(),yy=now.getFullYear();
@@ -2423,7 +2982,7 @@ function saveVoucherReport(){
 function nav(p){S.page=p;S.currentAnalysis=null;S.currentProject=null;S.analysisStep=0;S.analysisData=null;S.docType=null;render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 
-var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 분석',products:'📦 제품 카드',projects:'🚀 프로젝트',orders:'📋 주문관리',services:'💼 서비스',docgen:'📄 서류',emailhub:'✉️ 이메일',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🤝 바이어'};
+var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 분석',products:'📦 제품 카드',projects:'🚀 프로젝트',orders:'📋 주문관리',services:'💼 서비스',docgen:'📄 서류',emailhub:'✉️ 이메일',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🤝 바이어',meetings:'📅 일정관리',alibaba:'🏪 알리바바'};
 
 /* === ONBOARDING WIZARD === */
 function pgOnboarding(){
@@ -2503,11 +3062,12 @@ function completeOnboarding(startAnalysis){
 
 function renderPage(){
   if(S.user&&!S.user.onboarding_completed&&!S.company&&S.page==='dashboard')return pgOnboarding();
-  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'buyers':return pgBuyers();default:return pgDash();}
+  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'buyers':return pgBuyers();case'meetings':return pgMeetings();case'alibaba':return pgAlibaba();default:return pgDash();}
 }
 
 function renderSidebar(){
-  var menu=[{id:'dashboard',icon:'📊',label:'대시보드'},{id:'analysis',icon:'🔬',label:'AI 수출 분석'},{id:'projects',icon:'🚀',label:'프로젝트'},{id:'div'},{id:'products',icon:'📦',label:'제품 카드'},{id:'buyers',icon:'🤝',label:'바이어'},{id:'docgen',icon:'📄',label:'서류 생성'},{id:'emailhub',icon:'✉️',label:'이메일 허브'},{id:'div'},{id:'services',icon:'💼',label:'서비스 신청'},{id:'costsim',icon:'🧮',label:'원가 계산'},{id:'subscription',icon:'💎',label:'구독'},{id:'voucherreport',icon:'🏛️',label:'바우처 보고서'},{id:'div'},{id:'settings',icon:'⚙️',label:'설정'}];
+  var isAlibaba=S.user&&S.user.plan==='alibaba';
+  var menu=[{id:'dashboard',icon:'📊',label:'대시보드'},{id:'analysis',icon:'🔬',label:'AI 수출 분석'},{id:'projects',icon:'🚀',label:'프로젝트'},{id:'div'},{id:'products',icon:'📦',label:'제품 카드'},{id:'buyers',icon:'🤝',label:'바이어'},{id:'meetings',icon:'📅',label:'일정관리'},{id:'orders',icon:'📋',label:'주문관리'},{id:'div'},{id:'docgen',icon:'📄',label:'서류 생성'},{id:'emailhub',icon:'✉️',label:'이메일 허브'},{id:'costsim',icon:'🧮',label:'원가 계산'},{id:'div'}].concat(isAlibaba?[{id:'alibaba',icon:'🏪',label:'알리바바'},{id:'div'}]:[]).concat([{id:'services',icon:'💼',label:'서비스 신청'},{id:'subscription',icon:'💎',label:'구독'},{id:'voucherreport',icon:'🏛️',label:'바우처 보고서'},{id:'div'},{id:'settings',icon:'⚙️',label:'설정'}]);
   return '<div class="sidebar"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">'+UI.pb(S.user&&S.user.plan||'free')+'</div></div></div><div class="sidebar-nav">'+menu.map(function(m){if(m.id==='div')return '<div class="nav-section"></div>';return '<div class="nav-item '+(S.page===m.id?'active':'')+'" onclick="App.nav(\''+m.id+'\')"><span class="icon">'+m.icon+'</span><span>'+m.label+'</span></div>';}).join('')+'</div><div class="sidebar-footer"><div class="nav-item" onclick="App.doLogout()" style="color:var(--w40)"><span class="icon">🚪</span><span>로그아웃</span></div></div></div>';
 }
 
@@ -2520,7 +3080,7 @@ function render(){
 }
 
 function renderNotifPanel(){
-  var ICONS={order:'📋',email:'✉️',buyer:'🤝',service:'💼',cert:'📜',analysis:'🔬',system:'🔔'};
+  var ICONS={order:'📋',email:'✉️',buyer:'🤝',service:'💼',cert:'📜',analysis:'🔬',system:'🔔',meeting:'📅',alibaba:'🏪',sample:'📦',shipment:'🚢',payment:'💰'};
   var list=S.notifications.slice(0,20);
   var unread=list.filter(function(n){return !n.is_read;}).length;
   var h='<div style="position:absolute;top:52px;right:16px;z-index:500;width:380px;max-height:480px;background:var(--card);border:1px solid var(--bd-l);border-radius:var(--r);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden">';
@@ -2591,7 +3151,7 @@ function pushNotif(type,title,body,linkPage,linkId,telegram){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid};
 loadUser();
 })();
 </script>
