@@ -138,6 +138,7 @@ var U={
   usd:function(n){if(n==null)return'\u2014';return'$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});},
   krw:function(n){if(n==null)return'\u2014';n=Number(n);if(n>=1e8)return'\u20A9'+(n/1e8).toFixed(1)+'\uC5B5';if(n>=1e4)return'\u20A9'+(n/1e4).toFixed(0)+'\uB9CC';return'\u20A9'+n.toLocaleString('ko-KR');},
   tr:function(s,l){l=l||50;return s&&s.length>l?s.slice(0,l)+'\u2026':s||'';},
+  esc:function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');},
   sl:function(t){return{premium_analysis:'\uD504\uB9AC\uBBF8\uC5C4 \uBD84\uC11D',matching:'\uBC14\uC774\uC5B4 \uB9E4\uCE6D',document:'\uC11C\uB958 \uB300\uD589',certification:'\uC778\uC99D \uB300\uD589',logistics:'\uBB3C\uB958/\uD1B5\uAD00',email_support:'\uC774\uBA54\uC77C \uC9C0\uC6D0'}[t]||t;},
   si:function(t){return{premium_analysis:'\uD83D\uDD2C',matching:'\uD83E\uDD1D',document:'\uD83D\uDCC4',certification:'\uD83C\uDFC5',logistics:'\uD83D\uDEA2',email_support:'\u2709\uFE0F'}[t]||'\uD83D\uDCCB';},
   cl:function(c){return{US:'\uD83C\uDDFA\uD83C\uDDF8 \uBBF8\uAD6D',JP:'\uD83C\uDDEF\uD83C\uDDF5 \uC77C\uBCF8',CN:'\uD83C\uDDE8\uD83C\uDDF3 \uC911\uAD6D',EU:'\uD83C\uDDEA\uD83C\uDDFA EU',SEA:'\uD83C\uDF0F \uB3D9\uB0A8\uC544'}[c]||c||'\u2014';},
@@ -400,6 +401,7 @@ function rmSP(i){S.analysisData.selling_points.splice(i,1);render();}
 function addFiles(fl){
   for(var i=0;i<fl.length;i++){
     var f=fl[i];
+    if(f.size>10485760){UI.toast('파일 크기 초과 (최대 10MB): '+f.name,'err');continue;}
     // base64 변환하여 저장
     (function(file){
       var reader=new FileReader();
@@ -417,9 +419,10 @@ function toggleCert(c){var d=S.analysisData;if(!d.existing_certs)d.existing_cert
 
 /* ── Analysis: submit ── */
 function submitA(){
+  if(S._submitting){return;}S._submitting=true;
   /* Plan limit check */
   var g=_planGate('analysis');
-  if(g.blocked){UI.toast(g.label+' 한도 초과! 업그레이드가 필요합니다.','warn');nav('subscription');return;}
+  if(g.blocked){S._submitting=false;UI.toast(g.label+' 한도 초과! 업그레이드가 필요합니다.','warn');nav('subscription');return;}
   var d=S.analysisData;
   /* collect current step data */
   if(S.analysisStep===1){
@@ -431,11 +434,12 @@ function submitA(){
     d.selling_points=Array.from(document.querySelectorAll('.asp')).map(function(e){return e.value;});
     var els=document.querySelectorAll('.card-b input[name],.card-b textarea[name]');els.forEach(function(el){if(el.name)d[el.name]=el.value;});
   }
-  if(!d||!d.product_name){UI.toast('제품명을 입력하세요','warn');return;}
+  if(!d||!d.product_name){S._submitting=false;UI.toast('제품명을 입력하세요','warn');return;}
   var urls=d.urls.filter(function(u){return u;});
+  urls=urls.filter(function(u){try{new URL(u);return true;}catch(e){return false;}});
   var sp=d.selling_points.filter(function(s){return s;});
   sb.from('analyses').insert({user_id:S.user.id,product_name:d.product_name,product_url:urls[0]||null,analysis_type:d.analysis_type||'free',status:'analyzing',ai_result:{input_data:{product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:urls,files:(d.files||[]).map(function(f){return f.name||'file';}),selling_points:sp,target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements}}}).select().single().then(function(r){
-    if(r.error){UI.toast('실패: '+r.error.message,'err');return;}
+    if(r.error){S._submitting=false;UI.toast('실패: '+r.error.message,'err');return;}
     S.analyses.unshift(r.data);S.analysisStep=0;S.analysisData=null;
     set({currentAnalysis:r.data});UI.toast('AI가 실제 수출 분석 중입니다... (30초~1분 소요)','info');
     /* AI 분석 API 호출 */
@@ -446,10 +450,12 @@ function submitA(){
       var res=data.result;
       res.input_data={product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),files:(d.files||[]).map(function(f){return f.name||f;}),selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer};
       sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).then(function(){
+        S._submitting=false;
         autoCreateProduct(r.data.id,res,d.product_name);
         loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('AI 분석 완료!','ok');});
       });
     }).catch(function(err){
+      S._submitting=false;
       console.warn('AI API 실패, 폴백 모드:',err);UI.toast('AI 서버 연결 실패, 기본 분석 사용','warn');
       var res=genReport(d);
       sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).then(function(){
