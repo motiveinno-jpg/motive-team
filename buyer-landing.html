@@ -168,7 +168,7 @@ function DemoMotion({ openSignup }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: T.w90, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                     <div style={{ display: "flex", gap: 4, marginTop: 3, alignItems: "center" }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: T.acc }}>{p.price}원</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: T.acc }}>{p.price}원 <span style={{ fontSize: 9, fontWeight: 500, color: T.w40 }}>(한국 판매가)</span></span>
                       {p.maker && <span style={{ fontSize: 10, color: T.w40 }}>| {p.maker}</span>}
                     </div>
                   </div>
@@ -236,6 +236,22 @@ function App() {
   const [demoBlurred, setDemoBlurred] = useState(false);
   const blurTimer = useRef(null);
 
+  /* Sort, Filter, Pagination */
+  const [sortMode, setSortMode] = useState("sim");
+  const [originFilter, setOriginFilter] = useState("all");
+  const [ageGroup, setAgeGroup] = useState("all");
+  const [trendTab, setTrendTab] = useState("weekly");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalResults, setTotalResults] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  /* Product Detail Modal */
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [translatedTitle, setTranslatedTitle] = useState("");
+  const [translateLoading, setTranslateLoading] = useState(false);
+  const [analysisData, setAnalysisData] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+
   const RELAY = (!location.hostname || location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.protocol === "file:") ? "http://localhost:3456" : "https://uncommanded-brooke-truculent.ngrok-free.dev";
   const sb = window.supabase.createClient("https://lylktgxngrlxmsldxdqj.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0");
 
@@ -260,40 +276,99 @@ function App() {
   const [searchCount, setSearchCount] = useState(() => {
     try { return parseInt(localStorage.getItem("whistle_search_count") || "0"); } catch { return 0; }
   });
-  const FREE_SEARCH_LIMIT = 3; // 비회원 3회
+  const FREE_SEARCH_LIMIT = 99; // 테스트용 (배포 시 3으로 변경)
 
-  const runDemoSearch = (q) => {
-    const query = (q || demoQuery).trim();
-    if (!query) return;
+  const BATCH_SIZE = 40;
+  const MAX_PAGES = 3;
+
+  const buildQuery = (q, age) => {
+    const base = (q || "").trim();
+    if (!base) return "";
+    if (age && age !== "all") return age + " 인기 " + base;
+    return base;
+  };
+
+  const runDemoSearch = (q, sort, age, append) => {
+    const rawQuery = (q || demoQuery).trim();
+    if (!rawQuery) return;
+    const useSort = sort || sortMode;
+    const useAge = age !== undefined ? age : ageGroup;
+    const finalQuery = buildQuery(rawQuery, useAge);
 
     // 검색 크레딧 확인
-    if (searchCount >= FREE_SEARCH_LIMIT) {
+    if (!append && searchCount >= FREE_SEARCH_LIMIT) {
       setDemoSearched(true);
       setDemoResults([]);
       setDemoError("FREE_LIMIT");
       return;
     }
 
-    setDemoQuery(query);
-    setDemoLoading(true);
-    setDemoSearched(true);
-    setDemoBlurred(false);
-    setDemoError("");
-    if (blurTimer.current) clearTimeout(blurTimer.current);
-    fetch(RELAY + "/api/naver/search?q=" + encodeURIComponent(query) + "&display=6", {headers:{"ngrok-skip-browser-warning":"1"}})
+    if (!append) {
+      setDemoQuery(rawQuery);
+      setDemoLoading(true);
+      setDemoSearched(true);
+      setDemoBlurred(false);
+      setDemoError("");
+      setCurrentPage(1);
+      setOriginFilter("all");
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+    } else {
+      setLoadingMore(true);
+    }
+
+    const startIdx = append ? (currentPage * BATCH_SIZE + 1) : 1;
+    fetch(RELAY + "/api/naver/search?q=" + encodeURIComponent(finalQuery) + "&display=" + BATCH_SIZE + "&start=" + startIdx + "&sort=" + useSort, {headers:{"ngrok-skip-browser-warning":"1"}})
       .then(r => r.json())
       .then(d => {
         if (d.ok && d.items) {
           const items = d.items.map(it => ({ ...it, origin: classifyOrigin(it.maker, it.brand) }));
-          setDemoResults(items);
-          const newCount = searchCount + 1;
-          setSearchCount(newCount);
-          try { localStorage.setItem("whistle_search_count", String(newCount)); } catch {}
-        } else { setDemoResults([]); setDemoError(d.error || "검색 결과가 없습니다"); }
+          if (append) {
+            setDemoResults(prev => [...prev, ...items]);
+            setCurrentPage(p => p + 1);
+          } else {
+            setDemoResults(items);
+            const newCount = searchCount + 1;
+            setSearchCount(newCount);
+            try { localStorage.setItem("whistle_search_count", String(newCount)); } catch {}
+          }
+          setTotalResults(d.total || 0);
+        } else if (!append) { setDemoResults([]); setDemoError(d.error || "검색 결과가 없습니다"); }
         setDemoLoading(false);
-        blurTimer.current = setTimeout(() => setDemoBlurred(true), 10000);
+        setLoadingMore(false);
+        if (!append) blurTimer.current = setTimeout(() => setDemoBlurred(true), 15000);
       })
-      .catch(e => { setDemoResults([]); setDemoLoading(false); setDemoError("서버 연결 실패: " + e.message); });
+      .catch(e => { if (!append) { setDemoResults([]); setDemoError("서버 연결 실패: " + e.message); } setDemoLoading(false); setLoadingMore(false); });
+  };
+
+  const changeSort = (s) => { setSortMode(s); if (demoQuery) runDemoSearch(demoQuery, s); };
+  const changeAge = (a) => { setAgeGroup(a); if (demoQuery) runDemoSearch(demoQuery, sortMode, a); };
+  const loadMore = () => { if (!loadingMore && currentPage < MAX_PAGES) runDemoSearch(demoQuery, sortMode, ageGroup, true); };
+
+  const filteredResults = originFilter === "all" ? demoResults : demoResults.filter(p => p.origin === originFilter);
+
+  /* Product Detail */
+  const openProductDetail = (p) => {
+    setSelectedProduct(p);
+    setTranslatedTitle("");
+    setTranslateLoading(true);
+    setAnalysisData(null);
+    setAnalysisLoading(false);
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+    // Translate title
+    const rawTitle = (p.title || "").replace(/<[^>]*>/g, "");
+    fetch(RELAY + "/api/translate", { method: "POST", headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" }, body: JSON.stringify({ text: rawTitle, targetLang: "en" }) })
+      .then(r => r.json())
+      .then(d => { setTranslatedTitle(d.ok ? d.translated : ""); setTranslateLoading(false); })
+      .catch(() => { setTranslateLoading(false); });
+  };
+
+  const requestAnalysis = () => {
+    if (!selectedProduct?.link || analysisLoading) return;
+    setAnalysisLoading(true);
+    fetch(RELAY + "/api/whistle/analyze-anonymous", { method: "POST", headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" }, body: JSON.stringify({ url: selectedProduct.link }) })
+      .then(r => r.json())
+      .then(d => { setAnalysisData(d.ok ? d.analysis : { error: d.error || "분석 실패" }); setAnalysisLoading(false); })
+      .catch(e => { setAnalysisData({ error: e.message }); setAnalysisLoading(false); });
   };
 
   /* Login */
@@ -463,8 +538,161 @@ function App() {
     </div>
   );
 
+  /* ═══ PRODUCT DETAIL MODAL ═══ */
+  const productDetailModal = selectedProduct && (() => {
+    const p = selectedProduct;
+    const rawTitle = (p.title || "").replace(/<[^>]*>/g, "");
+    const price = parseInt(p.lprice || 0).toLocaleString();
+    const cats = [p.category1, p.category2, p.category3, p.category4].filter(Boolean).join(" > ");
+    const summaryText = (() => {
+      const parts = [];
+      if (p.maker) parts.push(p.maker + "가 제조한");
+      if (p.category1) parts.push(p.category1 + " 제품입니다.");
+      else parts.push("제품입니다.");
+      parts.push("네이버 쇼핑 " + price + "원.");
+      if (p.origin === "verified") parts.push("AI 원산지 검증: 한국 제조 확인.");
+      else if (p.origin === "likely_korean") parts.push("AI 원산지 검증: 한국 브랜드 추정.");
+      return parts.join(" ");
+    })();
+
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={() => setSelectedProduct(null)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.75)", backdropFilter: "blur(10px)" }} />
+        <div style={{ position: "relative", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", background: T.bgCard, borderRadius: 20, border: `1px solid ${T.borderL}`, boxShadow: "0 24px 80px rgba(0,0,0,.7)" }}>
+          {/* Close button */}
+          <div onClick={() => setSelectedProduct(null)} style={{ position: "sticky", top: 12, float: "right", marginRight: 12, width: 36, height: 36, borderRadius: 18, background: "rgba(0,0,0,.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, color: T.w60, zIndex: 2 }}>&#x2715;</div>
+
+          {/* Image */}
+          {p.image && <img src={p.image} style={{ width: "100%", height: 240, objectFit: "cover", borderRadius: "20px 20px 0 0" }} onError={e => { e.target.style.display = "none"; }} />}
+
+          <div style={{ padding: "20px 24px 24px" }}>
+            {/* Origin badge large */}
+            <div style={{ marginBottom: 12 }}>
+              {p.origin === "verified"
+                ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: "rgba(0,230,118,.12)", color: T.ok, border: `1px solid ${T.ok}30` }}>&#x2705; 한국 제조 확인</span>
+                : p.origin === "likely_korean"
+                  ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: "rgba(255,184,0,.12)", color: T.acc, border: `1px solid ${T.acc}30` }}>&#x26A0;&#xFE0F; 한국 브랜드 추정</span>
+                  : <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: T.w08, color: T.w40, border: `1px solid ${T.border}` }}>&#x2753; 원산지 미확인</span>
+              }
+            </div>
+
+            {/* Title Korean */}
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.w, lineHeight: 1.4, marginBottom: 4 }}>{rawTitle}</div>
+
+            {/* Title English (async) */}
+            <div style={{ fontSize: 13, color: T.w40, marginBottom: 16, minHeight: 20 }}>
+              {translateLoading
+                ? <span style={{ color: T.pri, fontSize: 12 }}>&#x23F3; 영문 번역 중...</span>
+                : translatedTitle
+                  ? <span style={{ fontStyle: "italic" }}>{translatedTitle}</span>
+                  : null
+              }
+            </div>
+
+            {/* Price */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 16, padding: "12px 16px", borderRadius: 12, background: `${T.acc}08`, border: `1px solid ${T.acc}20` }}>
+              <span style={{ fontSize: 10, color: T.w40 }}>한국 판매가</span>
+              <span style={{ fontSize: 24, fontWeight: 800, color: T.acc }}>&#x20A9;{price}</span>
+              <span style={{ fontSize: 12, color: T.w20 }}>원</span>
+            </div>
+
+            {/* Info grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+              {p.maker && <div style={{ padding: "10px 12px", borderRadius: 10, background: T.bgSurface, border: `1px solid ${T.border}` }}><div style={{ fontSize: 10, color: T.w20, marginBottom: 2 }}>제조사</div><div style={{ fontSize: 13, fontWeight: 700, color: T.w90 }}>{p.maker}</div></div>}
+              {p.brand && <div style={{ padding: "10px 12px", borderRadius: 10, background: T.bgSurface, border: `1px solid ${T.border}` }}><div style={{ fontSize: 10, color: T.w20, marginBottom: 2 }}>브랜드</div><div style={{ fontSize: 13, fontWeight: 700, color: T.w90 }}>{p.brand}</div></div>}
+              {cats && <div style={{ padding: "10px 12px", borderRadius: 10, background: T.bgSurface, border: `1px solid ${T.border}`, gridColumn: !p.maker || !p.brand ? "span 1" : "span 2" }}><div style={{ fontSize: 10, color: T.w20, marginBottom: 2 }}>카테고리</div><div style={{ fontSize: 13, fontWeight: 600, color: T.w60 }}>{cats}</div></div>}
+              {p.mallName && <div style={{ padding: "10px 12px", borderRadius: 10, background: T.bgSurface, border: `1px solid ${T.border}` }}><div style={{ fontSize: 10, color: T.w20, marginBottom: 2 }}>판매처</div><div style={{ fontSize: 13, fontWeight: 600, color: T.w60 }}>{p.mallName}</div></div>}
+            </div>
+
+            {/* AI Summary (template-based) */}
+            <div style={{ padding: "14px 16px", borderRadius: 12, background: `${T.pri}06`, border: `1px solid ${T.pri}15`, marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 12 }}>&#x1F916;</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: T.pri }}>AI 요약</span>
+              </div>
+              <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.6 }}>{summaryText}</div>
+            </div>
+
+            {/* Deep Analysis Section */}
+            {!analysisData && !analysisLoading && (
+              <button onClick={requestAnalysis} style={{ ...s.btn("ghost"), width: "100%", padding: "14px", fontSize: 13, marginBottom: 12, border: `1.5px dashed ${T.purple}40`, color: T.purple, background: `${T.purple}06` }}>
+                &#x1F52C; AI 심층 분석 (제품 점수, HS코드, FOB 가격, 인증 요건)
+              </button>
+            )}
+            {analysisLoading && (
+              <div style={{ textAlign: "center", padding: "20px 16px", marginBottom: 12, borderRadius: 12, background: `${T.purple}06`, border: `1px solid ${T.purple}20` }}>
+                <div style={{ width: 28, height: 28, border: `3px solid ${T.border}`, borderTopColor: T.purple, borderRadius: "50%", margin: "0 auto 10px", animation: "spin 1s linear infinite" }} />
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.purple }}>AI가 제품을 심층 분석하고 있습니다...</div>
+                <div style={{ fontSize: 11, color: T.w40, marginTop: 4 }}>약 15~30초 소요됩니다</div>
+              </div>
+            )}
+            {analysisData && !analysisData.error && (
+              <div style={{ padding: "16px", borderRadius: 12, background: `${T.purple}06`, border: `1px solid ${T.purple}20`, marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                  <span style={{ fontSize: 12 }}>&#x1F52C;</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.purple }}>AI 심층 분석 결과</span>
+                </div>
+                <div style={{ fontSize: 12, color: T.w60, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                  {typeof analysisData === "string" ? analysisData : JSON.stringify(analysisData, null, 2)}
+                </div>
+              </div>
+            )}
+            {analysisData?.error && (
+              <div style={{ padding: "12px 16px", borderRadius: 10, background: `${T.err}08`, border: `1px solid ${T.err}20`, marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: T.err, fontWeight: 600 }}>분석 실패: {analysisData.error}</div>
+                <div style={{ fontSize: 11, color: T.w40, marginTop: 4 }}>네이버 상품 페이지가 복잡할 경우 분석에 실패할 수 있습니다.</div>
+              </div>
+            )}
+
+            {/* Action button */}
+            <button onClick={() => {
+              // 관심 제품 localStorage에 저장 → 가입 후 buyer.html에서 자동 로드
+              try {
+                const saved = JSON.parse(localStorage.getItem("whistle_saved_products") || "[]");
+                const exists = saved.some(s => s.link === p.link);
+                if (!exists) {
+                  saved.unshift({ title: rawTitle, lprice: p.lprice, image: p.image, link: p.link, maker: p.maker, brand: p.brand, origin: p.origin, category: cats, mallName: p.mallName, savedAt: new Date().toISOString() });
+                  localStorage.setItem("whistle_saved_products", JSON.stringify(saved.slice(0, 20)));
+                }
+              } catch {}
+              setSelectedProduct(null);
+              openSignup();
+            }} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 15 }}>
+              &#x1F4E9; 인콰이어리 보내기
+            </button>
+            <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: T.w20 }}>가입 후 Whistle 팀이 한국 제조사를 대신 컨택합니다</div>
+          </div>
+        </div>
+      </div>
+    );
+  })();
+
   /* ═══ HERO + INTERACTIVE DEMO ═══ */
   const quickKeywords = ["달팽이크림", "시트마스크", "홍삼", "선크림", "비타민C세럼", "헤어세럼", "립틴트"];
+  const sortOptions = [
+    { key: "sim", label: "관련순" }, { key: "date", label: "최신순" },
+    { key: "asc", label: "가격 낮은순" }, { key: "dsc", label: "가격 높은순" },
+  ];
+  const originFilters = [
+    { key: "all", label: "전체" }, { key: "verified", label: "✅ 한국 제조" }, { key: "likely_korean", label: "⚠️ 한국 브랜드" },
+  ];
+  const ageOptions = [
+    { key: "all", label: "전체" }, { key: "20대", label: "20대" }, { key: "30대", label: "30대" }, { key: "40대", label: "40대" }, { key: "50대", label: "50대+" },
+  ];
+  const trendData = {
+    weekly: [
+      { label: "💄 K-뷰티 TOP", query: "인기 스킨케어" },
+      { label: "🍜 K-푸드 TOP", query: "인기 한국식품" },
+      { label: "💊 건강식품 TOP", query: "인기 건강보조식품" },
+      { label: "💇 헤어/바디", query: "인기 헤어케어" },
+    ],
+    monthly: [
+      { label: "☀️ 선크림 베스트", query: "베스트 선크림" },
+      { label: "🧴 마스크팩", query: "베스트 시트마스크" },
+      { label: "🌿 홍삼 제품", query: "베스트 홍삼" },
+      { label: "💋 립 메이크업", query: "베스트 립틴트" },
+    ]
+  };
 
   const originBadge = (origin) => {
     if (origin === "verified") return <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: "rgba(0,230,118,.12)", color: T.ok }}>&#x2705; 한국 제조 확인</span>;
@@ -498,10 +726,32 @@ function App() {
             <input value={demoQuery} onChange={e => setDemoQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") runDemoSearch(); }} placeholder="한국에서 유행하는 진짜 제품을 검색하세요... (예: 달팽이크림)" style={{ ...s.input, flex: 1 }} />
             <button onClick={() => runDemoSearch()} disabled={searchCount >= FREE_SEARCH_LIMIT} style={{ ...s.btn("pri"), padding: "12px 24px", whiteSpace: "nowrap", opacity: searchCount >= FREE_SEARCH_LIMIT ? 0.5 : 1 }}>검색하기</button>
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: demoSearched ? 16 : 0 }}>
-            {quickKeywords.map((kw, i) => (
-              <div key={i} onClick={() => { setDemoQuery(kw); runDemoSearch(kw); }} style={{ padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: `${T.pri}08`, color: T.pri, border: `1px solid ${T.pri}25`, cursor: "pointer", transition: "all .2s" }}>{kw}</div>
+          {/* 트렌드 탭 + 키워드 */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              {[{key:"weekly",label:"🔥 이번 주 인기"},{key:"monthly",label:"📈 이번 달 인기"}].map(t => (
+                <div key={t.key} onClick={() => setTrendTab(t.key)} style={{ padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: trendTab === t.key ? `${T.acc}15` : T.w08, color: trendTab === t.key ? T.acc : T.w40, border: `1px solid ${trendTab === t.key ? T.acc+"40" : T.border}`, cursor: "pointer", transition: "all .2s" }}>{t.label}</div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {trendData[trendTab].map((td, i) => (
+                <div key={i} onClick={() => { setDemoQuery(td.query); setSortMode("sim"); runDemoSearch(td.query, "sim"); }} style={{ padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: `${T.purple}08`, color: T.purple, border: `1px solid ${T.purple}20`, cursor: "pointer", transition: "all .2s" }}>{td.label}</div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {quickKeywords.map((kw, i) => (
+                <div key={i} onClick={() => { setDemoQuery(kw); runDemoSearch(kw); }} style={{ padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: `${T.pri}08`, color: T.pri, border: `1px solid ${T.pri}25`, cursor: "pointer", transition: "all .2s" }}>{kw}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* 연령대 필터 */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 10, color: T.w20, marginRight: 4 }}>연령대</span>
+            {ageOptions.map(a => (
+              <div key={a.key} onClick={() => changeAge(a.key)} style={{ padding: "3px 10px", borderRadius: 14, fontSize: 10, fontWeight: 600, background: ageGroup === a.key ? `${T.ok}15` : "transparent", color: ageGroup === a.key ? T.ok : T.w40, border: `1px solid ${ageGroup === a.key ? T.ok+"40" : T.border}`, cursor: "pointer", transition: "all .2s" }}>{a.label}</div>
             ))}
+            <span style={{ fontSize: 9, color: T.w12, marginLeft: 4 }}>네이버 검색어 기반</span>
           </div>
 
           {demoLoading && (
@@ -514,20 +764,55 @@ function App() {
 
           {!demoLoading && demoSearched && demoResults.length > 0 && (
             <div style={{ position: "relative" }}>
+              {/* 정렬 + 원산지 필터 + 결과 건수 */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {sortOptions.map(so => (
+                    <div key={so.key} onClick={() => changeSort(so.key)} style={{ padding: "4px 10px", borderRadius: 14, fontSize: 10, fontWeight: 700, background: sortMode === so.key ? T.pri : `${T.pri}08`, color: sortMode === so.key ? T.bg : T.pri, border: `1px solid ${sortMode === so.key ? T.pri : T.pri+"25"}`, cursor: "pointer", transition: "all .2s" }}>{so.label}</div>
+                  ))}
+                  <div style={{ width: 1, height: 20, background: T.border, margin: "0 4px" }} />
+                  {originFilters.map(of => (
+                    <div key={of.key} onClick={() => setOriginFilter(of.key)} style={{ padding: "4px 10px", borderRadius: 14, fontSize: 10, fontWeight: 600, background: originFilter === of.key ? `${T.ok}12` : "transparent", color: originFilter === of.key ? T.ok : T.w40, border: `1px solid ${originFilter === of.key ? T.ok+"30" : T.border}`, cursor: "pointer", transition: "all .2s" }}>{of.label}</div>
+                  ))}
+                </div>
+                <span style={{ fontSize: 10, color: T.w20 }}>약 {totalResults.toLocaleString()}건 {originFilter !== "all" && `(필터: ${filteredResults.length}건)`}</span>
+              </div>
+
+              <div style={{ maxHeight: 600, overflowY: "auto", borderRadius: 12, paddingRight: 4 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }} className="grid-responsive">
-                {demoResults.slice(0, 6).map((p, i) => (
-                  <div key={i} style={{ padding: 12, borderRadius: 12, background: T.bgSurface, border: `1px solid ${T.border}`, transition: "all .2s" }}>
-                    {p.image && <img src={p.image} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 8, marginBottom: 8, background: T.w08 }} onError={e => { e.target.style.display = "none"; }} />}
+                {filteredResults.map((p, i) => (
+                  <div key={i} onClick={() => openProductDetail(p)} style={{ padding: 12, borderRadius: 12, background: T.bgSurface, border: `1px solid ${T.border}`, transition: "all .2s", cursor: "pointer" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = T.pri; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
+                    {p.image && <img loading="lazy" src={p.image} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 8, marginBottom: 8, background: T.w08 }} onError={e => { e.target.style.display = "none"; }} />}
                     <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap" }}>
                       <span style={{ display: "inline-block", padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: "rgba(255,184,0,.1)", color: T.acc, border: "1px solid rgba(255,184,0,.2)" }}>Korea Market</span>
                       {originBadge(p.origin)}
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: T.w90, marginBottom: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: p.title || "상품" }} />
-                    <div style={{ fontSize: 13, fontWeight: 800, color: T.acc }}>{parseInt(p.lprice || 0).toLocaleString()} <span style={{ fontSize: 10, fontWeight: 500, color: T.w40 }}>원</span></div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: T.acc }}>{parseInt(p.lprice || 0).toLocaleString()}<span style={{ fontSize: 10, fontWeight: 500, color: T.w40 }}>원</span> <span style={{ fontSize: 9, fontWeight: 500, color: T.w20 }}>(한국 판매가)</span></div>
                     {(p.maker || p.brand) && <div style={{ fontSize: 10, color: T.w40, marginTop: 3 }}>{p.maker ? "제조사: " + p.maker : ""}{p.brand ? (p.maker ? " | " : "") + "브랜드: " + p.brand : ""}</div>}
                   </div>
                 ))}
               </div>
+              </div>
+
+              {/* 더 보기 / 페이지네이션 */}
+              {!demoBlurred && currentPage < MAX_PAGES && demoResults.length >= BATCH_SIZE && (
+                <div style={{ textAlign: "center", marginTop: 16 }}>
+                  <button onClick={loadMore} disabled={loadingMore} style={{ ...s.btn("ghost"), padding: "12px 32px", fontSize: 13, opacity: loadingMore ? 0.6 : 1 }}>
+                    {loadingMore ? "로딩 중..." : `더 보기 (+${BATCH_SIZE}개)`}
+                  </button>
+                  <div style={{ fontSize: 10, color: T.w20, marginTop: 6 }}>{demoResults.length}개 표시 중 / 약 {totalResults.toLocaleString()}건</div>
+                </div>
+              )}
+              {currentPage >= MAX_PAGES && !demoBlurred && (
+                <div style={{ textAlign: "center", marginTop: 16, padding: "16px", background: `${T.acc}08`, borderRadius: 12, border: `1px solid ${T.acc}20` }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.w, marginBottom: 6 }}>더 많은 결과를 보려면 가입하세요</div>
+                  <button onClick={openSignup} style={{ ...s.btn("acc"), padding: "10px 24px", fontSize: 13 }}>무료 회원가입</button>
+                </div>
+              )}
+
               {demoBlurred && (
                 <div style={{ position: "absolute", inset: 0, background: "rgba(6,11,24,.85)", backdropFilter: "blur(8px)", borderRadius: 12, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
                   <div style={{ fontSize: 18, fontWeight: 800, color: T.w, textAlign: "center" }}>가입하면 더 많은 검색이 가능합니다</div>
@@ -992,6 +1277,7 @@ function App() {
       `}</style>
       {loginModal}
       {signupModal}
+      {productDetailModal}
       {header}
       {hero}
       {painSection}

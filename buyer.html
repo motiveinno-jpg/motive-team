@@ -180,6 +180,8 @@ var S={
   searchQuery:'',searchSource:'all',searchResults:[],naverResults:[],whistleResults:[],searching:false,
   // data
   inquiries:[],savedProducts:[],
+  // marketplace
+  myRequests:[],requestProposals:{},_viewRequest:null,_reqFilter:'all',
   // modal
   modal:null,modalData:null,
   // inquiry form
@@ -241,6 +243,7 @@ function _doRender(){
 
 function renderPage(){
   switch(S.page){
+    case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
     case'inquiries':return pgInquiries();
     case'saved':return pgSaved();
@@ -262,6 +265,7 @@ function renderSidebar(){
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
     {id:'deals',icon:'&#x1F680;',label:'Sourcing Pipeline',count:activeDeals},
     {id:'inquiries',icon:'&#x1F4CB;',label:'Inquiries',count:S.inquiries.filter(function(i){return i.status==='pending';}).length},
+    {id:'marketplace',icon:'&#x1F3EA;',label:'Marketplace',count:S.myRequests.filter(function(r){return r.status==='open';}).length},
     {id:'messages',icon:'&#x1F4AC;',label:'Messages',count:S.chatUnread},
     {id:'orders',icon:'&#x1F4E6;',label:'Orders',count:S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length},
     {id:'shipments',icon:'&#x1F6A2;',label:'Shipments'},
@@ -280,7 +284,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  var titles={dashboard:'Dashboard',search:'Product Search',deals:'Sourcing Pipeline',inquiries:'My Inquiries',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents'};
+  var titles={dashboard:'Dashboard',search:'Product Search',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Request Board',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents'};
   var h='<div class="topbar"><div class="topbar-title">'+(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Notification bell
   h+='<div class="notif-bell" onclick="event.stopPropagation();B.toggleNotif()">&#x1F514;';
@@ -383,8 +387,31 @@ function loadAllData(){
   loadBuyerLinks();
   loadInquiries();
   loadSavedProducts();
+  loadMyRequests();
   loadNotifications();
+  importLandingSavedProducts();
   render();
+}
+
+/* 랜딩페이지에서 저장한 관심 제품 → buyer_saved_products 자동 등록 */
+function importLandingSavedProducts(){
+  if(!S.user)return;
+  try{
+    var saved=JSON.parse(localStorage.getItem('whistle_saved_products')||'[]');
+    if(!saved.length)return;
+    saved.forEach(function(p){
+      sb.from('buyer_saved_products').insert({
+        user_id:S.user.id,
+        source:'naver',
+        naver_product_data:{title:p.title,lprice:p.lprice,image:p.image,link:p.link,maker:p.maker,brand:p.brand,mallName:p.mallName,category:p.category,origin:p.origin},
+        note:'Landing page inquiry'
+      }).then(function(r){
+        if(r.error&&r.error.message&&r.error.message.includes('duplicate'))return;
+        if(!r.error)console.log('[import] 랜딩 관심제품 저장:', p.title);
+      });
+    });
+    localStorage.removeItem('whistle_saved_products');
+  }catch(e){console.log('[import] 에러:', e.message);}
 }
 
 /* === BUYER-SELLER BRIDGE === */
@@ -678,6 +705,7 @@ function openCustomSourcing(){
 
 function renderModal(){
   if(S.modal==='inquiry')return renderInquiryModal();
+  if(S.modal==='marketplace_request')return renderMarketplaceModal();
   if(S.modal==='inquiryDetail')return renderInquiryDetailModal();
   if(S.modal==='orderDetail')return renderOrderDetailModal();
   if(S.modal==='docDetail')return renderDocDetailModal();
@@ -899,6 +927,239 @@ function renderInquiryDetailModal(){
 
   h+='</div></div></div>';
   return h;
+}
+
+/* === MARKETPLACE (바이어 요청 장터) === */
+function loadMyRequests(){
+  if(!S.user)return;
+  sb.from('buyer_requests').select('*').eq('buyer_user_id',S.user.id)
+    .order('created_at',{ascending:false}).then(function(r){
+    S.myRequests=r.data||[];render();
+  });
+}
+function loadRequestProposals(reqId){
+  sb.from('buyer_request_proposals').select('*').eq('request_id',reqId)
+    .order('created_at',{ascending:true}).then(function(r){
+    S.requestProposals[reqId]=r.data||[];render();
+  });
+}
+
+function pgMarketplace(){
+  if(S._viewRequest)return pgMarketRequestDetail();
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">';
+  h+='<div><h2 style="font-size:18px;font-weight:800">&#x1F3EA; Request Board</h2>';
+  h+='<p style="font-size:12px;color:var(--w40);margin-top:2px">Post sourcing requests and receive proposals from Korean manufacturers</p></div>';
+  h+='<button class="btn btn-pri" onclick="B.showRequestForm()">+ New Request</button></div>';
+  // filter tabs
+  var filters=['all','open','closed','completed'];
+  h+='<div style="display:flex;gap:8px;margin-bottom:16px">';
+  filters.forEach(function(f){
+    var cnt=f==='all'?S.myRequests.length:S.myRequests.filter(function(r){return r.status===f;}).length;
+    var active=(S._reqFilter===f);
+    h+='<button class="btn btn-sm '+(active?'btn-pri':'btn-ghost')+'" onclick="B.set({_reqFilter:\''+f+'\'})">'+f.charAt(0).toUpperCase()+f.slice(1)+' ('+cnt+')</button>';
+  });
+  h+='</div>';
+  var list=S.myRequests;
+  if(S._reqFilter&&S._reqFilter!=='all')list=list.filter(function(r){return r.status===S._reqFilter;});
+  if(!list.length){
+    h+='<div style="text-align:center;padding:60px;color:var(--w40)"><div style="font-size:36px;margin-bottom:12px">&#x1F3EA;</div>';
+    h+='<h3 style="font-weight:700;margin-bottom:8px">No requests yet</h3><p style="font-size:13px">Post your first sourcing request to receive proposals from manufacturers.</p>';
+    h+='<button class="btn btn-pri" style="margin-top:12px" onclick="B.showRequestForm()">Post Request</button></div>';
+    return h;
+  }
+  list.forEach(function(r){
+    var stColor={open:'var(--ok)',closed:'var(--w40)',expired:'var(--err)',completed:'var(--pri)',cancelled:'var(--err)'};
+    h+='<div class="card" style="margin-bottom:12px;cursor:pointer" onclick="B.viewRequest(\''+r.id+'\')">';
+    h+='<div class="card-b"><div style="display:flex;justify-content:space-between;align-items:start">';
+    h+='<div><div style="font-size:15px;font-weight:700;margin-bottom:4px">'+esc(r.title)+'</div>';
+    h+='<div style="font-size:12px;color:var(--w40)">'+esc(r.category||'')+' · '+(r.target_quantity||'')+(r.target_market?' · '+esc(r.target_market):'')+'</div></div>';
+    h+='<span class="badge" style="background:'+(stColor[r.status]||'var(--w40)')+'15;color:'+(stColor[r.status]||'var(--w40)')+'">'+r.status+'</span></div>';
+    h+='<div style="display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--w60)">';
+    h+='<span>&#x1F4E8; '+r.proposal_count+' proposals</span>';
+    h+='<span>'+timeAgo(r.created_at)+'</span>';
+    if(r.is_urgent)h+='<span style="color:var(--err);font-weight:700">URGENT</span>';
+    h+='</div></div></div>';
+  });
+  return h;
+}
+
+function pgMarketRequestDetail(){
+  var req=S.myRequests.find(function(r){return r.id===S._viewRequest;});
+  if(!req)return '<div>Not found</div>';
+  var proposals=S.requestProposals[req.id]||[];
+  var h='<div style="margin-bottom:16px"><button class="btn btn-ghost btn-sm" onclick="B.backToRequests()">&larr; Back to Requests</button></div>';
+  // request info card
+  h+='<div class="card" style="margin-bottom:20px"><div class="card-b">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px"><div style="font-size:18px;font-weight:800">'+esc(req.title)+'</div>';
+  var stColor={open:'var(--ok)',closed:'var(--w40)',completed:'var(--pri)'};
+  h+='<span class="badge" style="background:'+(stColor[req.status]||'var(--w40)')+'15;color:'+(stColor[req.status]||'var(--w40)')+'">'+req.status+'</span></div>';
+  h+='<div style="font-size:13px;color:var(--w60);line-height:1.6;margin-bottom:16px">'+esc(req.description)+'</div>';
+  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--w40)">';
+  if(req.category)h+='<span>&#x1F3F7; '+esc(req.category)+'</span>';
+  if(req.target_quantity)h+='<span>&#x1F4E6; '+esc(req.target_quantity)+'</span>';
+  if(req.target_price_range)h+='<span>&#x1F4B0; '+esc(req.target_price_range)+'</span>';
+  if(req.target_market)h+='<span>&#x1F30D; '+esc(req.target_market)+'</span>';
+  if(req.product_type)h+='<span>&#x1F3ED; '+esc(req.product_type)+'</span>';
+  h+='</div>';
+  if(req.status==='open')h+='<div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="B.closeRequest(\''+req.id+'\')">Close Request</button></div>';
+  h+='</div></div>';
+  // proposals
+  h+='<div style="font-size:14px;font-weight:700;margin-bottom:12px">&#x1F4E8; Proposals ('+proposals.length+')</div>';
+  if(!proposals.length){
+    h+='<div style="text-align:center;padding:40px;color:var(--w40)"><p>No proposals yet. Manufacturers will see your request and submit proposals.</p></div>';
+    return h;
+  }
+  proposals.forEach(function(p){
+    var pColor={pending:'var(--acc)',accepted:'var(--ok)',rejected:'var(--err)',viewed:'var(--pri)',withdrawn:'var(--w40)'};
+    var pLabel={pending:'Pending',accepted:'Accepted',rejected:'Rejected',viewed:'Viewed',withdrawn:'Withdrawn'};
+    h+='<div class="card" style="margin-bottom:10px"><div class="card-b">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+    h+='<div style="font-size:14px;font-weight:700">&#x1F3ED; '+esc(p.seller_company)+'</div>';
+    h+='<span class="badge" style="background:'+(pColor[p.status]||'var(--w40)')+'15;color:'+(pColor[p.status]||'var(--w40)')+'">'+(pLabel[p.status]||p.status)+'</span></div>';
+    h+='<div style="font-size:13px;color:var(--w60);line-height:1.6;margin-bottom:10px">'+esc(p.message)+'</div>';
+    h+='<div style="display:flex;gap:12px;font-size:12px;color:var(--w40);margin-bottom:10px">';
+    if(p.proposed_price)h+='<span>&#x1F4B0; '+esc(p.proposed_price)+'</span>';
+    if(p.proposed_moq)h+='<span>&#x1F4E6; MOQ '+esc(p.proposed_moq)+'</span>';
+    if(p.lead_time)h+='<span>&#x23F0; '+esc(p.lead_time)+'</span>';
+    h+='<span>'+timeAgo(p.created_at)+'</span></div>';
+    if(req.status==='open'&&p.status==='pending'){
+      h+='<div style="display:flex;gap:8px">';
+      h+='<button class="btn btn-pri btn-sm" onclick="event.stopPropagation();B.acceptProposal(\''+p.id+'\',\''+req.id+'\')">Accept</button>';
+      h+='<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();B.rejectProposal(\''+p.id+'\',\''+req.id+'\')">Reject</button>';
+      h+='</div>';
+    }
+    h+='</div></div>';
+  });
+  return h;
+}
+
+function showRequestForm(){
+  S.modal='marketplace_request';S.modalData={};render();
+}
+
+function renderMarketplaceModal(){
+  if(S.modal!=='marketplace_request')return '';
+  var h='<div class="modal-overlay" onclick="B.closeModal()">';
+  h+='<div class="modal-content" onclick="event.stopPropagation()" style="max-width:520px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px"><div style="font-size:18px;font-weight:800">&#x1F3EA; New Sourcing Request</div>';
+  h+='<div class="modal-close" onclick="B.closeModal()">&#x2715;</div></div>';
+  h+='<form id="mkt-form" onsubmit="event.preventDefault();B.submitRequest()">';
+  h+='<div class="form-group"><label>Title *</label><input name="title" placeholder="e.g. Snail Cream OEM 5000 units" class="input" required></div>';
+  h+='<div class="form-row"><div class="form-group"><label>Category</label><select name="category" class="input"><option value="">Select</option>';
+  ['K-Beauty','K-Food','K-Health','K-Fashion','K-Electronics','K-Living'].forEach(function(c){h+='<option value="'+c+'">'+c+'</option>';});
+  h+='</select></div>';
+  h+='<div class="form-group"><label>Product Type</label><select name="product_type" class="input"><option value="">Select</option>';
+  ['OEM','ODM','Finished Product','Raw Material'].forEach(function(t){h+='<option value="'+t+'">'+t+'</option>';});
+  h+='</select></div></div>';
+  h+='<div class="form-group"><label>Description *</label><textarea name="description" placeholder="Describe what you are looking for in detail..." class="input" rows="4" required></textarea></div>';
+  h+='<div class="form-row"><div class="form-group"><label>Target Quantity</label><input name="target_quantity" placeholder="e.g. 5000 units" class="input"></div>';
+  h+='<div class="form-group"><label>Price Range</label><input name="target_price_range" placeholder="e.g. $3-5 FOB" class="input"></div></div>';
+  h+='<div class="form-row"><div class="form-group"><label>Target Market</label><select name="target_market" class="input"><option value="">Select</option>';
+  [['US','USA'],['JP','Japan'],['EU','Europe'],['CN','China'],['SEA','Southeast Asia'],['ME','Middle East'],['SA','South America']].forEach(function(c){h+='<option value="'+c[0]+'">'+c[1]+'</option>';});
+  h+='</select></div>';
+  h+='<div class="form-group"><label>Deadline</label><input type="date" name="deadline" class="input"></div></div>';
+  h+='<div class="form-group"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="is_urgent"> Mark as Urgent</label></div>';
+  h+='<button type="submit" class="btn btn-pri" style="width:100%;padding:14px;font-size:15px;margin-top:8px">Post Request</button>';
+  h+='</form></div></div>';
+  return h;
+}
+
+function submitRequest(){
+  var form=document.getElementById('mkt-form');
+  if(!form)return;
+  var fd=new FormData(form);
+  var title=fd.get('title');var desc=fd.get('description');
+  if(!title||!desc){toast('Title and description are required','warn');return;}
+  var req={
+    buyer_user_id:S.user.id,
+    buyer_company:S.user.company_name||S.user.display_name||S.user.email,
+    buyer_country:S.user.country||'',
+    buyer_display_name:S.user.display_name||'',
+    title:title,
+    category:fd.get('category')||null,
+    description:desc,
+    target_quantity:fd.get('target_quantity')||null,
+    target_price_range:fd.get('target_price_range')||null,
+    target_market:fd.get('target_market')||null,
+    product_type:fd.get('product_type')||null,
+    deadline:fd.get('deadline')||null,
+    is_urgent:!!form.querySelector('[name=is_urgent]').checked,
+    status:'open'
+  };
+  sb.from('buyer_requests').insert(req).then(function(r){
+    if(r.error){toast('Failed: '+r.error.message,'err');return;}
+    toast('Request posted!','ok');
+    S.modal=null;
+    loadMyRequests();
+    fetch(RELAY+'/api/whistle/marketplace-notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+      body:JSON.stringify({type:'new_request',title:title,category:fd.get('category'),buyer:S.user.company_name,country:S.user.country})
+    }).catch(function(){});
+  });
+}
+
+function viewRequest(id){
+  S._viewRequest=id;
+  loadRequestProposals(id);
+  render();
+}
+function backToRequests(){S._viewRequest=null;render();}
+
+function acceptProposal(propId,reqId){
+  if(!confirm('Accept this proposal? This will start the deal process.'))return;
+  var request=S.myRequests.find(function(r){return r.id===reqId;});
+  var proposals=S.requestProposals[reqId]||[];
+  var prop=proposals.find(function(p){return p.id===propId;});
+  if(!prop||!request)return;
+  // 1. Create buyer record
+  sb.from('buyers').insert({
+    registered_by:prop.seller_user_id,source:'marketplace',
+    company_name:request.buyer_company,contact_name:request.buyer_display_name,
+    email:S.user.email,country:request.buyer_country,
+    buyer_user_id:S.user.id,
+    categories:request.category?[request.category]:[],
+    notes:'[Marketplace] '+request.title
+  }).select().single().then(function(br){
+    if(br.error){toast('Error: '+br.error.message,'err');return;}
+    var newBuyer=br.data;
+    // 2. Create matching
+    sb.from('matchings').insert({
+      user_id:prop.seller_user_id,buyer_id:newBuyer.id,
+      product_id:prop.product_id||null,status:'interested',
+      match_reason:'[Marketplace] '+request.title,match_score:80
+    }).select().single().then(function(mr){
+      if(mr.error){toast('Matching error: '+mr.error.message,'err');return;}
+      // 3. Update proposal
+      sb.from('buyer_request_proposals').update({status:'accepted',matching_id:mr.data.id,buyer_id:newBuyer.id,updated_at:new Date().toISOString()}).eq('id',propId).then(function(){});
+      // 4. Reject others
+      sb.from('buyer_request_proposals').update({status:'rejected',updated_at:new Date().toISOString()}).eq('request_id',reqId).neq('id',propId).then(function(){});
+      // 5. Close request
+      sb.from('buyer_requests').update({status:'completed',accepted_proposal_id:propId,updated_at:new Date().toISOString()}).eq('id',reqId).then(function(){});
+      // 6. Notify seller
+      fetch(RELAY+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+        body:JSON.stringify({userId:prop.seller_user_id,type:'marketplace',title:'Proposal accepted: '+request.title,body:request.buyer_company+' accepted your proposal. Start the deal!',linkPage:'buyers',telegram:true})
+      }).catch(function(){});
+      toast('Proposal accepted! Deal pipeline started.','ok');
+      loadMyRequests();loadBuyerLinks();loadMatchings();
+    });
+  });
+}
+
+function rejectProposal(propId,reqId){
+  if(!confirm('Reject this proposal?'))return;
+  sb.from('buyer_request_proposals').update({status:'rejected',updated_at:new Date().toISOString()}).eq('id',propId).then(function(r){
+    if(r.error){toast('Error','err');return;}
+    toast('Proposal rejected','ok');
+    loadRequestProposals(reqId);
+  });
+}
+
+function closeRequest(reqId){
+  if(!confirm('Close this request? No more proposals will be received.'))return;
+  sb.from('buyer_requests').update({status:'closed',updated_at:new Date().toISOString()}).eq('id',reqId).then(function(r){
+    if(r.error){toast('Error','err');return;}
+    toast('Request closed','ok');
+    S._viewRequest=null;loadMyRequests();
+  });
 }
 
 /* === SAVED PRODUCTS === */
@@ -1799,6 +2060,11 @@ window.B={
   toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,
   // Translation
   translateMsg:translateMsg,
+  // Marketplace
+  showRequestForm:showRequestForm,submitRequest:submitRequest,
+  viewRequest:viewRequest,backToRequests:backToRequests,
+  acceptProposal:acceptProposal,rejectProposal:rejectProposal,
+  closeRequest:closeRequest,
   _inqFilter:null
 };
 
