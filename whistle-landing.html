@@ -85,6 +85,10 @@ function App() {
   const [showSignup, setShowSignup] = useState(false);
   const [signupStep, setSignupStep] = useState(0);
   const [signupForm, setSignupForm] = useState({ company: "", name: "", email: "", phone: "", pw: "", product: "" });
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginForm, setLoginForm] = useState({ email: "", pw: "" });
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [vBiz, setVBiz] = useState(""); const [vRev, setVRev] = useState(""); const [vExp, setVExp] = useState(""); const [vResult, setVResult] = useState(null);
   const [pForm, setPForm] = useState({ type: "", company: "", name: "", email: "", phone: "", desc: "" }); const [pSent, setPSent] = useState(false);
   const [anonUrl, setAnonUrl] = useState(""); const [anonLoading, setAnonLoading] = useState(false); const [anonResult, setAnonResult] = useState(null);
@@ -149,6 +153,24 @@ function App() {
     setSignupLoading(false);
   };
 
+  const openLogin = () => { setShowLogin(true); setLoginError(""); setLoginForm({ email: "", pw: "" }); };
+  const handleLogin = async () => {
+    const { email, pw } = loginForm;
+    if (!email || !pw) { setLoginError("이메일과 비밀번호를 입력해주세요."); return; }
+    setLoginLoading(true); setLoginError("");
+    try {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
+      if (error) { setLoginError(error.message === "Invalid login credentials" ? "이메일 또는 비밀번호가 올바르지 않습니다." : error.message); setLoginLoading(false); return; }
+      // role 확인 후 리다이렉트
+      const uid = data.user.id;
+      const { data: u } = await sb.from("users").select("role").eq("id", uid).single();
+      const role = u?.role || data.user.user_metadata?.role || "seller";
+      if (role === "buyer") window.location.href = "buyer.html";
+      else if (role === "admin") window.location.href = "admin.html";
+      else window.location.href = "whistle.html";
+    } catch(e) { setLoginError("서버 연결 실패. 잠시 후 다시 시도해주세요."); setLoginLoading(false); }
+  };
+
   const s = {
     section: { padding: "100px 24px", maxWidth: 1140, margin: "0 auto" },
     heading: { fontSize: 40, fontWeight: 800, color: T.w, letterSpacing: -1.5, lineHeight: 1.2, textAlign: "center" },
@@ -189,6 +211,7 @@ function App() {
             </div>
           ))}
           <div style={{ width: 1, height: 24, background: T.w12, margin: "0 10px" }} />
+          <div onClick={openLogin} style={{ padding: "10px 20px", fontSize: 14, fontWeight: 600, color: T.w60, cursor: "pointer", borderRadius: 10, border: `1.5px solid ${T.borderL}`, transition: "all .2s" }}>로그인</div>
           <div onClick={openSignup} style={s.btn("pri")}>무료 AI 분석</div>
         </div>
         {/* Mobile hamburger */}
@@ -208,7 +231,8 @@ function App() {
               {n.label}{n.badge && <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: `${T.acc}15`, color: T.acc, fontWeight: 700 }}>NEW</span>}
             </div>
           ))}
-          <div onClick={() => { openSignup(); setMobileMenu(false); }} style={{ ...s.btn("pri"), width: "100%", marginTop: 12, padding: "14px", fontSize: 14 }}>무료 AI 분석 시작</div>
+          <div onClick={() => { openLogin(); setMobileMenu(false); }} style={{ width: "100%", marginTop: 12, padding: "14px", fontSize: 14, fontWeight: 600, color: T.w60, cursor: "pointer", borderRadius: 12, border: `1.5px solid ${T.borderL}`, textAlign: "center" }}>로그인</div>
+          <div onClick={() => { openSignup(); setMobileMenu(false); }} style={{ ...s.btn("pri"), width: "100%", marginTop: 8, padding: "14px", fontSize: 14 }}>무료 AI 분석 시작</div>
         </div>
       )}
     </div>
@@ -234,6 +258,7 @@ function App() {
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>연락처 *</label><input type="tel" value={signupForm.phone} onChange={e => setSignupForm({...signupForm, phone: e.target.value})} placeholder="010-1234-5678" style={s.input} /></div>
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>주요 제품 (선택)</label><input value={signupForm.product} onChange={e => setSignupForm({...signupForm, product: e.target.value})} placeholder="예: 스킨케어, 전자부품, 식품 등" style={s.input} /></div>
               <button onClick={handleSignup} disabled={signupLoading} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: signupLoading ? 0.6 : 1 }}>{signupLoading ? "가입 처리 중..." : "무료 회원가입 & AI 분석 시작"}</button>
+              <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: T.w40 }}>이미 계정이 있으신가요? <span style={{ color: T.pri, cursor: "pointer", fontWeight: 600 }} onClick={() => { setShowSignup(false); openLogin(); }}>로그인</span></div>
             </div>
           </div>
         ) : (
@@ -245,6 +270,34 @@ function App() {
             <div style={{ fontSize: 11, color: T.w20, marginTop: 12 }}>{signupForm.email}로 확인 이메일이 발송되었습니다</div>
           </div>
         )}
+      </div>
+    </div>
+  );
+
+  /* ═══ LOGIN MODAL ═══ */
+  const loginModal = showLogin && (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onClick={() => setShowLogin(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(8px)" }} />
+      <div style={{ position: "relative", width: "100%", maxWidth: 400, background: T.bgCard, borderRadius: 20, border: `1px solid ${T.borderL}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div onClick={() => setShowLogin(false)} style={{ position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: 16, background: T.w08, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, color: T.w40, zIndex: 1 }}>✕</div>
+        <div style={{ padding: "32px 28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: T.priG, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 16px rgba(0,212,255,.25)" }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill={T.bg} /></svg>
+            </div>
+            <div><div style={{ fontSize: 20, fontWeight: 800, color: T.w }}>로그인</div><div style={{ fontSize: 11, color: T.w40 }}>Whistle AI 계정으로 로그인</div></div>
+          </div>
+          {loginError && <div style={{ background: `${T.err}12`, border: `1px solid ${T.err}30`, borderRadius: 10, padding: "10px 14px", marginBottom: 16, fontSize: 12, color: T.err, fontWeight: 600 }}>{loginError}</div>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>이메일</label><input type="email" value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})} onKeyDown={e => { if (e.key === "Enter") handleLogin(); }} placeholder="your@email.com" style={s.input} /></div>
+            <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>비밀번호</label><input type="password" value={loginForm.pw} onChange={e => setLoginForm({...loginForm, pw: e.target.value})} onKeyDown={e => { if (e.key === "Enter") handleLogin(); }} placeholder="비밀번호 입력" style={s.input} /></div>
+            <button onClick={handleLogin} disabled={loginLoading} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: loginLoading ? 0.6 : 1 }}>{loginLoading ? "로그인 중..." : "로그인"}</button>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 12 }}>
+            <span style={{ color: T.w40, cursor: "pointer" }} onClick={async () => { const email = loginForm.email.trim(); if (!email) { setLoginError("이메일을 먼저 입력해주세요."); return; } const { error } = await sb.auth.resetPasswordForEmail(email); if (error) setLoginError(error.message); else { setLoginError(""); alert("비밀번호 재설정 링크가 이메일로 발송되었습니다."); } }}>비밀번호 찾기</span>
+            <span style={{ color: T.pri, cursor: "pointer", fontWeight: 600 }} onClick={() => { setShowLogin(false); openSignup(); }}>회원가입</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1155,6 +1208,7 @@ function App() {
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.bg}}::-webkit-scrollbar-thumb{background:${T.w12};border-radius:3px}
       `}</style>
       {signupModal}
+      {loginModal}
       {analysisModal}
       {header}
       {page === "home" && <>
