@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://js.tosspayments.com/v2/standard"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -122,7 +123,7 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .empty-state .ed{font-size:13px}
 @keyframes slideInR{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:768px){.sidebar{display:none}.sidebar.mobile-open{display:flex;position:fixed;top:0;right:0;bottom:0;left:0;z-index:900;width:280px;box-shadow:var(--shadow-lg)}.sidebar.mobile-open~.mob-overlay{display:block}.mob-overlay{display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);z-index:899}.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.page-content{padding:16px}.topbar{padding:0 16px}.mob-toggle{display:flex!important}.tbl-r thead{display:none}.tbl-r tbody tr{display:flex;flex-wrap:wrap;gap:4px 12px;padding:12px;border-bottom:1px solid var(--w08)}.tbl-r tbody td{display:flex;align-items:center;gap:4px;padding:2px 0;border:none;font-size:12px}.tbl-r tbody td::before{content:attr(data-label);color:var(--w30);font-size:10px;font-weight:600;min-width:50px}}
+@media(max-width:768px){.sidebar{display:none}.sidebar.mobile-open{display:flex;position:fixed;top:0;right:0;bottom:0;left:0;z-index:900;width:280px;box-shadow:var(--shadow-lg)}.sidebar.mobile-open~.mob-overlay{display:block}.mob-overlay{display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);z-index:899}.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}.page-content{padding:16px}.topbar{padding:0 16px}.mob-toggle{display:flex!important}.tbl-r thead{display:none}.tbl-r tbody tr{display:flex;flex-wrap:wrap;gap:4px 12px;padding:12px;border-bottom:1px solid var(--w08)}.tbl-r tbody td{display:flex;align-items:center;gap:4px;padding:2px 0;border:none;font-size:12px}.tbl-r tbody td::before{content:attr(data-label);color:var(--w30);font-size:10px;font-weight:600;min-width:50px}.chat-layout{flex-direction:column!important;height:auto!important}.chat-sidebar{width:100%!important;max-height:200px!important;overflow-y:auto!important}.chat-main{width:100%!important;min-height:400px!important}.grid-4{grid-template-columns:1fr 1fr!important}.grid-3{grid-template-columns:1fr!important}.doc-form .grid-2{grid-template-columns:1fr!important}.stat-grid{grid-template-columns:1fr 1fr!important}.table-wrap{overflow-x:auto}table{min-width:600px}}
 .mob-toggle{display:none;width:36px;height:36px;border-radius:8px;background:var(--w08);border:none;color:var(--w60);font-size:16px;cursor:pointer;align-items:center;justify-content:center;transition:all .15s}
 .mob-toggle:hover{background:var(--w12);color:var(--w)}
 .notif-dot{width:7px;height:7px;border-radius:50%;background:var(--err);position:absolute;top:-1px;right:-1px;animation:pulse 2s infinite}
@@ -136,6 +137,18 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0');
 var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'';
 var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY_URL=t;}}).catch(function(){})})();
+function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetry(url,opts,retries,delay);});}
+function _fetchRetry(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'}},opts||{})).then(function(r){if(!r.ok&&retries>1)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetry(url,opts,retries-1,delay*2));},delay);});});}
+
+/* === CSV EXPORT === */
+function exportCSV(data,filename){
+  if(!data||!data.length){UI.toast('내보낼 데이터가 없습니다','warn');return;}
+  var keys=Object.keys(data[0]);
+  var csv=keys.join(',')+'\n';
+  data.forEach(function(row){csv+=keys.map(function(k){var v=row[k];if(v===null||v===undefined)return'';v=String(v);if(v.indexOf(',')>=0||v.indexOf('"')>=0||v.indexOf('\n')>=0)v='"'+v.replace(/"/g,'""')+'"';return v;}).join(',')+'\n';});
+  var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=filename||'export.csv';a.click();URL.revokeObjectURL(url);
+}
 
 /* === UTILS === */
 var U={
@@ -352,7 +365,7 @@ function doLogout(){if(confirm('로그아웃?')){sb.auth.signOut().then(function
 /* === PAGES === */
 function pgAuth(){
   var isL=S.authMode==='login';
-  return '<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><div class="auth-logo-icon">W</div><div><div class="auth-title">Whistle AI</div><div class="auth-sub">수출 성공의 시작</div></div></div><div class="auth-tabs"><div class="auth-tab '+(isL?'active':'')+'" onclick="App.set({authMode:\'login\',authError:\'\'})">로그인</div><div class="auth-tab '+(!isL?'active':'')+'" onclick="App.set({authMode:\'signup\',authError:\'\'})">회원가입</div></div>'+(S.authError?'<div class="auth-error">'+S.authError+'</div>':'')+(isL?'<form onsubmit="App.doLogin(event)">'+UI.inp('email','이메일',{type:'email',placeholder:'email@company.com',required:true})+UI.inp('password','비밀번호',{type:'password',placeholder:'비밀번호',required:true})+'<button class="btn btn-pri btn-block btn-lg" type="submit" style="margin-top:8px">로그인</button></form>':'<form onsubmit="App.doSignup(event)">'+UI.inp('company_name','회사명',{placeholder:'(주)모티브이노베이션',required:true})+UI.inp('email','이메일',{type:'email',placeholder:'email@company.com',required:true})+UI.inp('password','비밀번호',{type:'password',placeholder:'6자 이상',required:true})+'<button class="btn btn-pri btn-block btn-lg" type="submit" style="margin-top:8px">무료 시작하기</button></form>')+'<div style="text-align:center;margin-top:16px;font-size:11px;color:var(--w20)">가입 즉시 AI 수출 분석 1회 무료</div></div></div>';
+  return '<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><div class="auth-logo-icon">W</div><div><div class="auth-title">Whistle AI</div><div class="auth-sub">수출 성공의 시작</div></div></div><div class="auth-tabs"><div class="auth-tab '+(isL?'active':'')+'" onclick="App.set({authMode:\'login\',authError:\'\'})">로그인</div><div class="auth-tab '+(!isL?'active':'')+'" onclick="App.set({authMode:\'signup\',authError:\'\'})">회원가입</div></div>'+(S.authError?'<div class="auth-error">'+S.authError+'</div>':'')+(isL?'<form onsubmit="App.doLogin(event)">'+UI.inp('email','이메일',{type:'email',placeholder:'email@company.com',required:true})+UI.inp('password','비밀번호',{type:'password',placeholder:'비밀번호',required:true})+'<button class="btn btn-pri btn-block btn-lg" type="submit" style="margin-top:8px">로그인</button></form>':'<form onsubmit="App.doSignup(event)">'+UI.inp('company_name','회사명',{placeholder:'(주)모티브이노베이션',required:true})+UI.inp('email','이메일',{type:'email',placeholder:'email@company.com',required:true})+UI.inp('password','비밀번호',{type:'password',placeholder:'6자 이상',required:true})+'<label style="display:flex;align-items:flex-start;gap:8px;margin:12px 0 4px;cursor:pointer;font-size:11px;color:var(--w40)"><input type="checkbox" name="agree_terms" style="margin-top:2px;accent-color:var(--pri)" required><span>이용약관 및 <span style="color:var(--pri);text-decoration:underline">개인정보처리방침</span>에 동의합니다 (필수)</span></label><button class="btn btn-pri btn-block btn-lg" type="submit" style="margin-top:8px">무료 시작하기</button></form>')+'<div style="text-align:center;margin-top:16px;font-size:11px;color:var(--w20)">가입 즉시 AI 수출 분석 1회 무료</div></div></div>';
 }
 
 function pgDash(){
@@ -661,6 +674,7 @@ function submitA(){
       });
     }).catch(function(err){
       S._submitting=false;
+      S._fallbackAnalysis=true;
       UI.toast('AI 서버 연결 실패, 기본 분석 사용','warn');
       var res=genReport(d);
       sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){
@@ -735,6 +749,7 @@ function pgAReport(){
   var sc=function(s){return s>=80?'var(--ok)':s>=60?'var(--acc)':'var(--err)';};
   var bar=function(label,val,max){max=max||100;var pct=Math.min(val/max*100,100);var col=sc(val);return '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--w60)">'+label+'</span><span style="font-size:12px;font-weight:700;color:'+col+'">'+val+'/'+max+'</span></div><div style="height:6px;border-radius:3px;background:var(--w08)"><div style="height:100%;border-radius:3px;background:'+col+';width:'+pct+'%;transition:width .5s ease"></div></div></div>';};
   var hdr='<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><button class="btn btn-ghost btn-sm" onclick="App.set({currentAnalysis:null})">← 목록</button><h2 style="font-size:18px;font-weight:800;flex:1">'+a.product_name+'</h2>'+UI.badge(a.analysis_type==='premium'?'⭐ 프리미엄':'🆓 무료',a.analysis_type==='premium'?'acc':'ghost')+'<span style="font-size:12px;color:var(--w20)">'+U.fd(a.created_at)+'</span></div>';
+  var fallbackBanner=S._fallbackAnalysis?'<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:8px;font-size:13px;color:#856404">\u26a0\ufe0f AI \uc11c\ubc84 \ubbf8\uc5f0\uacb0 \u2014 \uae30\ubcf8 \ubd84\uc11d \uacb0\uacfc\uc785\ub2c8\ub2e4. \uc11c\ubc84 \ubcf5\uad6c \ud6c4 \uc7ac\ubd84\uc11d\uc744 \uad8c\uc7a5\ud569\ub2c8\ub2e4.</div>':'';
   var scoreCard='<div style="display:flex;gap:16px;margin-bottom:16px"><div style="width:140px;height:140px;border-radius:50%;border:6px solid '+sc(r.overall_score)+';display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:36px;font-weight:900;color:'+sc(r.overall_score)+'">'+( r.overall_score||'—')+'</div><div style="font-size:10px;color:var(--w40)">종합 점수</div></div><div style="flex:1">'+bar('시장 적합도',r.market_fit||0)+bar('가격 경쟁력',r.price_competitiveness||0)+bar('브랜드 파워',r.brand_power||0)+bar('경쟁 환경',r.competition||0)+bar('규제 대응',r.regulatory||0)+bar('물류 적합성',r.logistics_score||0)+'</div></div>';
   var execSummary='<div class="card" style="margin-bottom:14px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="font-size:15px;font-weight:700;margin-bottom:10px">📋 Executive Summary</div><p style="font-size:13px;color:var(--w70);line-height:1.9">'+(r.executive_summary||r.summary||'—')+'</p></div></div>';
   var pdSection='';if(r.product_detail){var pd=r.product_detail;pdSection='<div class="card" style="margin-bottom:14px;border-color:rgba(168,85,247,.15)"><div class="card-h">🔍 크롤링 기반 제품 상세</div><div class="card-b"><div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px;line-height:2">'+(pd.actual_name?'<span style="color:var(--w40);font-weight:600">확인된 제품명</span><span style="color:var(--w90)">'+pd.actual_name+'</span>':'')+(pd.ingredients_or_specs?'<span style="color:var(--w40);font-weight:600">성분/규격</span><span style="color:var(--w90)">'+pd.ingredients_or_specs+'</span>':'')+(pd.retail_price?'<span style="color:var(--w40);font-weight:600">판매가</span><span style="color:var(--pri);font-weight:700">'+pd.retail_price+'</span>':'')+(pd.target_consumer?'<span style="color:var(--w40);font-weight:600">타겟 소비자</span><span style="color:var(--w90)">'+pd.target_consumer+'</span>':'')+'</div>'+(pd.unique_features?'<div style="margin-top:12px"><div style="font-size:12px;color:var(--w40);margin-bottom:6px;font-weight:600">차별화 포인트</div><p style="font-size:13px;color:var(--w70);line-height:1.8">'+pd.unique_features+'</p></div>':'')+'</div></div>';}
@@ -749,7 +764,7 @@ function pgAReport(){
   var linkedProd=S.products.filter(function(p){return p.analysis_id===a.id;});
   var prodCard='';if(linkedProd.length){prodCard='<div class="card" style="margin-bottom:14px;border-color:rgba(0,230,118,.15)"><div class="card-h"><span>📦 자동 등록된 제품</span>'+UI.badge(linkedProd.length+'건','ok')+'</div><div class="card-b"><div class="grid-3">'+linkedProd.map(function(p){return '<div style="padding:14px;border-radius:10px;border:1px solid var(--bd);background:var(--w08);cursor:pointer" onclick="App.editP(\''+p.id+'\')"><div style="font-size:13px;font-weight:700">'+U.tr(p.name_ko,20)+'</div><div style="font-size:11px;color:var(--w40);margin-top:4px">'+(p.category||'')+' · FOB '+(p.fob_price?U.fmtUSD(p.fob_price):'—')+'</div><div style="margin-top:6px">'+UI.sb(p.status)+'</div>'+(p.description_en?'<div style="font-size:10px;color:var(--ok);margin-top:4px">EN</div>':'<button class="btn btn-acc btn-sm" style="margin-top:6px" onclick="event.stopPropagation();App.genCatalogEN(\''+p.id+'\')">AI 영문 생성</button>')+'</div>';}).join('')+'</div></div></div>';}
   var nc=(r.required_certs||[]);var actions='<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--bd)"><div style="font-size:14px;font-weight:700;margin-bottom:12px">⚡ 다음 단계</div><div style="display:flex;flex-wrap:wrap;gap:8px"><button class="btn btn-pri" onclick="App.createPj(\''+a.id+'\')">🚀 프로젝트 생성</button>'+(nc.length?'<button class="btn btn-acc" onclick="App.reqSvc(\'certification\',\''+a.id+'\')">🏅 인증 ('+nc.length+'건)</button>':'')+'<button class="btn btn-ghost" onclick="App.reqSvc(\'matching\',\''+a.id+'\')">🤝 매칭</button><button class="btn btn-ghost" onclick="App.reqSvc(\'premium_analysis\',\''+a.id+'\')">🔬 프리미엄</button><button class="btn btn-ghost" onclick="window.print()">🖨️ 출력</button></div></div>';
-  return hdr+scoreCard+execSummary+pdSection+priceInfo+compSection+priceStrategy+mktSection+certSection+trendSection+oppRisk+actionPlan+prodCard+actions;
+  return hdr+fallbackBanner+scoreCard+execSummary+pdSection+priceInfo+compSection+priceStrategy+mktSection+certSection+trendSection+oppRisk+actionPlan+prodCard+actions;
 }
 
 function viewA(id){var a=S.analyses.find(function(x){return x.id===id;});if(a)set({currentAnalysis:a,page:'analysis'});}
@@ -1001,7 +1016,7 @@ function createPj(aid){
 function pgProducts(){
   var sr=SF.read('products');var cats=U.CAT.map(function(c){return{value:c,label:c};});
   var fp=SF.filter(S.products,sr.query,['name_ko','name_en','category'],{category:sr.filters&&sr.filters.category});
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">📦 제품 카드</h2></div><button class="btn btn-pri" onclick="App.showPF()">+ 등록</button></div>'+SF.bar('products',{placeholder:'제품명, 카테고리 검색…',filters:[{key:'category',label:'카테고리',options:cats}]})+(fp.length===0?'<div class="card"><div class="card-b">'+UI.empty('📦',S.products.length?'검색 결과 없음':'등록 제품 없음',S.products.length?'검색어를 변경해 보세요':'제품을 등록하면 바이어에게 노출됩니다')+'<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="App.showPF()">첫 제품 등록</button></div></div></div>':'<div class="grid-3">'+fp.map(function(p){return '<div class="prod-card"><div class="prod-img" onclick="App.editP(\''+p.id+'\')" style="position:relative">'+(p.images&&p.images[0]?'<img src="'+p.images[0]+'" style="width:100%;height:100%;object-fit:cover">':'📦')+'</div><div class="prod-body"><div style="display:flex;justify-content:space-between;align-items:start"><div onclick="App.editP(\''+p.id+'\')" style="cursor:pointer;flex:1"><div class="prod-name">'+U.tr(p.name_ko,25)+'</div><div class="prod-meta">'+(p.category||'미설정')+' · FOB '+(p.fob_price?U.fmtUSD(p.fob_price):'미설정')+'</div><div class="prod-meta" style="margin-top:4px">MOQ: '+(p.moq||'—')+'</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+UI.sb(p.status)+'<button class="btn btn-danger btn-sm" onclick="App.delP(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:4px">삭제</button><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.naverSearch(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:2px" title="네이버 시장조사">🔍 시장조사</button></div></div></div></div>';}).join('')+'<div class="prod-card" onclick="App.showPF()" style="display:flex;align-items:center;justify-content:center;min-height:200px;border-style:dashed"><div style="text-align:center;color:var(--w20)"><div style="font-size:32px">+</div><div style="font-size:13px">추가</div></div></div></div>');
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">📦 제품 카드</h2></div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="App.exportCSV(S.products,\'whistle-products.csv\')" style="font-size:11px">CSV 내보내기</button><button class="btn btn-pri" onclick="App.showPF()">+ 등록</button></div></div>'+SF.bar('products',{placeholder:'제품명, 카테고리 검색…',filters:[{key:'category',label:'카테고리',options:cats}]})+(fp.length===0?'<div class="card"><div class="card-b">'+UI.empty('📦',S.products.length?'검색 결과 없음':'등록 제품 없음',S.products.length?'검색어를 변경해 보세요':'제품을 등록하면 바이어에게 노출됩니다')+'<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="App.showPF()">첫 제품 등록</button></div></div></div>':'<div class="grid-3">'+fp.map(function(p){return '<div class="prod-card"><div class="prod-img" onclick="App.editP(\''+p.id+'\')" style="position:relative">'+(p.images&&p.images[0]?'<img src="'+p.images[0]+'" style="width:100%;height:100%;object-fit:cover">':'📦')+'</div><div class="prod-body"><div style="display:flex;justify-content:space-between;align-items:start"><div onclick="App.editP(\''+p.id+'\')" style="cursor:pointer;flex:1"><div class="prod-name">'+U.tr(p.name_ko,25)+'</div><div class="prod-meta">'+(p.category||'미설정')+' · FOB '+(p.fob_price?U.fmtUSD(p.fob_price):'미설정')+'</div><div class="prod-meta" style="margin-top:4px">MOQ: '+(p.moq||'—')+'</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+UI.sb(p.status)+'<button class="btn btn-danger btn-sm" onclick="App.delP(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:4px">삭제</button><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.naverSearch(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:2px" title="네이버 시장조사">🔍 시장조사</button></div></div></div></div>';}).join('')+'<div class="prod-card" onclick="App.showPF()" style="display:flex;align-items:center;justify-content:center;min-height:200px;border-style:dashed"><div style="text-align:center;color:var(--w20)"><div style="font-size:32px">+</div><div style="font-size:13px">추가</div></div></div></div>');
 }
 
 function showPF(p){
@@ -1705,135 +1720,163 @@ function genDoc(){
 
 function genDocPDF(){
   if(!_lastDoc){UI.toast('서류 데이터 없음','warn');return;}
-  var d=_lastDoc;var jsPDF=window.jspdf.jsPDF;var doc=new jsPDF('p','mm','a4');
-  var w=210,m=15,cw=w-2*m;var y=20;
-  /* header */
-  doc.setFillColor(0,51,102);doc.rect(0,0,w,28,  'F');
-  doc.setTextColor(255,255,255);doc.setFontSize(18);doc.setFont('helvetica','bold');
-  doc.text(d.typeName,w/2,16,{align:'center'});
-  doc.setFontSize(9);doc.text('No: '+d.ref.doc_no+'  |  Date: '+d.ref.doc_date,w/2,24,{align:'center'});
-  y=36;
-  /* seller & buyer */
-  doc.setTextColor(0,0,0);doc.setFontSize(11);doc.setFont('helvetica','bold');
-  doc.text(d.company.name_en||d.company.name_ko||'COMPANY',m,y);
-  doc.setFontSize(9);doc.setFont('helvetica','normal');y+=5;
-  doc.text(d.company.address_en||'',m,y);y+=4;
-  doc.text('Tel: '+(d.company.phone||''),m,y);y+=8;
-  doc.setDrawColor(200);doc.line(m,y,w-m,y);y+=6;
-  doc.setFont('helvetica','bold');doc.setFontSize(10);
-  doc.text('TO: '+d.buyer.buyer_company,m,y);y+=5;
-  doc.setFont('helvetica','normal');doc.setFontSize(9);
-  if(d.buyer.buyer_contact)doc.text('Attn: '+d.buyer.buyer_contact,m,y);y+=4;
-  if(d.buyer.buyer_address)doc.text(d.buyer.buyer_address,m,y);y+=4;
-  /* terms */
+  var d=_lastDoc;
+  /* Build HTML content for pdf rendering - uses browser fonts (Noto Sans KR) for Korean support */
   var terms='';
   if(d.type==='pl')terms='Marks: '+(d.ref.marks||'N/M')+'  |  Vessel: '+(d.ref.vessel||'TBD');
   else if(d.type==='co')terms='Origin: Republic of Korea  |  Criteria: '+(d.ref.origin_criteria||'WO')+'  |  Transport: '+(d.ref.transport||'Ocean');
   else if(d.type==='sc')terms='Payment: '+(d.ref.payment||'T/T')+'  |  Terms: '+(d.ref.terms||'FOB')+' '+(d.ref.port||'Busan')+'  |  Delivery: '+(d.ref.delivery_date||'TBD');
   else terms='Payment: '+(d.ref.payment||'T/T')+'  |  Terms: '+(d.ref.terms||'FOB')+' '+(d.ref.port||'Busan');
-  doc.text(terms,m,y);y+=8;
-  /* items table */
-  var head,body,foot;
-  if(d.type==='pl'){
-    head=[['No','Description','Qty','Ctns','N.W.','G.W.','CBM']];
-    body=d.items.map(function(x,i){return [i+1,x.name+(x.desc?'\n'+x.desc:''),x.qty+' '+x.unit,x.ctn||'',x.nw?x.nw.toFixed(1):'',x.gw?x.gw.toFixed(1):'',x.cbm?x.cbm.toFixed(3):''];});
-    foot=[['','TOTAL',d.totalQty,''+d.totalC,d.totalNW.toFixed(1),d.totalGW.toFixed(1),d.totalCBM.toFixed(3)]];
-  }else{
-    head=[['No','Description','Qty','Unit Price','Amount']];
-    body=d.items.map(function(x,i){return [i+1,x.name+(x.desc?'\n'+x.desc:''),x.qty+' '+x.unit,'$'+x.price.toFixed(2),'$'+(x.qty*x.price).toFixed(2)];});
-    foot=[['','','','TOTAL','$'+d.total.toFixed(2)]];
-  }
-  doc.autoTable({head:head,body:body,foot:foot,startY:y,margin:{left:m,right:m},styles:{fontSize:9,cellPadding:3},headStyles:{fillColor:[0,51,102],textColor:255},footStyles:{fillColor:[245,245,245],textColor:[0,0,0],fontStyle:'bold'},columnStyles:{0:{cellWidth:12}}});
-  y=doc.lastAutoTable.finalY+10;
-  /* SC contract terms */
+  /* items table HTML */
+  var isPL=(d.type==='pl');
+  var thCols=isPL?'<th>No</th><th>Description</th><th>Qty</th><th>Ctns</th><th>N.W.</th><th>G.W.</th><th>CBM</th>':'<th>No</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th>';
+  var tbRows='';
+  d.items.forEach(function(x,i){
+    if(isPL){
+      tbRows+='<tr><td>'+(i+1)+'</td><td>'+x.name+(x.desc?'<br>'+x.desc:'')+'</td><td>'+x.qty+' '+x.unit+'</td><td>'+(x.ctn||'')+'</td><td>'+(x.nw?x.nw.toFixed(1):'')+'</td><td>'+(x.gw?x.gw.toFixed(1):'')+'</td><td>'+(x.cbm?x.cbm.toFixed(3):'')+'</td></tr>';
+    }else{
+      tbRows+='<tr><td>'+(i+1)+'</td><td>'+x.name+(x.desc?'<br>'+x.desc:'')+'</td><td>'+x.qty+' '+x.unit+'</td><td>$'+x.price.toFixed(2)+'</td><td>$'+(x.qty*x.price).toFixed(2)+'</td></tr>';
+    }
+  });
+  var tfCols=isPL?'<td></td><td>TOTAL</td><td>'+d.totalQty+'</td><td>'+d.totalC+'</td><td>'+d.totalNW.toFixed(1)+'</td><td>'+d.totalGW.toFixed(1)+'</td><td>'+d.totalCBM.toFixed(3)+'</td>':'<td></td><td></td><td></td><td>TOTAL</td><td>$'+d.total.toFixed(2)+'</td>';
+  /* SC contract terms HTML */
+  var scHTML='';
   if(d.type==='sc'){
-    doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text('TERMS AND CONDITIONS',m,y);y+=6;
-    doc.setFontSize(8);doc.setFont('helvetica','normal');
     var dep=d.ref.deposit_pct||30;var pen=d.ref.penalty_rate||0.1;
-    var clauses=[
-      '1. QUALITY STANDARDS',
-      '   Products shall strictly conform to the specifications, quality and',
-      '   standards described herein. Seller warrants that all products are',
-      '   free from defects in material and workmanship.',
-      '',
-      '2. PAYMENT TERMS',
-      '   '+( d.ref.payment||'T/T 30% deposit, 70% before shipment'),
-      '   Deposit ('+dep+'%) due within 5 business days of contract signing.',
-      '   Balance due before/upon shipment as agreed.',
-      '',
-      '3. DELIVERY & SHIPPING',
-      '   Terms: '+(d.ref.terms||'FOB')+' '+(d.ref.port||'Busan, Korea'),
-      '   Delivery Date: '+(d.ref.delivery_date||'TBD'),
-      '   Partial shipment: Allowed / Transshipment: Allowed',
-      '',
-      '4. INSPECTION',
-      '   Buyer may inspect goods prior to shipment at Seller\'s premises.',
-      '   Inspection must be requested at least 7 days before shipment.',
-      '   Final inspection at destination within 14 days of arrival.',
-      '',
-      '5. WARRANTY & CLAIMS',
-      '   Warranty Period: '+(d.ref.warranty||'12 months from B/L date'),
-      '   Claims must be filed within 30 days of discovery.',
-      '   Defective goods to be replaced or credited at Seller\'s option.',
-      '',
-      '6. INTELLECTUAL PROPERTY',
-      '   Seller retains all IP rights. Buyer shall not reverse-engineer,',
-      '   copy, or modify products without written consent.',
-      '',
-      '7. LATE DELIVERY PENALTY',
-      '   Penalty rate: '+pen+'% of contract value per calendar day of delay.',
-      '   Maximum penalty: 10% of total contract value.',
-      '   Delay > 30 days: Buyer may cancel without penalty.',
-      '',
-      '8. FORCE MAJEURE',
-      '   Neither party liable for delays due to force majeure events.',
-      '   Affected party must notify within 7 days. If > 60 days,',
-      '   either party may terminate without liability.',
-      '',
-      '9. CONFIDENTIALITY',
-      '   Both parties shall keep confidential all business information',
-      '   disclosed during this agreement for a period of 2 years.',
-      '',
-      '10. DISPUTE RESOLUTION',
-      '    '+(d.ref.dispute||'ICC International Court of Arbitration, Seoul, Korea'),
-      '    Governing Law: Laws of the Republic of Korea',
-      '',
-      '11. GENERAL PROVISIONS',
-      '    This contract constitutes the entire agreement. Amendments',
-      '    must be in writing and signed by both parties.',
-      '    This contract is executed in duplicate in English.'
-    ];
-    clauses.forEach(function(cl){if(y>270){doc.addPage();y=20;}doc.text(cl,m,y);y+=3.5;});y+=6;
+    scHTML='<div style="margin-top:12px"><div style="font-size:10px;font-weight:bold;margin-bottom:6px">TERMS AND CONDITIONS</div><pre style="font-family:\'Noto Sans KR\',sans-serif;font-size:8px;line-height:1.5;white-space:pre-wrap;margin:0">'
++'1. QUALITY STANDARDS\n'
++'   Products shall strictly conform to the specifications, quality and\n'
++'   standards described herein. Seller warrants that all products are\n'
++'   free from defects in material and workmanship.\n\n'
++'2. PAYMENT TERMS\n'
++'   '+(d.ref.payment||'T/T 30% deposit, 70% before shipment')+'\n'
++'   Deposit ('+dep+'%) due within 5 business days of contract signing.\n'
++'   Balance due before/upon shipment as agreed.\n\n'
++'3. DELIVERY &amp; SHIPPING\n'
++'   Terms: '+(d.ref.terms||'FOB')+' '+(d.ref.port||'Busan, Korea')+'\n'
++'   Delivery Date: '+(d.ref.delivery_date||'TBD')+'\n'
++'   Partial shipment: Allowed / Transshipment: Allowed\n\n'
++'4. INSPECTION\n'
++'   Buyer may inspect goods prior to shipment at Seller\'s premises.\n'
++'   Inspection must be requested at least 7 days before shipment.\n'
++'   Final inspection at destination within 14 days of arrival.\n\n'
++'5. WARRANTY &amp; CLAIMS\n'
++'   Warranty Period: '+(d.ref.warranty||'12 months from B/L date')+'\n'
++'   Claims must be filed within 30 days of discovery.\n'
++'   Defective goods to be replaced or credited at Seller\'s option.\n\n'
++'6. INTELLECTUAL PROPERTY\n'
++'   Seller retains all IP rights. Buyer shall not reverse-engineer,\n'
++'   copy, or modify products without written consent.\n\n'
++'7. LATE DELIVERY PENALTY\n'
++'   Penalty rate: '+pen+'% of contract value per calendar day of delay.\n'
++'   Maximum penalty: 10% of total contract value.\n'
++'   Delay > 30 days: Buyer may cancel without penalty.\n\n'
++'8. FORCE MAJEURE\n'
++'   Neither party liable for delays due to force majeure events.\n'
++'   Affected party must notify within 7 days. If > 60 days,\n'
++'   either party may terminate without liability.\n\n'
++'9. CONFIDENTIALITY\n'
++'   Both parties shall keep confidential all business information\n'
++'   disclosed during this agreement for a period of 2 years.\n\n'
++'10. DISPUTE RESOLUTION\n'
++'    '+(d.ref.dispute||'ICC International Court of Arbitration, Seoul, Korea')+'\n'
++'    Governing Law: Laws of the Republic of Korea\n\n'
++'11. GENERAL PROVISIONS\n'
++'    This contract constitutes the entire agreement. Amendments\n'
++'    must be in writing and signed by both parties.\n'
++'    This contract is executed in duplicate in English.'
++'</pre></div>';
   }
-  /* CO declaration */
+  /* CO declaration HTML */
+  var coHTML='';
   if(d.type==='co'){
-    doc.setFontSize(9);doc.setFont('helvetica','bold');doc.text('DECLARATION BY THE EXPORTER',m,y);y+=5;
-    doc.setFont('helvetica','normal');doc.setFontSize(8);
     var _ftaMap={US:'KORUS FTA',JP:'RCEP / Korea-Japan EPA',EU:'Korea-EU FTA',DE:'Korea-EU FTA',FR:'Korea-EU FTA',NL:'Korea-EU FTA',GB:'Korea-UK FTA',AU:'KAFTA (Korea-Australia FTA)',CN:'RCEP / Korea-China FTA',SG:'RCEP / Korea-ASEAN FTA',VN:'RCEP / Korea-ASEAN FTA',TH:'RCEP / Korea-ASEAN FTA',ID:'RCEP / Korea-ASEAN FTA',AE:'Korea-GCC FTA (pending)',CA:'CKFTA (Canada-Korea FTA)',IN:'Korea-India CEPA',NZ:'Korea-New Zealand FTA'};
     var _buyerCC=(d.buyer.buyer_country||'').toUpperCase().substring(0,2);var _ftaName=_ftaMap[_buyerCC]||'applicable FTA';
     var decl='The undersigned declares that the above goods were produced in Republic of Korea and comply with the origin requirements specified in '+_ftaName+'.';
-    var lines=doc.splitTextToSize(decl,cw);doc.text(lines,m,y);y+=lines.length*4+4;
-    doc.text('Place and Date: Seoul, Korea / '+d.ref.doc_date,m,y);y+=8;
+    coHTML='<div style="margin-top:10px"><div style="font-size:9px;font-weight:bold;margin-bottom:4px">DECLARATION BY THE EXPORTER</div><div style="font-size:8px;line-height:1.5">'+decl+'</div><div style="font-size:8px;margin-top:4px">Place and Date: Seoul, Korea / '+d.ref.doc_date+'</div></div>';
   }
-  /* signatures */
-  if(y>250){doc.addPage();y=20;}
-  doc.setDrawColor(0);doc.line(m,y+15,m+60,y+15);doc.line(w-m-60,y+15,w-m,y+15);
-  doc.setFontSize(9);doc.setFont('helvetica','bold');
-  doc.text(d.company.name_en||'SELLER',m,y+20);
-  doc.text(d.buyer.buyer_company,w-m-60,y+20);y+=28;
-  /* bank info */
+  /* bank info HTML */
+  var bankHTML='';
   if(d.type!=='pl'&&d.type!=='co'&&d.company.bank_name){
-    doc.setDrawColor(200);doc.rect(m,y,cw,16);
-    doc.setFontSize(8);doc.setFont('helvetica','normal');
-    doc.text('BANK: '+d.company.bank_name+' / A/C: '+(d.company.bank_account||'')+' / SWIFT: '+(d.company.swift_code||''),m+4,y+6);y+=20;
+    bankHTML='<div style="border:1px solid #ccc;padding:6px 8px;margin-top:10px;font-size:8px">BANK: '+d.company.bank_name+' / A/C: '+(d.company.bank_account||'')+' / SWIFT: '+(d.company.swift_code||'')+'</div>';
   }
-  /* disclaimer */
-  doc.setFillColor(255,248,225);doc.rect(m,y,cw,10,'F');doc.setFontSize(7);doc.setTextColor(109,76,0);
-  doc.text(DISCLAIMER.en.substring(0,120)+'...',m+2,y+5);
-  /* save */
-  var fn=d.ref.doc_no+'_'+d.type.toUpperCase()+'.pdf';
-  doc.save(fn);
-  UI.toast('PDF 다운로드: '+fn,'ok');
+  /* Build full HTML div */
+  var pdfHTML='<div style="width:720px;padding:40px 50px;font-family:\'Noto Sans KR\',\'Sora\',sans-serif;color:#000;background:#fff;line-height:1.4">'
+    +'<div style="background:#003366;color:#fff;padding:14px 20px;text-align:center;margin:-40px -50px 20px -50px">'
+    +'<div style="font-size:18px;font-weight:bold">'+d.typeName+'</div>'
+    +'<div style="font-size:9px;margin-top:4px">No: '+d.ref.doc_no+'  |  Date: '+d.ref.doc_date+'</div>'
+    +'</div>'
+    +'<div style="font-size:11px;font-weight:bold">'+(d.company.name_en||d.company.name_ko||'COMPANY')+'</div>'
+    +'<div style="font-size:9px">'+(d.company.address_en||'')+'</div>'
+    +'<div style="font-size:9px">Tel: '+(d.company.phone||'')+'</div>'
+    +'<hr style="border:none;border-top:1px solid #ccc;margin:8px 0">'
+    +'<div style="font-size:10px;font-weight:bold">TO: '+d.buyer.buyer_company+'</div>'
+    +(d.buyer.buyer_contact?'<div style="font-size:9px">Attn: '+d.buyer.buyer_contact+'</div>':'')
+    +(d.buyer.buyer_address?'<div style="font-size:9px">'+d.buyer.buyer_address+'</div>':'')
+    +'<div style="font-size:9px;margin:6px 0 10px 0">'+terms+'</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:9px;margin-top:4px">'
+    +'<thead><tr style="background:#003366;color:#fff">'+thCols+'</tr></thead>'
+    +'<tbody>'+tbRows+'</tbody>'
+    +'<tfoot><tr style="background:#f5f5f5;font-weight:bold">'+tfCols+'</tr></tfoot>'
+    +'</table>'
+    +scHTML+coHTML
+    +'<div style="margin-top:20px;display:flex;justify-content:space-between">'
+    +'<div style="width:40%"><div style="border-bottom:1px solid #000;height:30px"></div><div style="font-size:9px;font-weight:bold;margin-top:4px">'+(d.company.name_en||'SELLER')+'</div></div>'
+    +'<div style="width:40%"><div style="border-bottom:1px solid #000;height:30px"></div><div style="font-size:9px;font-weight:bold;margin-top:4px">'+d.buyer.buyer_company+'</div></div>'
+    +'</div>'
+    +bankHTML
+    +'<div style="background:#FFF8E1;padding:4px 8px;margin-top:12px;font-size:7px;color:#6D4C00">'+DISCLAIMER.en.substring(0,120)+'...</div>'
+    +'</div>';
+  /* Create hidden container, render with html2canvas, then generate PDF */
+  var container=document.createElement('div');
+  container.style.cssText='position:fixed;left:-9999px;top:0;z-index:-1;';
+  container.innerHTML=pdfHTML;
+  var _pdfStyle=document.createElement('style');
+  _pdfStyle.textContent='._pdf-tbl td,._pdf-tbl th{padding:4px 6px;border:1px solid #ddd;text-align:left}';
+  container.querySelector('table').classList.add('_pdf-tbl');
+  container.appendChild(_pdfStyle);
+  document.body.appendChild(container);
+  var targetEl=container.firstChild;
+  UI.toast('PDF 생성 중...','pri');
+  html2canvas(targetEl,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+    document.body.removeChild(container);
+    var imgData=canvas.toDataURL('image/jpeg',0.95);
+    var jsPDF=window.jspdf.jsPDF;
+    var pdfW=210;var pdfH=297;var margin=10;
+    var contentW=pdfW-2*margin;
+    var imgW=canvas.width;var imgH=canvas.height;
+    var ratio=contentW/imgW;
+    var contentH=imgH*ratio;
+    var pdfDoc=new jsPDF('p','mm','a4');
+    var pageContentH=pdfH-2*margin;
+    if(contentH<=pageContentH){
+      pdfDoc.addImage(imgData,'JPEG',margin,margin,contentW,contentH);
+    }else{
+      var pageCanvas=document.createElement('canvas');
+      var pageCtx=pageCanvas.getContext('2d');
+      var sliceH=Math.floor(pageContentH/ratio);
+      var totalPages=Math.ceil(imgH/sliceH);
+      pageCanvas.width=imgW;
+      for(var p=0;p<totalPages;p++){
+        if(p>0)pdfDoc.addPage();
+        var srcY=p*sliceH;
+        var srcH=Math.min(sliceH,imgH-srcY);
+        pageCanvas.height=srcH;
+        pageCtx.clearRect(0,0,imgW,srcH);
+        pageCtx.drawImage(canvas,0,srcY,imgW,srcH,0,0,imgW,srcH);
+        var pgImg=pageCanvas.toDataURL('image/jpeg',0.95);
+        var pgH=srcH*ratio;
+        pdfDoc.addImage(pgImg,'JPEG',margin,margin,contentW,pgH);
+      }
+    }
+    var fn=d.ref.doc_no+'_'+d.type.toUpperCase()+'.pdf';
+    pdfDoc.save(fn);
+    UI.toast('PDF 다운로드: '+fn,'ok');
+  }).catch(function(err){
+    document.body.removeChild(container);
+    console.error('PDF generation error:',err);
+    UI.toast('PDF 생성 실패','err');
+  });
 }
 
 function pgEmail(){
@@ -1887,8 +1930,13 @@ function sendE(){
     body:JSON.stringify({to:d.to,subject:d.subject||'',bodyText:d.body||'',userId:S.user.id,buyerId:buyerId||null})
   }).then(function(r){return r.json();}).then(function(data){
     if(data.ok){
-      UI.toast(data.method==='resend'?'이메일 발송 완료!':'이메일 기록 저장 (API키 미설정 → 메일앱으로 발송)','ok');
-      if(data.method==='logged_only')window.open('mailto:'+d.to+'?subject='+encodeURIComponent(d.subject||'')+'&body='+encodeURIComponent(d.body||''));
+      if(data.method==='logged_only'){
+        UI.toast('이메일 API 미설정 — 메일 앱에서 직접 발송해주세요','warn');
+        window.open('mailto:'+d.to+'?subject='+encodeURIComponent(d.subject||'')+'&body='+encodeURIComponent(d.body||''));
+        if(data.logId)sb.from('email_logs').update({status:'draft'}).eq('id',data.logId);
+      }else{
+        UI.toast('이메일 발송 완료!','ok');
+      }
       loadEmailLogs();
       pushNotif('email','이메일 발송: '+(d.subject||'(제목없음)').substring(0,30),'수신: '+d.to,'emailhub');
       /* Email → chat message */
@@ -2953,7 +3001,7 @@ function pgOrders(){
   var paidAmt=S.orders.filter(function(o){return o.payment_status==='paid';}).reduce(function(s,o){return s+(parseFloat(o.total_amount)||0);},0);
   var activeOrd=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length;
 
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">📋 주문 관리</h2></div><button class="btn btn-pri" onclick="App.showOrderForm()">+ 새 주문</button></div>'+
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">📋 주문 관리</h2></div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="App.exportCSV(S.orders,\'whistle-orders.csv\')" style="font-size:11px">CSV 내보내기</button><button class="btn btn-pri" onclick="App.showOrderForm()">+ 새 주문</button></div></div>'+
   '<div class="grid-3" style="margin-bottom:16px">'+
   UI.stat('총 주문',S.orders.length+'건','누적','var(--pri)')+
   UI.stat('진행중',activeOrd+'건','현재','var(--acc)')+
@@ -3185,7 +3233,7 @@ function pgBuyers(){
     '<button class="btn btn-pri btn-block" type="submit" style="margin-top:10px">🔍 AI 바이어 후보 찾기</button>'+
     '</form><div id="ai-buyers-result"></div></div></div>';
 
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">🤝 바이어 관리</h2><p style="font-size:12px;color:var(--w40);margin-top:2px">등록 '+S.buyers.length+'건'+((S.buyers.filter(function(b){return b.source==='ai_generated';}).length)?' · AI 추천 '+S.buyers.filter(function(b){return b.source==='ai_generated';}).length+'건':'')+'</p></div><button class="btn btn-pri" onclick="App.showBF()">+ 직접 등록</button></div>'+
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">🤝 바이어 관리</h2><p style="font-size:12px;color:var(--w40);margin-top:2px">등록 '+S.buyers.length+'건'+((S.buyers.filter(function(b){return b.source==='ai_generated';}).length)?' · AI 추천 '+S.buyers.filter(function(b){return b.source==='ai_generated';}).length+'건':'')+'</p></div><div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="App.exportCSV(S.buyers,\'whistle-buyers.csv\')" style="font-size:11px">CSV 내보내기</button><button class="btn btn-pri" onclick="App.showBF()">+ 직접 등록</button></div></div>'+
   aiForm+
   '<div class="card"><div class="card-h">📋 바이어 목록</div><div class="card-b" style="padding:0">'+list+'</div></div>';
 }
@@ -3936,33 +3984,7 @@ function toggleAliSection(si){if(!S._aliManualOpen)S._aliManualOpen={};if(S._ali
 function toggleAliManual(si,ii){var k='ali_manual_'+si;var s=JSON.parse(localStorage.getItem(k)||'{}');s[ii]=!s[ii];localStorage.setItem(k,JSON.stringify(s));render();}
 
 function pgAlibabaAPI(){
-  var features=[
-    {name:'상품 자동 동기화',desc:'Whistle 제품 카드 → 알리바바 자동 등록/수정',api:'Product Publish API',status:'planned',icon:'📦'},
-    {name:'문의 자동 수신',desc:'알리바바 TM 메시지 → Whistle 문의함 실시간 연동',api:'Trade Manager API',status:'planned',icon:'💬'},
-    {name:'AI 자동 응답',desc:'문의 수신 → AI 분석 → 초안 생성 → 1클릭 전송',api:'Message API + Claude',status:'planned',icon:'🤖'},
-    {name:'주문 자동 연동',desc:'알리바바 주문 → Whistle 주문관리 자동 등록',api:'Trade API',status:'planned',icon:'📋'},
-    {name:'실시간 데이터',desc:'조회수/문의수/전환율 대시보드 실시간 갱신',api:'Analytics API',status:'planned',icon:'📊'},
-    {name:'광고 성과 분석',desc:'P4P 광고 ROI, 키워드 성과 시각화',api:'Marketing API',status:'planned',icon:'📈'}
-  ];
-  var stBadge={ready:'<span style="padding:2px 8px;border-radius:6px;background:rgba(0,230,118,.12);color:var(--ok);font-size:10px;font-weight:700">사용가능</span>',planned:'<span style="padding:2px 8px;border-radius:6px;background:rgba(138,92,246,.12);color:var(--purple);font-size:10px;font-weight:700">예정</span>',dev:'<span style="padding:2px 8px;border-radius:6px;background:rgba(0,212,255,.12);color:var(--pri);font-size:10px;font-weight:700">개발중</span>'};
-  var h='<div class="card" style="margin-bottom:14px"><div class="card-b" style="padding:16px">';
-  h+='<div style="font-weight:700;font-size:14px;margin-bottom:10px">🔗 API 연동 아키텍처</div>';
-  h+='<div style="display:flex;align-items:center;gap:0;flex-wrap:wrap;justify-content:center;margin-bottom:16px">';
-  var arch=['Alibaba Open Platform','→','Relay Server','→','Supabase DB','→','Whistle UI'];
-  arch.forEach(function(a){
-    if(a==='→')h+='<div style="padding:4px 8px;font-size:14px;color:var(--w30)">→</div>';
-    else h+='<div style="padding:8px 14px;border-radius:8px;background:var(--w08);font-size:12px;font-weight:600;color:var(--w80);text-align:center">'+a+'</div>';
-  });
-  h+='</div>';
-  h+='<div style="padding:10px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:11px;color:var(--acc);margin-bottom:12px">⚠️ API 연동은 알리바바 본사 협의 후 단계적으로 진행됩니다. 현재는 수작업 가이드로 운영합니다.</div>';
-  h+='</div></div>';
-
-  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
-  features.forEach(function(f){
-    h+='<div class="card"><div class="card-b" style="padding:14px"><div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px"><span style="font-size:24px">'+f.icon+'</span>'+stBadge[f.status]+'</div><div style="font-weight:700;font-size:13px;margin-bottom:4px">'+f.name+'</div><div style="font-size:11px;color:var(--w50);margin-bottom:8px">'+f.desc+'</div><div style="font-size:10px;color:var(--w30);font-family:JetBrains Mono">API: '+f.api+'</div></div></div>';
-  });
-  h+='</div>';
-  return h;
+  return '<div style="text-align:center;padding:80px 20px"><div style="font-size:48px;margin-bottom:16px">🔧</div><div style="font-size:18px;font-weight:700;color:var(--w);margin-bottom:8px">API 연동 준비중</div><div style="font-size:13px;color:var(--w40);line-height:1.6">알리바바 API 자동 연동 기능을 개발 중입니다.<br>현재는 수동 입력 탭에서 데이터를 관리해주세요.</div></div>';
 }
 
 function pgAlibabaPipeline(){
@@ -4510,7 +4532,7 @@ function orderCtx(e,oid){var o=S.orders.find(function(x){return x.id===oid;});if
 function filterOrderStatus(st){S._searchCache['orders']=S._searchCache['orders']||{q:'',filters:{}};S._searchCache['orders'].filters={status:st};nav('orders');}
 function cloneDoc(docId){sb.from('documents').select('*').eq('id',docId).single().then(function(r){if(!r.data)return;var d=r.data.data||{};S.docType=r.data.doc_type;S.docItems=d.items||[{name:'',qty:1,unit_price:0,desc:'',unit:'PCS'}];S._docPrefill={cloneData:d};render();setTimeout(function(){if(d.buyer){Object.keys(d.buyer).forEach(function(k){var el=document.querySelector('[name='+k+']');if(el)el.value=d.buyer[k];});}if(d.ref){Object.keys(d.ref).forEach(function(k){var el=document.querySelector('[name='+k+']');if(el&&k!=='doc_no')el.value=d.ref[k];});}},100);});}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV};
 _handleTossCallback();
 loadUser();
 })();

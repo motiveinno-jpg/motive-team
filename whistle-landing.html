@@ -84,7 +84,8 @@ function App() {
   const [showVP, setShowVP] = useState(false);
   const [showSignup, setShowSignup] = useState(false);
   const [signupStep, setSignupStep] = useState(0);
-  const [signupForm, setSignupForm] = useState({ company: "", name: "", email: "", phone: "", pw: "", product: "" });
+  const [signupRole, setSignupRole] = useState("seller");
+  const [signupForm, setSignupForm] = useState({ company: "", name: "", email: "", phone: "", pw: "", product: "", agreeTerms: false });
   const [showLogin, setShowLogin] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: "", pw: "" });
   const [loginLoading, setLoginLoading] = useState(false);
@@ -141,13 +142,18 @@ function App() {
   const handleSignup = async () => {
     const { company, name, email, phone, pw, product } = signupForm;
     if (!company || !name || !email || !phone || !pw) { alert("모든 필수 항목을 입력해주세요."); return; }
+    if (!signupForm.agreeTerms) { alert("이용약관 및 개인정보처리방침에 동의해주세요."); return; }
     if (pw.length < 6) { alert("비밀번호는 6자 이상이어야 합니다."); return; }
     setSignupLoading(true);
     try {
-      const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { full_name: name, company_name: company, phone } } });
+      const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { full_name: name, company_name: company, phone, role: signupRole } } });
       if (error) { alert(error.message || "회원가입 실패"); setSignupLoading(false); return; }
       if (data.user) {
-        try { await sb.from("companies").insert({ user_id: data.user.id, name: company, contact_name: name, phone, product_categories: product || null }); } catch(e) {}
+        if (signupRole === "seller") {
+          try { await sb.from("companies").insert({ user_id: data.user.id, name: company, contact_name: name, phone, product_categories: product || null }); } catch(e) {}
+        } else {
+          try { await sb.from("users").upsert({ id: data.user.id, email, role: "buyer", company_name: company, display_name: name, phone }, { onConflict: "id" }); } catch(e) {}
+        }
       }
       setSignupStep(1);
     } catch(e) { alert("서버 연결 실패. 잠시 후 다시 시도해주세요."); }
@@ -247,7 +253,17 @@ function App() {
         {signupStep === 0 ? (
           <div style={{ padding: "32px 28px" }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 4 }}>무료 회원가입</div>
-            <div style={{ fontSize: 13, color: T.w40, marginBottom: 24 }}>가입 즉시 AI 수출 분석 3회 무료 · 카드 불필요</div>
+            <div style={{ fontSize: 13, color: T.w40, marginBottom: 16 }}>가입 즉시 AI 수출 분석 3회 무료 · 카드 불필요</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <div onClick={() => setSignupRole("seller")} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: signupRole === "seller" ? "2px solid " + T.pri : "1px solid " + T.w08, background: signupRole === "seller" ? T.pri + "15" : T.w08, cursor: "pointer", textAlign: "center" }}>
+                <div style={{ fontSize: 18, marginBottom: 2 }}>🏭</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: signupRole === "seller" ? T.pri : T.w60 }}>제조사 / 셀러</div>
+              </div>
+              <div onClick={() => setSignupRole("buyer")} style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: signupRole === "buyer" ? "2px solid " + T.acc : "1px solid " + T.w08, background: signupRole === "buyer" ? T.acc + "15" : T.w08, cursor: "pointer", textAlign: "center" }}>
+                <div style={{ fontSize: 18, marginBottom: 2 }}>🛒</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: signupRole === "buyer" ? T.acc : T.w60 }}>바이어 / 수입자</div>
+              </div>
+            </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>회사명 *</label><input value={signupForm.company} onChange={e => setSignupForm({...signupForm, company: e.target.value})} placeholder="(주)모티브이노베이션" style={s.input} /></div>
@@ -257,6 +273,7 @@ function App() {
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>비밀번호 *</label><input type="password" value={signupForm.pw} onChange={e => setSignupForm({...signupForm, pw: e.target.value})} placeholder="6자 이상" style={s.input} /></div>
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>연락처 *</label><input type="tel" value={signupForm.phone} onChange={e => setSignupForm({...signupForm, phone: e.target.value})} placeholder="010-1234-5678" style={s.input} /></div>
               <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>주요 제품 (선택)</label><input value={signupForm.product} onChange={e => setSignupForm({...signupForm, product: e.target.value})} placeholder="예: 스킨케어, 전자부품, 식품 등" style={s.input} /></div>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 4, cursor: "pointer" }}><input type="checkbox" checked={signupForm.agreeTerms} onChange={e => setSignupForm({...signupForm, agreeTerms: e.target.checked})} style={{ marginTop: 3, accentColor: T.pri }} /><span style={{ fontSize: 11, color: T.w40, lineHeight: 1.5 }}>이용약관 및 <span style={{ color: T.pri, textDecoration: "underline" }}>개인정보처리방침</span>에 동의합니다 (필수)</span></label>
               <button onClick={handleSignup} disabled={signupLoading} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: signupLoading ? 0.6 : 1 }}>{signupLoading ? "가입 처리 중..." : "무료 회원가입 & AI 분석 시작"}</button>
               <div style={{ textAlign: "center", marginTop: 14, fontSize: 12, color: T.w40 }}>이미 계정이 있으신가요? <span style={{ color: T.pri, cursor: "pointer", fontWeight: 600 }} onClick={() => { setShowSignup(false); openLogin(); }}>로그인</span></div>
             </div>
@@ -266,7 +283,7 @@ function App() {
             <div style={{ width: 64, height: 64, borderRadius: 32, background: `${T.ok}15`, border: `2px solid ${T.ok}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 28 }}>✓</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 8 }}>가입이 완료되었습니다!</div>
             <div style={{ fontSize: 14, color: T.w40, lineHeight: 1.6, marginBottom: 24 }}><span style={{ color: T.pri, fontWeight: 700 }}>{signupForm.company}</span>님,<br />지금 바로 AI 수출 분석을 시작해보세요.</div>
-            <button onClick={() => { setShowSignup(false); window.location.href = "whistle.html"; }} style={{ ...s.btn("pri"), padding: "16px 40px", fontSize: 15 }}>첫 번째 AI 분석 시작하기</button>
+            <button onClick={() => { setShowSignup(false); window.location.href = signupRole === "buyer" ? "buyer.html" : "whistle.html"; }} style={{ ...s.btn("pri"), padding: "16px 40px", fontSize: 15 }}>{signupRole === "buyer" ? "바이어 포털 시작하기" : "첫 번째 AI 분석 시작하기"}</button>
             <div style={{ fontSize: 11, color: T.w20, marginTop: 12 }}>{signupForm.email}로 확인 이메일이 발송되었습니다</div>
           </div>
         )}
