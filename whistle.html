@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#060B18;--bg2:#0A1020;--card:#0D1424;--card2:#111B2E;--sf:#111B2E;--pri:#00D4FF;--pri-g:linear-gradient(135deg,#00D4FF,#0088FF);--pri-d:#0088FF;--pri-glow:0 0 30px rgba(0,212,255,.12);--acc:#FFB800;--acc-g:linear-gradient(135deg,#FFB800,#FF8C00);--ok:#00E676;--err:#FF5252;--warn:#FFA726;--purple:#A855F7;--w:#fff;--w90:rgba(255,255,255,.9);--w70:rgba(255,255,255,.7);--w60:rgba(255,255,255,.6);--w40:rgba(255,255,255,.4);--w20:rgba(255,255,255,.2);--w12:rgba(255,255,255,.1);--w08:rgba(255,255,255,.06);--bd:rgba(255,255,255,.08);--bd-l:rgba(255,255,255,.15);--r:14px;--r-s:10px;--r-xs:6px;--shadow:0 4px 24px rgba(0,0,0,.4);--shadow-lg:0 12px 48px rgba(0,0,0,.6)}
@@ -206,6 +207,21 @@ var PLAN_LIMITS={
   pro:{analyses:-1,products:-1,projects:-1,docs:-1,emails:-1,matching:1},
   alibaba:{analyses:-1,products:-1,projects:-1,docs:-1,emails:-1,matching:3}
 };
+
+/* === STRIPE CONFIG === */
+var STRIPE_CONFIG={
+  pk:'pk_test_REPLACE_WITH_YOUR_STRIPE_PUBLISHABLE_KEY',
+  fn:'https://lylktgxngrlxmsldxdqj.supabase.co/functions/v1',
+  /* Stripe Price IDs — Stripe Dashboard에서 생성 후 여기에 입력 */
+  prices:{
+    starter:{m:'price_starter_m',s:'price_starter_s',a:'price_starter_a',m_krw:'price_starter_m_krw',s_krw:'price_starter_s_krw',a_krw:'price_starter_a_krw'},
+    pro:{m:'price_pro_m',s:'price_pro_s',a:'price_pro_a',m_krw:'price_pro_m_krw',s_krw:'price_pro_s_krw',a_krw:'price_pro_a_krw'},
+    enterprise:{m:'price_enterprise_m'},
+    alibaba:{m:'price_alibaba_m',s:'price_alibaba_s',a:'price_alibaba_a'}
+  }
+};
+var _stripeInstance=null;
+function _getStripe(){if(!_stripeInstance&&STRIPE_CONFIG.pk.indexOf('REPLACE')===-1){_stripeInstance=Stripe(STRIPE_CONFIG.pk);}return _stripeInstance;}
 
 /* === PLAN GATE === */
 function _planGate(feature){
@@ -2422,7 +2438,7 @@ function pgSub(){
   var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">💎 구독 관리</h2></div>'+
 
   /* Current plan summary */
-  '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">현재 플랜</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div></div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">AI 분석</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">제품</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">프로젝트</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
+  '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">현재 플랜</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div>'+(cur!=='free'&&S.user&&S.user.stripe_customer_id?'<button class="btn btn-ghost btn-sm" onclick="App.openBillingPortal()" style="margin-top:6px;font-size:11px">구독 관리 (결제수단·해지)</button>':'')+'</div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">AI 분석</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">제품</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">프로젝트</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
 
   /* Section header + voucher toggle */
   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px"><div style="font-size:13px;color:var(--w40)">SaaS 구독 요금 — AI 분석·바이어 소통·수출 관리</div>'+
@@ -2506,19 +2522,20 @@ function openCheckout(planId){
 
     /* 결제 방식 3탭 */
     '<div style="padding:16px;border-radius:12px;background:var(--w08);margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--w60);margin-bottom:8px">결제 방식 선택</div>'+
-    '<div id="ck-tabs" style="display:flex;gap:8px;margin-bottom:14px">'+
-    '<div class="ck-tab active" onclick="App.ckTab(0)" style="flex:1;padding:12px 8px;border-radius:10px;border:2px solid var(--pri);background:rgba(0,212,255,.06);text-align:center;cursor:pointer;font-size:12px;font-weight:700;color:var(--pri)">🏦 계좌이체</div>'+
-    '<div class="ck-tab" onclick="App.ckTab(1)" style="flex:1;padding:12px 8px;border-radius:10px;border:2px solid var(--bd);text-align:center;cursor:pointer;font-size:12px;color:var(--w40)">💬 카카오 상담</div>'+
-    '<div class="ck-tab" onclick="App.ckTab(2)" style="flex:1;padding:12px 8px;border-radius:10px;border:2px solid var(--bd);text-align:center;cursor:pointer;font-size:12px;color:var(--w40)">🏛️ 바우처</div></div>'+
+    '<div id="ck-tabs" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">'+
+    '<div class="ck-tab" onclick="App.ckTab(0)" style="flex:1;min-width:70px;padding:10px 6px;border-radius:10px;border:2px solid var(--bd);text-align:center;cursor:pointer;font-size:11px;color:var(--w40)">🏦 계좌이체</div>'+
+    '<div class="ck-tab active" onclick="App.ckTab(3)" style="flex:1;min-width:70px;padding:10px 6px;border-radius:10px;border:2px solid var(--pri);background:rgba(0,212,255,.06);text-align:center;cursor:pointer;font-size:11px;font-weight:700;color:var(--pri)">💳 카드결제</div>'+
+    '<div class="ck-tab" onclick="App.ckTab(1)" style="flex:1;min-width:70px;padding:10px 6px;border-radius:10px;border:2px solid var(--bd);text-align:center;cursor:pointer;font-size:11px;color:var(--w40)">💬 카카오</div>'+
+    '<div class="ck-tab" onclick="App.ckTab(2)" style="flex:1;min-width:70px;padding:10px 6px;border-radius:10px;border:2px solid var(--bd);text-align:center;cursor:pointer;font-size:11px;color:var(--w40)">🏛️ 바우처</div></div>'+
 
     /* 탭 내용 영역 */
-    '<div id="ck-body">'+_ckTransfer(p)+'</div></div>'+
+    '<div id="ck-body">'+_ckStripe(planId)+'</div></div>'+
 
     /* 금액 요약 */
     '<div style="padding:14px;border-radius:10px;border:1px solid var(--bd);margin-bottom:14px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:var(--w40)">'+p.n+' 월간 구독</span><span style="font-weight:700">'+U.fmtPrice(p.pr)+'</span></div><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:var(--w40)">부가세 (10%)</span><span style="font-weight:700">'+U.fmtPrice(Math.round(p.pr*0.1))+'</span></div><div style="border-top:1px solid var(--bd);padding-top:8px;margin-top:8px;display:flex;justify-content:space-between;font-size:15px;font-weight:800"><span>총 결제금액</span><span style="color:'+p.c+'">'+U.fmtPrice(Math.round(p.pr*1.1))+'</span></div>'+
     (p.v?'<div style="margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15)"><div style="font-size:11px;color:var(--acc)">바우처 적용시 (70% 지원): <b>'+U.fmtPrice(Math.round(p.v*1.1))+'</b>/월</div></div>':'')+'</div>';
 
-  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'ckm',title:'💎 플랜 변경',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'ckm\')">취소</button><button class="btn btn-pri" id="ck-submit" onclick="App.confirmCheckout(\''+planId+'\')">입금 완료 알림</button>',width:'460px'}));UI.showModal('ckm');
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'ckm',title:'💎 플랜 변경',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'ckm\')">취소</button><button class="btn btn-pri" id="ck-submit" onclick="App.initStripeCheckout(\''+planId+'\')">💳 카드 결제하기</button>',width:'480px'}));UI.showModal('ckm');
 }
 
 /* 체크아웃 탭 내용 */
@@ -2548,6 +2565,93 @@ function _ckVoucher(){
     '<input name="voucher_no" placeholder="바우처 번호 (선택)" style="padding:10px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px">'+
     '</div><div style="margin-top:10px;font-size:11px;color:var(--w40)">바우처 확인 후 영업일 기준 1일 내 플랜이 활성화됩니다.</div></div>';
 }
+function _ckStripe(planId){
+  var prices={starter:{m:'₩99,000',s:'₩534,600',a:'₩950,400',dm:'₩99,000/월',ds:'₩89,100/월 (10%↓)',da:'₩79,200/월 (20%↓)'},pro:{m:'₩299,000',s:'₩1,614,600',a:'₩2,870,400',dm:'₩299,000/월',ds:'₩269,100/월',da:'₩239,200/월'}};
+  var pr=prices[planId]||prices.starter;
+  return '<div style="padding:14px;border-radius:10px;background:var(--card);border:1px solid var(--bd)">'+
+    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--pri)">💳 Stripe 카드 결제</div>'+
+    '<div style="font-size:12px;color:var(--w60);margin-bottom:12px">해외 카드 포함 모든 카드로 즉시 결제됩니다. 구독은 자동 갱신되며 언제든 해지 가능합니다.</div>'+
+    '<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:8px">결제 주기 선택</div>'+
+    '<div id="stripe-cycle" style="display:flex;flex-direction:column;gap:6px">'+
+    '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--pri);background:rgba(0,212,255,.06);cursor:pointer"><input type="radio" name="billing_cycle" value="m" checked style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">월간</span><span style="font-size:11px;color:var(--w40);margin-left:8px">'+pr.dm+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.m+'</span></label>'+
+    '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:pointer"><input type="radio" name="billing_cycle" value="s" style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">6개월</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.ds+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.s+'</span></label>'+
+    '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:pointer"><input type="radio" name="billing_cycle" value="a" style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">연간</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.da+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.a+'</span></label>'+
+    '</div>'+
+    '<div style="margin-top:10px;font-size:11px;color:var(--w40)">Stripe 보안 결제. 카드 정보는 Stripe에서만 처리됩니다.</div></div>';
+}
+
+function initStripeCheckout(planId){
+  var stripe=_getStripe();
+  if(!stripe){UI.toast('Stripe 설정이 필요합니다. 관리자에게 문의하세요.','warn');return;}
+  var cycleEl=document.querySelector('input[name=billing_cycle]:checked');
+  var cycle=cycleEl?cycleEl.value:'m';
+  var isKRW=true;/* 제조사 = KRW */
+  var priceKey=cycle+(isKRW?'_krw':'');
+  var priceId=STRIPE_CONFIG.prices[planId]&&STRIPE_CONFIG.prices[planId][priceKey];
+  if(!priceId||priceId.indexOf('price_')===0&&priceId.indexOf('price_1')!==0){
+    /* fallback: 아직 price ID 미설정 → 기존 결제 방식 안내 */
+    UI.toast('카드 결제 준비 중입니다. 계좌이체를 이용해주세요.','info');return;
+  }
+  var btn=document.getElementById('ck-submit');
+  if(btn){btn.disabled=true;btn.textContent='결제 준비 중...';}
+
+  var session=sb.auth.session&&sb.auth.session();
+  var token=session?session.access_token:(S.user?S.user.access_token:'');
+  if(!token){
+    sb.auth.getSession().then(function(r){
+      if(r.data&&r.data.session)_doStripeCheckout(planId,priceId,r.data.session.access_token);
+      else{UI.toast('로그인이 필요합니다.','warn');if(btn){btn.disabled=false;btn.textContent='💳 카드 결제하기';}}
+    });
+  }else{_doStripeCheckout(planId,priceId,token);}
+}
+
+function _doStripeCheckout(planId,priceId,token){
+  var btn=document.getElementById('ck-submit');
+  fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0'},
+    body:JSON.stringify({
+      price_id:priceId,
+      success_url:location.origin+location.pathname+'#subscription',
+      cancel_url:location.origin+location.pathname+'#subscription'
+    })
+  }).then(function(r){return r.json();}).then(function(data){
+    if(data.error){UI.toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent='💳 카드 결제하기';}return;}
+    /* Close checkout modal, open Stripe Embedded Checkout */
+    closeModal('ckm');
+    var stripe=_getStripe();
+    var overlay='<div class="modal-overlay" id="stripe-modal" onclick="if(event.target===this)App.closeStripeCheckout()"><div class="modal" style="max-width:520px"><div class="modal-h"><h3>💳 카드 결제</h3><button class="modal-close" onclick="App.closeStripeCheckout()">&#10005;</button></div><div class="modal-b"><div id="stripe-checkout-mount" style="min-height:300px"></div></div></div></div>';
+    document.body.insertAdjacentHTML('beforeend',overlay);
+    UI.showModal('stripe-modal');
+    stripe.initEmbeddedCheckout({clientSecret:data.clientSecret}).then(function(checkout){
+      window._stripeCheckout=checkout;
+      checkout.mount('#stripe-checkout-mount');
+    });
+  }).catch(function(err){
+    UI.toast('결제 연결 오류: '+err.message,'err');
+    if(btn){btn.disabled=false;btn.textContent='💳 카드 결제하기';}
+  });
+}
+
+function closeStripeCheckout(){
+  if(window._stripeCheckout){window._stripeCheckout.destroy();window._stripeCheckout=null;}
+  closeModal('stripe-modal');
+}
+
+function openBillingPortal(){
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){UI.toast('로그인이 필요합니다.','warn');return;}
+    fetch(STRIPE_CONFIG.fn+'/create-billing-portal',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0'},
+      body:JSON.stringify({return_url:location.href})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.url)window.open(data.url,'_blank');
+      else UI.toast(data.error||'Billing Portal을 열 수 없습니다.','warn');
+    });
+  });
+}
+
 function ckTab(idx){
   var tabs=document.querySelectorAll('.ck-tab');
   tabs.forEach(function(t,i){
@@ -2559,9 +2663,10 @@ function ckTab(idx){
   var _m=btn?btn.getAttribute('onclick').match(/'(\w+)'/):null;var planId=_m?_m[1]:'';
   var plans={starter:{pr:99000},pro:{pr:299000}};
   var p=plans[planId]||{pr:0};
-  if(idx===0){bd.innerHTML=_ckTransfer(p);if(btn)btn.textContent='입금 완료 알림';}
-  else if(idx===1){bd.innerHTML=_ckKakao();if(btn)btn.textContent='상담 완료';}
-  else{bd.innerHTML=_ckVoucher();if(btn)btn.textContent='바우처 신청';}
+  if(idx===0){bd.innerHTML=_ckTransfer(p);if(btn){btn.textContent='입금 완료 알림';btn.setAttribute('onclick',"App.confirmCheckout('"+planId+"')");}}
+  else if(idx===1){bd.innerHTML=_ckKakao();if(btn){btn.textContent='상담 완료';btn.setAttribute('onclick',"App.confirmCheckout('"+planId+"')");}}
+  else if(idx===2){bd.innerHTML=_ckVoucher();if(btn){btn.textContent='바우처 신청';btn.setAttribute('onclick',"App.confirmCheckout('"+planId+"')");}}
+  else if(idx===3){bd.innerHTML=_ckStripe(planId);if(btn){btn.textContent='💳 카드 결제하기';btn.setAttribute('onclick',"App.initStripeCheckout('"+planId+"')");}}
 }
 
 function confirmCheckout(planId){
@@ -4326,7 +4431,7 @@ function orderCtx(e,oid){var o=S.orders.find(function(x){return x.id===oid;});if
 function filterOrderStatus(st){S._searchCache['orders']=S._searchCache['orders']||{q:'',filters:{}};S._searchCache['orders'].filters={status:st};nav('orders');}
 function cloneDoc(docId){sb.from('documents').select('*').eq('id',docId).single().then(function(r){if(!r.data)return;var d=r.data.data||{};S.docType=r.data.doc_type;S.docItems=d.items||[{name:'',qty:1,unit_price:0,desc:'',unit:'PCS'}];S._docPrefill={cloneData:d};render();setTimeout(function(){if(d.buyer){Object.keys(d.buyer).forEach(function(k){var el=document.querySelector('[name='+k+']');if(el)el.value=d.buyer[k];});}if(d.ref){Object.keys(d.ref).forEach(function(k){var el=document.querySelector('[name='+k+']');if(el&&k!=='doc_no')el.value=d.ref[k];});}},100);});}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals};
 loadUser();
 })();
 </script>

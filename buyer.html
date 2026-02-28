@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Whistle AI — Buyer Portal</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#060B18;--bg2:#0A1020;--card:#0D1424;--card2:#111B2E;--sf:#111B2E;--pri:#00D4FF;--pri-g:linear-gradient(135deg,#00D4FF,#0088FF);--pri-d:#0088FF;--pri-glow:0 0 30px rgba(0,212,255,.12);--acc:#FFB800;--acc-g:linear-gradient(135deg,#FFB800,#FF8C00);--ok:#00E676;--err:#FF5252;--warn:#FFA726;--purple:#A855F7;--w:#fff;--w90:rgba(255,255,255,.9);--w70:rgba(255,255,255,.7);--w60:rgba(255,255,255,.6);--w40:rgba(255,255,255,.4);--w20:rgba(255,255,255,.2);--w12:rgba(255,255,255,.1);--w08:rgba(255,255,255,.06);--bd:rgba(255,255,255,.08);--bd-l:rgba(255,255,255,.15);--r:14px;--r-s:10px;--r-xs:6px;--shadow:0 4px 24px rgba(0,0,0,.4);--shadow-lg:0 12px 48px rgba(0,0,0,.6)}
@@ -172,6 +173,14 @@ var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
 var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
 var RELAY=(!location.hostname||location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:')?'http://localhost:3456':'https://uncommanded-brooke-truculent.ngrok-free.dev';
 var sb=window.supabase.createClient(SB_URL,SB_KEY);
+/* Stripe config (buyer = USD) */
+var STRIPE_CFG={
+  pk:'pk_test_REPLACE_WITH_YOUR_STRIPE_PUBLISHABLE_KEY',
+  fn:SB_URL+'/functions/v1',
+  prices:{starter:{m:'price_buyer_starter_m',s:'price_buyer_starter_s',a:'price_buyer_starter_a'},pro:{m:'price_buyer_pro_m',s:'price_buyer_pro_s',a:'price_buyer_pro_a'},enterprise:{m:'price_buyer_enterprise_m'}}
+};
+var _stripe=null;
+function _getStripe(){if(!_stripe&&STRIPE_CFG.pk.indexOf('REPLACE')===-1){_stripe=Stripe(STRIPE_CFG.pk);}return _stripe;}
 
 /* === STATE === */
 var S={
@@ -1225,15 +1234,32 @@ function pgProfile(){
   h+='<div class="card"><div class="card-h">My Plan</div><div class="card-b">';
   h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">';
   h+='<div style="padding:6px 16px;border-radius:20px;background:'+(planColors[curPlan]||'var(--w40)')+';color:var(--w);font-weight:800;font-size:14px">'+(planNames[curPlan]||'Free')+'</div>';
-  h+='<div style="font-size:12px;color:var(--w40)">'+(curPlan==='free'?'Upgrade to unlock more features':'Active subscription')+'</div>';
+  h+='<div style="flex:1;font-size:12px;color:var(--w40)">'+(curPlan==='free'?'Upgrade to unlock more features':'Active subscription')+'</div>';
+  if(curPlan!=='free')h+='<button class="btn btn-ghost btn-sm" onclick="B.openBillingPortal()" style="font-size:11px">Manage Billing</button>';
   h+='</div>';
-  h+='<table class="tbl" style="margin-bottom:12px"><thead><tr><th>Plan</th><th>Monthly</th><th>Searches</th><th>Inquiries</th><th>Key Feature</th></tr></thead><tbody>';
-  h+='<tr'+(curPlan==='free'?' style="background:rgba(255,255,255,.03)"':'')+'><td><b>Free</b></td><td>$0</td><td>1/signup</td><td>1</td><td style="font-size:11px">Basic access</td></tr>';
-  h+='<tr'+(curPlan==='starter'||curPlan==='basic'?' style="background:rgba(0,122,255,.05)"':'')+'><td><b style="color:var(--pri)">Starter</b></td><td><b>$29</b>/mo</td><td>30/mo</td><td>15/mo</td><td style="font-size:11px">Reports, Origin verification</td></tr>';
-  h+='<tr'+(curPlan==='pro'?' style="background:rgba(0,212,255,.05)"':'')+'><td><b style="color:var(--acc)">Pro</b></td><td><b>$89</b>/mo</td><td>200/mo</td><td>50/mo</td><td style="font-size:11px">Factory discount, Priority matching</td></tr>';
-  h+='<tr'+(curPlan==='enterprise'?' style="background:rgba(168,85,247,.05)"':'')+'><td><b style="color:var(--purple)">Enterprise</b></td><td>Custom</td><td>Unlimited</td><td>Unlimited</td><td style="font-size:11px">Dedicated manager, Full service</td></tr>';
-  h+='</tbody></table>';
-  h+='<div style="font-size:11px;color:var(--w30);margin-bottom:12px">Add-ons: Search pack (10) $9 · Trend report $19 · Factory contact $200~$700</div>';
+  /* Plan comparison cards */
+  var bPlans=[
+    {id:'free',n:'Free',pr:'$0',desc:'1 search, 1 inquiry',c:'var(--w40)'},
+    {id:'starter',n:'Starter',pr:'$29/mo',yp:'$23.20/mo (annual)',desc:'30 searches, 15 inquiries/mo',c:'var(--pri)'},
+    {id:'pro',n:'Pro',pr:'$89/mo',yp:'$71.20/mo (annual)',desc:'200 searches, 50 inquiries/mo',c:'var(--acc)'},
+    {id:'enterprise',n:'Enterprise',pr:'Custom',desc:'Unlimited everything',c:'var(--purple)'}
+  ];
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">';
+  bPlans.forEach(function(p){
+    var isCur=(curPlan===p.id||(curPlan==='basic'&&p.id==='starter'));
+    var isUp=bPlans.findIndex(function(x){return x.id===p.id;})>bPlans.findIndex(function(x){return x.id===curPlan||(curPlan==='basic'&&x.id==='starter');});
+    h+='<div style="padding:12px;border-radius:10px;border:1px solid '+(isCur?p.c:'var(--bd)')+';background:'+(isCur?p.c+'10':'var(--w04)')+';text-align:center">';
+    h+='<div style="font-size:11px;font-weight:800;color:'+p.c+';margin-bottom:4px">'+p.n+'</div>';
+    h+='<div style="font-size:16px;font-weight:800;margin-bottom:2px">'+p.pr+'</div>';
+    if(p.yp)h+='<div style="font-size:10px;color:var(--ok)">'+p.yp+'</div>';
+    h+='<div style="font-size:10px;color:var(--w40);margin-top:4px">'+p.desc+'</div>';
+    if(!isCur&&isUp&&p.id!=='enterprise')h+='<button class="btn btn-pri btn-sm btn-block" style="margin-top:8px;font-size:10px" onclick="B.openBuyerCheckout(\''+p.id+'\')">Upgrade</button>';
+    else if(isCur)h+='<div style="margin-top:8px;font-size:10px;color:var(--w20)">Current</div>';
+    else if(p.id==='enterprise')h+='<a href="mailto:contact@motiveinno.com" class="btn btn-ghost btn-sm btn-block" style="margin-top:8px;font-size:10px">Contact Us</a>';
+    h+='</div>';
+  });
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--w30);margin-bottom:8px">Add-ons: Search pack (10) $9 · Trend report $19 · Factory contact $200~$700</div>';
   h+='<div style="font-size:11px;color:var(--w30)">Sourcing commission: &lt;$3K = $300 fixed · $3K~30K = 8% · $30K~100K = 5% · $100K+ = 3%</div>';
   h+='</div></div>';
 
@@ -2059,6 +2085,65 @@ sb.auth.onAuthStateChange(function(event,session){
 });
 loadUser();
 
+/* === STRIPE CHECKOUT (Buyer) === */
+function openBuyerCheckout(planId){
+  var prices={starter:{m:'$29',s:'$156.60',a:'$278.40',dm:'$29/mo',ds:'$26.10/mo (10% off)',da:'$23.20/mo (20% off)'},pro:{m:'$89',s:'$480.60',a:'$854.40',dm:'$89/mo',ds:'$80.10/mo',da:'$71.20/mo'}};
+  var pr=prices[planId]||prices.starter;
+  var body='<div style="text-align:center;margin-bottom:16px"><div style="font-size:24px;font-weight:900;color:var(--pri)">'+(planId==='pro'?'Pro':'Starter')+'</div></div>'+
+  '<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:8px">Billing Cycle</div>'+
+  '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">'+
+  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--pri);background:rgba(0,212,255,.06);cursor:pointer"><input type="radio" name="b_cycle" value="m" checked style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">Monthly</span><span style="font-size:11px;color:var(--w40);margin-left:8px">'+pr.dm+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.m+'</span></label>'+
+  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:pointer"><input type="radio" name="b_cycle" value="s" style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">6 Months</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.ds+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.s+'</span></label>'+
+  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:pointer"><input type="radio" name="b_cycle" value="a" style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">Annual</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.da+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.a+'</span></label></div>'+
+  '<div style="font-size:11px;color:var(--w40)">Secure payment via Stripe. Cancel anytime.</div>';
+  document.body.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="bck" onclick="if(event.target===this)B.closeModal(\'bck\')"><div class="modal" style="max-width:420px"><div class="modal-h"><h3>Upgrade Plan</h3><button class="modal-close" onclick="B.closeModal(\'bck\')">&#10005;</button></div><div class="modal-b">'+body+'</div><div class="modal-f"><button class="btn btn-ghost" onclick="B.closeModal(\'bck\')">Cancel</button><button class="btn btn-pri" id="bck-btn" onclick="B.initBuyerStripe(\''+planId+'\')">Pay with Card</button></div></div></div>');
+  var m=document.getElementById('bck');if(m)m.style.display='flex';
+}
+
+function initBuyerStripe(planId){
+  var stripe=_getStripe();
+  if(!stripe){toast('Stripe is not configured yet. Contact support.','warn');return;}
+  var cycleEl=document.querySelector('input[name=b_cycle]:checked');
+  var cycle=cycleEl?cycleEl.value:'m';
+  var priceId=STRIPE_CFG.prices[planId]&&STRIPE_CFG.prices[planId][cycle];
+  if(!priceId||priceId.indexOf('price_buyer')===0){toast('Payment setup in progress. Contact support@motiveinno.com','info');return;}
+  var btn=document.getElementById('bck-btn');
+  if(btn){btn.disabled=true;btn.textContent='Connecting...';}
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){toast('Please log in first','warn');if(btn){btn.disabled=false;btn.textContent='Pay with Card';}return;}
+    fetch(STRIPE_CFG.fn+'/create-checkout-session',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
+      body:JSON.stringify({price_id:priceId,success_url:location.origin+location.pathname+'#profile',cancel_url:location.origin+location.pathname+'#profile'})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.error){toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent='Pay with Card';}return;}
+      closeModal('bck');
+      document.body.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="stripe-ck" onclick="if(event.target===this)B.closeStripeModal()"><div class="modal" style="max-width:520px"><div class="modal-h"><h3>Payment</h3><button class="modal-close" onclick="B.closeStripeModal()">&#10005;</button></div><div class="modal-b"><div id="stripe-mount" style="min-height:300px"></div></div></div></div>');
+      var sm=document.getElementById('stripe-ck');if(sm)sm.style.display='flex';
+      stripe.initEmbeddedCheckout({clientSecret:data.clientSecret}).then(function(checkout){window._bStripe=checkout;checkout.mount('#stripe-mount');});
+    }).catch(function(err){toast('Connection error: '+err.message,'err');if(btn){btn.disabled=false;btn.textContent='Pay with Card';}});
+  });
+}
+
+function closeStripeModal(){
+  if(window._bStripe){window._bStripe.destroy();window._bStripe=null;}
+  closeModal('stripe-ck');
+}
+
+function openBillingPortal(){
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){toast('Please log in first','warn');return;}
+    fetch(STRIPE_CFG.fn+'/create-billing-portal',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
+      body:JSON.stringify({return_url:location.href})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.url)window.open(data.url,'_blank');
+      else toast(data.error||'Cannot open billing portal','warn');
+    });
+  });
+}
+
 /* === PUBLIC API === */
 window.B={
   set:set,render:render,nav:nav,
@@ -2068,6 +2153,7 @@ window.B={
   saveProduct:saveProduct,unsaveProduct:unsaveProduct,
   showInquiryDetail:showInquiryDetail,
   saveProfile:saveProfile,changePassword:changePassword,
+  openBuyerCheckout:openBuyerCheckout,initBuyerStripe:initBuyerStripe,closeStripeModal:closeStripeModal,openBillingPortal:openBillingPortal,
   // Deals
   openDeal:openDeal,closeDeal:closeDeal,sendDealMessage:sendDealMessage,
   // Chat
