@@ -3741,14 +3741,12 @@ function saveTrackingStatus(shipId){
 function generateShareLink(shipId){
   var ship=S.shipments.find(function(x){return x.id===shipId;});if(!ship)return;
   var token=ship.share_token;
-  if(!token){
-    token='tk_'+Math.random().toString(36).substr(2,12);
-    sb.from('shipments').update({share_token:token,buyer_visible:true}).eq('id',shipId).then(function(r){
-      if(!r.error){ship.share_token=token;ship.buyer_visible=true;}
-    });
-  }
-  var url=window.location.origin+window.location.pathname+'?track='+shipId+'&token='+token;
-  navigator.clipboard.writeText(url).then(function(){UI.toast('공유 링크가 복사되었습니다','ok');});
+  function copyLink(t){var url=window.location.origin+window.location.pathname+'?track='+shipId+'&token='+t;navigator.clipboard.writeText(url).then(function(){UI.toast('공유 링크가 복사되었습니다','ok');});}
+  if(token){copyLink(token);return;}
+  var arr=new Uint8Array(16);crypto.getRandomValues(arr);token='tk_'+Array.from(arr,function(b){return b.toString(36);}).join('').substr(0,16);
+  sb.from('shipments').update({share_token:token,buyer_visible:true}).eq('id',shipId).then(function(r){
+    if(!r.error){ship.share_token=token;ship.buyer_visible=true;copyLink(token);}else{UI.toast('링크 생성 실패','err');}
+  });
 }
 
 function trackBL(bl,carrier){
@@ -3946,7 +3944,7 @@ function submitProposal(reqId){
 
 /* === ALIBABA === */
 function pgAlibaba(){
-  if(S.user&&S.user.plan!=='alibaba'){return '<div class="card"><div class="card-b" style="text-align:center;padding:40px"><div style="font-size:48px;margin-bottom:12px">🏪</div><h3>알리바바 몰대행 서비스</h3><p style="color:var(--w40);margin:8px 0 16px">알리바바 플랜 구독 시 이용 가능합니다</p><button class="btn btn-pri" onclick="App.nav(\'settings\')">플랜 변경 →</button></div></div>';}
+  if(S.user&&S.user.plan!=='alibaba'){return '<div class="card"><div class="card-b" style="text-align:center;padding:40px"><div style="font-size:48px;margin-bottom:12px">🏪</div><h3>알리바바 몰대행 서비스</h3><p style="color:var(--w40);margin:8px 0 16px">알리바바 플랜 구독 시 이용 가능합니다</p><button class="btn btn-pri" onclick="App.nav(\'subscription\')">플랜 변경 →</button></div></div>';}
   var tab=S._alibabaTab||'overview';
   var tabs=[{id:'overview',icon:'📊',label:'개요'},{id:'manual',icon:'📋',label:'수작업 가이드'},{id:'api',icon:'🔗',label:'API 연동'},{id:'pipeline',icon:'📈',label:'주문 파이프라인'}];
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px"><div><h2 style="font-size:18px;font-weight:800">🏪 알리바바 몰대행</h2><p style="font-size:13px;color:var(--w40);margin-top:2px">알리바바 스토어 관리, 문의 응대, 바이어 전환</p></div></div>';
@@ -4294,7 +4292,7 @@ function convertPItoOrder(docId){
   sb.from('documents').select('*').eq('id',docId).single().then(function(r){
     if(r.error||!r.data){UI.toast('서류 없음','err');return;}
     doc=r.data;if(doc.doc_type&&doc.doc_type!=='pi'){UI.toast('PI 서류만 주문으로 전환할 수 있습니다','warn');return;}
-    var c=doc.content||doc.data||{};
+    var c=doc.content||{};
     var docNum=c.ref?c.ref.doc_no:(c.doc_number||'');
     var docTotal=c.total||0;
     var docPayment=c.ref?c.ref.payment:(c.payment_terms||'T/T 30% deposit');
