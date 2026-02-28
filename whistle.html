@@ -135,7 +135,7 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 "use strict";
 var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0');
 var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'';
-(function(){if(RELAY_URL)return;fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY_URL=t;}}).catch(function(){})})();
+var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY_URL=t;}}).catch(function(){})})();
 
 /* === UTILS === */
 var U={
@@ -653,7 +653,7 @@ function submitA(){
       if(!data.ok)throw new Error(data.error||'분석 실패');
       var res=data.result;
       res.input_data={product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),files:(d.files||[]).map(function(f){return f.name||f;}),selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer};
-      sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).then(function(){
+      sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){
         S._submitting=false;
         autoCreateProduct(r.data.id,res,d.product_name);
         loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('AI 분석 완료!','ok');});
@@ -661,9 +661,9 @@ function submitA(){
       });
     }).catch(function(err){
       S._submitting=false;
-      console.warn('AI API 실패, 폴백 모드:',err);UI.toast('AI 서버 연결 실패, 기본 분석 사용','warn');
+      UI.toast('AI 서버 연결 실패, 기본 분석 사용','warn');
       var res=genReport(d);
-      sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).then(function(){
+      sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){
         autoCreateProduct(r.data.id,res,d.product_name);
         loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('분석 완료 (기본 모드)','ok');});
       });
@@ -676,7 +676,7 @@ function autoCreateProduct(analysisId,res,productName){
   var inp=res.input_data||{};
   var prod={user_id:S.user.id,analysis_id:analysisId,name_ko:productName||inp.product_name_en||'',name_en:inp.product_name_en||'',category:inp.category||null,hs_code:res.hs_code||null,fob_price:inp.fob_price||null,moq:inp.moq||null,certifications:res.existing_certs||[],status:'draft'};
   sb.from('products').insert(prod).select().single().then(function(r2){
-    if(r2.error){console.warn('자동 제품등록 실패:',r2.error.message);return;}
+    if(r2.error){UI.toast('자동 제품등록 실패','warn');return;}
     loadP().then(function(){UI.toast('제품 자동 등록: '+prod.name_ko,'ok');});
   });
 }
@@ -2881,7 +2881,7 @@ function uploadCompDoc(docType){
 }
 function delCompDoc(id){
   if(!confirm('삭제할까요?'))return;
-  sb.from('company_documents').delete().eq('id',id).then(function(r){
+  sb.from('company_documents').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){
     if(r.error){UI.toast('삭제 실패','err');return;}
     loadCompanyDocs();UI.toast('삭제됨','ok');
   });
