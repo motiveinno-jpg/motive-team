@@ -371,8 +371,9 @@ function pgDash(){
   var journeyPct=0,journeyStage='시작 전';
   if(S.projects.length>0){
     var jp=S.projects[0];
-    var jStages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
-    var jLabels=['계획수립','인증/규제','바이어 발굴','협상','생산','선적','완료'];
+    var jStages=getProjectStages(jp);
+    var jLabelMap={planning:'계획수립',certification:'인증/규제',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상',production:'생산',shipping:'선적',completed:'완료'};
+    var jLabels=jStages.map(function(s){return jLabelMap[s]||s;});
     var jIdx=jStages.indexOf(jp.status);
     journeyPct=jIdx>=0?Math.round((jIdx/(jStages.length-1))*100):0;
     journeyStage=jLabels[jIdx>=0?jIdx:0];
@@ -419,8 +420,9 @@ function pgDash(){
   /* 수출 여정 시각화 */
   if(S.projects.length>0){
     var jp=S.projects[0];
-    var jStages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
-    var jLabels=['📋 계획','📜 인증','🤝 바이어','💬 협상','🏭 생산','🚢 선적','✅ 완료'];
+    var jStages=getProjectStages(jp);
+    var jLabelMap2={planning:'📋 계획',certification:'📜 인증',alibaba_listing:'🏪 입점',buyer_search:'🤝 바이어',negotiation:'💬 협상',production:'🏭 생산',shipping:'🚢 선적',completed:'✅ 완료'};
+    var jLabels=jStages.map(function(s){return jLabelMap2[s]||s;});
     var jIdx=jStages.indexOf(jp.status);if(jIdx<0)jIdx=0;
     h+='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.15)"><div class="card-h"><span>🗺️ 수출 여정 — '+U.tr(jp.name,30)+'</span><span class="badge badge-pri" style="font-size:12px">'+journeyPct+'%</span></div><div class="card-b">';
     h+='<div style="display:flex;align-items:center;gap:0;margin-bottom:12px">';
@@ -758,8 +760,14 @@ var STAGE_DEFAULTS={
   negotiation:[{text:'가격 협상',done:false},{text:'결제 조건 협의',done:false},{text:'계약서 검토',done:false},{text:'PI 발행',done:false}],
   production:[{text:'생산 일정 확정',done:false},{text:'생산 시작',done:false},{text:'중간 검수 (QC)',done:false},{text:'포장 및 라벨링',done:false},{text:'최종 검수 및 출하 준비',done:false}],
   shipping:[{text:'CI/PL 작성',done:false},{text:'통관 서류 준비',done:false},{text:'포워더 선정',done:false},{text:'선적 완료',done:false},{text:'B/L 수령',done:false}],
-  completed:[{text:'대금 수령 확인',done:false},{text:'사후 관리 계획',done:false},{text:'재주문 협의',done:false}]
+  completed:[{text:'대금 수령 확인',done:false},{text:'사후 관리 계획',done:false},{text:'재주문 협의',done:false}],
+  alibaba_listing:[{text:'알리바바 계정 준비 (Whistle 총판 or 자체 계정)',done:false},{text:'상품 영문 정보 준비 (5개 기본)',done:false},{text:'알리바바 상품 등록',done:false},{text:'스토어 페이지 구축',done:false},{text:'KWA 광고 초기 셋팅',done:false}]
 };
+function getProjectStages(p){
+  var base=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
+  if(p&&p.alibaba_customer)base.splice(2,0,'alibaba_listing');
+  return base;
+}
 
 /* ── Category × Market 수출 로드맵 ── */
 var CATEGORY_ROADMAPS={
@@ -954,9 +962,9 @@ function getRoadmap(category,market){
   return cat[market]||cat._default||CATEGORY_ROADMAPS._default._default;
 }
 
-function buildStageProgress(category,market,existingCerts){
+function buildStageProgress(category,market,existingCerts,isAlibaba){
   var rm=getRoadmap(category,market);
-  var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
+  var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];if(isAlibaba)stages.splice(2,0,'alibaba_listing');
   var sp={};
   stages.forEach(function(stage){
     var stageRM=rm[stage]||STAGE_DEFAULTS[stage];
@@ -976,14 +984,15 @@ function buildStageProgress(category,market,existingCerts){
 
 function createPj(aid){
   var g=_planGate('project');if(g.blocked){UI.toast(g.label+' 한도 초과! 업그레이드가 필요합니다.','warn');nav('subscription');return;}
+  var isAlibaba=confirm('알리바바 입점 서비스를 이용하시겠습니까?\n(알리바바 플랜 고객에게 입점 단계가 추가됩니다)');
   var a=S.analyses.find(function(x){return x.id===aid;});if(!a)return;
   var linkedProd=S.products.find(function(p){return p.analysis_id===aid;});
   var category=(a.ai_result&&a.ai_result.category)||(linkedProd&&linkedProd.category)||'Other';
   var markets=a.ai_result&&a.ai_result.recommended_markets||['US'];
   var primaryMarket=markets[0]||'US';
   var aiCerts=a.ai_result&&a.ai_result.required_certs||[];
-  var initProgress=buildStageProgress(category,primaryMarket,aiCerts.length?aiCerts:null);
-  sb.from('projects').insert({user_id:S.user.id,analysis_id:aid,product_id:linkedProd?linkedProd.id:null,name:a.product_name+' 수출 프로젝트',target_countries:markets,status:'planning',stage_progress:initProgress}).then(function(r){
+  var initProgress=buildStageProgress(category,primaryMarket,aiCerts.length?aiCerts:null,isAlibaba);
+  sb.from('projects').insert({user_id:S.user.id,analysis_id:aid,product_id:linkedProd?linkedProd.id:null,name:a.product_name+' 수출 프로젝트',target_countries:markets,status:'planning',stage_progress:initProgress,alibaba_customer:isAlibaba}).then(function(r){
     if(r.error){UI.toast(_errMsg(r.error),'err');return;}loadPr().then(function(){set({page:'projects',currentAnalysis:null});UI.toast('프로젝트 생성! 카테고리별 로드맵이 자동 적용되었습니다','ok');});
   });
 }
@@ -991,7 +1000,7 @@ function createPj(aid){
 function pgProducts(){
   var sr=SF.read('products');var cats=U.CAT.map(function(c){return{value:c,label:c};});
   var fp=SF.filter(S.products,sr.query,['name_ko','name_en','category'],{category:sr.filters&&sr.filters.category});
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">📦 제품 카드</h2></div><button class="btn btn-pri" onclick="App.showPF()">+ 등록</button></div>'+SF.bar('products',{placeholder:'제품명, 카테고리 검색…',filters:[{key:'category',label:'카테고리',options:cats}]})+(fp.length===0?'<div class="card"><div class="card-b">'+UI.empty('📦',S.products.length?'검색 결과 없음':'등록 제품 없음',S.products.length?'검색어를 변경해 보세요':'제품을 등록하면 바이어에게 노출됩니다')+'<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="App.showPF()">첫 제품 등록</button></div></div></div>':'<div class="grid-3">'+fp.map(function(p){return '<div class="prod-card"><div class="prod-img" onclick="App.editP(\''+p.id+'\')" style="position:relative">'+(p.images&&p.images[0]?'<img src="'+p.images[0]+'" style="width:100%;height:100%;object-fit:cover">':'📦')+'</div><div class="prod-body"><div style="display:flex;justify-content:space-between;align-items:start"><div onclick="App.editP(\''+p.id+'\')" style="cursor:pointer;flex:1"><div class="prod-name">'+U.tr(p.name_ko,25)+'</div><div class="prod-meta">'+(p.category||'미설정')+' · FOB '+(p.fob_price?U.fmtUSD(p.fob_price):'미설정')+'</div><div class="prod-meta" style="margin-top:4px">MOQ: '+(p.moq||'—')+'</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+UI.sb(p.status)+'<button class="btn btn-danger btn-sm" onclick="App.delP(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:4px">삭제</button></div></div></div></div>';}).join('')+'<div class="prod-card" onclick="App.showPF()" style="display:flex;align-items:center;justify-content:center;min-height:200px;border-style:dashed"><div style="text-align:center;color:var(--w20)"><div style="font-size:32px">+</div><div style="font-size:13px">추가</div></div></div></div>');
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">📦 제품 카드</h2></div><button class="btn btn-pri" onclick="App.showPF()">+ 등록</button></div>'+SF.bar('products',{placeholder:'제품명, 카테고리 검색…',filters:[{key:'category',label:'카테고리',options:cats}]})+(fp.length===0?'<div class="card"><div class="card-b">'+UI.empty('📦',S.products.length?'검색 결과 없음':'등록 제품 없음',S.products.length?'검색어를 변경해 보세요':'제품을 등록하면 바이어에게 노출됩니다')+'<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="App.showPF()">첫 제품 등록</button></div></div></div>':'<div class="grid-3">'+fp.map(function(p){return '<div class="prod-card"><div class="prod-img" onclick="App.editP(\''+p.id+'\')" style="position:relative">'+(p.images&&p.images[0]?'<img src="'+p.images[0]+'" style="width:100%;height:100%;object-fit:cover">':'📦')+'</div><div class="prod-body"><div style="display:flex;justify-content:space-between;align-items:start"><div onclick="App.editP(\''+p.id+'\')" style="cursor:pointer;flex:1"><div class="prod-name">'+U.tr(p.name_ko,25)+'</div><div class="prod-meta">'+(p.category||'미설정')+' · FOB '+(p.fob_price?U.fmtUSD(p.fob_price):'미설정')+'</div><div class="prod-meta" style="margin-top:4px">MOQ: '+(p.moq||'—')+'</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'+UI.sb(p.status)+'<button class="btn btn-danger btn-sm" onclick="App.delP(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:4px">삭제</button><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.naverSearch(\''+p.id+'\')" style="font-size:10px;padding:2px 6px;margin-top:2px" title="네이버 시장조사">🔍 시장조사</button></div></div></div></div>';}).join('')+'<div class="prod-card" onclick="App.showPF()" style="display:flex;align-items:center;justify-content:center;min-height:200px;border-style:dashed"><div style="text-align:center;color:var(--w20)"><div style="font-size:32px">+</div><div style="font-size:13px">추가</div></div></div></div>');
 }
 
 function showPF(p){
@@ -1020,6 +1029,38 @@ function delP(id){if(!confirm('이 제품을 삭제할까요?'))return;sb.from('
 
 function delA(id){if(!confirm('이 분석을 삭제할까요?'))return;sb.from('analyses').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){UI.toast(_errMsg(r.error,'삭제'),'err');return;}loadA().then(function(){render();UI.toast('삭제 완료','ok');});});}
 
+function naverSearch(productId){
+  var p=S.products.find(function(x){return x.id===productId;});
+  if(!p){UI.toast('제품을 찾을 수 없습니다','warn');return;}
+  var keyword=p.name_ko||p.name||'';
+  if(!keyword){UI.toast('제품명이 없습니다','warn');return;}
+  UI.toast('검색 중...','info');
+  fetch(RELAY_URL+'/api/naver/search?query='+encodeURIComponent(keyword),{headers:{'ngrok-skip-browser-warning':'1'}})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(!data||data.error){UI.toast(data&&data.error||'검색 실패','err');return;}
+      var items=data.items||data.results||[];
+      if(items.length===0){UI.toast('검색 결과가 없습니다','warn');return;}
+      var body='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-height:480px;overflow-y:auto;padding:4px">';
+      items.forEach(function(item){
+        var title=(item.title||'').replace(/<\/?b>/gi,'');
+        var price=item.lprice?Number(item.lprice).toLocaleString()+'원':'가격 미정';
+        var img=item.image||'';
+        var link=item.link||'#';
+        body+='<div style="border:1px solid var(--bd-l);border-radius:12px;overflow:hidden;background:var(--sf)">';
+        if(img)body+='<div style="height:140px;overflow:hidden;background:#f5f5f5"><img src="'+img+'" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display=\'none\'"></div>';
+        body+='<div style="padding:10px"><div style="font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'+title+'</div>';
+        body+='<div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:6px">'+price+'</div>';
+        body+='<a href="'+link+'" target="_blank" rel="noopener" style="font-size:11px;color:var(--acc);text-decoration:none">상품 보기 →</a>';
+        body+='</div></div>';
+      });
+      body+='</div>';
+      document.body.insertAdjacentHTML('beforeend',UI.modal({id:'nvm',title:'🔍 네이버 시장조사 — '+keyword,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'nvm\')">닫기</button>',width:'720px'}));
+      UI.showModal('nvm');
+    })
+    .catch(function(e){UI.toast('네이버 검색 오류: '+e.message,'err');});
+}
+
 function pgServices(){
   var svcs=[{type:'premium_analysis',name:'프리미엄 AI 분석',icon:'🔬',desc:'전문가 검수 심층 리포트',price:'₩300~500K'},{type:'matching',name:'바이어 매칭',icon:'🤝',desc:'검증된 해외 바이어 발굴',price:'₩1~3M+2~5%'},{type:'document',name:'서류 대행',icon:'📄',desc:'PI, CI, PL, CO 작성',price:'₩200~500K'},{type:'certification',name:'인증 대행',icon:'🏅',desc:'FDA, CE, CPNP 취득',price:'₩2~10M'},{type:'logistics',name:'물류/통관',icon:'🚢',desc:'운송, 통관, 보험 일괄',price:'₩500K~2M'},{type:'email_support',name:'이메일 지원',icon:'✉️',desc:'바이어 소통 번역대행',price:'₩200~500K/월'}];
   return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">💼 서비스 신청</h2><p style="font-size:13px;color:var(--w40);margin-top:4px">바우처 적용 가능</p></div><div class="svc-grid" style="margin-bottom:24px">'+svcs.map(function(s){return '<div class="svc-card" onclick="App.reqSvc(\''+s.type+'\')"><div class="svc-icon">'+s.icon+'</div><div class="svc-name">'+s.name+'</div><div class="svc-desc">'+s.desc+'</div><div class="svc-price">'+s.price+'</div></div>';}).join('')+'</div>'+(S.serviceRequests.length?'<div class="card"><div class="card-h"><span>신청 이력</span>'+UI.badge(S.serviceRequests.length+'건','pri')+'</div><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>서비스</th><th>상태</th><th>금액</th><th>날짜</th></tr></thead><tbody>'+S.serviceRequests.map(function(sr){return '<tr><td>'+U.si(sr.service_type)+' '+U.sl(sr.service_type)+'</td><td>'+UI.sb(sr.status)+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+(sr.price?U.krw(sr.price):'견적대기')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(sr.created_at)+'</td></tr>';}).join('')+'</tbody></table></div></div>':'');
@@ -1042,16 +1083,15 @@ function subSvc(){
 
 function pgProjects(){
   if(S.currentProject)return pgPjDetail();
-  var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
-  var stL={planning:'기획',certification:'인증',buyer_search:'바이어',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적',completed:'완료'};
-  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🚀 프로젝트</h2></div>'+(S.projects.length===0?'<div class="card"><div class="card-b">'+UI.empty('🚀','프로젝트 없음','AI 분석 후 프로젝트를 생성하세요')+'<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="App.nav(\'analysis\')">AI 분석 시작</button></div></div></div>':S.projects.map(function(p){var ci=stages.indexOf(p.status);var linked=S.serviceRequests.filter(function(sr){return sr.project_id===p.id;});var a=S.analyses.find(function(x){return x.id===p.analysis_id;});var sp=p.stage_progress||{};var rmInfo=sp._roadmap||{};var totalItems=0,totalDone=0;stages.forEach(function(s){var items=sp[s]||[];totalItems+=items.length;totalDone+=items.filter(function(it){return it.done;}).length;});var totalPct=totalItems?Math.round(totalDone/totalItems*100):0;return '<div class="card" style="margin-bottom:12px;cursor:pointer" onclick="App.viewPj(\''+p.id+'\')"><div class="card-h"><div style="display:flex;align-items:center;gap:8px"><span>🚀</span><span style="font-weight:700">'+p.name+'</span>'+(rmInfo.category?'<span class="badge badge-ghost" style="font-size:10px">'+rmInfo.category+'</span>':'')+'</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;font-weight:700;color:var(--pri);font-family:JetBrains Mono">'+totalPct+'%</span>'+UI.sb(p.status)+'</div></div><div class="card-b"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="flex:1;height:8px;border-radius:4px;background:var(--w08)"><div style="height:100%;border-radius:4px;background:'+(totalPct===100?'var(--ok)':'var(--pri-g)')+';width:'+totalPct+'%;transition:width .3s"></div></div></div><div style="display:flex;gap:4px;margin-bottom:10px">'+stages.map(function(s,i){return '<div style="flex:1;text-align:center"><div style="height:5px;border-radius:3px;background:'+(i<ci?'var(--ok)':i===ci?'var(--pri)':'var(--w08)')+';margin-bottom:4px"></div><div style="font-size:9px;color:'+(i<=ci?'var(--w60)':'var(--w20)')+'">'+stL[s]+'</div></div>';}).join('')+'</div><div style="display:flex;gap:12px;font-size:12px;color:var(--w40)"><span>🌍 '+(p.target_countries||[]).map(function(c){return U.cl(c);}).join(', ')+'</span>'+(a&&a.ai_result?'<span>📊 '+a.ai_result.overall_score+'점</span>':'')+(linked.length?'<span>💼 '+linked.length+'건</span>':'')+'</div></div></div>';}).join(''));
+  var stL={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적',completed:'완료'};
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🚀 프로젝트</h2></div>'+(S.projects.length===0?'<div class="card"><div class="card-b">'+UI.empty('🚀','프로젝트 없음','AI 분석 후 프로젝트를 생성하세요')+'<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="App.nav(\'analysis\')">AI 분석 시작</button></div></div></div>':S.projects.map(function(p){var stages=getProjectStages(p);var ci=stages.indexOf(p.status);var linked=S.serviceRequests.filter(function(sr){return sr.project_id===p.id;});var a=S.analyses.find(function(x){return x.id===p.analysis_id;});var sp=p.stage_progress||{};var rmInfo=sp._roadmap||{};var totalItems=0,totalDone=0;stages.forEach(function(s){var items=sp[s]||[];totalItems+=items.length;totalDone+=items.filter(function(it){return it.done;}).length;});var totalPct=totalItems?Math.round(totalDone/totalItems*100):0;return '<div class="card" style="margin-bottom:12px;cursor:pointer" onclick="App.viewPj(\''+p.id+'\')"><div class="card-h"><div style="display:flex;align-items:center;gap:8px"><span>🚀</span><span style="font-weight:700">'+p.name+'</span>'+(rmInfo.category?'<span class="badge badge-ghost" style="font-size:10px">'+rmInfo.category+'</span>':'')+'</div><div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;font-weight:700;color:var(--pri);font-family:JetBrains Mono">'+totalPct+'%</span>'+UI.sb(p.status)+'</div></div><div class="card-b"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="flex:1;height:8px;border-radius:4px;background:var(--w08)"><div style="height:100%;border-radius:4px;background:'+(totalPct===100?'var(--ok)':'var(--pri-g)')+';width:'+totalPct+'%;transition:width .3s"></div></div></div><div style="display:flex;gap:4px;margin-bottom:10px">'+stages.map(function(s,i){return '<div style="flex:1;text-align:center"><div style="height:5px;border-radius:3px;background:'+(i<ci?'var(--ok)':i===ci?'var(--pri)':'var(--w08)')+';margin-bottom:4px"></div><div style="font-size:9px;color:'+(i<=ci?'var(--w60)':'var(--w20)')+'">'+stL[s]+'</div></div>';}).join('')+'</div><div style="display:flex;gap:12px;font-size:12px;color:var(--w40)"><span>🌍 '+(p.target_countries||[]).map(function(c){return U.cl(c);}).join(', ')+'</span>'+(a&&a.ai_result?'<span>📊 '+a.ai_result.overall_score+'점</span>':'')+(linked.length?'<span>💼 '+linked.length+'건</span>':'')+'</div></div></div>';}).join(''));
 }
 
 function pgPjDetail(){
   var p=S.currentProject;if(!p)return'';
-  var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
-  var stL={planning:'기획',certification:'인증',buyer_search:'바이어 발굴',negotiation:'협상/계약',production:'수출용 생산/검수',shipping:'선적/통관',completed:'사후관리'};
-  var stIcon={planning:'📋',certification:'🏅',buyer_search:'🔍',negotiation:'🤝',production:'🏭',shipping:'🚢',completed:'✅'};
+  var stages=getProjectStages(p);
+  var stL={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상/계약',production:'수출용 생산/검수',shipping:'선적/통관',completed:'사후관리'};
+  var stIcon={planning:'📋',certification:'🏅',alibaba_listing:'🏪',buyer_search:'🔍',negotiation:'🤝',production:'🏭',shipping:'🚢',completed:'✅'};
   var ci=stages.indexOf(p.status);
   var sp=p.stage_progress||{};
   /* 기존 프로젝트 호환: production이 없으면 자동 생성 */
@@ -1114,7 +1154,7 @@ function pgPjDetail(){
     var doneCount=items.filter(function(it){return it.done;}).length;
     var pct=items.length?Math.round(doneCount/items.length*100):0;
     var stRM=rm[s]||{};
-    var svcMap={planning:'premium_analysis',certification:'certification',buyer_search:'matching',negotiation:'document',production:'sourcing',shipping:'logistics',completed:'email_support'};
+    var svcMap={planning:'premium_analysis',certification:'certification',alibaba_listing:'alibaba',buyer_search:'matching',negotiation:'document',production:'sourcing',shipping:'logistics',completed:'email_support'};
 
     /* 노드 원형 */
     var nodeColor=done?'var(--ok)':cur?'var(--pri)':'var(--w20)';
@@ -1128,14 +1168,14 @@ function pgPjDetail(){
     if(done){
       /* 완료 단계: 축약형 */
       journey+='<div style="padding:12px 16px;border-radius:12px;background:rgba(0,230,118,.04);border:1px solid rgba(0,230,118,.12);cursor:pointer" onclick="App.toggleJourneyStage(\''+s+'\')">';
-      journey+='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px">'+stIcon[s]+'</span><span style="font-size:14px;font-weight:700;color:var(--ok)">'+stL[s]+'</span><span style="font-size:11px;color:var(--ok);font-family:JetBrains Mono">완료 ✓</span><span style="margin-left:auto;font-size:12px;color:var(--w40)">'+(stRM.time||'')+'</span></div>';
+      journey+='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px">'+stIcon[s]+'</span><span style="font-size:14px;font-weight:700;color:var(--ok)">'+stL[s]+'</span>'+(p.alibaba_customer?(function(){var _sync=(p.alibaba_sync||{})[s]||{};var _ss=_sync.status||'not_applicable';var _sc={synced:'var(--ok)',pending:'var(--acc)',not_applicable:'var(--w20)'}[_ss]||'var(--w20)';var _sl={synced:'동기화됨',pending:'처리중',not_applicable:'—'}[_ss]||'—';return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.2);color:'+_sc+'">'+_sl+'</span>';})():'')+'<span style="font-size:11px;color:var(--ok);font-family:JetBrains Mono">완료 ✓</span><span style="margin-left:auto;font-size:12px;color:var(--w40)">'+(stRM.time||'')+'</span></div>';
       /* 확장시 체크리스트 표시 */
       journey+='<div id="stage-expand-'+s+'" style="display:none;margin-top:12px">'+renderJourneyChecklist(p,s,false)+'</div>';
       journey+='</div>';
     }else if(cur){
       /* 현재 단계: 풀 확장 */
       journey+='<div style="padding:16px 18px;border-radius:14px;background:rgba(0,212,255,.04);border:2px solid rgba(0,212,255,.2)">';
-      journey+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:18px">'+stIcon[s]+'</span><span style="font-size:15px;font-weight:800;color:var(--pri)">'+stL[s]+'</span><span style="font-size:12px;padding:3px 10px;border-radius:20px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:700">진행중</span>';
+      journey+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:18px">'+stIcon[s]+'</span><span style="font-size:15px;font-weight:800;color:var(--pri)">'+stL[s]+'</span>'+(p.alibaba_customer?(function(){var _sync=(p.alibaba_sync||{})[s]||{};var _ss=_sync.status||'not_applicable';var _sc={synced:'var(--ok)',pending:'var(--acc)',not_applicable:'var(--w20)'}[_ss]||'var(--w20)';var _sl={synced:'동기화됨',pending:'처리중',not_applicable:'—'}[_ss]||'—';return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.2);color:'+_sc+'">'+_sl+'</span>';})():'')+'<span style="font-size:12px;padding:3px 10px;border-radius:20px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:700">진행중</span>';
       if(stRM.time)journey+='<span style="margin-left:auto;font-size:11px;color:var(--w40)">예상 '+stRM.time+'</span>';
       journey+='</div>';
 
@@ -1149,6 +1189,18 @@ function pgPjDetail(){
         journey+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
         journey+='<div style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:3px">경로 A: 바이어 직접</div><div style="font-size:11px;color:var(--w50);line-height:1.5">바이어가 Whistle 채팅/이메일로 주문 → 자동 등록</div></div>';
         journey+='<div style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:3px">경로 B: 모티브 수동입력</div><div style="font-size:11px;color:var(--w50);line-height:1.5">알리바바 셀러센터 확인 → Whistle에 AI 보조 입력</div></div>';
+        journey+='</div></div>';
+      }
+
+      /* 알리바바 입점 단계 특별 처리 */
+      if(s==='alibaba_listing'){
+        var aliInfo=p.alibaba_store||{};
+        journey+='<div style="padding:12px;border-radius:10px;background:rgba(255,152,0,.06);border:1px solid rgba(255,152,0,.15);margin-bottom:12px">';
+        journey+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:14px">🏪</span><span style="font-size:13px;font-weight:700">알리바바 스토어 현황</span></div>';
+        journey+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+        journey+='<div style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:3px">계정 유형</div><div style="font-size:13px;font-weight:600;color:var(--w90)">'+(aliInfo.account_type||'미설정')+'</div></div>';
+        journey+='<div style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:3px">등록 상품</div><div style="font-size:13px;font-weight:600;color:var(--w90)">'+(aliInfo.listed_count||0)+'개</div></div>';
+        journey+='<div style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:3px">스토어 상태</div><div style="font-size:13px;font-weight:600;color:'+(aliInfo.status==='active'?'var(--ok)':'var(--acc)')+'">'+(aliInfo.status==='active'?'운영중':'준비중')+'</div></div>';
         journey+='</div></div>';
       }
 
@@ -1185,6 +1237,7 @@ function pgPjDetail(){
       /* 액션 버튼 */
       journey+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
       journey+='<button class="btn btn-pri btn-sm" onclick="App.reqSvc(\''+svcMap[s]+'\')">🤖 대행 요청</button>';
+      if(s==='alibaba_listing'){journey+='<button class="btn btn-acc btn-sm" onclick="App.nav(\'alibaba\')">🏪 알리바바 관리</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.nav(\'products\')">📦 상품 관리</button>';}
       if(s==='buyer_search')journey+='<button class="btn btn-acc btn-sm" onclick="App.nav(\'emailhub\')">✉️ 이메일 발송</button>';
       if(s==='negotiation'){journey+='<button class="btn btn-acc btn-sm" onclick="App.openDocModal()">📄 서류 생성</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.openCostModal()">🧮 원가 계산</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.showOrderForm()">📋 주문 등록</button>';}
       if(s==='production'){journey+='<button class="btn btn-acc btn-sm" onclick="App.nav(\'orders\')">📋 주문 관리</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.openDocModal()">📄 서류 생성</button>';}
@@ -1196,7 +1249,7 @@ function pgPjDetail(){
     }else{
       /* 잠금 단계: 미리보기 */
       journey+='<div style="padding:12px 16px;border-radius:12px;background:var(--w08);border:1px solid var(--bd);opacity:.6">';
-      journey+='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px;filter:grayscale(1)">'+stIcon[s]+'</span><span style="font-size:14px;font-weight:600;color:var(--w40)">'+stL[s]+'</span><span style="font-size:10px;color:var(--w20);margin-left:auto">🔒</span></div>';
+      journey+='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px;filter:grayscale(1)">'+stIcon[s]+'</span><span style="font-size:14px;font-weight:600;color:var(--w40)">'+stL[s]+'</span>'+(p.alibaba_customer?(function(){var _sync=(p.alibaba_sync||{})[s]||{};var _ss=_sync.status||'not_applicable';var _sc={synced:'var(--ok)',pending:'var(--acc)',not_applicable:'var(--w20)'}[_ss]||'var(--w20)';var _sl={synced:'동기화됨',pending:'처리중',not_applicable:'—'}[_ss]||'—';return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.2);color:'+_sc+'">'+_sl+'</span>';})():'')+'<span style="font-size:10px;color:var(--w20);margin-left:auto">🔒</span></div>';
       if(stRM.items||stRM.tip){
         journey+='<div style="margin-top:8px;font-size:11px;color:var(--w20);line-height:1.6">';
         var previewItems=(stRM.items||[]).slice(0,3).map(function(t){return typeof t==='string'?t:t.text;});
@@ -1225,7 +1278,7 @@ function pgPjDetail(){
 function renderJourneyChecklist(p,stage,interactive){
   var items=getStageItems(p,stage);
   /* 서비스 타입 매핑 */
-  var svcForStage={planning:'consultation',certification:'certification',buyer_search:'matching',negotiation:'consultation',production:'consultation',shipping:'logistics',completed:'consultation'};
+  var svcForStage={planning:'consultation',certification:'certification',alibaba_listing:'alibaba',buyer_search:'matching',negotiation:'consultation',production:'consultation',shipping:'logistics',completed:'consultation'};
   var html='';
   items.forEach(function(it,idx){
     var text=typeof it==='string'?it:(it.text||'');
@@ -1278,11 +1331,11 @@ function getStageItems(p,stage){
 }
 
 function renderStageChecklist(p,stage){
-  var stNames={planning:'기획',certification:'인증',buyer_search:'바이어 발굴',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적',completed:'완료'};
+  var stNames={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적',completed:'완료'};
   var items=getStageItems(p,stage);var done=items.filter(function(it){return it.done;}).length;var pct=items.length?Math.round(done/items.length*100):0;
   var bar='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><div style="flex:1;height:8px;border-radius:4px;background:var(--w08)"><div class="stg-bar" style="height:100%;border-radius:4px;background:'+(pct===100?'var(--ok)':'var(--pri)')+';width:'+pct+'%;transition:width .3s"></div></div><span class="stg-pct" style="font-size:12px;font-weight:700;color:'+(pct===100?'var(--ok)':'var(--pri)')+'">'+pct+'%</span></div>';
   var list=items.map(function(it,idx){return '<div data-idx="'+idx+'" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:var(--w08);margin-bottom:6px;cursor:pointer" onclick="App.toggleStageItem(\''+p.id+'\',\''+stage+'\','+idx+')"><div class="ck-box" style="width:22px;height:22px;border-radius:6px;border:2px solid '+(it.done?'var(--ok)':'var(--bd-l)')+';background:'+(it.done?'var(--ok)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0">'+(it.done?'<span style="color:var(--bg);font-size:12px;font-weight:900">\u2713</span>':'')+'</div><span class="ck-txt" style="font-size:13px;color:'+(it.done?'var(--w40)':'var(--w90)')+';'+(it.done?'text-decoration:line-through':'')+'">'+it.text+'</span></div>';}).join('');
-  var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];var ci=stages.indexOf(p.status);var nextStage=stages[ci+1]||null;
+  var stages=getProjectStages(p);var ci=stages.indexOf(p.status);var nextStage=stages[ci+1]||null;
   var nextBtn=nextStage&&pct===100?'<button class="btn btn-pri" style="margin-top:10px" onclick="App.setPjStage(\''+nextStage+'\')">다음 단계 →</button>':'';
   return '<div class="card" data-stage="'+stage+'" style="margin-bottom:14px"><div class="card-h"><span>📋 '+stNames[stage]+' 체크리스트</span><span class="stg-badge" style="background:rgba(0,212,255,.12);color:var(--pri);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">'+done+'/'+items.length+'</span></div><div class="card-b">'+bar+list+nextBtn+'</div></div>';
 }
@@ -3082,8 +3135,8 @@ function addOrderNote(orderId){
 
 function pgBuyers(){
   var typeLabel={distributor:'유통',retailer:'소매',online:'온라인',wholesaler:'도매',chain:'체인',other:'기타'};
-  var srcLabel={manual:'직접등록',platform:'플랫폼',ai_generated:'AI 추천',linkedin:'LinkedIn',alibaba:'알리바바',exhibition:'전시회',referral:'소개'};
-  var srcColor={ai_generated:'var(--pri)',alibaba:'var(--acc)',exhibition:'var(--ok)',linkedin:'var(--pri)'};
+  var srcLabel={manual:'직접등록',platform:'플랫폼',ai_generated:'AI 추천',linkedin:'LinkedIn',alibaba:'알리바바',exhibition:'전시회',referral:'소개',mock:'플랫폼',marketplace:'마켓플레이스'};
+  var srcColor={ai_generated:'var(--pri)',alibaba:'var(--acc)',exhibition:'var(--ok)',linkedin:'var(--pri)',mock:'var(--w40)',marketplace:'#6366f1'};
 
   /* 검색/필터 */
   var _bs=S._searchCache['buyers']||{};
@@ -4199,7 +4252,7 @@ function pgVoucherReport(){
   var mProd=S.products.length;
   var mPj=S.projects.length;
   var mSR=S.serviceRequests.filter(function(s){var d=new Date(s.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;}).length;
-  var pjPct=0;if(S.projects.length){var total=0;S.projects.forEach(function(p){var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];var idx=stages.indexOf(p.status||'planning');total+=Math.round((idx+1)/stages.length*100);});pjPct=Math.round(total/S.projects.length);}
+  var pjPct=0;if(S.projects.length){var total=0;S.projects.forEach(function(p){var stages=getProjectStages(p);var idx=stages.indexOf(p.status||'planning');total+=Math.round((idx+1)/stages.length*100);});pjPct=Math.round(total/S.projects.length);}
 
   return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🏛️ 바우처 성과보고서</h2><p style="font-size:13px;color:var(--w40);margin-top:4px">수출바우처 · 제조혁신바우처 성과 산출물 자동 생성</p></div>'+
   '<div class="card" style="margin-bottom:16px"><div class="card-h">📊 이번 달 실적 요약</div><div class="card-b"><div class="grid-4">'+
@@ -4224,7 +4277,7 @@ function genVoucherReport(){
   var c=S.company||{};
   var mAna=S.analyses.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;}).length;
   var mSR=S.serviceRequests.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;}).length;
-  var pjPct=0;if(S.projects.length){var total=0;S.projects.forEach(function(p){var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];var idx=stages.indexOf(p.status||'planning');total+=Math.round((idx+1)/stages.length*100);});pjPct=Math.round(total/S.projects.length);}
+  var pjPct=0;if(S.projects.length){var total=0;S.projects.forEach(function(p){var stages=getProjectStages(p);var idx=stages.indexOf(p.status||'planning');total+=Math.round((idx+1)/stages.length*100);});pjPct=Math.round(total/S.projects.length);}
   var h='<html><head><meta charset="UTF-8"><title>바우처 성과보고서 — '+period+'</title><style>body{font-family:"Noto Sans KR",sans-serif;max-width:800px;margin:20px auto;color:#222;font-size:13px}table{width:100%;border-collapse:collapse;margin:16px 0}th,td{border:1px solid #bbb;padding:10px;font-size:13px}th{background:#f5f5f5;font-weight:700}.ttl{font-size:22px;font-weight:bold;text-align:center;margin:20px 0;padding:14px;background:#003366;color:white;border-radius:8px}.subtitle{font-size:16px;font-weight:700;color:#003366;margin:24px 0 10px;border-bottom:2px solid #003366;padding-bottom:6px}@media print{body{margin:0}}</style></head><body>';
   h+='<div class="ttl">수출바우처 성과보고서</div>';
   h+='<table><tr><td><b>수행기관:</b> (주)모티브이노베이션</td><td><b>보고 기간:</b> '+period+'</td></tr><tr><td><b>수혜기업:</b> '+(c.name_ko||S.user.company_name||'')+'</td><td><b>작성일:</b> '+now.toISOString().split('T')[0]+'</td></tr></table>';
@@ -4238,9 +4291,9 @@ function genVoucherReport(){
   h+='<div class="subtitle">2. 수출 프로젝트 현황</div>';
   if(S.projects.length){
     h+='<table><thead><tr><th>프로젝트명</th><th>현재 단계</th><th>타겟 시장</th><th>진행률</th></tr></thead><tbody>';
-    var stL2={planning:'기획',certification:'인증',buyer_search:'바이어 발굴',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적/통관',completed:'완료'};
+    var stL2={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적/통관',completed:'완료'};
     S.projects.forEach(function(p){
-      var stages=['planning','certification','buyer_search','negotiation','production','shipping','completed'];
+      var stages=getProjectStages(p);
       var pp=Math.round((stages.indexOf(p.status||'planning')+1)/stages.length*100);
       h+='<tr><td>'+p.name+'</td><td>'+(stL2[p.status]||p.status)+'</td><td>'+(p.target_countries||[]).join(', ')+'</td><td style="text-align:center;font-weight:700">'+pp+'%</td></tr>';
     });
@@ -4456,7 +4509,7 @@ function orderCtx(e,oid){var o=S.orders.find(function(x){return x.id===oid;});if
 function filterOrderStatus(st){S._searchCache['orders']=S._searchCache['orders']||{q:'',filters:{}};S._searchCache['orders'].filters={status:st};nav('orders');}
 function cloneDoc(docId){sb.from('documents').select('*').eq('id',docId).single().then(function(r){if(!r.data)return;var d=r.data.data||{};S.docType=r.data.doc_type;S.docItems=d.items||[{name:'',qty:1,unit_price:0,desc:'',unit:'PCS'}];S._docPrefill={cloneData:d};render();setTimeout(function(){if(d.buyer){Object.keys(d.buyer).forEach(function(k){var el=document.querySelector('[name='+k+']');if(el)el.value=d.buyer[k];});}if(d.ref){Object.keys(d.ref).forEach(function(k){var el=document.querySelector('[name='+k+']');if(el&&k!=='doc_no')el.value=d.ref[k];});}},100);});}
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals};
 _handleTossCallback();
 loadUser();
 })();
