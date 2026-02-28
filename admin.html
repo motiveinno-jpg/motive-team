@@ -127,7 +127,7 @@ var U={
   sl:function(t){return{premium_analysis:'\uD504\uB9AC\uBBF8\uC5C4 \uBD84\uC11D',matching:'\uBC14\uC774\uC5B4 \uB9E4\uCE6D',document:'\uC11C\uB958 \uB300\uD589',certification:'\uC778\uC99D \uB300\uD589',logistics:'\uBB3C\uB958/\uD1B5\uAD00',email_support:'\uC774\uBA54\uC77C \uC9C0\uC6D0'}[t]||t;},
   si:function(t){return{premium_analysis:'\uD83D\uDD2C',matching:'\uD83E\uDD1D',document:'\uD83D\uDCC4',certification:'\uD83C\uDFC5',logistics:'\uD83D\uDEA2',email_support:'\u2709\uFE0F'}[t]||'\uD83D\uDCCB';},
   cl:function(c){return{US:'\uD83C\uDDFA\uD83C\uDDF8',JP:'\uD83C\uDDEF\uD83C\uDDF5',CN:'\uD83C\uDDE8\uD83C\uDDF3',EU:'\uD83C\uDDEA\uD83C\uDDFA',SEA:'\uD83C\uDF0F'}[c]||c||'';},
-  pl:function(p){return{free:['FREE','var(--w40)'],basic:['BASIC','var(--pri)'],pro:['PRO','var(--acc)'],alibaba:['ALIBABA','var(--admin)']}[p]||['FREE','var(--w40)'];},
+  pl:function(p){return{free:['FREE','var(--w40)'],starter:['STARTER','var(--pri)'],basic:['STARTER','var(--pri)'],pro:['PRO','var(--acc)'],alibaba:['ALIBABA','var(--admin)']}[p]||['FREE','var(--w40)'];},
   pct:function(n,t){return t?Math.round(n/t*100):0;},
   esc:function(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 };
@@ -237,13 +237,18 @@ function filterBySearch(arr,fields){
 }
 
 /* === PAYMENT CONSTANTS === */
-var PLAN_PRICE={basic:{m:29,s:156.60,a:278.40},pro:{m:99,s:534.60,a:950.40},alibaba:{m:199,s:1074.60,a:1910.40},enterprise:{m:499,s:2694.60,a:4790.40}};
+/* Buyer plans (USD) */
+var PLAN_PRICE_BUYER={starter:{m:29,s:156.60,a:278.40},pro:{m:89,s:480.60,a:854.40},enterprise:{m:499,s:2694.60,a:4790.40}};
+/* Manufacturer plans (KRW → USD@1400) */
+var PLAN_PRICE_MFR={starter:{m:71,s:383.40,a:681.60,krw_m:99000,krw_s:534600,krw_a:950400},pro:{m:214,s:1155.60,a:2054.40,krw_m:299000,krw_s:1614600,krw_a:2870400},alibaba:{m:199,s:1074.60,a:1910.40,setup_total:2000000,setup_voucher:300000}};
+/* Combined lookup (기본은 buyer 기준, starter=basic alias) */
+var PLAN_PRICE={starter:{m:29,s:156.60,a:278.40},basic:{m:29,s:156.60,a:278.40},pro:{m:89,s:480.60,a:854.40},alibaba:{m:199,s:1074.60,a:1910.40},enterprise:{m:499,s:2694.60,a:4790.40}};
 var CYCLE_L={monthly:'\uC6D4\uAC04',semi_annual:'6\uAC1C\uC6D4',annual:'\uC5F0\uAC04'};
 var CYCLE_M={monthly:1,semi_annual:6,annual:12};
 var ESC_ST={pending_deposit:['\uC785\uAE08\uB300\uAE30','ghost'],funded:['\uC608\uCE58\uC644\uB8CC','pri'],in_production:['\uC0DD\uC0B0\uC911','acc'],shipped:['\uC120\uC801\uC644\uB8CC','purple'],inspection:['\uAC80\uC218\uC911','acc'],released:['\uC815\uC0B0\uC644\uB8CC','ok'],refunded:['\uD658\uBD88','err'],disputed:['\uBD84\uC7C1','err']};
 var ESC_COL={pending_deposit:'var(--w40)',funded:'var(--pri)',in_production:'var(--acc)',shipped:'var(--purple)',inspection:'var(--warn)',released:'var(--ok)',refunded:'var(--err)',disputed:'var(--err)'};
 function escBadge(s){var e=ESC_ST[s];return e?UI.badge(e[0],e[1]):UI.badge(s||'\u2014','ghost');}
-function calcMRR(){var mrr=0;if(S.subscriptions.length){S.subscriptions.filter(function(s){return s.status==='active';}).forEach(function(s){var a=Number(s.amount)||0;if(s.billing_cycle==='semi_annual')mrr+=a/6;else if(s.billing_cycle==='annual')mrr+=a/12;else mrr+=a;});}else{S.users.forEach(function(u){var p=PLAN_PRICE[u.plan];if(p)mrr+=p.m;});}return mrr;}
+function calcMRR(){var mrr=0;if(S.subscriptions.length){S.subscriptions.filter(function(s){return s.status==='active';}).forEach(function(s){var a=Number(s.amount)||0;if(s.billing_cycle==='semi_annual')mrr+=a/6;else if(s.billing_cycle==='annual')mrr+=a/12;else mrr+=a;});}else{S.users.forEach(function(u){var isMfr=(u.role==='client'&&u.preferred_currency==='KRW');var k=u.plan==='basic'?'starter':u.plan;if(isMfr){var mp=PLAN_PRICE_MFR[k];if(mp)mrr+=mp.m;}else{var bp=PLAN_PRICE[k];if(bp)mrr+=bp.m;}});}return mrr;}
 function calcEscrowHold(){return S.escrowTxns.filter(function(e){return['funded','in_production','shipped','inspection'].indexOf(e.escrow_status)>=0;}).reduce(function(s,e){return s+(Number(e.amount)||0);},0);}
 function calcEscrowComm(){return S.escrowTxns.filter(function(e){return e.escrow_status==='released';}).reduce(function(s,e){return s+(Number(e.commission_amount)||0);},0);}
 function calcFloat(){return S.escrowTxns.reduce(function(s,e){return s+(Number(e.float_revenue_estimate)||0);},0);}
@@ -269,9 +274,10 @@ function pgDash(){
   var convRate=clients.length?Math.round(completedDeals.length/clients.length*100):0;
 
   // Plan distribution
-  var planDist={free:0,basic:0,pro:0,alibaba:0};
+  var planDist={free:0,starter:0,basic:0,pro:0,alibaba:0};
   clients.forEach(function(u){planDist[u.plan||'free']=(planDist[u.plan||'free']||0)+1;});
-  var maxPlan=Math.max(planDist.free,planDist.basic,planDist.pro,planDist.alibaba,1);
+  planDist.starter=(planDist.starter||0)+(planDist.basic||0);planDist.basic=0;
+  var maxPlan=Math.max(planDist.free,planDist.starter,planDist.pro,planDist.alibaba,1);
 
   // Pipeline funnel
   var pipeline={proposed:0,interested:0,sample:0,negotiation:0,contract:0,completed:0};
@@ -329,7 +335,7 @@ function pgUsers(){
   var filtered=filterBySearch(S.users,['email','company_name','display_name']);
   if(S.tab!=='all')filtered=filtered.filter(function(u){return u.plan===S.tab||u.role===S.tab;});
 
-  var plans=['all','free','basic','pro','alibaba'];
+  var plans=['all','free','starter','basic','pro','alibaba'];
   return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">👥 유저 관리</h2>'+UI.badge(S.users.length+'명','pri')+'</div>'+
   '<div style="display:flex;gap:10px;margin-bottom:16px"><div class="search-box" style="flex:1"><input placeholder="이메일, 회사명 검색..." value="'+S.searchFilter+'" oninput="Adm.setSearch(this.value)"></div></div>'+
   '<div class="tab-bar">'+plans.map(function(p){
@@ -662,7 +668,7 @@ function pgAnalyticsUsers(tabBar){
   '</div></div>'+
   '<div class="grid-2" style="margin-bottom:16px">'+
     '<div class="card"><div class="card-h">역할 분포</div><div class="card-b">'+Object.keys(roleLabels).map(function(k){return hBar(roleLabels[k],(roles[k]||[]).length,S.users.length,'var(--pri)');}).join('')+'</div></div>'+
-    '<div class="card"><div class="card-h">플랜 분포 (제조사)</div><div class="card-b">'+['free','basic','pro','alibaba'].map(function(k){var r=U.pl(k);return hBar(r[0],(plans[k]||[]).length,clients.length||1,r[1]);}).join('')+'</div></div>'+
+    '<div class="card"><div class="card-h">플랜 분포 (제조사)</div><div class="card-b">'+['free','starter','pro','alibaba'].map(function(k){var cnt=0;clients.forEach(function(u){if(k==='starter'&&(u.plan==='starter'||u.plan==='basic'))cnt++;else if(u.plan===k)cnt++;});var r=U.pl(k);return hBar(r[0],cnt,clients.length||1,r[1]);}).join('')+'</div></div>'+
   '</div>'+
   '<div class="grid-2">'+
     '<div class="card"><div class="card-h">국가별 바이어</div><div class="card-b">'+(function(){var sorted=Object.entries(countries).sort(function(a,b){return b[1]-a[1];});var mx=sorted.length?sorted[0][1]:1;return sorted.map(function(e){return hBar(flag(e[0])+' '+e[0],e[1],mx,'var(--pri)');}).join('');})()+
@@ -840,7 +846,7 @@ function pgOrders(){
   var payDist=groupBy(S.orders,'payment_status');
   var countryRev={};S.orders.forEach(function(o){if(o.status==='cancelled')return;var c=getBuyerCountry(o.buyer_id);if(c)countryRev[c]=(countryRev[c]||0)+(Number(o.total_amount)||0);});
   var sortedCR=Object.entries(countryRev).sort(function(a,b){return b[1]-a[1];});var maxCR=sortedCR.length?sortedCR[0][1]:1;
-  var subRevenue=0;S.users.forEach(function(u){if(u.plan==='basic')subRevenue+=29;if(u.plan==='pro')subRevenue+=99;if(u.plan==='alibaba')subRevenue+=199;});
+  var subRevenue=0;S.users.forEach(function(u){var isMfr=(u.role==='client'&&u.country==='KR')||(u.preferred_currency==='KRW');if(u.plan==='basic'||u.plan==='starter')subRevenue+=isMfr?71:29;if(u.plan==='pro')subRevenue+=isMfr?214:89;if(u.plan==='alibaba')subRevenue+=199;});
   return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">💰 주문 / 매출</h2>'+UI.badge(S.orders.length+'건','pri')+'</div>'+
   '<div class="grid-5" style="margin-bottom:16px">'+UI.stat('총 주문',S.orders.length,'','var(--pri)')+UI.stat('완료 매출',U.usd(totalRev),'','var(--ok)')+UI.stat('미결제',U.usd(pendingRev),'','var(--acc)')+UI.stat('구독 MRR','$'+subRevenue+'/mo','','var(--admin)')+UI.stat('결제 건',S.paymentMilestones.length,'','var(--purple)')+'</div>'+
   '<div class="grid-2" style="margin-bottom:16px">'+
@@ -953,9 +959,9 @@ function pgPayRevenue(){
   var activeEsc=S.escrowTxns.filter(function(e){return['funded','in_production','shipped','inspection'].indexOf(e.escrow_status)>=0;}).length;
 
   /* Plan revenue breakdown */
-  var planRev={basic:0,pro:0,alibaba:0,enterprise:0};
-  if(S.subscriptions.length){S.subscriptions.filter(function(s){return s.status==='active';}).forEach(function(s){var a=Number(s.amount)||0;var mo=s.billing_cycle==='semi_annual'?a/6:s.billing_cycle==='annual'?a/12:a;planRev[s.plan]=(planRev[s.plan]||0)+mo;});}
-  else{S.users.forEach(function(u){var p=PLAN_PRICE[u.plan];if(p)planRev[u.plan]=(planRev[u.plan]||0)+p.m;});}
+  var planRev={starter:0,pro:0,alibaba:0,enterprise:0};
+  if(S.subscriptions.length){S.subscriptions.filter(function(s){return s.status==='active';}).forEach(function(s){var a=Number(s.amount)||0;var mo=s.billing_cycle==='semi_annual'?a/6:s.billing_cycle==='annual'?a/12:a;var k=(s.plan==='basic')?'starter':s.plan;planRev[k]=(planRev[k]||0)+mo;});}
+  else{S.users.forEach(function(u){var p=PLAN_PRICE[u.plan];if(p){var k=(u.plan==='basic')?'starter':u.plan;planRev[k]=(planRev[k]||0)+p.m;}});}
   var maxPR=Math.max.apply(null,Object.values(planRev).concat([1]));
 
   /* Billing cycle dist */
@@ -996,7 +1002,7 @@ function pgPayRevenue(){
       '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--w08);display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;font-weight:700;color:var(--w70)">\uC6D4 \uCD1D \uC218\uC775 (\uCD94\uC815)</span><span style="font-size:20px;font-weight:900;color:var(--admin)">'+U.usd(mrr+comm/Math.max(1,S.escrowTxns.length?6:1)+flt/12)+'</span></div>'+
     '</div></div>'+
     '<div class="card"><div class="card-h">\uD50C\uB79C\uBCC4 MRR</div><div class="card-b">'+
-      ['basic','pro','alibaba','enterprise'].map(function(p){var r=U.pl(p);var pr=PLAN_PRICE[p];return hBar(r[0]+' ($'+(pr?pr.m:0)+'/mo)',U.usd(planRev[p]||0),maxPR,r[1]);}).join('')+
+      ['starter','pro','alibaba','enterprise'].map(function(p){var r=U.pl(p);var pr=PLAN_PRICE[p];return hBar(r[0]+' ($'+(pr?pr.m:0)+'/mo)',U.usd(planRev[p]||0),maxPR,r[1]);}).join('')+
     '</div></div>'+
   '</div>'+
   '<div class="grid-2" style="margin-bottom:16px">'+
@@ -1021,11 +1027,19 @@ function pgPaySubs(){
   var subStatusL={active:'\uD65C\uC131',cancelled:'\uD574\uC9C0',past_due:'\uC5F0\uCCB4',trialing:'\uCCB4\uD5D8',paused:'\uC77C\uC2DC\uC815\uC9C0'};
 
   /* Pricing table */
-  var pricingTable='<div class="card" style="margin-bottom:16px"><div class="card-h">\uC694\uAE08\uC81C (USD)</div><div class="card-b"><table class="tbl"><thead><tr><th>\uD50C\uB79C</th><th>\uC6D4\uAC04</th><th>6\uAC1C\uC6D4 (10%\u2193)</th><th>\uC5F0\uAC04 (20%\u2193)</th><th>\uC8FC\uC694 \uAE30\uB2A5</th></tr></thead><tbody>'+
-    ['basic','pro','alibaba','enterprise'].map(function(p){var pr=PLAN_PRICE[p];var r=U.pl(p);
-      var features={basic:'\uBB34\uB8CC\uBD84\uC11D 5\uD68C/\uC6D4, \uAE30\uBCF8 \uB9E4\uCE6D',pro:'\uBB34\uC81C\uD55C \uBD84\uC11D, \uC804\uB2F4\uB9E4\uB2C8\uC800, \uC11C\uB958\uB300\uD589',alibaba:'\uC54C\uB9AC\uBC14\uBC14 \uC785\uC810, \uAE00\uB85C\uBC8C \uB9C8\uCF00\uD305',enterprise:'\uC804\uCCB4\uAE30\uB2A5, \uCEE4\uC2A4\uD140API, \uC628\uC0AC\uC774\uD2B8'};
-      return '<tr><td>'+UI.pb(p)+'</td><td style="font-family:JetBrains Mono;font-weight:700">$'+pr.m+'/mo</td><td style="font-family:JetBrains Mono">$'+pr.s+' <span style="color:var(--ok);font-size:10px">(-10%)</span></td><td style="font-family:JetBrains Mono">$'+pr.a+' <span style="color:var(--ok);font-size:10px">(-20%)</span></td><td style="font-size:11px;color:var(--w60)">'+features[p]+'</td></tr>';
-    }).join('')+'</tbody></table></div></div>';
+  var pricingTable='<div class="card" style="margin-bottom:16px"><div class="card-h">요금제 — 바이어 (USD)</div><div class="card-b"><table class="tbl"><thead><tr><th>플랜</th><th>월간</th><th>6개월 (10%↓)</th><th>연간 (20%↓)</th><th>주요 기능</th></tr></thead><tbody>'+
+    ['starter','pro','enterprise'].map(function(p){var pr=PLAN_PRICE_BUYER[p];if(!pr)return'';var r=U.pl(p);
+      var features={starter:'검색 30회/월, 리포트 1건, 인콰이리 15건',pro:'검색 200회/월, 무제한 리포트, 공장컨택 할인, 우선매칭',enterprise:'전담매니저, 무제한 검색, 커스텀 리포트, 물류/서류 포함'};
+      return '<tr><td>'+UI.pb(p)+'</td><td style="font-family:JetBrains Mono;font-weight:700">$'+pr.m+'/mo</td><td style="font-family:JetBrains Mono">$'+pr.s+'</td><td style="font-family:JetBrains Mono">$'+pr.a+'</td><td style="font-size:11px;color:var(--w60)">'+(features[p]||'')+'</td></tr>';
+    }).join('')+'</tbody></table></div></div>'+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h">요금제 — 제조사 (KRW)</div><div class="card-b"><table class="tbl"><thead><tr><th>플랜</th><th>월간</th><th>바우처 적용</th><th>USD 환산</th><th>주요 기능</th></tr></thead><tbody>'+
+    ['starter','pro','alibaba'].map(function(p){var pr=PLAN_PRICE_MFR[p];if(!pr)return'';var r=U.pl(p);
+      var features={starter:'AI분석 10회/월, 서류생성, 수출체크리스트',pro:'무제한 분석, 전담매니저, 바이어매칭 1건/월, 에스크로 2.0%',alibaba:'알리바바 입점 셋업 (1회) + 카테고리별 커미션 2~5%'};
+      var vPrice=p==='alibaba'?'₩'+Number(pr.setup_voucher).toLocaleString('ko-KR')+'<br><span style="font-size:10px">(85% 지원)</span>':'₩'+Number(Math.round(pr.krw_m*0.3)).toLocaleString('ko-KR')+'<br><span style="font-size:10px">(70% 지원)</span>';
+      var monthly=p==='alibaba'?'₩'+Number(pr.setup_total).toLocaleString('ko-KR')+' <span style="font-size:10px">(1회)</span>':'₩'+Number(pr.krw_m).toLocaleString('ko-KR')+'/월';
+      return '<tr><td>'+UI.pb(p)+'</td><td style="font-family:JetBrains Mono;font-weight:700">'+monthly+'</td><td style="font-family:JetBrains Mono;color:var(--ok)">'+vPrice+'</td><td style="font-family:JetBrains Mono;color:var(--w40)">~$'+pr.m+'/mo</td><td style="font-size:11px;color:var(--w60)">'+(features[p]||'')+'</td></tr>';
+    }).join('')+'</tbody></table>'+
+    '<div style="margin-top:8px;padding:8px 12px;border-radius:6px;background:var(--w08);font-size:11px;color:var(--w40)">※ 수출바우처 70% / 혁신바우처 85% 정부지원 · 연간결제 17% 할인 · 부가세 별도</div></div></div>';
 
   return '<div class="grid-4" style="margin-bottom:16px">'+
     UI.stat('\uD65C\uC131 \uAD6C\uB3C5',active.length,'\uC6D4 '+U.usd(calcMRR()),'var(--ok)')+
@@ -1090,10 +1104,11 @@ function pgPayPolicy(){
         '<div style="padding:10px 14px;border-radius:8px;background:var(--w08);margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:var(--w70)">\u2022 \uBD84\uC7C1 \uBC1C\uC0DD\uC2DC Whistle \uC911\uC7AC</div><div style="font-size:11px;color:var(--w40);margin-top:2px">\uC591\uCE21 \uC99D\uBE59 \uD655\uC778 \uD6C4 \uACF5\uC815\uD55C \uC815\uC0B0 \uC9C4\uD589</div></div>'+
         '<div style="padding:10px 14px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:600;color:var(--w70)">\u2022 \uC804\uC561 \uD658\uBD88: \uC81C\uC870\uC0AC \uC0DD\uC0B0 \uC2DC\uC791 \uC804</div><div style="font-size:11px;color:var(--w40);margin-top:2px">\uC0DD\uC0B0 \uC2DC\uC791 \uD6C4\uC5D0\uB294 \uC2E4\uC81C \uBC1C\uC0DD \uBE44\uC6A9 \uCC28\uAC10 \uD6C4 \uD658\uBD88</div></div>'+
       '</div>'+
-      '<div><div style="font-size:14px;font-weight:700;color:var(--admin);margin-bottom:10px">\uC218\uC218\uB8CC \uAD6C\uC870</div>'+
-        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08);margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:var(--w70)">\u2022 \uAE30\uBCF8 \uC218\uC218\uB8CC: \uAC70\uB798\uC561\uC758 2.5%</div><div style="font-size:11px;color:var(--w40);margin-top:2px">\uC815\uC0B0\uC2DC \uC81C\uC870\uC0AC \uC1A1\uAE08\uC561\uC5D0\uC11C \uCC28\uAC10</div></div>'+
-        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08);margin-bottom:8px"><div style="font-size:12px;font-weight:600;color:var(--w70)">\u2022 Pro/Alibaba \uD50C\uB79C: 2.0% \uC218\uC218\uB8CC</div><div style="font-size:11px;color:var(--w40);margin-top:2px">\uC720\uB8CC \uAD6C\uB3C5\uC790 \uC6B0\uB300 \uC218\uC218\uB8CC\uC728 \uC801\uC6A9</div></div>'+
-        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:600;color:var(--w70)">\u2022 \uD50C\uB85C\uD2B8 \uC218\uC775: \uBCF4\uC720\uAE30\uAC04 \uC774\uC790</div><div style="font-size:11px;color:var(--w40);margin-top:2px">\uBCF4\uC720\uAE08 \xD7 \uC77C\uC218 \xD7 0.01~0.02% \uC77C\uC77C\uAE08\uB9AC</div></div>'+
+      '<div><div style="font-size:14px;font-weight:700;color:var(--admin);margin-bottom:10px">수수료 구조 (3종 분리)</div>'+
+        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08);margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:4px">① 에스크로 수수료 (거래 정산시)</div><div style="font-size:12px;font-weight:600;color:var(--w70)">• 기본: 거래액의 2.5% — Pro/Alibaba 플랜: 2.0%</div><div style="font-size:11px;color:var(--w40);margin-top:2px">정산시 제조사 송금액에서 차감. 바이어-제조사 직거래 에스크로 보호</div></div>'+
+        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08);margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:4px">② 알리바바 총판 수출 커미션 (FOB 기준)</div><div style="font-size:12px;font-weight:600;color:var(--w70)">• 뷰티 5% · 식품 4% · 전자IT 3% · 패션 5% · 생활 3% · 산업 2%</div><div style="font-size:11px;color:var(--w40);margin-top:2px">총판 모델 전용. 독립 모델(자체 알리바바 계정)은 커미션 0%</div></div>'+
+        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08);margin-bottom:8px"><div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:4px">③ 바이어 소싱 대행 수수료</div><div style="font-size:12px;font-weight:600;color:var(--w70)">• &lt;$3K: 고정 $300 · $3K~30K: 8% · $30K~100K: 5% · $100K+: 3%</div><div style="font-size:11px;color:var(--w40);margin-top:2px">바이어가 소싱 대행 요청시 적용. 직접 거래(에스크로)와 별개</div></div>'+
+        '<div style="padding:10px 14px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:700;color:var(--purple);margin-bottom:4px">④ 플로트 수익 (자금보유 이자)</div><div style="font-size:12px;font-weight:600;color:var(--w70)">• 보유금 × 일수 × 0.01~0.02% 일일금리</div><div style="font-size:11px;color:var(--w40);margin-top:2px">에스크로 예치금 보유기간 동안 발생하는 금융 수익</div></div>'+
       '</div>'+
     '</div></div>'+
   '</div>'+
@@ -1120,8 +1135,8 @@ function pgPayPolicy(){
 /* ============ ACTIONS ============ */
 function editUserPlan(uid){
   var u=S.users.find(function(x){return x.id===uid;});if(!u)return;
-  var plan=prompt('플랜 변경 (free/basic/pro/alibaba):',u.plan||'free');
-  if(!plan||!['free','basic','pro','alibaba'].includes(plan))return;
+  var plan=prompt('플랜 변경 (free/starter/pro/alibaba):',u.plan==='basic'?'starter':(u.plan||'free'));
+  if(!plan||!['free','starter','basic','pro','alibaba'].includes(plan))return;
   sb.from('users').update({plan:plan,plan_started_at:new Date().toISOString()}).eq('id',uid).then(function(r){
     if(r.error){UI.toast('실패','err');return;}
     u.plan=plan;S.selectedUser=u;render();UI.toast('플랜 변경: '+plan.toUpperCase(),'ok');
