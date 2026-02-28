@@ -153,7 +153,7 @@ var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co','
 var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'';
 var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY_URL=t;}}).catch(function(){})})();
 function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetry(url,opts,retries,delay);});}
-function _fetchRetry(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'}},opts||{})).then(function(r){if(!r.ok&&retries>1)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetry(url,opts,retries-1,delay*2));},delay);});});}
+function _fetchRetry(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'}},opts||{})).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetry(url,opts,retries-1,delay*2));},delay);});});}
 
 /* === CSV EXPORT === */
 function exportCSV(data,filename){
@@ -387,7 +387,7 @@ function doSignup(e){e.preventDefault();var f=e.target;
     UI.toast('가입 완료! 이메일 확인 후 로그인하세요','ok');set({authMode:'login'});
   });
 }
-function doLogout(){if(confirm('로그아웃?')){sb.auth.signOut().then(function(){S.user=null;S.company=null;render();});}}
+function doLogout(){if(confirm('로그아웃하시겠습니까?')){if(S._chatChannel){sb.removeChannel(S._chatChannel);S._chatChannel=null;}sb.auth.signOut().then(function(){S.user=null;S.company=null;render();});}}
 
 /* === PAGES === */
 function pgAuth(){
@@ -1389,7 +1389,7 @@ function addPjNote(){
 
 function rmPjNote(i){var p=S.currentProject;if(!p)return;var n=p.notes||[];n.splice(i,1);sb.from('projects').update({notes:n}).eq('id',p.id).then(function(r){if(!r.error){p.notes=n;render();}});}
 
-function delPj(id){if(!confirm('삭제?'))return;sb.from('projects').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){UI.toast(_errMsg(r.error),'err');return;}S.currentProject=null;loadPr().then(function(){render();UI.toast('삭제','ok');});});}
+function delPj(id){if(!confirm('이 프로젝트를 삭제하시겠습니까? 관련 데이터가 함께 삭제됩니다.'))return;sb.from('projects').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){UI.toast(_errMsg(r.error),'err');return;}S.currentProject=null;loadPr().then(function(){render();UI.toast('삭제','ok');});});}
 
 /* ── Stage checklist functions ── */
 function getStageItems(p,stage){
@@ -2150,6 +2150,8 @@ function chatDrop(e){
   var files=e.dataTransfer.files;if(!files||!files.length)return;
   var file=files[0];
   if(file.size>10*1024*1024){UI.toast('10MB 이하 파일만 가능','warn');return;}
+  var ALLOWED_EXT=/\.(pdf|jpe?g|png|gif|webp|doc|docx|xls|xlsx|csv)$/i;
+  if(!ALLOWED_EXT.test(file.name)){UI.toast('지원하지 않는 파일 형식입니다. (PDF, 이미지, 문서, 엑셀만 가능)','warn');return;}
   var path='chat/'+S.user.id+'/'+buyerId+'/'+Date.now()+'_'+file.name;
   UI.toast('업로드 중...','info');
   sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
@@ -2982,7 +2984,7 @@ function uploadCompDoc(docType){
   };inp.click();
 }
 function delCompDoc(id){
-  if(!confirm('삭제할까요?'))return;
+  if(!confirm('이 알리바바 스토어 정보를 삭제하시겠습니까?'))return;
   sb.from('company_documents').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){
     if(r.error){UI.toast('삭제 실패','err');return;}
     loadCompanyDocs();UI.toast('삭제됨','ok');
@@ -4708,8 +4710,8 @@ function renderNotifPanel(){
       var dot=n.is_read?'':'<div style="width:6px;height:6px;border-radius:3px;background:var(--pri);flex-shrink:0;margin-top:6px"></div>';
       h+='<div onclick="App.clickNotif(\''+n.id+'\',\''+(n.link_page||'')+'\')" style="padding:10px 16px;border-bottom:1px solid var(--w08);background:'+bg+';cursor:pointer;display:flex;gap:10px;align-items:flex-start;transition:background .15s" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\''+bg+'\'">';
       h+='<span style="font-size:18px;flex-shrink:0;margin-top:1px">'+(ICONS[n.type]||'🔔')+'</span>';
-      h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:'+(n.is_read?'400':'600')+';color:'+(n.is_read?'var(--w70)':'var(--w90)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+n.title+'</div>';
-      if(n.body)h+='<div style="font-size:11px;color:var(--w40);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+n.body+'</div>';
+      h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:'+(n.is_read?'400':'600')+';color:'+(n.is_read?'var(--w70)':'var(--w90)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(n.title)+'</div>';
+      if(n.body)h+='<div style="font-size:11px;color:var(--w40);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(n.body)+'</div>';
       h+='<div style="font-size:10px;color:var(--w20);margin-top:3px">'+ago+'</div></div>'+dot+'</div>';
     });
   }
@@ -4788,6 +4790,10 @@ function submitPartnership(){
 window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doLogout:doLogout,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV};
 _handleTossCallback();
 loadUser();
+sb.auth.onAuthStateChange(function(event, session){
+  if(event === 'SIGNED_OUT'){ S.user = null; S.company = null; render(); }
+  else if(event === 'TOKEN_REFRESHED'){ loadUser(); }
+});
 })();
 </script>
 <!-- 실시간 문의 채팅 위젯 -->

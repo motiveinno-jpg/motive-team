@@ -421,7 +421,11 @@ function loadUser(){
       if(r.error||!r.data){
         // User exists in auth but not users table - create entry
         var meta=session.user.user_metadata||{};
-        sb.from('users').upsert({id:session.user.id,email:session.user.email,role:'buyer',company_name:meta.company_name||'',display_name:meta.display_name||''},{onConflict:'id'}).then(function(ur){
+        if(meta.role && meta.role !== 'buyer' && meta.role !== 'admin'){
+          sb.auth.signOut();
+          return set({loading:false, user:null, authError:'This portal is for buyers only. Please use the seller portal at whistle.html'});
+        }
+        sb.from('users').insert({id:session.user.id,email:session.user.email,role:'buyer',company_name:meta.company_name||'',display_name:meta.display_name||''}).then(function(ur){
           S.user=ur.data&&ur.data[0]?ur.data[0]:{id:session.user.id,email:session.user.email,role:'buyer'};
           S.loading=false;
           loadAllData();
@@ -441,6 +445,7 @@ function loadAllData(){
   loadSavedProducts();
   loadMyRequests();
   loadNotifications();
+  loadMatchings();
   importLandingSavedProducts();
   render();
 }
@@ -1183,7 +1188,7 @@ function viewRequest(id){
 function backToRequests(){S._viewRequest=null;render();}
 
 function acceptProposal(propId,reqId){
-  if(!confirm('Accept this proposal? This will start the deal process.'))return;
+  if(!confirm('Accept this proposal?\n\nThis will create a sourcing deal and open communication with the manufacturer.'))return;
   var request=S.myRequests.find(function(r){return r.id===reqId;});
   var proposals=S.requestProposals[reqId]||[];
   var prop=proposals.find(function(p){return p.id===propId;});
@@ -1223,7 +1228,7 @@ function acceptProposal(propId,reqId){
 }
 
 function rejectProposal(propId,reqId){
-  if(!confirm('Reject this proposal?'))return;
+  if(!confirm('Reject this proposal?\n\nThe seller will be notified. You can still accept other proposals.'))return;
   sb.from('buyer_request_proposals').update({status:'rejected',updated_at:new Date().toISOString()}).eq('id',propId).then(function(r){
     if(r.error){toast('Error','err');return;}
     toast('Proposal rejected','ok');
