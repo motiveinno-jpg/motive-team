@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whistle AI - Service Journey Map & QA Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#242836;--surface3:#2e3344;
+  --border:#363b4e;--text:#e4e7ef;--text2:#9ba1b7;--text3:#6b7190;
+  --pri:#6366f1;--pri-light:#818cf8;--pri-bg:rgba(99,102,241,.12);
+  --green:#22c55e;--green-bg:rgba(34,197,94,.12);
+  --red:#ef4444;--red-bg:rgba(239,68,68,.12);
+  --yellow:#eab308;--yellow-bg:rgba(234,179,8,.12);
+  --blue:#3b82f6;--blue-bg:rgba(59,130,246,.12);
+  --orange:#f97316;--orange-bg:rgba(249,115,22,.12);
+  --radius:12px;--radius-sm:8px;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+/* Layout */
+.app{display:flex;height:100vh}
+.sidebar{width:320px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:100;transition:transform .3s}
+.sidebar.collapsed{transform:translateX(-320px);margin-right:-320px}
+.sidebar-header{padding:20px;border-bottom:1px solid var(--border)}
+.sidebar-header h1{font-size:18px;font-weight:800;background:linear-gradient(135deg,var(--pri-light),#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sidebar-header p{font-size:12px;color:var(--text3);margin-top:4px}
+.sidebar-search{padding:12px 16px}
+.sidebar-search input{width:100%;padding:10px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;outline:none}
+.sidebar-search input:focus{border-color:var(--pri)}
+.sidebar-nav{flex:1;overflow-y:auto;padding:8px}
+.sidebar-nav::-webkit-scrollbar{width:4px}
+.sidebar-nav::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+.nav-group{margin-bottom:4px}
+.nav-group-header{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-radius:var(--radius-sm);font-size:13px;font-weight:600;color:var(--text2);transition:all .15s}
+.nav-group-header:hover{background:var(--surface2);color:var(--text)}
+.nav-group-header .icon{font-size:16px;width:24px;text-align:center}
+.nav-group-header .count{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:10px;background:var(--surface3);color:var(--text3)}
+.nav-group-header .count.has-issues{background:var(--red-bg);color:var(--red)}
+.nav-group-items{display:none;padding-left:20px}
+.nav-group.open .nav-group-items{display:block}
+.nav-group-header .arrow{transition:transform .2s;font-size:10px}
+.nav-group.open .arrow{transform:rotate(90deg)}
+.nav-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-radius:var(--radius-sm);font-size:12px;color:var(--text2);transition:all .15s}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--pri-bg);color:var(--pri-light)}
+.nav-item .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot.pass{background:var(--green)}.dot.fail{background:var(--red)}.dot.warn{background:var(--yellow)}.dot.fixed{background:var(--blue)}.dot.pending{background:var(--text3)}
+
+/* Main area */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.toolbar{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);z-index:50}
+.toolbar-left{display:flex;align-items:center;gap:12px}
+.toolbar-center{flex:1;display:flex;justify-content:center;gap:8px}
+.toolbar-right{display:flex;align-items:center;gap:8px}
+.btn{padding:8px 16px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;display:flex;align-items:center;gap:6px}
+.btn:hover{background:var(--surface3);border-color:var(--text3)}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn.pri:hover{background:var(--pri-light)}
+.btn.sm{padding:6px 10px;font-size:11px}
+.btn.icon-only{padding:8px;width:36px;height:36px;justify-content:center}
+.tab-btn{padding:8px 16px;border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;font-weight:500;border-radius:var(--radius-sm);transition:all .15s}
+.tab-btn:hover{color:var(--text);background:var(--surface2)}
+.tab-btn.active{color:var(--pri-light);background:var(--pri-bg)}
+.zoom-info{font-size:11px;color:var(--text3);min-width:48px;text-align:center}
+
+/* Content area */
+.content{flex:1;overflow:auto;position:relative}
+.content::-webkit-scrollbar{width:8px;height:8px}
+.content::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+/* Journey view */
+.journey-view{padding:40px}
+.journey-section{margin-bottom:60px}
+.journey-title{display:flex;align-items:center;gap:16px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.journey-title h2{font-size:24px;font-weight:800}
+.journey-title .badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.journey-title .badge.seller{background:var(--pri-bg);color:var(--pri-light)}
+.journey-title .badge.buyer{background:var(--green-bg);color:var(--green)}
+.journey-title .badge.admin{background:var(--orange-bg);color:var(--orange)}
+
+.journey-flow{display:flex;flex-wrap:wrap;gap:20px}
+.journey-step{position:relative}
+.journey-step .arrow{position:absolute;right:-16px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px}
+
+/* Feature cards */
+.feature-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;width:340px;transition:all .2s;cursor:pointer}
+.feature-card:hover{border-color:var(--pri);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.feature-card.status-pass{border-left:3px solid var(--green)}
+.feature-card.status-fail{border-left:3px solid var(--red)}
+.feature-card.status-warn{border-left:3px solid var(--yellow)}
+.feature-card.status-fixed{border-left:3px solid var(--blue)}
+.feature-card.status-pending{border-left:3px solid var(--text3)}
+.card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+.card-header h3{font-size:15px;font-weight:700}
+.card-header .step-num{font-size:11px;color:var(--text3);font-weight:600;padding:2px 8px;background:var(--surface2);border-radius:10px}
+.card-status{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.status-badge{padding:3px 10px;border-radius:10px;font-size:11px;font-weight:600}
+.status-badge.pass{background:var(--green-bg);color:var(--green)}
+.status-badge.fail{background:var(--red-bg);color:var(--red)}
+.status-badge.warn{background:var(--yellow-bg);color:var(--yellow)}
+.status-badge.fixed{background:var(--blue-bg);color:var(--blue)}
+.status-badge.pending{background:var(--surface3);color:var(--text3)}
+.card-desc{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px}
+.card-issues{border-top:1px solid var(--border);padding-top:10px}
+.issue-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;font-size:11px;color:var(--text2);line-height:1.5}
+.issue-item .sev{flex-shrink:0;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.sev.critical{background:var(--red-bg);color:var(--red)}
+.sev.high{background:var(--orange-bg);color:var(--orange)}
+.sev.medium{background:var(--yellow-bg);color:var(--yellow)}
+.sev.low{background:var(--surface3);color:var(--text3)}
+.card-meta{display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.card-meta span{font-size:10px;color:var(--text3)}
+
+/* Changelog view */
+.changelog-view{padding:40px;max-width:1000px;margin:0 auto}
+.changelog-day{margin-bottom:40px}
+.changelog-date{font-size:18px;font-weight:700;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.changelog-date .count{font-size:12px;padding:2px 10px;border-radius:10px;background:var(--pri-bg);color:var(--pri-light)}
+.changelog-entry{display:flex;gap:16px;padding:16px;margin-bottom:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);transition:all .15s}
+.changelog-entry:hover{border-color:var(--pri)}
+.changelog-time{font-size:12px;color:var(--text3);font-weight:500;min-width:60px;flex-shrink:0}
+.changelog-content{flex:1}
+.changelog-content h4{font-size:13px;font-weight:600;margin-bottom:4px}
+.changelog-content p{font-size:12px;color:var(--text2);line-height:1.5}
+.changelog-tags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.changelog-tag{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600}
+.changelog-tag.fix{background:var(--green-bg);color:var(--green)}
+.changelog-tag.bug{background:var(--red-bg);color:var(--red)}
+.changelog-tag.feat{background:var(--blue-bg);color:var(--blue)}
+.changelog-tag.ux{background:var(--pri-bg);color:var(--pri-light)}
+.changelog-tag.security{background:var(--orange-bg);color:var(--orange)}
+.changelog-file{font-size:10px;color:var(--text3);margin-top:6px;font-family:'Fira Code',monospace}
+
+/* Stats view */
+.stats-view{padding:40px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:32px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.stat-card .label{font-size:12px;color:var(--text3);margin-bottom:8px}
+.stat-card .value{font-size:32px;font-weight:800}
+.stat-card .value.green{color:var(--green)}
+.stat-card .value.red{color:var(--red)}
+.stat-card .value.yellow{color:var(--yellow)}
+.stat-card .value.blue{color:var(--blue)}
+.stat-card .sub{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* Summary table */
+.summary-table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.summary-table th{padding:12px 16px;text-align:left;font-size:12px;font-weight:600;color:var(--text3);background:var(--surface2);border-bottom:1px solid var(--border)}
+.summary-table td{padding:10px 16px;font-size:12px;border-bottom:1px solid var(--border)}
+.summary-table tr:last-child td{border-bottom:none}
+.summary-table tr:hover td{background:var(--surface2)}
+
+/* Detail modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s}
+.modal-overlay.active{opacity:1;pointer-events:auto}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:90%;max-width:700px;max-height:85vh;overflow-y:auto;padding:32px}
+.modal::-webkit-scrollbar{width:4px}
+.modal::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.modal h2{font-size:20px;font-weight:800;margin-bottom:8px}
+.modal .close{position:absolute;top:16px;right:16px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px}
+
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:200}
+  .sidebar.collapsed{transform:translateX(-320px)}
+  .feature-card{width:100%}
+  .journey-flow{flex-direction:column}
+}
+
+/* Print */
+@media print{
+  .sidebar,.toolbar{display:none!important}
+  .content{overflow:visible!important}
+  .feature-card{break-inside:avoid;page-break-inside:avoid}
+  body{background:#fff;color:#000}
+}
+
+/* Animations */
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.feature-card{animation:fadeIn .3s ease}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h1>Whistle AI QA Dashboard</h1>
+      <p>Service Journey Map & Audit Trail</p>
+    </div>
+    <div class="sidebar-search">
+      <input type="text" placeholder="Search features, issues..." id="searchInput" oninput="filterNav(this.value)">
+    </div>
+    <nav class="sidebar-nav" id="sidebarNav"></nav>
+    <div style="padding:16px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text3);display:flex;justify-content:space-between">
+        <span>Last updated</span><span id="lastUpdated"></span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="btn icon-only" onclick="toggleSidebar()" title="Toggle sidebar">&#9776;</button>
+        <span style="font-size:14px;font-weight:700" id="viewTitle">Overview</span>
+      </div>
+      <div class="toolbar-center">
+        <button class="tab-btn active" data-view="overview" onclick="switchView('overview',this)">Overview</button>
+        <button class="tab-btn" data-view="seller" onclick="switchView('seller',this)">Seller Journey</button>
+        <button class="tab-btn" data-view="buyer" onclick="switchView('buyer',this)">Buyer Journey</button>
+        <button class="tab-btn" data-view="admin" onclick="switchView('admin',this)">Admin Journey</button>
+        <button class="tab-btn" data-view="database" onclick="switchView('database',this)">Database</button>
+        <button class="tab-btn" data-view="changelog" onclick="switchView('changelog',this)">Changelog</button>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn sm" onclick="expandAll()">Expand All</button>
+        <button class="btn sm" onclick="collapseAll()">Collapse All</button>
+        <button class="btn sm pri" onclick="window.print()">Export</button>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+// =====================================================
+// DATA — All journey steps, features, issues, changelog
+// =====================================================
+var DATA = {
+  meta: {
+    project: 'Whistle AI',
+    description: 'AI-powered Export Management SaaS for Korean Manufacturers',
+    version: '1.0.0',
+    lastAudit: new Date().toISOString(),
+    files: [
+      {name:'whistle-landing.html', size:'134KB', role:'Seller Landing'},
+      {name:'buyer-landing.html', size:'145KB', role:'Buyer Landing'},
+      {name:'whistle.html', size:'533KB', role:'Seller App'},
+      {name:'buyer.html', size:'158KB', role:'Buyer Portal'},
+      {name:'admin.html', size:'186KB', role:'Admin Dashboard'}
+    ]
+  },
+
+  // SELLER JOURNEY
+  seller: {
+    label: 'Seller Journey (제조사 여정)',
+    icon: '🏭',
+    badge: 'seller',
+    steps: [
+      {
+        id:'s-landing', name:'Landing Page', nameKo:'랜딩 페이지', file:'whistle-landing.html',
+        desc:'서비스 소개, 기능 쇼케이스, 가격 정책, 회원가입/로그인',
+        status:'pass',
+        features:['Hero 섹션 + CTA','기능 소개 슬라이드','가격 플랜 3종(Free/Starter/Pro)','고객 후기','FAQ 아코디언','무료 AI 분석 체험','회원가입 모달(이메일/비밀번호)','로그인 모달','비밀번호 찾기'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'security',text:'채팅 위젯 esc()에 & 및 > 이스케이핑 추가, bubble() 텍스트 이스케이핑 추가',commit:'audit-fix'},
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'companies insert 컬럼명 수정: name→name_ko, contact_name→ceo_name_ko, product_categories→category',commit:'audit-fix'}
+        ]
+      },
+      {
+        id:'s-signup', name:'Signup & Auth', nameKo:'회원가입/인증', file:'whistle-landing.html',
+        desc:'이메일 기반 회원가입, 역할 선택(제조사/바이어), 이용약관 동의, Supabase Auth',
+        status:'pass',
+        features:['이메일/비밀번호 가입','역할 선택 (제조사/바이어)','이용약관 동의 체크박스','회사명/담당자명/연락처 수집','users 테이블 생성 + companies 테이블 생성','가입 후 whistle.html 자동 리다이렉트'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'companies insert 컬럼명 수정: name→name_ko, contact_name→ceo_name_ko, product_categories→category',commit:'audit-fix'},
+          {date:'2026-02-28',time:'17:05',type:'fix',text:'가입 시 users 테이블 row 미생성 → upsert 추가 (CRITICAL)',commit:'d022591'},
+          {date:'2026-02-28',time:'17:05',type:'fix',text:'이용약관 동의 체크박스 추가 (AUTH-001)',commit:'6e05175'},
+          {date:'2026-02-28',time:'17:05',type:'fix',text:'무료 분석 횟수 "1회" → "3회" 통일',commit:'6e05175'}
+        ]
+      },
+      {
+        id:'s-onboard', name:'Onboarding', nameKo:'온보딩', file:'whistle.html',
+        desc:'첫 로그인 후 회사 정보 설정, 비즈니스 정보 입력, 대시보드 안내',
+        status:'pass',
+        features:['회사 정보 확인/수정','사업 유형 선택','주요 수출 품목 설정','타겟 시장 선택','온보딩 완료 후 대시보드'],
+        issues:[
+          {sev:'low',text:'랜딩에서 입력한 회사명이 온보딩에서 자동 채워지지 않음 — 중복 입력 발생'}
+        ],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'온보딩 회사정보 저장 시 ceo_name → ceo_name_ko 컬럼명 수정',commit:'audit-fix'}
+        ]
+      },
+      {
+        id:'s-dashboard', name:'Dashboard', nameKo:'대시보드', file:'whistle.html',
+        desc:'전체 현황 요약: 프로젝트, 바이어, 주문, AI 분석, 최근 활동, 빠른 작업',
+        status:'pass',
+        features:['통계 카드 (프로젝트/바이어/주문/매출)','최근 활동 타임라인','빠른 작업 버튼','환율 정보 표시','플랜 정보 표시','가이드센터 링크'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:49',type:'fix',text:'빈 활동 타임라인에 CTA 버튼 추가',commit:'a6c4a2e'},
+          {date:'2026-02-28',time:'22:49',type:'fix',text:'loadExchangeRate를 _relayReady에 래핑',commit:'9831e85'}
+        ]
+      },
+      {
+        id:'s-projects', name:'Projects', nameKo:'프로젝트 관리', file:'whistle.html',
+        desc:'수출 프로젝트 생성/관리: 바이어 배정, 상태 추적, 타임라인, 문서 연결',
+        status:'pass',
+        features:['프로젝트 CRUD','바이어 연결','상태 관리 (준비/진행/완료)','프로젝트별 문서 목록','프로젝트별 채팅','프로젝트 삭제 확인'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:48',type:'ux',text:'프로젝트 삭제 확인 메시지 개선',commit:'d022591'}
+        ]
+      },
+      {
+        id:'s-products', name:'Products', nameKo:'제품 관리', file:'whistle.html',
+        desc:'수출 제품 등록: 제품명, 설명, 카테고리, 가격, 이미지, 인증 정보',
+        status:'pass',
+        features:['제품 등록/수정/삭제','이미지 업로드 (Supabase Storage)','카테고리 분류','가격/MOQ/리드타임 설정','인증 정보 관리','제품 목록 검색/필터'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'s-buyers', name:'Buyers', nameKo:'바이어 관리', file:'whistle.html',
+        desc:'바이어 연락처 관리, 커뮤니케이션 이력, 등급 분류',
+        status:'pass',
+        features:['바이어 추가/수정/삭제','국가/등급/상태 분류','연락처 정보','커뮤니케이션 이력','바이어별 주문 목록'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'s-analysis', name:'AI Analysis', nameKo:'AI 분석', file:'whistle.html',
+        desc:'AI 기반 시장 분석: URL 분석, 이미지 분석, 수동 분석, 보고서 생성',
+        status:'warn',
+        features:['URL 입력 분석 (시장/경쟁사)','이미지 업로드 분석','수동 데이터 입력 분석','AI 보고서 생성 (PDF)','분석 이력 관리','무료 3회/월 제한'],
+        issues:[
+          {sev:'medium',text:'릴레이 서버 미연결 시 폴백 분석에 경고 배너 없음'},
+          {sev:'low',text:'분석 진행 중 다른 탭 이동 시 결과 알림 없음'}
+        ],
+        history:[
+          {date:'2026-02-28',time:'22:49',type:'fix',text:'FREE_SEARCH_LIMIT 99→3 변경',commit:'6e05175'}
+        ]
+      },
+      {
+        id:'s-documents', name:'Documents', nameKo:'서류 관리', file:'whistle.html',
+        desc:'수출 서류 자동 생성: PI, CI, PL, BL 등. PDF 다운로드, 이메일 발송',
+        status:'pass',
+        features:['PI (Proforma Invoice) 생성','CI (Commercial Invoice) 생성','PL (Packing List) 생성','BL (Bill of Lading) 생성','PDF 다운로드 (한글 폰트 지원)','이메일 첨부 발송','서류 번호 자동 생성','서류 이력 관리'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'documents insert 시 data→content 컬럼명 수정, buyer_name→buyer_id로 변경',commit:'audit-fix'},
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'documents read 코드에서 doc.data 대신 doc.content 우선 참조하도록 수정',commit:'audit-fix'},
+          {date:'2026-02-28',time:'22:49',type:'fix',text:'PI→주문 전환 시 데이터 경로 수정 (c.ref.* 우선)',commit:'b8181dc'},
+          {date:'2026-02-27',type:'fix',text:'jsPDF 한글 깨짐 수정 (NanumGothic 임베드)',commit:'DOC-001'}
+        ]
+      },
+      {
+        id:'s-orders', name:'Orders', nameKo:'주문 관리', file:'whistle.html',
+        desc:'주문 생성/관리, 상태 추적, 결제 조건, 배송 정보',
+        status:'pass',
+        features:['주문 목록/상세','PI에서 주문 전환','주문 상태 관리','결제 조건 (T/T, L/C 등)','인코텀즈 설정','주문별 문서 연결','CSV 내보내기'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'s-email', name:'Email', nameKo:'이메일', file:'whistle.html',
+        desc:'바이어에게 이메일 발송, 템플릿, 발송 이력 관리',
+        status:'warn',
+        features:['이메일 작성/발송','템플릿 (인사/제품소개/견적 등)','첨부 파일','발송 이력 조회','AI 이메일 초안 생성'],
+        issues:[
+          {sev:'high',text:'실제 이메일 발송은 릴레이 서버 API키 설정 필요 — 미설정 시 mailto: 핸들러로 열림'},
+          {sev:'medium',text:'발송 실패 시에도 로그에 "sent"로 기록될 수 있음'}
+        ],
+        history:[
+          {date:'2026-02-27',type:'fix',text:'이메일 로그 상태를 실제 발송 여부에 따라 정확히 기록',commit:'EMAIL-001'}
+        ]
+      },
+      {
+        id:'s-chat', name:'Chat', nameKo:'채팅', file:'whistle.html',
+        desc:'바이어와 실시간 채팅, 파일 공유, 읽음 확인',
+        status:'pass',
+        features:['실시간 메시지 (Supabase Realtime)','파일 업로드/공유','바이어별 대화 목록','읽음 확인','채팅 알림','로그아웃 시 채널 정리'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:48',type:'fix',text:'Realtime 채널 로그아웃 시 정리',commit:'d022591'},
+          {date:'2026-02-28',time:'22:49',type:'security',text:'채팅 드래그앤드롭 파일 유형 검증 추가',commit:'9831e85'},
+          {date:'2026-02-28',time:'22:49',type:'fix',text:'플로팅 채팅 HTML 이스케이핑 완성',commit:'9831e85'}
+        ]
+      },
+      {
+        id:'s-marketplace', name:'Marketplace', nameKo:'마켓플레이스', file:'whistle.html',
+        desc:'바이어 요청 브라우징, 제안 제출, 매칭 관리',
+        status:'pass',
+        features:['바이어 요청 목록 조회','카테고리/국가 필터','제안서 작성/제출','제안 상태 추적','매칭 알림'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'s-alibaba', name:'Alibaba', nameKo:'알리바바 관리', file:'whistle.html',
+        desc:'알리바바 스토어 설정, 제품 등록 가이드, 인콰이어리 관리',
+        status:'warn',
+        features:['스토어 정보 설정','제품 등록 워크플로우','인콰이어리 목록','프로젝트 생성 가이드'],
+        issues:[
+          {sev:'medium',text:'API 연동 탭은 "준비중"으로 표시됨 — 실제 API 미연동'}
+        ],
+        history:[
+          {date:'2026-02-27',type:'fix',text:'알리바바 API 탭 "준비중" 명시',commit:'ALI-001'},
+          {date:'2026-02-28',time:'22:49',type:'ux',text:'알리바바 스토어 삭제 확인 메시지 개선',commit:'d022591'}
+        ]
+      },
+      {
+        id:'s-voucher', name:'Voucher', nameKo:'바우처 관리', file:'whistle.html',
+        desc:'정부 수출바우처 사용 내역 추적, 리포트 생성',
+        status:'pass',
+        features:['바우처 활동 기록','월별 사용 내역','PDF 리포트 생성','바우처 잔액 표시'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:49',type:'ux',text:'바우처 가격 틸드(~) 제거',commit:'a6c4a2e'}
+        ]
+      },
+      {
+        id:'s-settings', name:'Settings', nameKo:'설정', file:'whistle.html',
+        desc:'회사 정보, 프로필, 플랜/결제, 알림 설정',
+        status:'warn',
+        features:['회사 정보 수정','프로필 수정','플랜 변경 (Free→Starter→Pro)','결제 (Toss Payments)','알림 설정','로그아웃'],
+        issues:[
+          {sev:'critical',text:'Toss Payments 클라이언트 키가 "REPLACE" 플레이스홀더 — 결제 불가'},
+          {sev:'critical',text:'Stripe publishable 키가 "REPLACE" 플레이스홀더 — 결제 불가'}
+        ],
+        history:[
+          {date:'2026-02-28',time:'22:49',type:'ux',text:'플랜 다운그레이드 확인 메시지에 잃는 기능 목록 추가',commit:'a6c4a2e'}
+        ]
+      },
+      {
+        id:'s-notifications', name:'Notifications', nameKo:'알림', file:'whistle.html',
+        desc:'인앱 알림 센터: 새 메시지, 매칭, 주문 상태 변경 등',
+        status:'pass',
+        features:['알림 패널','읽음/안읽음 표시','알림 클릭 시 해당 페이지 이동','알림 전체 읽음'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:48',type:'security',text:'알림 title/body XSS 방지 (U.esc 적용)',commit:'d022591'}
+        ]
+      },
+      {
+        id:'s-guide', name:'Guide Center', nameKo:'가이드센터', file:'whistle.html',
+        desc:'수출 가이드, 산업별/국가별 가이드, 용어사전, 박람회 정보',
+        status:'pass',
+        features:['수출 절차 가이드','산업별 가이드 (뷰티, 식품, 건강)','국가별 가이드 (미국, EU, 일본, 중국)','수출 용어사전','박람회 일정/추천','가이드 검색/필터'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',type:'feat',text:'가이드센터 전체 콘텐츠 도입',commit:'0357cb2'}
+        ]
+      }
+    ]
+  },
+
+  // BUYER JOURNEY
+  buyer: {
+    label: 'Buyer Journey (바이어 여정)',
+    icon: '🛒',
+    badge: 'buyer',
+    steps: [
+      {
+        id:'b-landing', name:'Landing Page', nameKo:'랜딩 페이지', file:'buyer-landing.html',
+        desc:'바이어용 서비스 소개, 한국 제품 검색 체험, 가입/로그인',
+        status:'pass',
+        features:['Hero + CTA','한국 제품 검색 체험 (Naver API)','가격 플랜 (Free/Starter/Pro)','K-Beauty/K-Food 쇼케이스','FAQ','회원가입/로그인 모달'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'security',text:'XSS 취약점 수정 — dangerouslySetInnerHTML로 Naver 상품 제목 미이스케이프 렌더링 해결',commit:'audit-fix'},
+          {date:'2026-02-28',time:'24:00',type:'security',text:'채팅 위젯 esc()에 & 및 > 이스케이핑 추가, bubble() 텍스트 이스케이핑 추가',commit:'audit-fix'},
+          {date:'2026-02-28',time:'22:41',type:'fix',text:'FREE_SEARCH_LIMIT 99→3 수정',commit:'6e05175'},
+          {date:'2026-02-28',time:'22:41',type:'fix',text:'서버 디버그 메시지 사용자 노출 제거',commit:'6e05175'},
+          {date:'2026-02-28',time:'22:41',type:'ux',text:'EN 번역 개선 (Naver 참조 제거)',commit:'a6c4a2e'}
+        ]
+      },
+      {
+        id:'b-signup', name:'Signup', nameKo:'회원가입', file:'buyer-landing.html',
+        desc:'바이어 회원가입, 역할 자동 설정 (buyer)',
+        status:'pass',
+        features:['이메일/비밀번호 가입','회사명/이름 수집','role=buyer 자동 설정','buyer.html 자동 리다이렉트'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',type:'fix',text:'랜딩 가입 시 role=buyer 설정 수정 (BUYER-001)',commit:'6e05175'}
+        ]
+      },
+      {
+        id:'b-search', name:'Product Search', nameKo:'제품 검색', file:'buyer.html',
+        desc:'네이버 쇼핑 API로 한국 제품 검색, 필터링, 정렬',
+        status:'pass',
+        features:['키워드 검색','카테고리 필터','가격 범위 필터','정렬 (관련도/가격/인기)','검색 결과 페이지네이션','제품 상세 보기'],
+        issues:[
+          {sev:'low',text:'KRW 가격 옆 USD 환산 미표시'}
+        ],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'security',text:'PostgREST 필터 인젝션 취약점 수정 — 검색 쿼리 미세니타이즈 해결',commit:'audit-fix'},
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'검색 결과 제목 HTML 태그(<b>) 잔존 문제 해결',commit:'audit-fix'}
+        ]
+      },
+      {
+        id:'b-save', name:'Saved Products', nameKo:'찜 목록', file:'buyer.html',
+        desc:'관심 제품 저장, 관리, 내보내기',
+        status:'pass',
+        features:['제품 저장/제거','저장 목록 조회','제품 비교','문의 바로가기'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'b-inquiry', name:'Inquiry', nameKo:'문의하기', file:'buyer.html',
+        desc:'셀러에게 제품 문의, 견적 요청',
+        status:'pass',
+        features:['문의 폼 (제품/수량/목적)','파일 첨부','문의 이력 조회','문의 상태 추적'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:49',type:'fix',text:'문의 폼 이중 제출 방지 가드 추가',commit:'9831e85'}
+        ]
+      },
+      {
+        id:'b-chat', name:'Chat', nameKo:'채팅', file:'buyer.html',
+        desc:'셀러와 실시간 채팅',
+        status:'pass',
+        features:['실시간 메시지','파일 공유','대화 목록','알림'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'b-marketplace', name:'Marketplace', nameKo:'마켓플레이스', file:'buyer.html',
+        desc:'소싱 요청 등록, 셀러 제안 검토, 매칭',
+        status:'pass',
+        features:['소싱 요청 등록 (RFQ)','카테고리/수량/예산 설정','셀러 제안 목록','제안 수락/거절','매칭 상태 추적'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:48',type:'ux',text:'제안 수락/거절 확인 메시지 상세화',commit:'d022591'}
+        ]
+      },
+      {
+        id:'b-profile', name:'Profile & Settings', nameKo:'프로필/설정', file:'buyer.html',
+        desc:'프로필 관리, 알림 설정, 플랜 관리',
+        status:'warn',
+        features:['프로필 수정','회사 정보','플랜 변경','Stripe 결제','로그아웃'],
+        issues:[
+          {sev:'critical',text:'Stripe publishable 키 "REPLACE" 플레이스홀더 — 결제 불가'}
+        ],
+        history:[]
+      }
+    ]
+  },
+
+  // ADMIN JOURNEY
+  admin: {
+    label: 'Admin Journey (관리자 여정)',
+    icon: '⚙️',
+    badge: 'admin',
+    steps: [
+      {
+        id:'a-login', name:'Login', nameKo:'로그인', file:'admin.html',
+        desc:'관리자 로그인, 이중 제출 방지',
+        status:'pass',
+        features:['이메일/비밀번호 로그인','이중 제출 방지','세션 관리 (onAuthStateChange)','로그아웃 확인'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:53',type:'fix',text:'이중 로그인 가드 추가',commit:'d022591'},
+          {date:'2026-02-28',time:'22:53',type:'fix',text:'onAuthStateChange 추가',commit:'d022591'}
+        ]
+      },
+      {
+        id:'a-dashboard', name:'Dashboard', nameKo:'대시보드', file:'admin.html',
+        desc:'전체 플랫폼 현황: 사용자/주문/매출/서비스요청 통계',
+        status:'pass',
+        features:['통계 카드 (총 사용자/셀러/바이어/주문)','매출 차트','최근 서비스 요청','최근 메시지','긴급 알림'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'22:53',type:'ux',text:'"알수없음" → "알 수 없음" 띄어쓰기 수정',commit:'a6c4a2e'}
+        ]
+      },
+      {
+        id:'a-users', name:'User Management', nameKo:'사용자 관리', file:'admin.html',
+        desc:'전체 사용자 목록, 상세 정보, 역할 관리',
+        status:'pass',
+        features:['사용자 목록 (페이지네이션)','검색/필터 (역할/상태)','사용자 상세 보기','역할 변경','사용자 비활성화'],
+        issues:[],
+        history:[
+          {date:'2026-02-27',type:'fix',text:'페이지네이션 추가 (PERF-001)',commit:'PERF-001'}
+        ]
+      },
+      {
+        id:'a-companies', name:'Company Management', nameKo:'회사 관리', file:'admin.html',
+        desc:'등록 회사 목록, 인증 관리',
+        status:'pass',
+        features:['회사 목록','회사 상세','인증 상태 관리','관련 사용자 보기'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'a-orders', name:'Order Management', nameKo:'주문 관리', file:'admin.html',
+        desc:'전체 주문 모니터링, 상태 관리',
+        status:'pass',
+        features:['주문 목록','주문 상세','상태 변경','필터/검색'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'a-service', name:'Service Requests', nameKo:'서비스 요청', file:'admin.html',
+        desc:'고객 서비스 요청(지원 티켓) 접수/처리/완료',
+        status:'pass',
+        features:['요청 목록','상태 관리 (접수→배정→처리→완료)','담당자 배정','우선순위 설정','관리자 메모','처리 시작 시간 보존'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'whistle.html: service_requests insert에서 존재하지 않는 project_id 컬럼 사용 → details jsonb로 이동',commit:'audit-fix'},
+          {date:'2026-02-28',time:'22:53',type:'fix',text:'started_at 덮어쓰기 방지 — 기존 SR 레코드 확인',commit:'b8181dc'},
+          {date:'2026-02-27',type:'fix',text:'서비스 요청 워크플로우 전체 구현 (SVC-001)',commit:'SVC-001'}
+        ]
+      },
+      {
+        id:'a-marketplace', name:'Marketplace', nameKo:'마켓플레이스', file:'admin.html',
+        desc:'마켓플레이스 요청/제안 모니터링',
+        status:'pass',
+        features:['요청 목록','제안 현황','매칭 관리'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'a-chat', name:'Chat Monitor', nameKo:'채팅 모니터', file:'admin.html',
+        desc:'전체 채팅 모니터링, 미읽은 메시지 추적',
+        status:'pass',
+        features:['대화 목록','메시지 모니터링','미읽음 카운트','바이어별 대화 그룹'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'a-analytics', name:'Analytics', nameKo:'분석/리포트', file:'admin.html',
+        desc:'플랫폼 분석: 사용자 증가, 거래 추이, 서비스 성과',
+        status:'pass',
+        features:['사용자 증가 추이','거래 현황','서비스 요청 통계','AI 분석 사용량'],
+        issues:[],
+        history:[]
+      }
+    ]
+  },
+
+  // DATABASE
+  database: {
+    label: 'Database (Supabase)',
+    icon: '🗄️',
+    badge: 'admin',
+    steps: [
+      {
+        id:'db-auth', name:'Auth & Users', nameKo:'인증/사용자', file:'Supabase',
+        desc:'auth.users (Supabase Auth) + public.users 테이블',
+        status:'pass',
+        features:['Email/Password auth','User metadata (role, company)','Session management','Token refresh'],
+        issues:[],
+        history:[]
+      },
+      {
+        id:'db-tables', name:'Core Tables', nameKo:'핵심 테이블', file:'Supabase',
+        desc:'companies, products, buyers, orders, documents, projects 등 31개 테이블',
+        status:'pass',
+        features:['companies','products','buyers','orders','documents','projects','messages','notifications','marketplace_requests','marketplace_proposals','matchings','service_requests','subscriptions','analyses','email_logs','voucher_activities','alibaba_stores','alibaba_inquiries','saved_products','guide_articles'],
+        issues:[
+          {sev:'low',text:'인덱스 최적화 추가 점검 권장'},
+          {sev:'low',text:'외래키 관계 추가 점검 권장'}
+        ],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'updated_at 트리거 추가: alibaba_inquiries, alibaba_stores, buyer_request_proposals, buyer_requests, escrow_transactions, meetings, orders, samples, shipments, subscriptions (10개 테이블)',commit:'migration'},
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'orders.order_number에 UNIQUE 제약조건 추가',commit:'migration'},
+          {date:'2026-02-28',time:'24:00',type:'fix',text:'status 컬럼 NOT NULL 제약조건 추가 (8개 테이블: buyer_requests, buyer_request_proposals, escrow_transactions, meetings, orders, samples, shipments, subscriptions)',commit:'migration'}
+        ]
+      },
+      {
+        id:'db-edge', name:'Edge Functions', nameKo:'엣지 함수', file:'Supabase',
+        desc:'서버리스 함수: 결제, AI 분석, 이메일 등',
+        status:'pending',
+        features:['toss-billing-issue','create-checkout-session','기타 Edge Functions'],
+        issues:[
+          {sev:'critical',text:'Edge Function 동작 상태 점검 필요'}
+        ],
+        history:[]
+      },
+      {
+        id:'db-rls', name:'RLS Policies', nameKo:'보안 정책', file:'Supabase',
+        desc:'Row Level Security 정책으로 데이터 접근 제어',
+        status:'pass',
+        features:['테이블별 RLS 활성화','SELECT/INSERT/UPDATE/DELETE 정책','서비스 역할 키 관리','RLS 헬퍼 함수 search_path 보안'],
+        issues:[],
+        history:[
+          {date:'2026-02-28',time:'24:00',type:'security',text:'RLS 헬퍼 함수에 explicit search_path 설정 (search_path 인젝션 방지)',commit:'migration'},
+          {date:'2026-02-28',time:'24:00',type:'security',text:'handle_updated_at 함수 search_path 수정',commit:'migration'}
+        ]
+      }
+    ]
+  },
+
+  // CROSS-CUTTING CONCERNS
+  crossCutting: [
+    {id:'cc-security', name:'Security', status:'warn', issues:[
+      {sev:'high',text:'이메일 인증(verification) 미강제 — 미인증 이메일로 가입/로그인 가능'},
+      {sev:'medium',text:'관리자 포털 세션 타임아웃 없음'},
+      {sev:'medium',text:'CAPTCHA 미적용 (로그인/가입)'},
+      {sev:'low',text:'알림 XSS — 수정완료 (U.esc)'},
+      {sev:'low',text:'채팅 HTML 이스케이핑 — 수정완료'},
+      {sev:'low',text:'PostgREST 필터 인젝션 — 수정완료 (buyer.html)'},
+      {sev:'low',text:'buyer-landing XSS (dangerouslySetInnerHTML) — 수정완료'},
+      {sev:'low',text:'채팅 위젯 esc() & bubble() 이스케이핑 — 수정완료 (양쪽 랜딩)'},
+      {sev:'low',text:'RLS 헬퍼 함수 search_path 보안 — 수정완료'}
+    ]},
+    {id:'cc-payment', name:'Payment', status:'fail', issues:[
+      {sev:'critical',text:'Toss Payments 키 "REPLACE" 플레이스홀더 — 셀러 결제 불가'},
+      {sev:'critical',text:'Stripe 키 "REPLACE" 플레이스홀더 — 바이어 결제 불가'}
+    ]},
+    {id:'cc-relay', name:'Relay Server', status:'warn', issues:[
+      {sev:'high',text:'Cloudflare 터널 URL 수시 만료 — AI/이메일/검색 중단 위험'},
+      {sev:'medium',text:'영구 호스팅 이전 권장 (Railway/Render)'}
+    ]},
+    {id:'cc-i18n', name:'Internationalization', status:'warn', issues:[
+      {sev:'medium',text:'바이어 포털 영어 번역 일부 불완전'},
+      {sev:'low',text:'일본어/중국어 미지원'}
+    ]},
+    {id:'cc-mobile', name:'Mobile Responsive', status:'pass', issues:[
+      {sev:'low',text:'일부 테이블 모바일에서 가로 스크롤 필요'}
+    ]},
+    {id:'cc-performance', name:'Performance', status:'warn', issues:[
+      {sev:'high',text:'Babel Standalone 프로덕션 사용 (~800KB) — 랜딩 페이지 로딩 성능 저하'},
+      {sev:'high',text:'Admin 200건 하드 리밋 — 부분 페이지네이션만 존재'},
+      {sev:'low',text:'whistle.html 533KB 단일 파일 — 코드 분할 권장'}
+    ]},
+    {id:'cc-database', name:'Database Integrity', status:'pass', issues:[
+      {sev:'low',text:'updated_at 트리거 10개 테이블 추가 — 수정완료'},
+      {sev:'low',text:'orders.order_number UNIQUE 제약 — 수정완료'},
+      {sev:'low',text:'status NOT NULL 제약 8개 테이블 — 수정완료'},
+      {sev:'low',text:'RLS 함수 search_path 보안 — 수정완료'}
+    ]}
+  ],
+
+  // CHANGELOG
+  changelog: [
+    {
+      date:'2026-02-28',
+      entries:[
+        {time:'24:00',type:'security',title:'DB 컬럼명 불일치 감사 수정 (whistle-landing.html)',desc:'companies insert에서 잘못된 컬럼명 사용: name→name_ko, contact_name→ceo_name_ko, product_categories→category. 가입 시 DB 오류 유발하던 문제 해결',files:['whistle-landing.html'],commit:'audit-fix'},
+        {time:'24:00',type:'security',title:'DB 컬럼명 불일치 감사 수정 (whistle.html - documents)',desc:'documents insert에서 data→content 컬럼 수정, buyer_name→buyer_id로 변경. documents read 코드에서 doc.data 대신 doc.content 우선 참조',files:['whistle.html'],commit:'audit-fix'},
+        {time:'24:00',type:'fix',title:'온보딩 컬럼명 수정 (whistle.html)',desc:'온보딩 회사정보 저장 시 ceo_name → ceo_name_ko 컬럼명 수정',files:['whistle.html'],commit:'audit-fix'},
+        {time:'24:00',type:'fix',title:'service_requests project_id 컬럼 수정 (whistle.html)',desc:'존재하지 않는 project_id 컬럼 사용 → details jsonb 필드로 이동',files:['whistle.html'],commit:'audit-fix'},
+        {time:'24:00',type:'security',title:'PostgREST 필터 인젝션 수정 (buyer.html)',desc:'검색 쿼리가 sanitize 없이 PostgREST 필터에 직접 전달되던 보안 취약점 수정',files:['buyer.html'],commit:'audit-fix'},
+        {time:'24:00',type:'security',title:'XSS 취약점 수정 (buyer-landing.html)',desc:'Naver 상품 제목을 dangerouslySetInnerHTML로 미이스케이프 렌더링하던 XSS 취약점 수정',files:['buyer-landing.html'],commit:'audit-fix'},
+        {time:'24:00',type:'security',title:'채팅 위젯 이스케이핑 보완 (양쪽 랜딩)',desc:'esc() 함수에 & 및 > 이스케이핑 누락 수정, bubble() 함수 텍스트 이스케이핑 추가',files:['whistle-landing.html','buyer-landing.html'],commit:'audit-fix'},
+        {time:'24:00',type:'fix',title:'DB 마이그레이션: updated_at 트리거 (10개 테이블)',desc:'alibaba_inquiries, alibaba_stores, buyer_request_proposals, buyer_requests, escrow_transactions, meetings, orders, samples, shipments, subscriptions에 updated_at 자동 갱신 트리거 추가',files:['Supabase'],commit:'migration'},
+        {time:'24:00',type:'fix',title:'DB 마이그레이션: UNIQUE/NOT NULL 제약조건',desc:'orders.order_number UNIQUE 추가. status 컬럼 NOT NULL 추가 (8개 테이블: buyer_requests, buyer_request_proposals, escrow_transactions, meetings, orders, samples, shipments, subscriptions)',files:['Supabase'],commit:'migration'},
+        {time:'24:00',type:'security',title:'DB 마이그레이션: RLS 함수 search_path 보안',desc:'RLS 헬퍼 함수에 explicit search_path 설정 (search_path 인젝션 방지). handle_updated_at 함수 search_path 수정',files:['Supabase'],commit:'migration'},
+        {time:'23:30',type:'fix',title:'convertPItoOrder 데이터 경로 수정',desc:'genDoc()이 c.ref.doc_no/payment/terms에 저장하지만 convertPItoOrder는 c.doc_number/payment_terms/incoterms를 참조 — c.ref.* 우선 참조로 수정',files:['whistle.html'],commit:'b8181dc'},
+        {time:'23:30',type:'fix',title:'SR started_at 덮어쓰기 방지',desc:'updateSR()가 매번 started_at을 현재시간으로 덮어씀 — 기존 SR 레코드의 started_at 확인 후 설정',files:['admin.html'],commit:'b8181dc'},
+        {time:'22:49',type:'fix',title:'엣지케이스: 릴레이 타이밍, 이중제출, 모달 릭, 채팅 이스케이핑',desc:'loadExchangeRate _relayReady 래핑, 바이어 문의 이중제출 가드, 모달 DOM 누수 수정, 플로팅 채팅 & 이스케이핑',files:['whistle.html','buyer.html'],commit:'9831e85'},
+        {time:'22:49',type:'ux',title:'UX 카피 폴리시',desc:'플랜 다운그레이드 확인 개선, 알리바바 프로젝트 생성 안내, 빈 활동 타임라인 CTA, 비밀번호 에러 완성, 바우처 틸드 제거',files:['whistle.html','buyer-landing.html','admin.html'],commit:'a6c4a2e'},
+        {time:'22:48',type:'security',title:'보안 & 안정성: XSS, 인증 상태, 세션 처리',desc:'알림 XSS 방지, onAuthStateChange 추가(whistle+admin), fetchRetry 수정, Realtime 정리, 파일 유형 검증, 역할 오염 방지, 삭제 확인 개선',files:['whistle.html','buyer.html','admin.html'],commit:'d022591'},
+        {time:'17:05',type:'feat',title:'UX 페르소나 시뮬레이션: i18n, 접근성, 모바일',desc:'셀러 가입 users row 생성, 무료 분석 3회 통일, FREE_SEARCH_LIMIT=3, 디버그 메시지 제거, 어드민 로그인 가드',files:['whistle-landing.html','buyer-landing.html','admin.html'],commit:'6e05175'}
+      ]
+    },
+    {
+      date:'2026-02-27',
+      entries:[
+        {time:'',type:'feat',title:'가이드센터, 플로팅 채팅, 제휴문의, 채팅 수정',desc:'수출가이드/산업별/국가별 가이드/용어사전/박람회 도입, 전 페이지 플로팅 실시간 상담, 제휴문의 폼, 셀러-바이어 채팅 연동 수정',files:['whistle.html','buyer.html','whistle-landing.html','buyer-landing.html','admin.html'],commit:'0357cb2'},
+        {time:'',type:'fix',title:'종합 QA 페르소나 기반 수정',desc:'Phase 1-2 전체 항목: AUTH, BUYER, DOC, EMAIL, RELAY, CHAT, PERF, SVC, MARKETPLACE, EXPORT, ALI, MOBILE',files:['all'],commit:'4daece4'}
+      ]
+    }
+  ]
+};
+
+// =====================================================
+// RENDER FUNCTIONS
+// =====================================================
+var currentView = 'overview';
+
+function switchView(view, btn) {
+  currentView = view;
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});
+  if(btn) btn.classList.add('active');
+  document.getElementById('viewTitle').textContent = {
+    overview:'Overview',seller:'Seller Journey',buyer:'Buyer Journey',
+    admin:'Admin Journey',database:'Database',changelog:'Changelog'
+  }[view] || view;
+  renderContent();
+}
+
+function renderContent() {
+  var el = document.getElementById('content');
+  switch(currentView) {
+    case 'overview': el.innerHTML = renderOverview(); break;
+    case 'seller': el.innerHTML = renderJourney(DATA.seller); break;
+    case 'buyer': el.innerHTML = renderJourney(DATA.buyer); break;
+    case 'admin': el.innerHTML = renderJourney(DATA.admin); break;
+    case 'database': el.innerHTML = renderJourney(DATA.database); break;
+    case 'changelog': el.innerHTML = renderChangelog(); break;
+  }
+}
+
+function renderOverview() {
+  var allSteps = getAllSteps();
+  var total = allSteps.length;
+  var pass = allSteps.filter(function(s){return s.status==='pass'}).length;
+  var fail = allSteps.filter(function(s){return s.status==='fail'}).length;
+  var warn = allSteps.filter(function(s){return s.status==='warn'}).length;
+  var pending = allSteps.filter(function(s){return s.status==='pending'}).length;
+  var allIssues = [];
+  allSteps.forEach(function(s){s.issues.forEach(function(i){allIssues.push({step:s.name,issue:i})})});
+  DATA.crossCutting.forEach(function(c){c.issues.forEach(function(i){allIssues.push({step:c.name,issue:i})})});
+  var critical = allIssues.filter(function(i){return i.issue.sev==='critical'}).length;
+  var high = allIssues.filter(function(i){return i.issue.sev==='high'}).length;
+  var medium = allIssues.filter(function(i){return i.issue.sev==='medium'}).length;
+  var low = allIssues.filter(function(i){return i.issue.sev==='low'}).length;
+  var totalChanges = 0;
+  DATA.changelog.forEach(function(d){totalChanges+=d.entries.length});
+
+  var h = '<div class="stats-view">';
+  h += '<h2 style="font-size:24px;font-weight:800;margin-bottom:8px">Whistle AI Platform QA Overview</h2>';
+  h += '<p style="color:var(--text2);margin-bottom:32px">전체 서비스 상태 요약 — '+new Date().toLocaleDateString('ko-KR')+'</p>';
+
+  // Stats grid
+  h += '<div class="stats-grid">';
+  h += '<div class="stat-card"><div class="label">Total Features</div><div class="value">'+total+'</div><div class="sub">전체 기능 영역</div></div>';
+  h += '<div class="stat-card"><div class="label">Passed</div><div class="value green">'+pass+'</div><div class="sub">'+(total?Math.round(pass/total*100):0)+'% 통과</div></div>';
+  h += '<div class="stat-card"><div class="label">Warnings</div><div class="value yellow">'+warn+'</div><div class="sub">주의 필요</div></div>';
+  h += '<div class="stat-card"><div class="label">Failed</div><div class="value red">'+fail+'</div><div class="sub">수정 필요</div></div>';
+  h += '<div class="stat-card"><div class="label">Pending Audit</div><div class="value blue">'+pending+'</div><div class="sub">점검 대기</div></div>';
+  h += '<div class="stat-card"><div class="label">Total Changes</div><div class="value">'+totalChanges+'</div><div class="sub">수정 이력</div></div>';
+  h += '</div>';
+
+  // Issue summary
+  h += '<h3 style="font-size:16px;font-weight:700;margin:32px 0 16px">Issue Summary</h3>';
+  h += '<div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">';
+  h += '<div class="stat-card" style="border-left:3px solid var(--red)"><div class="label">Critical</div><div class="value red">'+critical+'</div></div>';
+  h += '<div class="stat-card" style="border-left:3px solid var(--orange)"><div class="label">High</div><div class="value" style="color:var(--orange)">'+high+'</div></div>';
+  h += '<div class="stat-card" style="border-left:3px solid var(--yellow)"><div class="label">Medium</div><div class="value yellow">'+medium+'</div></div>';
+  h += '<div class="stat-card" style="border-left:3px solid var(--text3)"><div class="label">Low</div><div class="value" style="color:var(--text3)">'+low+'</div></div>';
+  h += '</div>';
+
+  // Critical/High issues table
+  var critHigh = allIssues.filter(function(i){return i.issue.sev==='critical'||i.issue.sev==='high'});
+  if(critHigh.length) {
+    h += '<h3 style="font-size:16px;font-weight:700;margin:32px 0 16px">Critical & High Issues ('+critHigh.length+')</h3>';
+    h += '<table class="summary-table"><thead><tr><th>Severity</th><th>Area</th><th>Issue</th></tr></thead><tbody>';
+    critHigh.forEach(function(i){
+      h += '<tr><td><span class="sev '+i.issue.sev+'">'+i.issue.sev.toUpperCase()+'</span></td>';
+      h += '<td>'+esc(i.step)+'</td><td>'+esc(i.issue.text)+'</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  // Cross-cutting concerns
+  h += '<h3 style="font-size:16px;font-weight:700;margin:32px 0 16px">Cross-Cutting Concerns</h3>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">';
+  DATA.crossCutting.forEach(function(c){
+    h += '<div class="feature-card status-'+c.status+'">';
+    h += '<div class="card-header"><h3>'+esc(c.name)+'</h3><span class="status-badge '+c.status+'">'+statusLabel(c.status)+'</span></div>';
+    if(c.issues.length) {
+      h += '<div class="card-issues">';
+      c.issues.forEach(function(i){
+        h += '<div class="issue-item"><span class="sev '+i.sev+'">'+i.sev.toUpperCase().charAt(0)+'</span><span>'+esc(i.text)+'</span></div>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Files table
+  h += '<h3 style="font-size:16px;font-weight:700;margin:32px 0 16px">Project Files</h3>';
+  h += '<table class="summary-table"><thead><tr><th>File</th><th>Size</th><th>Role</th></tr></thead><tbody>';
+  DATA.meta.files.forEach(function(f){
+    h += '<tr><td style="font-family:monospace;font-size:11px">'+esc(f.name)+'</td><td>'+f.size+'</td><td>'+esc(f.role)+'</td></tr>';
+  });
+  h += '</tbody></table>';
+  h += '</div>';
+  return h;
+}
+
+function renderJourney(journey) {
+  var h = '<div class="journey-view">';
+  h += '<div class="journey-title"><h2>'+journey.icon+' '+esc(journey.label)+'</h2>';
+  var passCount = journey.steps.filter(function(s){return s.status==='pass'}).length;
+  h += '<span class="badge '+journey.badge+'">'+passCount+'/'+journey.steps.length+' Passed</span></div>';
+
+  h += '<div class="journey-flow">';
+  journey.steps.forEach(function(step, idx) {
+    h += '<div class="journey-step">';
+    h += renderFeatureCard(step, idx+1);
+    if(idx < journey.steps.length-1) h += '<div class="arrow">&#8594;</div>';
+    h += '</div>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
+function renderFeatureCard(step, num) {
+  var h = '<div class="feature-card status-'+step.status+'" onclick="showDetail(\''+step.id+'\')" id="card-'+step.id+'">';
+  h += '<div class="card-header"><h3>'+esc(step.name)+'</h3><span class="step-num">Step '+num+'</span></div>';
+  h += '<div style="font-size:11px;color:var(--text3);margin-bottom:6px">'+esc(step.nameKo)+' &middot; '+esc(step.file)+'</div>';
+  h += '<div class="card-status"><span class="status-badge '+step.status+'">'+statusLabel(step.status)+'</span>';
+  if(step.issues.length) h += '<span style="font-size:11px;color:var(--red)">'+step.issues.length+' issues</span>';
+  if(step.history.length) h += '<span style="font-size:11px;color:var(--blue)">'+step.history.length+' changes</span>';
+  h += '</div>';
+  h += '<div class="card-desc">'+esc(step.desc)+'</div>';
+
+  // Features list (collapsed)
+  h += '<div style="margin-bottom:8px"><div style="font-size:11px;font-weight:600;color:var(--text3);margin-bottom:4px">Features ('+step.features.length+')</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+  step.features.slice(0,6).forEach(function(f){
+    h += '<span style="font-size:10px;padding:2px 8px;background:var(--surface2);border-radius:4px;color:var(--text2)">'+esc(f)+'</span>';
+  });
+  if(step.features.length > 6) h += '<span style="font-size:10px;padding:2px 8px;color:var(--text3)">+'+(step.features.length-6)+' more</span>';
+  h += '</div></div>';
+
+  // Issues
+  if(step.issues.length) {
+    h += '<div class="card-issues">';
+    step.issues.forEach(function(i){
+      h += '<div class="issue-item"><span class="sev '+i.sev+'">'+i.sev.toUpperCase().charAt(0)+'</span><span>'+esc(i.text)+'</span></div>';
+    });
+    h += '</div>';
+  }
+
+  // Recent history
+  if(step.history.length) {
+    h += '<div class="card-meta">';
+    var last = step.history[0];
+    h += '<span>Last: '+last.date+(last.time?' '+last.time:'')+'</span>';
+    h += '<span class="changelog-tag '+last.type+'">'+last.type+'</span>';
+    h += '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderChangelog() {
+  var h = '<div class="changelog-view">';
+  h += '<h2 style="font-size:24px;font-weight:800;margin-bottom:8px">Change History</h2>';
+  h += '<p style="color:var(--text2);margin-bottom:32px">모든 수정 이력 — 날짜/시간별 기록</p>';
+
+  DATA.changelog.forEach(function(day) {
+    h += '<div class="changelog-day">';
+    h += '<div class="changelog-date"><span>'+day.date+'</span><span class="count">'+day.entries.length+' changes</span></div>';
+    day.entries.forEach(function(e) {
+      h += '<div class="changelog-entry">';
+      h += '<div class="changelog-time">'+(e.time||'—')+'</div>';
+      h += '<div class="changelog-content">';
+      h += '<h4>'+esc(e.title)+'</h4>';
+      h += '<p>'+esc(e.desc)+'</p>';
+      h += '<div class="changelog-tags">';
+      h += '<span class="changelog-tag '+e.type+'">'+e.type+'</span>';
+      if(e.commit) h += '<span class="changelog-tag" style="background:var(--surface3);color:var(--text3)">'+esc(e.commit)+'</span>';
+      h += '</div>';
+      if(e.files) h += '<div class="changelog-file">'+e.files.join(', ')+'</div>';
+      h += '</div></div>';
+    });
+    h += '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+// =====================================================
+// DETAIL MODAL
+// =====================================================
+function showDetail(id) {
+  var step = findStep(id);
+  if(!step) return;
+  var m = document.getElementById('modalContent');
+  var h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">';
+  h += '<div><h2>'+esc(step.name)+'</h2><p style="color:var(--text2);font-size:13px;margin-top:4px">'+esc(step.nameKo)+' &middot; '+esc(step.file)+'</p></div>';
+  h += '<button onclick="closeModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:24px;padding:4px">&times;</button>';
+  h += '</div>';
+
+  h += '<div class="card-status" style="margin-bottom:16px"><span class="status-badge '+step.status+'" style="font-size:13px;padding:4px 14px">'+statusLabel(step.status)+'</span></div>';
+  h += '<p style="color:var(--text2);line-height:1.7;margin-bottom:24px">'+esc(step.desc)+'</p>';
+
+  // All features
+  h += '<h3 style="font-size:14px;font-weight:700;margin-bottom:12px">Features ('+step.features.length+')</h3>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:24px">';
+  step.features.forEach(function(f){
+    h += '<span style="font-size:12px;padding:4px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px">'+esc(f)+'</span>';
+  });
+  h += '</div>';
+
+  // All issues
+  if(step.issues.length) {
+    h += '<h3 style="font-size:14px;font-weight:700;margin-bottom:12px;color:var(--red)">Issues ('+step.issues.length+')</h3>';
+    step.issues.forEach(function(i){
+      h += '<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;margin-bottom:8px;background:var(--surface2);border-radius:var(--radius-sm);border-left:3px solid '+(i.sev==='critical'?'var(--red)':i.sev==='high'?'var(--orange)':i.sev==='medium'?'var(--yellow)':'var(--text3)')+'">';
+      h += '<span class="sev '+i.sev+'" style="flex-shrink:0">'+i.sev.toUpperCase()+'</span>';
+      h += '<span style="font-size:13px;line-height:1.5">'+esc(i.text)+'</span></div>';
+    });
+  }
+
+  // Full history
+  if(step.history.length) {
+    h += '<h3 style="font-size:14px;font-weight:700;margin:24px 0 12px">Change History ('+step.history.length+')</h3>';
+    step.history.forEach(function(ch){
+      h += '<div class="changelog-entry" style="margin-bottom:8px">';
+      h += '<div class="changelog-time">'+ch.date+'<br>'+(ch.time||'')+'</div>';
+      h += '<div class="changelog-content"><p style="font-size:13px">'+esc(ch.text)+'</p>';
+      h += '<div class="changelog-tags" style="margin-top:6px">';
+      h += '<span class="changelog-tag '+ch.type+'">'+ch.type+'</span>';
+      if(ch.commit) h += '<span class="changelog-tag" style="background:var(--surface3);color:var(--text3)">'+esc(ch.commit)+'</span>';
+      h += '</div></div></div>';
+    });
+  }
+
+  m.innerHTML = h;
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+// =====================================================
+// SIDEBAR NAV
+// =====================================================
+function renderSidebar() {
+  var nav = document.getElementById('sidebarNav');
+  var sections = [
+    {key:'overview',label:'Overview',icon:'📊',steps:[]},
+    {key:'seller',label:DATA.seller.label,icon:DATA.seller.icon,steps:DATA.seller.steps},
+    {key:'buyer',label:DATA.buyer.label,icon:DATA.buyer.icon,steps:DATA.buyer.steps},
+    {key:'admin',label:DATA.admin.label,icon:DATA.admin.icon,steps:DATA.admin.steps},
+    {key:'database',label:DATA.database.label,icon:DATA.database.icon,steps:DATA.database.steps},
+    {key:'changelog',label:'Changelog',icon:'📝',steps:[]}
+  ];
+  var h = '';
+  sections.forEach(function(sec){
+    var issueCount = sec.steps.reduce(function(a,s){return a+s.issues.length},0);
+    h += '<div class="nav-group'+(sec.key===currentView?' open':'')+'" data-section="'+sec.key+'">';
+    h += '<div class="nav-group-header" onclick="toggleNavGroup(this.parentElement)">';
+    h += '<span class="icon">'+sec.icon+'</span>';
+    h += '<span>'+esc(sec.label.split('(')[0].trim())+'</span>';
+    if(issueCount) h += '<span class="count has-issues">'+issueCount+'</span>';
+    else if(sec.steps.length) h += '<span class="count">'+sec.steps.length+'</span>';
+    h += '<span class="arrow">&#9654;</span></div>';
+    if(sec.steps.length) {
+      h += '<div class="nav-group-items">';
+      sec.steps.forEach(function(step){
+        h += '<div class="nav-item" onclick="navTo(\''+sec.key+'\',\''+step.id+'\')" data-search="'+esc(step.name+' '+step.nameKo+' '+step.desc).toLowerCase()+'">';
+        h += '<span class="dot '+step.status+'"></span>';
+        h += '<span>'+esc(step.name)+'</span>';
+        if(step.issues.length) h += '<span style="margin-left:auto;font-size:10px;color:var(--red)">'+step.issues.length+'</span>';
+        h += '</div>';
+      });
+      h += '</div>';
+    } else {
+      h += '<div class="nav-group-items"><div class="nav-item" onclick="switchView(\''+sec.key+'\',document.querySelector(\'[data-view='+sec.key+']\'))"><span class="dot pass"></span><span>View</span></div></div>';
+    }
+    h += '</div>';
+  });
+  nav.innerHTML = h;
+}
+
+function toggleNavGroup(el) {
+  el.classList.toggle('open');
+}
+
+function navTo(section, stepId) {
+  switchView(section, document.querySelector('[data-view='+section+']'));
+  setTimeout(function(){
+    var card = document.getElementById('card-'+stepId);
+    if(card) card.scrollIntoView({behavior:'smooth',block:'center'});
+  },100);
+}
+
+function filterNav(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.nav-item').forEach(function(el){
+    var match = !q || (el.dataset.search||'').includes(q);
+    el.style.display = match ? '' : 'none';
+  });
+  if(q) document.querySelectorAll('.nav-group').forEach(function(g){g.classList.add('open')});
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+function expandAll() {
+  document.querySelectorAll('.nav-group').forEach(function(g){g.classList.add('open')});
+}
+function collapseAll() {
+  document.querySelectorAll('.nav-group').forEach(function(g){g.classList.remove('open')});
+}
+
+// =====================================================
+// HELPERS
+// =====================================================
+function getAllSteps() {
+  return [].concat(DATA.seller.steps, DATA.buyer.steps, DATA.admin.steps, DATA.database.steps);
+}
+
+function findStep(id) {
+  return getAllSteps().find(function(s){return s.id===id});
+}
+
+function statusLabel(s) {
+  return {pass:'PASS',fail:'FAIL',warn:'WARNING',fixed:'FIXED',pending:'PENDING'}[s]||s;
+}
+
+function esc(s) {
+  if(!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// =====================================================
+// INIT
+// =====================================================
+document.getElementById('lastUpdated').textContent = new Date().toLocaleString('ko-KR');
+renderSidebar();
+renderContent();
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+  if(e.key === 'Escape') closeModal();
+  if(e.key === '/' && !e.ctrlKey && document.activeElement.tagName !== 'INPUT') {
+    e.preventDefault();
+    document.getElementById('searchInput').focus();
+  }
+});
+</script>
+</body>
+</html>
