@@ -117,7 +117,8 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 "use strict";
 var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0');
 
-var RELAY_URL=(function(){if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return'http://localhost:3456';var stored=localStorage.getItem('relay_url');if(stored)return stored;try{var x=new XMLHttpRequest();x.open('GET','relay-url.txt?t='+Date.now(),false);x.send();if(x.status===200&&x.responseText.trim().startsWith('https://'))return x.responseText.trim();}catch(e){}return''})();
+var RELAY_URL=(function(){if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return'http://localhost:3456';return''})();
+(function(){if(RELAY_URL)return;fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null;}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY_URL=t;}}).catch(function(){});})();
 
 /* === UTILS === */
 var U={
@@ -636,7 +637,7 @@ function pgProducts(){
   '<div style="display:flex;gap:10px;margin-bottom:16px"><div class="search-box" style="flex:1"><input placeholder="제품명, 카테고리 검색..." value="'+S.searchFilter+'" oninput="Adm.setSearch(this.value)"></div></div>'+
   '<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>제품</th><th>유저</th><th>카테고리</th><th>FOB</th><th>MOQ</th><th>상태</th><th>날짜</th></tr></thead><tbody>'+
   (filtered.length?filtered.map(function(p){
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">'+(p.images&&p.images[0]?'<img src="'+p.images[0]+'" style="width:36px;height:36px;border-radius:6px;object-fit:cover">':'<div style="width:36px;height:36px;border-radius:6px;background:var(--w08);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>')+'<div><div style="font-weight:600">'+U.tr(p.name_ko,25)+'</div>'+(p.name_en?'<div style="font-size:11px;color:var(--w40)">'+U.tr(p.name_en,30)+'</div>':'')+'</div></div></td><td style="font-size:12px">'+getUserName(p.user_id)+'</td><td style="font-size:12px">'+(p.category||'\u2014')+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+(p.fob_price?U.usd(p.fob_price):'\u2014')+'</td><td style="font-size:12px">'+(p.moq||'\u2014')+'</td><td>'+UI.sb(p.status||'draft')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(p.created_at,'rel')+'</td></tr>';
+    return '<tr><td><div style="display:flex;align-items:center;gap:10px">'+(p.images&&p.images[0]&&/^https?:\/\//.test(p.images[0])?'<img src="'+U.esc(p.images[0])+'" style="width:36px;height:36px;border-radius:6px;object-fit:cover">':'<div style="width:36px;height:36px;border-radius:6px;background:var(--w08);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>')+'<div><div style="font-weight:600">'+U.tr(p.name_ko,25)+'</div>'+(p.name_en?'<div style="font-size:11px;color:var(--w40)">'+U.tr(p.name_en,30)+'</div>':'')+'</div></div></td><td style="font-size:12px">'+getUserName(p.user_id)+'</td><td style="font-size:12px">'+(p.category||'\u2014')+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+(p.fob_price?U.usd(p.fob_price):'\u2014')+'</td><td style="font-size:12px">'+(p.moq||'\u2014')+'</td><td>'+UI.sb(p.status||'draft')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(p.created_at,'rel')+'</td></tr>';
   }).join(''):'<tr><td colspan="7">'+UI.empty('📦','제품 없음','')+'</td></tr>')+
   '</tbody></table></div></div>';
 }
@@ -1304,7 +1305,8 @@ function deleteSR(id){
 function exportCSV(table){
   var data=S[table==='service_requests'?'serviceRequests':table]||[];
   if(!data.length){UI.toast('데이터 없음','warn');return;}
-  var keys=Object.keys(data[0]);
+  var sensitive=['stripe_customer_id','toss_billing_key','toss_customer_key','password','password_hash','billing_key','secret','token'];
+  var keys=Object.keys(data[0]).filter(function(k){return sensitive.indexOf(k)<0;});
   var csv=keys.join(',')+'\n';
   data.forEach(function(row){
     csv+=keys.map(function(k){var v=row[k];if(v==null)return'';v=String(v).replace(/"/g,'""');return v.indexOf(',')>=0||v.indexOf('\n')>=0?'"'+v+'"':v;}).join(',')+'\n';
@@ -1634,8 +1636,7 @@ sb.auth.onAuthStateChange(function(event, session){
 <!-- 실시간 문의 채팅 위젯 -->
 <script>
 (function(){
-  var RELAY=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':(typeof RELAY_URL!=='undefined'&&RELAY_URL?RELAY_URL:'');
-  if(!RELAY){try{var _x=new XMLHttpRequest();_x.open('GET','relay-url.txt?t='+Date.now(),false);_x.send();if(_x.status===200&&_x.responseText.trim().startsWith('https://'))RELAY=_x.responseText.trim();}catch(e){}}
+  function getRelay(){return(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':(typeof RELAY_URL!=='undefined'&&RELAY_URL?RELAY_URL:'');}
   var PAGE='admin';
   var open=false,step=0,msgs=[],info={name:'',email:'',phone:''};
   var el=document.createElement('div');el.id='wc-root';document.body.appendChild(el);
@@ -1656,7 +1657,7 @@ sb.auth.onAuthStateChange(function(event, session){
     html+='</div>';
     el.innerHTML=html;var mc=document.getElementById('wc-msgs');if(mc)mc.scrollTop=mc.scrollHeight;
   }
-  function bbl(f,t){return f==='bot'?'<div style="align-self:flex-start;max-width:85%;padding:10px 14px;border-radius:12px 12px 12px 4px;background:#111B2E;border:1px solid rgba(255,255,255,.06)"><div style="font-size:13px;color:rgba(255,255,255,.75);line-height:1.5">'+t+'</div></div>':'<div style="align-self:flex-end;max-width:85%;padding:10px 14px;border-radius:12px 12px 4px 12px;background:linear-gradient(135deg,#00D4FF20,#0088FF15);border:1px solid #00D4FF30"><div style="font-size:13px;color:rgba(255,255,255,.9);line-height:1.5">'+t+'</div></div>';}
+  function bbl(f,t){var et=esc(t);return f==='bot'?'<div style="align-self:flex-start;max-width:85%;padding:10px 14px;border-radius:12px 12px 12px 4px;background:#111B2E;border:1px solid rgba(255,255,255,.06)"><div style="font-size:13px;color:rgba(255,255,255,.75);line-height:1.5">'+et+'</div></div>':'<div style="align-self:flex-end;max-width:85%;padding:10px 14px;border-radius:12px 12px 4px 12px;background:linear-gradient(135deg,#00D4FF20,#0088FF15);border:1px solid #00D4FF30"><div style="font-size:13px;color:rgba(255,255,255,.9);line-height:1.5">'+et+'</div></div>';}
   function qb(a){var h='<div style="display:flex;flex-wrap:wrap;gap:6px">';for(var i=0;i<a.length;i++)h+='<div onclick="WC.pick(\''+esc(a[i])+'\')" style="padding:6px 12px;border-radius:8px;border:1px solid rgba(0,212,255,.3);background:rgba(0,212,255,.06);color:#00D4FF;font-size:12px;font-weight:600;cursor:pointer">'+a[i]+'</div>';return h+'</div>';}
   function esc(s){return String(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;');}
   var ar={'무료 분석이 궁금해요':'URL이나 이미지를 올리면 13개 섹션의 종합 수출 분석 리포트가 생성됩니다!','바우처 문의':'수출바우처·제조혁신바우처 공식 수행기관입니다. 정부 50~85% 부담.','알리바바 입점':'총판(200만원)과 독립(500만원) 두 모델. 바우처 최대 85% 절감.','기타 문의':'궁금한 내용을 입력해주세요. 담당자가 답변드립니다.'};
@@ -1664,7 +1665,7 @@ sb.auth.onAuthStateChange(function(event, session){
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:'더 자세한 상담을 원하시면 정보를 남겨주세요.'});step=1;}r();},
     submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){alert('이름/회사명을 입력해주세요.');return;}msgs.push({from:'bot',text:info.name+'님, 반갑습니다! 궁금한 점을 입력해주세요.'});step=2;r();},
-    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();fetch(RELAY+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(r){return r.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
+    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var relay=getRelay();if(!relay){msgs.push({from:'bot',text:'채팅 서비스 연결 중... 잠시 후 다시 시도해주세요.'});r();return;}fetch(relay+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(r){return r.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
   };r();
 })();
 </script>
