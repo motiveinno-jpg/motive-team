@@ -1059,7 +1059,7 @@ function showPF(p){
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'pm',title:p.id?'제품 수정':'제품 등록',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'pm\')">취소</button><button class="btn btn-pri" onclick="App.saveP(\''+(p.id||'')+'\')">저장</button>',width:'640px'}));UI.showModal('pm');
 }
 
-function prevImg(url){var box=document.getElementById('prodImgBox');if(box)box.innerHTML=url?'<img src="'+url+'" style="width:100%;height:100%;object-fit:cover">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:24px">📷</div><div style="font-size:10px">클릭</div></div>';}
+function prevImg(url){var box=document.getElementById('prodImgBox');if(box)box.innerHTML=url&&/^https?:\/\//.test(url)?'<img src="'+U.esc(url)+'" style="width:100%;height:100%;object-fit:cover">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:24px">📷</div><div style="font-size:10px">클릭</div></div>';}
 function prodImgFile(f){if(!f)return;var r=new FileReader();r.onload=function(e){var url=e.target.result;prevImg(url);var inp=document.querySelector('[name=image_url]');if(inp)inp.value=url;};r.readAsDataURL(f);}
 
 function saveP(id){
@@ -3035,7 +3035,7 @@ function pgOrders(){
   /* 주문 목록 — 필터 적용 */
   var filteredO=S.orders;
   if(_osFilt.status)filteredO=filteredO.filter(function(o){return o.status===_osFilt.status;});
-  if(_os.q){var _oq=_os.q.toLowerCase();filteredO=filteredO.filter(function(o){var bn=(S.buyers.find(function(b){return b.id===o.buyer_id;})||{}).company_name||'';return o.order_number.toLowerCase().indexOf(_oq)>=0||bn.toLowerCase().indexOf(_oq)>=0;});}
+  if(_os.q){var _oq=_os.q.toLowerCase();filteredO=filteredO.filter(function(o){var bn=(S.buyers.find(function(b){return b.id===o.buyer_id;})||{}).company_name||'';return (o.order_number||'').toLowerCase().indexOf(_oq)>=0||bn.toLowerCase().indexOf(_oq)>=0;});}
   var list='';
   if(filteredO.length){
     list=filteredO.map(function(o){
@@ -3495,10 +3495,10 @@ function viewMeeting(mid){
   h+='<div>📅 '+mt.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short'})+' '+mt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'</div>';
   h+='<div>⏱️ '+m.duration_min+'분</div>';
   if(buyer)h+='<div>🤝 '+U.esc(buyer.company_name)+'</div>';
-  if(pj)h+='<div>🚀 '+pj.name+'</div>';
-  if(m.location)h+='<div>📍 '+m.location+'</div>';
+  if(pj)h+='<div>🚀 '+U.esc(pj.name)+'</div>';
+  if(m.location)h+='<div>📍 '+U.esc(m.location)+'</div>';
   h+='</div>';
-  if(m.meeting_url)h+='<div style="margin-top:8px"><a href="'+m.meeting_url+'" target="_blank" class="btn btn-pri btn-sm">🔗 미팅 입장</a></div>';
+  if(m.meeting_url)h+='<div style="margin-top:8px"><a href="'+U.esc(m.meeting_url)+'" target="_blank" rel="noopener" class="btn btn-pri btn-sm">🔗 미팅 입장</a></div>';
   h+='</div>';
   /* AI 브리핑 */
   if(m.ai_briefing)h+='<div style="margin-bottom:12px;padding:12px;border-radius:10px;background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15)"><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:6px">🤖 AI 미팅 브리핑</div><div style="font-size:12px;color:var(--w70);white-space:pre-wrap">'+U.esc(m.ai_briefing)+'</div></div>';
@@ -3975,8 +3975,8 @@ function pgAlibabaOverview(){
       var stColor2={setup:'var(--w40)',active:'var(--ok)',paused:'var(--acc)',suspended:'var(--err)'}[st.status]||'var(--w40)';
       h+='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:6px;display:flex;align-items:center;gap:12px">';
       h+='<div style="width:8px;height:8px;border-radius:4px;background:'+stColor2+'"></div>';
-      h+='<div style="flex:1"><div style="font-weight:700;font-size:14px">'+(st.store_name||'미설정')+'</div><div style="font-size:11px;color:var(--w40)">상품 '+(st.products_listed||0)+'개 · 월 조회 '+(st.monthly_views||0)+'회 · 문의 '+(st.monthly_inquiries||0)+'건</div></div>';
-      if(st.store_url)h+='<a href="'+st.store_url+'" target="_blank" class="btn btn-ghost btn-sm">방문</a>';
+      h+='<div style="flex:1"><div style="font-weight:700;font-size:14px">'+U.esc(st.store_name||'미설정')+'</div><div style="font-size:11px;color:var(--w40)">상품 '+(st.products_listed||0)+'개 · 월 조회 '+(st.monthly_views||0)+'회 · 문의 '+(st.monthly_inquiries||0)+'건</div></div>';
+      if(st.store_url&&/^https?:\/\//.test(st.store_url))h+='<a href="'+U.esc(st.store_url)+'" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">방문</a>';
       h+='</div>';
     });
     h+='</div></div>';
@@ -4927,7 +4927,10 @@ function pushNotif(type,title,body,linkPage,linkId,telegram){
   S.notifications.unshift(n);
   if(S.notifications.length>30)S.notifications.pop();
   render();
-  fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:S.user.id,type:type,title:title,body:body||'',linkPage:linkPage||'',linkId:linkId||'',telegram:!!telegram})}).then(function(r){return r.json();}).then(function(d){if(d.ok&&d.id)n.id=d.id;}).catch(function(){});
+  fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:S.user.id,type:type,title:title,body:body||'',linkPage:linkPage||'',linkId:linkId||'',telegram:!!telegram})}).then(function(r){return r.json();}).then(function(d){if(d.ok&&d.id)n.id=d.id;}).catch(function(){
+    // Fallback: persist to Supabase directly if relay is down
+    sb.from('notifications').insert({user_id:S.user.id,type:type,title:title,body:body||null,link_page:linkPage||null,link_id:linkId||null,is_read:false}).select().single().then(function(r){if(r.data)n.id=r.data.id;});
+  });
 }
 
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
