@@ -4295,13 +4295,17 @@ function convertPItoOrder(docId){
     if(r.error||!r.data){UI.toast('서류 없음','err');return;}
     doc=r.data;if(doc.doc_type&&doc.doc_type!=='pi'){UI.toast('PI 서류만 주문으로 전환할 수 있습니다','warn');return;}
     var c=doc.data||doc.content||{};
-    if(!confirm('이 PI를 주문으로 전환하시겠습니까?\n'+c.doc_number+' / $'+(c.total||0).toLocaleString()))return;
+    var docNum=c.ref?c.ref.doc_no:(c.doc_number||'');
+    var docTotal=c.total||0;
+    var docPayment=c.ref?c.ref.payment:(c.payment_terms||'T/T 30% deposit');
+    var docTerms=c.ref?c.ref.terms:(c.incoterms||'FOB');
+    if(!confirm('이 PI를 주문으로 전환하시겠습니까?\n'+docNum+' / $'+(docTotal||0).toLocaleString()))return;
     var orderNum='WO-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6);
     var items=c.items||[];
     var data={user_id:S.user.id,buyer_id:doc.buyer_id||null,project_id:doc.project_id||null,
-      order_number:orderNum,items:items,total_amount:parseFloat(c.total)||0,
-      payment_terms:c.payment_terms||'T/T 30% deposit',incoterms:c.incoterms||'FOB',
-      notes:[{text:'PI #'+c.doc_number+'에서 전환',date:new Date().toISOString()}]};
+      order_number:orderNum,items:items,total_amount:parseFloat(docTotal)||0,
+      payment_terms:docPayment,incoterms:docTerms,
+      notes:[{text:'PI #'+docNum+'에서 전환',date:new Date().toISOString()}]};
     sb.from('orders').insert(data).select().then(function(or){
       if(or.error){UI.toast('주문 생성 실패: '+or.error.message,'err');return;}
       var newOrder=or.data&&or.data[0];
