@@ -96,7 +96,7 @@ function App() {
   const [anonTab, setAnonTab] = useState("file"); const [anonFile, setAnonFile] = useState(null); const [anonFilePreview, setAnonFilePreview] = useState(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false); const [analysisStage, setAnalysisStage] = useState(0);
   const [countdown, setCountdown] = useState(30); const [countdownActive, setCountdownActive] = useState(false); const [analysisExpired, setAnalysisExpired] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOver, setDragOver] = useState(false); const [uploadProgress, setUploadProgress] = useState(0);
   const [guideStep, setGuideStep] = useState(0);
   const fileInputRef = useRef(null);
   const countdownRef = useRef(null);
@@ -109,8 +109,9 @@ function App() {
   const isAllowedFile = (f) => { if (ALLOWED_TYPES.indexOf(f.type) >= 0) return true; const ext = "." + f.name.split(".").pop().toLowerCase(); return ALLOWED_EXT.indexOf(ext) >= 0; };
   const FILE_ICONS = { pdf: "\uD83D\uDCD5", csv: "\uD83D\uDCCA", txt: "\uD83D\uDCC4", xlsx: "\uD83D\uDCCA", xls: "\uD83D\uDCCA" };
   const getFileIcon = (f) => { const ext = f.name.split(".").pop().toLowerCase(); return FILE_ICONS[ext] || (f.type.startsWith("image/") ? null : "\uD83D\uDCCE"); };
-  const handleFileDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f && f.size > 10485760) { alert("파일 크기가 10MB를 초과합니다."); return; } if (f && isAllowedFile(f)) { setAnonFile(f); const reader = new FileReader(); reader.onload = (ev) => setAnonFilePreview(ev.target.result); reader.onerror = () => { alert("파일 읽기 실패. 다시 시도해주세요."); setAnonFile(null); setAnonFilePreview(null); }; reader.readAsDataURL(f); } else if (f) { alert("지원되는 파일: 이미지, PDF, CSV, 텍스트, Excel"); } };
-  const handleFileSelect = (e) => { const f = e.target.files[0]; if (f && f.size > 10485760) { alert("파일 크기가 10MB를 초과합니다."); return; } if (f && isAllowedFile(f)) { setAnonFile(f); const reader = new FileReader(); reader.onload = (ev) => setAnonFilePreview(ev.target.result); reader.onerror = () => { alert("파일 읽기 실패. 다시 시도해주세요."); setAnonFile(null); setAnonFilePreview(null); }; reader.readAsDataURL(f); } else if (f) { alert("지원되는 파일: 이미지, PDF, CSV, 텍스트, Excel"); } };
+  const readFileWithProgress = (f) => { setAnonFile(f); setUploadProgress(0); const reader = new FileReader(); reader.onprogress = (ev) => { if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100)); }; reader.onload = (ev) => { setUploadProgress(100); setAnonFilePreview(ev.target.result); }; reader.onerror = () => { alert("파일 읽기 실패. 다시 시도해주세요."); setAnonFile(null); setAnonFilePreview(null); setUploadProgress(0); }; reader.readAsDataURL(f); };
+  const handleFileDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f && f.size > 10485760) { alert("파일 크기가 10MB를 초과합니다."); return; } if (f && isAllowedFile(f)) { readFileWithProgress(f); } else if (f) { alert("지원되는 파일: 이미지, PDF, CSV, 텍스트, Excel"); } };
+  const handleFileSelect = (e) => { const f = e.target.files[0]; if (f && f.size > 10485760) { alert("파일 크기가 10MB를 초과합니다."); return; } if (f && isAllowedFile(f)) { readFileWithProgress(f); } else if (f) { alert("지원되는 파일: 이미지, PDF, CSV, 텍스트, Excel"); } };
 
   const startCountdown = () => { setCountdown(90); setCountdownActive(true); setAnalysisExpired(false);
     if (countdownRef.current) clearInterval(countdownRef.current);
@@ -322,7 +323,7 @@ function App() {
   );
 
   /* ═══ ANALYSIS MODAL — Genspark-style 30초 프리뷰 ═══ */
-  const stageLabels = ["웹사이트 접속 중...", "제품 정보 수집 중...", "시장 데이터 분석 중...", "수출 전략 수립 중...", "리포트 생성 중...", "분석 완료!"];
+  const stageLabels = anonTab === "file" ? ["파일 업로드 중...", "제품 정보 추출 중...", "시장 데이터 분석 중...", "수출 전략 수립 중...", "리포트 생성 중...", "분석 완료!"] : ["웹사이트 접속 중...", "제품 정보 수집 중...", "시장 데이터 분석 중...", "수출 전략 수립 중...", "리포트 생성 중...", "분석 완료!"];
   const analysisModal = showAnalysisModal && (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.85)", backdropFilter: "blur(12px)" }} />
@@ -610,6 +611,17 @@ function App() {
                       <div style={{ flex: 1, textAlign: "left" }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: T.w90 }}>{anonFile.name}</div>
                         <div style={{ fontSize: 11, color: T.w20, marginTop: 2 }}>{(anonFile.size / 1024).toFixed(0)}KB \u00B7 클릭하여 변경</div>
+                        {uploadProgress > 0 && uploadProgress < 100 && (
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ height: 4, background: T.w08, borderRadius: 2, overflow: "hidden" }}>
+                              <div style={{ width: uploadProgress + "%", height: "100%", background: `linear-gradient(90deg, ${T.pri}, ${T.acc})`, borderRadius: 2, transition: "width .3s ease" }} />
+                            </div>
+                            <div style={{ fontSize: 10, color: T.pri, marginTop: 2 }}>파일 읽는 중... {uploadProgress}%</div>
+                          </div>
+                        )}
+                        {uploadProgress >= 100 && (
+                          <div style={{ fontSize: 10, color: T.ok, marginTop: 4 }}>\u2705 파일 준비 완료</div>
+                        )}
                       </div>
                     </div>
                   ) : (
