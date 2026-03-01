@@ -230,8 +230,16 @@ var S={
   notifications:[],notifUnread:0,notifOpen:false,
   // deals / pipeline
   deals:[],matchings:[],samples:[],dealFilter:'all',
-  currentDeal:null,dealMessages:[],dealChatOpen:true
+  currentDeal:null,dealMessages:[],dealChatOpen:true,
+  // currency
+  currency:'USD'
 };
+var FX={USD:1,KRW:1400,JPY:155,AED:3.67,EUR:0.92,GBP:0.79};
+function fxConvert(usd,toCur){if(!usd||!toCur||toCur==='USD')return usd;var rate=FX[toCur];return rate?Math.round(usd*rate):usd;}
+function fxFormat(usd,cur){cur=cur||S.currency;if(!usd)return'Price on request';var v=fxConvert(parseFloat(usd),cur);var sym={USD:'$',KRW:'',JPY:'¥',AED:'AED ',EUR:'€',GBP:'£'};return(sym[cur]||'')+v.toLocaleString()+(cur==='KRW'?' KRW':'');}
+function fxFromKRW(krw,toCur){if(!krw)return 0;var usd=parseFloat(krw)/FX.KRW;if(toCur==='USD')return Math.round(usd*100)/100;return fxConvert(usd,toCur);}
+function fxFormatKRW(krw,cur){cur=cur||S.currency;if(!krw)return'—';if(cur==='KRW')return parseInt(krw).toLocaleString()+' KRW';var v=fxFromKRW(krw,cur);var sym={USD:'$',JPY:'¥',AED:'AED ',EUR:'€',GBP:'£'};return(sym[cur]||'')+(cur==='USD'?v.toFixed(2):Math.round(v).toLocaleString());}
+function setCurrency(c){S.currency=c;render();}
 
 function set(obj){for(var k in obj)S[k]=obj[k];render();}
 
@@ -722,6 +730,7 @@ function pgSearch(){
   h+='<select class="form-select" style="width:auto;min-width:100px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'maxPrice\',this.value)"><option value="">Any Price</option><option value="10"'+(sf.maxPrice==='10'?' selected':'')+'>Under $10</option><option value="25"'+(sf.maxPrice==='25'?' selected':'')+'>Under $25</option><option value="50"'+(sf.maxPrice==='50'?' selected':'')+'>Under $50</option><option value="100"'+(sf.maxPrice==='100'?' selected':'')+'>Under $100</option></select>';
   h+='<select class="form-select" style="width:auto;min-width:100px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'moq\',this.value)"><option value="">Any MOQ</option><option value="100"'+(sf.moq==='100'?' selected':'')+'>MOQ &lt; 100</option><option value="500"'+(sf.moq==='500'?' selected':'')+'>MOQ &lt; 500</option><option value="1000"'+(sf.moq==='1000'?' selected':'')+'>MOQ &lt; 1,000</option></select>';
   h+='<select class="form-select" style="width:auto;min-width:100px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'sort\',this.value)"><option value="newest"'+(sf.sort==='newest'?' selected':'')+'>Newest</option><option value="price_asc"'+(sf.sort==='price_asc'?' selected':'')+'>Price: Low→High</option><option value="price_desc"'+(sf.sort==='price_desc'?' selected':'')+'>Price: High→Low</option></select>';
+  h+='<select class="form-select" style="width:auto;min-width:80px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--acc)" onchange="B.setCurrency(this.value)"><option value="USD"'+(S.currency==='USD'?' selected':'')+'>$ USD</option><option value="KRW"'+(S.currency==='KRW'?' selected':'')+'>&#8361; KRW</option><option value="JPY"'+(S.currency==='JPY'?' selected':'')+'>&#165; JPY</option><option value="AED"'+(S.currency==='AED'?' selected':'')+'>AED</option><option value="EUR"'+(S.currency==='EUR'?' selected':'')+'>&#8364; EUR</option><option value="GBP"'+(S.currency==='GBP'?' selected':'')+'>&#163; GBP</option></select>';
   if(sf.category||sf.maxPrice||sf.moq){h+='<button class="btn btn-ghost btn-sm" onclick="B.clearFilters()" style="font-size:11px">Clear Filters</button>';}
   h+='</div>';
 
@@ -814,13 +823,13 @@ function renderProductCard(source,p,idx){
   }
   // Price
   if(source==='whistle'){
-    h+='<div style="margin-bottom:8px">'+(p.fob_price?'<span style="font-weight:800;color:var(--acc)">$'+p.fob_price+'</span><span style="font-size:10px;color:var(--w40)"> FOB/unit</span>':'<span style="font-size:12px;color:var(--w40)">Price on request</span>');
+    h+='<div style="margin-bottom:8px">'+(p.fob_price?'<span style="font-weight:800;color:var(--acc)">'+fxFormat(p.fob_price)+'</span><span style="font-size:10px;color:var(--w40)"> FOB/unit</span>':'<span style="font-size:12px;color:var(--w40)">Price on request</span>');
     if(p.moq)h+=' <span style="font-size:10px;color:var(--w40);margin-left:8px">MOQ: '+p.moq+'</span>';
     h+='</div>';
   } else {
     var priceKRW=parseInt(p.lprice)||0;
-    h+='<div style="margin-bottom:8px"><span style="font-weight:800;color:var(--acc)">'+priceKRW.toLocaleString()+'</span><span style="font-size:10px;color:var(--w40)"> KRW (retail)</span>';
-    if(p.hprice&&parseInt(p.hprice)>priceKRW)h+='<span style="font-size:10px;color:var(--w20);margin-left:4px">~'+parseInt(p.hprice).toLocaleString()+'</span>';
+    h+='<div style="margin-bottom:8px"><span style="font-weight:800;color:var(--acc)">'+fxFormatKRW(priceKRW)+'</span><span style="font-size:10px;color:var(--w40)"> (retail)</span>';
+    if(S.currency!=='KRW'&&priceKRW)h+='<span style="font-size:10px;color:var(--w20);margin-left:4px">'+priceKRW.toLocaleString()+' KRW</span>';
     h+='</div>';
   }
   // Certifications (whistle only)
@@ -948,7 +957,7 @@ function openProductDetail(source,idx){
     h+='<h3 style="font-size:18px;font-weight:800;margin-bottom:4px">'+esc(p.name_en||p.name_ko||'Product')+'</h3>';
     if(p.name_ko&&p.name_en)h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+esc(p.name_ko)+'</div>';
     h+='<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">';
-    if(p.fob_price)h+='<div><div style="font-size:11px;color:var(--w40)">FOB Price</div><div style="font-size:20px;font-weight:800;color:var(--acc)">$'+p.fob_price+'<span style="font-size:11px;font-weight:400;color:var(--w40)">/unit</span></div></div>';
+    if(p.fob_price)h+='<div><div style="font-size:11px;color:var(--w40)">FOB Price</div><div style="font-size:20px;font-weight:800;color:var(--acc)">'+fxFormat(p.fob_price)+'<span style="font-size:11px;font-weight:400;color:var(--w40)">/unit</span></div>'+(S.currency!=='USD'?'<div style="font-size:10px;color:var(--w20)">$'+p.fob_price+' USD</div>':'')+'</div>';
     if(p.moq)h+='<div><div style="font-size:11px;color:var(--w40)">MOQ</div><div style="font-size:20px;font-weight:800">'+p.moq.toLocaleString()+'</div></div>';
     h+='</div>';
     if(p.category)h+='<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--w40)">Category:</span> <span style="font-size:13px">'+esc(p.category)+'</span></div>';
@@ -964,7 +973,7 @@ function openProductDetail(source,idx){
     var cats=[p.category1,p.category2,p.category3].filter(Boolean).join(' > ');
     if(cats)h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+esc(cats)+'</div>';
     var pk=parseInt(p.lprice)||0;
-    h+='<div style="margin-bottom:16px"><div style="font-size:11px;color:var(--w40)">Retail Price (KRW)</div><div style="font-size:20px;font-weight:800;color:var(--acc)">'+pk.toLocaleString()+' <span style="font-size:11px;font-weight:400;color:var(--w40)">KRW</span></div></div>';
+    h+='<div style="margin-bottom:16px"><div style="font-size:11px;color:var(--w40)">Retail Price</div><div style="font-size:20px;font-weight:800;color:var(--acc)">'+fxFormatKRW(pk)+'</div>'+(S.currency!=='KRW'?'<div style="font-size:11px;color:var(--w40)">'+pk.toLocaleString()+' KRW</div>':'')+'</div>';
     if(p.maker)h+='<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--w40)">Maker:</span> <span style="font-size:13px">'+esc(p.maker)+'</span></div>';
     if(p.brand)h+='<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--w40)">Brand:</span> <span style="font-size:13px">'+esc(p.brand)+'</span></div>';
     if(p.mallName)h+='<div style="margin-bottom:8px"><span style="font-size:11px;color:var(--w40)">Seller:</span> <span style="font-size:13px">'+esc(p.mallName)+'</span></div>';
@@ -2506,6 +2515,7 @@ window.B={
   // Onboarding
   toggleBuyerCat:toggleBuyerCat,setBuyerExp:setBuyerExp,nextBuyerOb:nextBuyerOb,
   skipBuyerOnboarding:skipBuyerOnboarding,completeBuyerOnboarding:completeBuyerOnboarding,
+  setCurrency:setCurrency,
   _inqFilter:null
 };
 
