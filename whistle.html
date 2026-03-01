@@ -170,6 +170,32 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .deal-sb-section{padding:14px 16px;border-bottom:1px solid var(--bd)}
 .deal-sb-section-title{font-size:11px;font-weight:700;color:var(--w40);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
 @media(max-width:900px){.deal-sidebar{display:none}.deal-chat-main{width:100%}}
+/* === PROJECT SPLIT LAYOUT === */
+.pj-split{display:flex;height:calc(100vh - 120px);gap:0;border-radius:var(--r);overflow:hidden;border:1px solid var(--bd);background:var(--card)}
+.pj-left{width:380px;background:var(--bg2);border-right:1px solid var(--bd);overflow-y:auto;flex-shrink:0;display:flex;flex-direction:column}
+.pj-left-head{padding:16px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.pj-left-stages{flex:1;overflow-y:auto;padding:12px}
+.pj-left-foot{padding:12px;border-top:1px solid var(--bd);flex-shrink:0;display:flex;gap:6px;flex-wrap:wrap}
+.pj-right{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+.pj-right-head{padding:12px 20px;border-bottom:1px solid var(--bd);flex-shrink:0;display:flex;align-items:center;gap:10px;background:var(--card)}
+.pj-right-body{flex:1;overflow-y:auto;padding:20px}
+.pj-stage-item{padding:10px 12px;border-radius:10px;margin-bottom:4px;cursor:pointer;display:flex;align-items:center;gap:10px;border:2px solid transparent;transition:all .15s}
+.pj-stage-item:hover{background:var(--w08)}
+.pj-stage-item.done{opacity:.7}
+.pj-stage-item.done .pj-stage-node{background:var(--ok);border-color:var(--ok)}
+.pj-stage-item.active{background:rgba(0,212,255,.06);border-color:rgba(0,212,255,.25)}
+.pj-stage-item.active .pj-stage-node{background:var(--pri);border-color:var(--pri)}
+.pj-stage-item.locked{opacity:.4;cursor:default}
+.pj-stage-node{width:28px;height:28px;border-radius:50%;border:2.5px solid var(--w20);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:800;color:var(--bg);transition:all .15s}
+.pj-stage-info{flex:1;min-width:0}
+.pj-stage-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pj-stage-sub{font-size:10px;color:var(--w40);margin-top:1px}
+.pj-stage-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700;flex-shrink:0}
+.pj-right-chat{flex:1;display:flex;flex-direction:column;min-height:0}
+.pj-chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+.pj-chat-input{padding:10px 16px;border-top:1px solid var(--bd);flex-shrink:0}
+.pj-chat-actions{display:flex;gap:6px;padding:0 0 8px;overflow-x:auto;flex-wrap:wrap}
+@media(max-width:900px){.pj-left{width:100%;max-height:40vh}.pj-split{flex-direction:column;height:auto;max-height:calc(100vh - 80px)}}
 .float-chat-msg.bot{margin-right:auto}
 .float-chat-msg.user{margin-left:auto}
 .float-chat-msg .bubble{padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5}
@@ -1531,209 +1557,347 @@ function pgPjDetail(){
   var stIcon={planning:'📋',certification:'🏅',alibaba_listing:'🏪',buyer_search:'🔍',negotiation:'🤝',production:'🏭',shipping:'🚢',completed:'✅'};
   var ci=stages.indexOf(p.status);
   var sp=p.stage_progress||{};
-  /* 기존 프로젝트 호환: production이 없으면 자동 생성 */
-  if(!sp.production){
-    var _rmI=sp._roadmap||{};var _rm=getRoadmap(_rmI.category||'Other',_rmI.market||'US');
-    var _pItems=(_rm.production&&_rm.production.items)||STAGE_DEFAULTS.production.map(function(i){return i.text;});
-    sp.production=_pItems.map(function(item){var t=typeof item==='string'?item:item.text;return{text:t,done:false};});
-  }
+  if(!sp.production){var _rmI=sp._roadmap||{};var _rm=getRoadmap(_rmI.category||'Other',_rmI.market||'US');var _pItems=(_rm.production&&_rm.production.items)||STAGE_DEFAULTS.production.map(function(i){return i.text;});sp.production=_pItems.map(function(item){var t=typeof item==='string'?item:item.text;return{text:t,done:false};});}
   var rmInfo=sp._roadmap||{};
   var rm=getRoadmap(rmInfo.category||'Other',rmInfo.market||'US');
   var a=S.analyses.find(function(x){return x.id===p.analysis_id;});
-  var linked=S.serviceRequests.filter(function(sr){return (sr.details&&sr.details.project_id)===p.id;});
   var notes=p.notes||[];
-
-  /* 전체 진행률 계산 */
+  /* 전체 진행률 */
   var totalItems=0,totalDone=0;
-  stages.forEach(function(s,i){
-    var items=sp[s]||[];
-    totalItems+=items.length;
-    totalDone+=items.filter(function(it){return it.done;}).length;
-  });
+  stages.forEach(function(s){var items=sp[s]||[];totalItems+=items.length;totalDone+=items.filter(function(it){return it.done;}).length;});
   var totalPct=totalItems?Math.round(totalDone/totalItems*100):0;
-
-  /* 총 예상 비용 계산 */
-  var costMin=0,costMax=0;
-  stages.forEach(function(s){
-    var stRM=rm[s];if(!stRM||!stRM.cost||stRM.cost==='-')return;
-    var m=stRM.cost.match(/\$([\d,]+).*?([\d,]+)/);
-    if(m){costMin+=parseInt(m[1].replace(/,/g,''));costMax+=parseInt(m[2].replace(/,/g,''));}
-  });
-
-  /* Header */
-  var hdr='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><button class="btn btn-ghost btn-sm" onclick="App.set({currentProject:null})">← 목록</button><div style="flex:1"><h2 style="font-size:18px;font-weight:800;margin-bottom:2px">'+p.name+'</h2><div style="font-size:12px;color:var(--w40)">'+(rmInfo.category||'')+(rmInfo.market?' → '+U.cl(rmInfo.market):'')+'</div></div>'+UI.sb(p.status)+'</div>';
-
-  /* 요약 카드 */
-  var summaryCard='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.15)"><div class="card-b" style="padding:16px"><div style="display:flex;align-items:center;gap:16px;margin-bottom:14px"><div style="flex:1"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">전체 진행률</div><div style="display:flex;align-items:center;gap:10px"><div style="flex:1;height:10px;border-radius:5px;background:var(--w08)"><div style="height:100%;border-radius:5px;background:'+(totalPct===100?'var(--ok)':'var(--pri-g)')+';width:'+totalPct+'%;transition:width .5s ease"></div></div><span style="font-size:16px;font-weight:800;color:'+(totalPct===100?'var(--ok)':'var(--pri)')+';font-family:JetBrains Mono;min-width:45px">'+totalPct+'%</span></div></div></div><div style="display:flex;gap:12px;flex-wrap:wrap"><div style="padding:10px 14px;border-radius:10px;background:var(--w08);flex:1;min-width:120px"><div style="font-size:10px;color:var(--w40)">현재 단계</div><div style="font-size:14px;font-weight:700;color:var(--pri)">'+stIcon[stages[ci]]+(ci+1)+'/'+stages.length+' '+stL[stages[ci]]+'</div></div><div style="padding:10px 14px;border-radius:10px;background:var(--w08);flex:1;min-width:120px"><div style="font-size:10px;color:var(--w40)">타겟 시장</div><div style="font-size:14px;font-weight:700">'+(p.target_countries||[]).map(function(c){return U.cl(c);}).join(', ')+'</div></div>'+(costMin?'<div style="padding:10px 14px;border-radius:10px;background:var(--w08);flex:1;min-width:120px"><div style="font-size:10px;color:var(--w40)">예상 총비용</div><div style="font-size:14px;font-weight:700;color:var(--acc);font-family:JetBrains Mono">'+U.fmtUSD(costMin)+'~'+U.fmtUSD(costMax)+'</div></div>':'')+(a&&a.ai_result?'<div style="padding:10px 14px;border-radius:10px;background:var(--w08);flex:1;min-width:120px;cursor:pointer" onclick="App.viewA(\''+a.id+'\')"><div style="font-size:10px;color:var(--w40)">AI 분석</div><div style="font-size:14px;font-weight:700;color:var(--pri)">'+a.ai_result.overall_score+'점 →</div></div>':'')+'</div></div></div>';
-
-  /* 리스크 경고 */
-  var riskBanner='';
-  if(a&&a.ai_result&&a.ai_result.risks&&a.ai_result.risks.length){
-    var risks=a.ai_result.risks;
-    var highRisks=risks.filter(function(r){return r.severity==='high';});
-    riskBanner='<div class="card" style="margin-bottom:16px;border-color:rgba(255,82,82,.3);background:rgba(255,82,82,.04)"><div class="card-b" style="padding:14px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:18px">⚠️</span><span style="font-size:13px;font-weight:700;color:var(--err)">주의사항 '+risks.length+'건'+(highRisks.length?' (긴급 '+highRisks.length+'건)':'')+'</span></div>'+
-    risks.map(function(r){
-      var col=r.severity==='high'?'var(--err)':r.severity==='medium'?'var(--warn)':'var(--w40)';
-      var txt=(typeof r==='string')?r:(r.text||r.description||JSON.stringify(r));
-      return '<div style="display:flex;align-items:start;gap:8px;padding:6px 0;border-bottom:1px solid var(--w08)"><span style="width:8px;height:8px;border-radius:50%;background:'+col+';margin-top:4px;flex-shrink:0"></span><div style="flex:1;font-size:12px;color:var(--w60)">'+txt+'</div><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;flex-shrink:0" onclick="App.reqSvc(\'certification\')">전문가 상담</button></div>';
-    }).join('')+'</div></div>';
-  }
-
-  /* 수직형 여정 맵 */
-  var journey='<div style="position:relative;padding-left:40px">';
-  /* 수직 라인 */
-  var _stLen=stages.length-1;
-  journey+='<div style="position:absolute;left:17px;top:0;bottom:0;width:2px;background:linear-gradient(to bottom,var(--ok) '+(ci>0?Math.round(ci/_stLen*100):0)+'%,var(--pri) '+(ci>0?Math.round(ci/_stLen*100):0)+'%,var(--pri) '+(Math.round((ci+1)/(stages.length)*100))+'%,var(--w08) '+(Math.round((ci+1)/(stages.length)*100))+'%)"></div>';
-
-  stages.forEach(function(s,i){
-    var cur=i===ci;var done=i<ci;var locked=i>ci;
-    var items=sp[s]||[];
-    var doneCount=items.filter(function(it){return it.done;}).length;
-    var pct=items.length?Math.round(doneCount/items.length*100):0;
-    var stRM=rm[s]||{};
-    var svcMap={planning:'premium_analysis',certification:'certification',alibaba_listing:'alibaba',buyer_search:'matching',negotiation:'document',production:'sourcing',shipping:'logistics',completed:'email_support'};
-
-    /* 노드 원형 */
-    var nodeColor=done?'var(--ok)':cur?'var(--pri)':'var(--w20)';
-    var nodeBg=done?'var(--ok)':cur?'var(--pri)':'transparent';
-    var nodeInner=done?'<span style="color:var(--bg);font-size:12px;font-weight:900">✓</span>':(cur?'<span style="color:var(--bg);font-size:12px;font-weight:900">'+(i+1)+'</span>':'<span style="color:var(--w20);font-size:12px;font-weight:700">'+(i+1)+'</span>');
-
-    journey+='<div style="position:relative;margin-bottom:'+(i<stages.length-1?'12px':'0')+'">';
-    /* 원형 노드 */
-    journey+='<div style="position:absolute;left:-40px;top:14px;width:36px;height:36px;border-radius:50%;border:3px solid '+nodeColor+';background:'+nodeBg+';display:flex;align-items:center;justify-content:center;z-index:1">'+nodeInner+'</div>';
-
-    if(done){
-      /* 완료 단계: 축약형 */
-      journey+='<div style="padding:12px 16px;border-radius:12px;background:rgba(0,230,118,.04);border:1px solid rgba(0,230,118,.12);cursor:pointer" onclick="App.toggleJourneyStage(\''+s+'\')">';
-      journey+='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px">'+stIcon[s]+'</span><span style="font-size:14px;font-weight:700;color:var(--ok)">'+stL[s]+'</span>'+(p.alibaba_customer?(function(){var _sync=(p.alibaba_sync||{})[s]||{};var _ss=_sync.status||'not_applicable';var _sc={synced:'var(--ok)',pending:'var(--acc)',not_applicable:'var(--w20)'}[_ss]||'var(--w20)';var _sl={synced:'동기화됨',pending:'처리중',not_applicable:'—'}[_ss]||'—';return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.2);color:'+_sc+'">'+_sl+'</span>';})():'')+'<span style="font-size:11px;color:var(--ok);font-family:JetBrains Mono">완료 ✓</span><span style="margin-left:auto;font-size:12px;color:var(--w40)">'+(stRM.time||'')+'</span></div>';
-      /* 확장시 체크리스트 표시 */
-      journey+='<div id="stage-expand-'+s+'" style="display:none;margin-top:12px">'+renderJourneyChecklist(p,s,false)+'</div>';
-      journey+='</div>';
-    }else if(cur){
-      /* 현재 단계: 풀 확장 */
-      journey+='<div style="padding:16px 18px;border-radius:14px;background:rgba(0,212,255,.04);border:2px solid rgba(0,212,255,.2)">';
-      journey+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="font-size:18px">'+stIcon[s]+'</span><span style="font-size:15px;font-weight:800;color:var(--pri)">'+stL[s]+'</span>'+(p.alibaba_customer?(function(){var _sync=(p.alibaba_sync||{})[s]||{};var _ss=_sync.status||'not_applicable';var _sc={synced:'var(--ok)',pending:'var(--acc)',not_applicable:'var(--w20)'}[_ss]||'var(--w20)';var _sl={synced:'동기화됨',pending:'처리중',not_applicable:'—'}[_ss]||'—';return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.2);color:'+_sc+'">'+_sl+'</span>';})():'')+'<span style="font-size:12px;padding:3px 10px;border-radius:20px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:700">진행중</span>';
-      if(stRM.time)journey+='<span style="margin-left:auto;font-size:11px;color:var(--w40)">예상 '+stRM.time+'</span>';
-      journey+='</div>';
-
-      /* 진행률 바 */
-      journey+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><div style="flex:1;height:8px;border-radius:4px;background:var(--w08)"><div style="height:100%;border-radius:4px;background:'+(pct===100?'var(--ok)':'var(--pri)')+';width:'+pct+'%;transition:width .3s"></div></div><span style="font-size:12px;font-weight:700;color:'+(pct===100?'var(--ok)':'var(--pri)')+'">'+doneCount+'/'+items.length+'</span></div>';
-
-      /* 데이터 입력 경로 안내 (협상/생산/선적 단계) */
-      if(s==='negotiation'||s==='production'||s==='shipping'){
-        journey+='<div style="padding:10px 14px;border-radius:10px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.12);margin-bottom:12px">';
-        journey+='<div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:8px">📌 데이터 입력 경로</div>';
-        journey+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-        journey+='<div style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:3px">경로 A: 바이어 직접</div><div style="font-size:11px;color:var(--w50);line-height:1.5">바이어가 Whistle 채팅/이메일로 주문 → 자동 등록</div></div>';
-        journey+='<div style="flex:1;min-width:180px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:3px">경로 B: 모티브 수동입력</div><div style="font-size:11px;color:var(--w50);line-height:1.5">알리바바 셀러센터 확인 → Whistle에 AI 보조 입력</div></div>';
-        journey+='</div></div>';
-      }
-
-      /* 알리바바 입점 단계 특별 처리 */
-      if(s==='alibaba_listing'){
-        var aliInfo=p.alibaba_store||{};
-        journey+='<div style="padding:12px;border-radius:10px;background:rgba(255,152,0,.06);border:1px solid rgba(255,152,0,.15);margin-bottom:12px">';
-        journey+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:14px">🏪</span><span style="font-size:13px;font-weight:700">알리바바 스토어 현황</span></div>';
-        journey+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-        journey+='<div style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:3px">계정 유형</div><div style="font-size:13px;font-weight:600;color:var(--w90)">'+(aliInfo.account_type||'미설정')+'</div></div>';
-        journey+='<div style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:3px">등록 상품</div><div style="font-size:13px;font-weight:600;color:var(--w90)">'+(aliInfo.listed_count||0)+'개</div></div>';
-        journey+='<div style="flex:1;min-width:160px;padding:8px 12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:3px">스토어 상태</div><div style="font-size:13px;font-weight:600;color:'+(aliInfo.status==='active'?'var(--ok)':'var(--acc)')+'">'+(aliInfo.status==='active'?'운영중':'준비중')+'</div></div>';
-        journey+='</div></div>';
-      }
-
-      /* 인증 단계 특별 처리 */
-      if(s==='certification'){
-        var certs=sp.certs||[];
-        if(certs.length){
-          var certDone=certs.filter(function(c){return c.status==='approved';}).length;
-          journey+='<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:13px;font-weight:700">인증 현황</span>'+UI.badge(certDone+'/'+certs.length+' 취득','acc')+'<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="App.addCertItem(\''+p.id+'\')">+ 추가</button></div>';
-          certs.forEach(function(c,idx){
-            var stCol={pending:'var(--w40)',in_progress:'var(--acc)',submitted:'var(--pri)',approved:'var(--ok)',rejected:'var(--err)'};
-            var stDot=c.status==='approved'?'🟢':c.status==='in_progress'?'🟡':c.status==='submitted'?'🔵':c.status==='rejected'?'🔴':'⚪';
-            journey+='<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;margin-bottom:4px"><span style="font-size:14px">'+stDot+'</span><span style="font-size:13px;font-weight:600;flex:1;color:'+(stCol[c.status]||'var(--w70)')+'">'+c.name+'</span><select class="form-select" style="width:100px;padding:4px 8px;font-size:11px" onchange="App.setCertStatus(\''+p.id+'\','+idx+',this.value)"><option value="pending"'+(c.status==='pending'?' selected':'')+'>대기</option><option value="in_progress"'+(c.status==='in_progress'?' selected':'')+'>진행중</option><option value="submitted"'+(c.status==='submitted'?' selected':'')+'>제출됨</option><option value="approved"'+(c.status==='approved'?' selected':'')+'>취득</option><option value="rejected"'+(c.status==='rejected'?' selected':'')+'>반려</option></select></div>';
-          });
-          journey+='</div>';
-        }
-      }
-
-      /* 체크리스트 */
-      journey+=renderJourneyChecklist(p,s,true);
-
-      /* 팁 */
-      if(stRM.tip){
-        journey+='<div style="padding:12px;border-radius:10px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12);margin-top:12px"><div style="font-size:11px;font-weight:700;color:var(--acc);margin-bottom:4px">💡 TIP</div><div style="font-size:12px;color:var(--w70);line-height:1.6">'+stRM.tip+'</div></div>';
-      }
-
-      /* 비용 */
-      if(stRM.cost&&stRM.cost!=='-'){
-        journey+='<div style="display:flex;gap:12px;margin-top:12px;font-size:12px;color:var(--w40)"><span>💰 예상 비용: <strong style="color:var(--acc)">'+stRM.cost+'</strong></span>';
-        if(stRM.time)journey+='<span>⏱ 예상 소요: <strong style="color:var(--pri)">'+stRM.time+'</strong></span>';
-        journey+='</div>';
-      }
-
-      /* 액션 버튼 */
-      journey+='<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
-      journey+='<button class="btn btn-pri btn-sm" onclick="App.reqSvc(\''+svcMap[s]+'\')">🤖 대행 요청</button>';
-      if(s==='alibaba_listing'){journey+='<button class="btn btn-acc btn-sm" onclick="App.nav(\'alibaba\')">🏪 알리바바 관리</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.nav(\'products\')">📦 상품 관리</button>';}
-      if(s==='buyer_search')journey+='<button class="btn btn-acc btn-sm" onclick="App.nav(\'emailhub\')">✉️ 이메일 발송</button>';
-      if(s==='negotiation'){journey+='<button class="btn btn-acc btn-sm" onclick="App.openDocModal()">📄 서류 생성</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.openCostModal()">🧮 원가 계산</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.showOrderForm()">📋 주문 등록</button>';}
-      if(s==='production'){journey+='<button class="btn btn-acc btn-sm" onclick="App.nav(\'orders\')">📋 주문 관리</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.openDocModal()">📄 서류 생성</button>';}
-      if(s==='shipping'){journey+='<button class="btn btn-acc btn-sm" onclick="App.openDocModal()">📄 서류 생성</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.nav(\'tracking\')">📍 물류 추적</button>';journey+='<button class="btn btn-ghost btn-sm" onclick="App.nav(\'orders\')">📋 주문 관리</button>';}
-      if(pct===100){var nextStage=stages[i+1];if(nextStage)journey+='<button class="btn btn-ok btn-sm" onclick="App.setPjStage(\''+nextStage+'\')">다음 단계 →</button>';}
-      journey+='</div>';
-
-      journey+='</div>';
-    }else{
-      /* 잠금 단계: 미리보기 */
-      journey+='<div style="padding:12px 16px;border-radius:12px;background:var(--w08);border:1px solid var(--bd);opacity:.6">';
-      journey+='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:16px;filter:grayscale(1)">'+stIcon[s]+'</span><span style="font-size:14px;font-weight:600;color:var(--w40)">'+stL[s]+'</span>'+(p.alibaba_customer?(function(){var _sync=(p.alibaba_sync||{})[s]||{};var _ss=_sync.status||'not_applicable';var _sc={synced:'var(--ok)',pending:'var(--acc)',not_applicable:'var(--w20)'}[_ss]||'var(--w20)';var _sl={synced:'동기화됨',pending:'처리중',not_applicable:'—'}[_ss]||'—';return '<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.2);color:'+_sc+'">'+_sl+'</span>';})():'')+'<span style="font-size:10px;color:var(--w20);margin-left:auto">🔒</span></div>';
-      if(stRM.items||stRM.tip){
-        journey+='<div style="margin-top:8px;font-size:11px;color:var(--w20);line-height:1.6">';
-        var previewItems=(stRM.items||[]).slice(0,3).map(function(t){return typeof t==='string'?t:t.text;});
-        journey+=previewItems.join(' · ');
-        if((stRM.items||[]).length>3)journey+=' ...';
-        journey+='</div>';
-      }
-      if(stRM.time&&stRM.time!=='-')journey+='<div style="margin-top:4px;font-size:10px;color:var(--w20)">예상 '+stRM.time+' · '+stRM.cost+'</div>';
-      journey+='</div>';
-    }
-
-    journey+='</div>';
-  });
-  journey+='</div>';
-
-  /* 하단: 서비스 + 메모 + 액션 */
-  var svc='<div class="card" style="margin-top:16px;margin-bottom:14px"><div class="card-h"><span>💼 연결 서비스</span>'+UI.badge(linked.length+'건','pri')+'<button class="btn btn-pri btn-sm" style="margin-left:auto" onclick="App.reqSvcForPj(\''+p.id+'\')">+ 신청</button></div>'+(linked.length?'<div class="card-b" style="padding:10px">'+linked.map(function(sr){return '<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:var(--w08);margin-bottom:4px"><span>'+U.si(sr.service_type)+'</span><div style="flex:1"><span style="font-size:13px;font-weight:600">'+U.sl(sr.service_type)+'</span><span style="font-size:11px;color:var(--w40);margin-left:8px">'+U.fd(sr.created_at,'rel')+'</span></div>'+UI.sb(sr.status)+'</div>';}).join('')+'</div>':'')+'</div>';
-
-  var noteS='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>📝 메모</span><button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="App.addPjNote()">+ 추가</button></div><div class="card-b">'+(notes.length?notes.map(function(n,i){return '<div style="padding:8px;border-radius:8px;background:var(--w08);margin-bottom:6px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:10px;color:var(--w40)">'+U.fd(n.date,'rel')+'</span><button class="btn btn-danger btn-sm" onclick="App.rmPjNote('+i+')" style="font-size:10px;padding:2px 6px">✕</button></div><div style="font-size:13px;color:var(--w70);white-space:pre-wrap">'+n.text+'</div></div>';}).join(''):'<div style="text-align:center;padding:12px;color:var(--w40);font-size:12px">메모를 남겨 진행을 기록하세요</div>')+'</div></div>';
-
-  /* Project Chat Section */
+  /* 선택된 스테이지 (기본: 현재 단계) */
+  var viewStage=S._pjViewStage||stages[ci];
+  if(stages.indexOf(viewStage)<0)viewStage=stages[ci];
+  var vi=stages.indexOf(viewStage);
+  /* 바이어 매칭 여부 확인 */
+  var matchedBuyers=[];
+  (S.matchings||[]).forEach(function(m){if(m.user_id===S.user.id){var b=S.buyers.find(function(bb){return bb.id===m.buyer_id;});if(b)matchedBuyers.push({matching:m,buyer:b});}});
   var projectBuyers=(S.serviceRequests||[]).filter(function(m){return (m.details&&m.details.project_id)===p.id&&m.buyer_id;}).map(function(m){return m.buyer_id;}).concat((S.orders||[]).filter(function(o){return o.project_id===p.id&&o.buyer_id;}).map(function(o){return o.buyer_id;}));
-  var uniqueBuyers=[];
-  projectBuyers.forEach(function(bid){if(bid&&uniqueBuyers.indexOf(bid)<0)uniqueBuyers.push(bid);});
-  var chatSection='';
-  if(uniqueBuyers.length>0){
-    chatSection='<div class="card" style="margin-top:20px"><div class="card-h"><span>💬 프로젝트 채팅</span></div><div style="padding:16px">';
-    uniqueBuyers.forEach(function(bid){
-      var buyer=S.buyers.find(function(b){return b.id===bid;});
-      if(!buyer)return;
-      var lastMsg=S._chatLastMsgs&&S._chatLastMsgs[bid];
-      var unread=S._chatUnread&&S._chatUnread[bid]||0;
-      chatSection+='<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;background:var(--card);margin-bottom:8px;cursor:pointer" onclick="App.nav(\'chat\');setTimeout(function(){App.openChatRoom(\''+bid+'\')},100)">';
-      chatSection+='<div style="display:flex;align-items:center;gap:10px">';
-      chatSection+='<div style="width:36px;height:36px;border-radius:18px;background:rgba(0,212,255,.15);display:flex;align-items:center;justify-content:center;font-size:14px">💬</div>';
-      chatSection+='<div><div style="font-weight:600;font-size:13px;color:var(--w)">'+U.esc(buyer.company_name||buyer.contact_name||'Buyer')+'</div>';
-      chatSection+='<div style="font-size:11px;color:var(--w40);margin-top:2px">'+(lastMsg?U.tr(lastMsg.body||'',40):'대화 시작하기')+'</div></div></div>';
-      if(unread>0)chatSection+='<span class="badge badge-pri" style="font-size:10px">'+unread+'</span>';
-      chatSection+='</div>';
-    });
-    chatSection+='</div></div>';
+  matchedBuyers.forEach(function(mb){if(projectBuyers.indexOf(mb.buyer.id)<0)projectBuyers.push(mb.buyer.id);});
+  var uniqueBuyers=[];projectBuyers.forEach(function(bid){if(bid&&uniqueBuyers.indexOf(bid)<0)uniqueBuyers.push(bid);});
+  var hasBuyerMatch=uniqueBuyers.length>0;
+  var chatStages=['negotiation','production','shipping','completed'];
+  var showChat=hasBuyerMatch&&chatStages.indexOf(viewStage)>=0;
+
+  /* ========== LEFT PANEL ========== */
+  var left='<div class="pj-left">';
+  /* Left header: project info */
+  left+='<div class="pj-left-head">';
+  left+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="App.set({currentProject:null,_pjViewStage:null})" style="padding:4px 8px;font-size:12px">←</button><div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(p.name)+'</div><div style="font-size:10px;color:var(--w40)">'+(rmInfo.category||'')+(rmInfo.market?' → '+U.cl(rmInfo.market):'')+'</div></div></div>';
+  /* Progress bar */
+  left+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:6px;border-radius:3px;background:var(--w08)"><div style="height:100%;border-radius:3px;background:'+(totalPct===100?'var(--ok)':'var(--pri)')+';width:'+totalPct+'%"></div></div><span style="font-size:12px;font-weight:800;color:'+(totalPct===100?'var(--ok)':'var(--pri)')+';font-family:JetBrains Mono">'+totalPct+'%</span></div>';
+  /* Quick stats */
+  left+='<div style="display:flex;gap:8px;margin-top:8px;font-size:10px">';
+  left+='<div style="flex:1;padding:6px 8px;border-radius:6px;background:var(--w08);text-align:center"><div style="color:var(--w40)">단계</div><div style="font-weight:700;color:var(--pri)">'+(ci+1)+'/'+stages.length+'</div></div>';
+  left+='<div style="flex:1;padding:6px 8px;border-radius:6px;background:var(--w08);text-align:center"><div style="color:var(--w40)">시장</div><div style="font-weight:700">'+(p.target_countries||[]).slice(0,2).map(function(c){return U.cl(c);}).join(',')+'</div></div>';
+  if(a&&a.ai_result)left+='<div style="flex:1;padding:6px 8px;border-radius:6px;background:var(--w08);text-align:center;cursor:pointer" onclick="App.viewA(\''+a.id+'\')"><div style="color:var(--w40)">AI점수</div><div style="font-weight:700;color:var(--acc)">'+a.ai_result.overall_score+'</div></div>';
+  left+='</div>';
+  left+='</div>';
+
+  /* Stage list */
+  left+='<div class="pj-left-stages">';
+  stages.forEach(function(s,i){
+    var done=i<ci;var cur=i===ci;var locked=i>ci;
+    var items=sp[s]||[];var dc=items.filter(function(it){return it.done;}).length;var pct=items.length?Math.round(dc/items.length*100):0;
+    var stRM=rm[s]||{};
+    var isSelected=s===viewStage;
+    var cls='pj-stage-item'+(done?' done':'')+(cur?' active':'')+(locked?' locked':'');
+    if(isSelected)cls+=' active';
+
+    left+='<div class="'+cls+'" onclick="App.setPjViewStage(\''+s+'\')">';
+    /* Node circle */
+    var nodeBg=done?'var(--ok)':cur?'var(--pri)':'transparent';
+    var nodeCol=done?'var(--ok)':cur?'var(--pri)':'var(--w20)';
+    left+='<div class="pj-stage-node" style="background:'+nodeBg+';border-color:'+nodeCol+'">';
+    left+=done?'<span style="color:var(--bg);font-weight:900">✓</span>':'<span style="color:'+(cur?'var(--bg)':'var(--w20)')+'">'+stIcon[s]+'</span>';
+    left+='</div>';
+    /* Info */
+    left+='<div class="pj-stage-info"><div class="pj-stage-name" style="color:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w40)')+'">'+stL[s]+'</div>';
+    left+='<div class="pj-stage-sub">'+(done?'완료'+(stRM.time?' · '+stRM.time:''):cur?pct+'% · '+dc+'/'+items.length:(stRM.time||''))+'</div></div>';
+    /* Badge */
+    if(cur)left+='<span class="pj-stage-badge" style="background:rgba(0,212,255,.1);color:var(--pri)">진행중</span>';
+    else if(done)left+='<span class="pj-stage-badge" style="background:rgba(0,230,118,.1);color:var(--ok)">완료</span>';
+    else left+='<span class="pj-stage-badge" style="color:var(--w20)">🔒</span>';
+    left+='</div>';
+  });
+  left+='</div>';
+
+  /* Left footer: actions */
+  left+='<div class="pj-left-foot">';
+  left+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.addPjNote()">📝 메모</button>';
+  left+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.reqSvcForPj(\''+p.id+'\')">💼 서비스</button>';
+  left+='<button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--err)" onclick="App.delPj(\''+p.id+'\')">삭제</button>';
+  left+='</div>';
+  left+='</div>';
+
+  /* ========== RIGHT PANEL ========== */
+  var right='<div class="pj-right">';
+  /* Right header */
+  right+='<div class="pj-right-head">';
+  right+='<span style="font-size:18px">'+stIcon[viewStage]+'</span>';
+  right+='<div style="flex:1"><span style="font-size:15px;font-weight:800;color:'+(vi<=ci?'var(--pri)':'var(--w40)')+'">'+stL[viewStage]+'</span>';
+  var stRM=rm[viewStage]||{};
+  if(stRM.time)right+=' <span style="font-size:11px;color:var(--w40);margin-left:8px">'+stRM.time+'</span>';
+  right+='</div>';
+  /* Stage-specific header actions */
+  if(viewStage==='planning')right+='<button class="btn btn-pri btn-sm" onclick="App.nav(\'analysis\')">AI 수출분석</button>';
+  if(viewStage==='certification')right+='<button class="btn btn-pri btn-sm" onclick="App.addCertItem(\''+p.id+'\')">+ 인증 추가</button>';
+  if(viewStage==='buyer_search')right+='<button class="btn btn-pri btn-sm" onclick="document.getElementById(\'abf\')&&document.getElementById(\'abf\').dispatchEvent(new Event(\'submit\'))">AI 바이어 매칭</button>';
+  if(showChat)right+='<button class="btn btn-ghost btn-sm" onclick="App.openDocModal()">📄 서류</button>';
+  right+='</div>';
+
+  /* Right body — depends on stage */
+  if(showChat){
+    /* === CHAT MODE === */
+    right+=renderPjChat(p,viewStage,uniqueBuyers,stRM);
   }else{
-    chatSection='<div class="card" style="margin-top:20px"><div class="card-h"><span>💬 프로젝트 채팅</span></div><div style="padding:24px;text-align:center;color:var(--w20);font-size:13px">바이어 매칭 후 채팅이 활성화됩니다</div></div>';
+    right+='<div class="pj-right-body">';
+    right+=renderPjStageContent(p,viewStage,vi,ci,stages,sp,rm,a,notes);
+    right+='</div>';
+  }
+  right+='</div>';
+
+  return '<div class="pj-split">'+left+right+'</div>';
+}
+
+/* 프로젝트 스테이지 뷰 전환 */
+function setPjViewStage(stage){S._pjViewStage=stage;S._pjChatBuyer=null;S._pjChatMsgs=[];render();
+  /* 채팅 단계면 자동으로 첫 바이어 채팅 로드 */
+  var p=S.currentProject;if(!p)return;
+  var chatStages=['negotiation','production','shipping','completed'];
+  if(chatStages.indexOf(stage)<0)return;
+  var matchedBuyerIds=[];
+  (S.matchings||[]).forEach(function(m){if(m.user_id===S.user.id&&matchedBuyerIds.indexOf(m.buyer_id)<0)matchedBuyerIds.push(m.buyer_id);});
+  if(matchedBuyerIds.length>0)openPjChat(matchedBuyerIds[0]);
+}
+
+/* 프로젝트 내 채팅 열기 */
+function openPjChat(buyerId){
+  S._pjChatBuyer=buyerId;S._pjChatMsgs=[];render();
+  sb.from('messages').select('*').eq('user_id',S.user.id).eq('buyer_id',buyerId).order('created_at',{ascending:true}).limit(200).then(function(r){
+    S._pjChatMsgs=r.data||[];render();
+    setTimeout(function(){var el=document.getElementById('pj-chat-scroll');if(el)el.scrollTop=el.scrollHeight;},80);
+  });
+  /* Realtime subscription */
+  if(S._pjChatChannel)sb.removeChannel(S._pjChatChannel);
+  S._pjChatChannel=sb.channel('pj-chat-'+buyerId).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'buyer_id=eq.'+buyerId},function(payload){
+    var m=payload.new;if(!S._pjChatMsgs.find(function(x){return x.id===m.id;})){S._pjChatMsgs.push(m);render();setTimeout(function(){var el=document.getElementById('pj-chat-scroll');if(el)el.scrollTop=el.scrollHeight;},50);}
+    if(m.sender_type==='buyer')sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id);
+  }).subscribe();
+}
+
+/* 프로젝트 채팅 메시지 전송 */
+function sendPjChat(){
+  var inp=document.getElementById('pj-chat-input');if(!inp)return;
+  var text=inp.value.trim();if(!text)return;
+  var buyerId=S._pjChatBuyer;if(!buyerId)return;
+  inp.value='';
+  var tmp={id:'tmp_'+Date.now(),user_id:S.user.id,buyer_id:buyerId,body:text,sender_type:'seller',message_type:'text',created_at:new Date().toISOString()};
+  S._pjChatMsgs.push(tmp);render();
+  setTimeout(function(){var el=document.getElementById('pj-chat-scroll');if(el)el.scrollTop=el.scrollHeight;},20);
+  sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:text,sender_type:'seller',message_type:'text',channel:'platform',direction:'outbound'}).select().single().then(function(r){
+    if(r.error){UI.toast('전송 실패','err');S._pjChatMsgs=S._pjChatMsgs.filter(function(m){return m.id!==tmp.id;});render();return;}
+    var idx=S._pjChatMsgs.findIndex(function(m){return m.id===tmp.id;});if(idx>=0)S._pjChatMsgs[idx]=r.data;
+    S._chatLastMsgs[buyerId]=r.data;
+  });
+}
+
+/* 프로젝트 채팅 패널 렌더링 */
+function renderPjChat(p,viewStage,uniqueBuyers,stRM){
+  var h='';
+  var buyerId=S._pjChatBuyer||uniqueBuyers[0]||null;
+  if(!buyerId){
+    h+='<div class="pj-right-body" style="display:flex;align-items:center;justify-content:center"><div style="text-align:center;color:var(--w40)"><div style="font-size:48px;margin-bottom:12px">💬</div><div style="font-size:16px;font-weight:700;margin-bottom:4px">바이어 매칭 대기중</div><div style="font-size:13px">바이어 발굴 단계에서 AI 매칭을 실행하세요</div></div></div>';
+    return h;
+  }
+  var buyer=S.buyers.find(function(b){return b.id===buyerId;});
+  var buyerName=buyer?(buyer.company_name||buyer.contact_name||buyer.email):'Buyer';
+  var msgs=S._pjChatMsgs||[];
+
+  /* Buyer selector tabs (if multiple buyers) */
+  if(uniqueBuyers.length>1){
+    h+='<div style="display:flex;gap:4px;padding:8px 16px;border-bottom:1px solid var(--bd);overflow-x:auto;flex-shrink:0">';
+    uniqueBuyers.forEach(function(bid){
+      var b=S.buyers.find(function(bb){return bb.id===bid;});var bName=b?(b.company_name||b.contact_name||'Buyer'):'Buyer';
+      var isActive=bid===buyerId;
+      var unread=S._chatUnread&&S._chatUnread[bid]||0;
+      h+='<div onclick="App.openPjChat(\''+bid+'\')" style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:'+(isActive?'700':'500')+';cursor:pointer;white-space:nowrap;background:'+(isActive?'rgba(0,212,255,.1)':'var(--w08)')+';color:'+(isActive?'var(--pri)':'var(--w60)')+';border:1px solid '+(isActive?'rgba(0,212,255,.2)':'transparent')+'">'+U.esc(bName)+(unread>0?' <span style="background:var(--err);color:#fff;padding:1px 5px;border-radius:8px;font-size:9px">'+unread+'</span>':'')+'</div>';
+    });
+    h+='</div>';
   }
 
-  var acts='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px"><button class="btn btn-pri" onclick="App.reqSvcForPj(\''+p.id+'\')">💼 서비스</button><button class="btn btn-acc" onclick="App.nav(\'docgen\')">📄 서류</button><button class="btn btn-ghost" onclick="App.nav(\'emailhub\')">✉️ 이메일</button><button class="btn btn-ghost" onclick="App.nav(\'cost\')">🧮 비용 계산</button><button class="btn btn-danger" onclick="App.delPj(\''+p.id+'\')">🗑️ 삭제</button></div>';
-  return hdr+summaryCard+riskBanner+journey+svc+noteS+chatSection+acts;
+  /* Chat header */
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--bd);flex-shrink:0">';
+  h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--bg)">'+U.esc(buyerName.charAt(0))+'</div>';
+  h+='<div style="flex:1"><div style="font-size:13px;font-weight:700">'+U.esc(buyerName)+'</div><div style="font-size:10px;color:var(--ok)">● 온라인</div></div>';
+  h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openDealDocForm(\'pi\')">📄 서류</button>';
+  h+='</div>';
+
+  /* Messages */
+  h+='<div id="pj-chat-scroll" class="pj-chat-messages">';
+  if(!msgs.length){
+    h+='<div style="text-align:center;padding:40px 20px;color:var(--w40)"><div style="font-size:36px;margin-bottom:8px">💬</div><div style="font-size:14px;font-weight:600;margin-bottom:4px">대화를 시작하세요</div><div style="font-size:12px">바이어에게 인사하고 거래를 진행하세요!</div></div>';
+  }
+  msgs.forEach(function(m){
+    var isSeller=m.sender_type==='seller'||m.sender_type==='client';
+    var body=m.body||m.message||'';
+    var isSystem=m.msg_type==='system';
+    if(isSystem){
+      h+='<div style="text-align:center;padding:4px 0"><div style="display:inline-block;padding:4px 12px;border-radius:12px;background:var(--w04);font-size:11px;color:var(--w40)">'+UI.esc(body)+'</div></div>';
+    }else{
+      h+='<div style="display:flex;justify-content:'+(isSeller?'flex-end':'flex-start')+';align-items:flex-end;gap:4px">';
+      if(!isSeller)h+='<div style="width:26px;height:26px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(buyerName.charAt(0))+'</div>';
+      h+='<div style="max-width:70%;padding:10px 14px;border-radius:'+(isSeller?'14px 14px 4px 14px':'14px 14px 14px 4px')+';background:'+(isSeller?'var(--pri)':'var(--w08)')+';color:'+(isSeller?'#fff':'var(--w90)')+';font-size:13px;line-height:1.6">';
+      h+=UI.esc(body);
+      h+='<div style="font-size:9px;color:'+(isSeller?'rgba(255,255,255,.35)':'var(--w20)')+';margin-top:4px;text-align:right">'+new Date(m.created_at).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})+'</div>';
+      h+='</div></div>';
+    }
+  });
+  h+='</div>';
+
+  /* Action chips + Input */
+  h+='<div class="pj-chat-input">';
+  h+='<div class="pj-chat-actions">';
+  /* Stage-specific action chips */
+  if(viewStage==='negotiation'){
+    h+='<div class="deal-action-chip primary" onclick="App.openDealDocForm(\'pi\')">📄 견적서(PI)</div>';
+    h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'sc\')">📋 계약서</div>';
+    h+='<div class="deal-action-chip" onclick="App.openCostModal()">🧮 원가계산</div>';
+    h+='<div class="deal-action-chip" onclick="App.showOrderForm()">📋 주문등록</div>';
+  }else if(viewStage==='production'){
+    h+='<div class="deal-action-chip primary" onclick="App.openDealDocForm(\'pl\')">📦 패킹리스트</div>';
+    h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'ci\')">📄 상업송장</div>';
+    h+='<div class="deal-action-chip" onclick="App.nav(\'orders\')">📋 주문관리</div>';
+  }else if(viewStage==='shipping'){
+    h+='<div class="deal-action-chip primary" onclick="App.openDealDocForm(\'co\')">📜 원산지증명</div>';
+    h+='<div class="deal-action-chip" onclick="App.nav(\'tracking\')">📍 물류추적</div>';
+    h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'ci\')">📄 상업송장</div>';
+  }else if(viewStage==='completed'){
+    h+='<div class="deal-action-chip" style="opacity:.5;cursor:default">🎉 거래 완료</div>';
+  }
+  h+='</div>';
+  h+='<div style="display:flex;gap:8px"><input id="pj-chat-input" placeholder="메시지를 입력하세요..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:13px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:10px 18px">전송</button></div>';
+  h+='</div>';
+  return h;
+}
+
+/* 단계별 오른쪽 패널 콘텐츠 */
+function renderPjStageContent(p,viewStage,vi,ci,stages,sp,rm,a,notes){
+  var h='';var stRM=rm[viewStage]||{};var locked=vi>ci;
+
+  if(locked){
+    /* 잠금 단계: 미리보기 */
+    h+='<div style="text-align:center;padding:60px 20px;color:var(--w40)"><div style="font-size:48px;margin-bottom:12px;filter:grayscale(1)">🔒</div>';
+    h+='<div style="font-size:16px;font-weight:700;margin-bottom:8px">이전 단계를 완료해주세요</div>';
+    if(stRM.items){h+='<div style="font-size:13px;line-height:1.8;max-width:400px;margin:0 auto">';
+    (stRM.items||[]).slice(0,5).forEach(function(t){var txt=typeof t==='string'?t:t.text;h+='<div style="padding:4px 0;color:var(--w20)">'+txt+'</div>';});
+    h+='</div>';}
+    if(stRM.time)h+='<div style="margin-top:12px;font-size:12px">예상 '+stRM.time+(stRM.cost&&stRM.cost!=='-'?' · '+stRM.cost:'')+'</div>';
+    h+='</div>';
+    return h;
+  }
+
+  /* ===== PLANNING ===== */
+  if(viewStage==='planning'){
+    /* AI 분석 결과 요약 */
+    if(a&&a.ai_result){
+      var ar=a.ai_result;
+      h+='<div class="card" style="margin-bottom:14px;border-color:rgba(0,212,255,.15)"><div class="card-h"><span>🤖 AI 수출 분석 결과</span><button class="btn btn-pri btn-sm" onclick="App.viewA(\''+a.id+'\')">상세 보기 →</button></div><div class="card-b">';
+      h+='<div style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+      h+='<div style="flex:1;min-width:80px;text-align:center;padding:10px;border-radius:10px;background:var(--w08)"><div style="font-size:24px;font-weight:800;color:var(--pri)">'+ar.overall_score+'</div><div style="font-size:10px;color:var(--w40)">종합점수</div></div>';
+      if(ar.market_score)h+='<div style="flex:1;min-width:80px;text-align:center;padding:10px;border-radius:10px;background:var(--w08)"><div style="font-size:20px;font-weight:700;color:var(--acc)">'+ar.market_score+'</div><div style="font-size:10px;color:var(--w40)">시장성</div></div>';
+      if(ar.competitor_score)h+='<div style="flex:1;min-width:80px;text-align:center;padding:10px;border-radius:10px;background:var(--w08)"><div style="font-size:20px;font-weight:700;color:var(--ok)">'+ar.competitor_score+'</div><div style="font-size:10px;color:var(--w40)">경쟁력</div></div>';
+      h+='</div>';
+      if(ar.executive_summary)h+='<div style="font-size:12px;color:var(--w60);line-height:1.6;max-height:80px;overflow:hidden">'+U.esc(typeof ar.executive_summary==='string'?ar.executive_summary:ar.executive_summary.join(' '))+'</div>';
+      h+='</div></div>';
+    }else{
+      h+='<div class="card" style="margin-bottom:14px"><div class="card-b" style="text-align:center;padding:24px"><div style="font-size:36px;margin-bottom:8px">🤖</div><div style="font-size:14px;font-weight:700;margin-bottom:4px">AI 수출분석을 실행하세요</div><div style="font-size:12px;color:var(--w40);margin-bottom:14px">제품 URL 또는 정보를 입력하면 AI가 수출 가능성을 분석합니다</div><button class="btn btn-pri" onclick="App.nav(\'analysis\')">AI 수출분석 시작</button></div></div>';
+    }
+    /* Product info */
+    if(S.products.length>0){
+      var prod=S.products[0];
+      h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>📦 등록 제품</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'products\')">관리 →</button></div><div class="card-b">';
+      h+='<div style="display:flex;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:700">'+U.esc(prod.name_en||prod.name_ko||'')+'</div>';
+      if(prod.hs_code)h+='<div style="font-size:12px;color:var(--w40);margin-top:4px">HS코드: <strong>'+U.esc(prod.hs_code)+'</strong></div>';
+      if(prod.fob_price)h+='<div style="font-size:12px;color:var(--acc);margin-top:2px">FOB: $'+prod.fob_price+'</div>';
+      h+='</div></div></div></div>';
+    }
+    /* Checklist */
+    h+=renderStageChecklist(p,'planning');
+    /* Risks */
+    if(a&&a.ai_result&&a.ai_result.risks&&a.ai_result.risks.length){
+      h+='<div class="card" style="border-color:rgba(255,82,82,.2)"><div class="card-h" style="color:var(--err)">⚠️ 리스크</div><div class="card-b">';
+      a.ai_result.risks.forEach(function(r){var txt=(typeof r==='string')?r:(r.text||r.description||'');h+='<div style="font-size:12px;color:var(--w60);padding:4px 0;border-bottom:1px solid var(--w08)">'+txt+'</div>';});
+      h+='</div></div>';
+    }
+  }
+
+  /* ===== CERTIFICATION ===== */
+  else if(viewStage==='certification'){
+    h+=pgCertTracker(p);
+  }
+
+  /* ===== ALIBABA LISTING ===== */
+  else if(viewStage==='alibaba_listing'){
+    var aliInfo=p.alibaba_store||{};
+    h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>🏪 알리바바 스토어</span><button class="btn btn-acc btn-sm" onclick="App.nav(\'alibaba\')">관리 →</button></div><div class="card-b">';
+    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
+    h+='<div style="padding:12px;border-radius:8px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">계정 유형</div><div style="font-size:14px;font-weight:700;margin-top:4px">'+(aliInfo.account_type||'미설정')+'</div></div>';
+    h+='<div style="padding:12px;border-radius:8px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">등록 상품</div><div style="font-size:14px;font-weight:700;margin-top:4px">'+(aliInfo.listed_count||0)+'개</div></div>';
+    h+='<div style="padding:12px;border-radius:8px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">상태</div><div style="font-size:14px;font-weight:700;color:'+(aliInfo.status==='active'?'var(--ok)':'var(--acc)')+';margin-top:4px">'+(aliInfo.status==='active'?'운영중':'준비중')+'</div></div>';
+    h+='</div></div></div>';
+    h+=renderStageChecklist(p,'alibaba_listing');
+  }
+
+  /* ===== BUYER SEARCH ===== */
+  else if(viewStage==='buyer_search'){
+    /* AI 바이어 매칭 폼 */
+    var prod=S.products[0];
+    h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>🤖 AI 바이어 매칭</span></div><div class="card-b">';
+    h+='<form id="abf" onsubmit="event.preventDefault();App.findBuyersAI()">';
+    h+='<div class="grid-3">'+UI.sel('target_market','타겟 시장',[{value:'US',label:'미국'},{value:'JP',label:'일본'},{value:'EU',label:'EU'},{value:'CN',label:'중국'},{value:'SG',label:'싱가포르'},{value:'VN',label:'베트남'},{value:'TH',label:'태국'},{value:'AE',label:'UAE'},{value:'AU',label:'호주'},{value:'CA',label:'캐나다'}])+UI.sel('product_cat','카테고리',[{value:'Skincare',label:'스킨케어/화장품'},{value:'K-Food',label:'식품/음료'},{value:'Health Supplement',label:'건강기능식품'},{value:'Fashion',label:'패션/의류'},{value:'Electronics',label:'전자기기'},{value:'Home & Living',label:'생활용품'}])+UI.inp('fob_hint','FOB 단가(USD)',{type:'number',step:'0.01',placeholder:'4.50'})+'</div>';
+    h+='<button class="btn btn-pri btn-block" type="submit" style="margin-top:10px">AI 바이어 매칭 실행</button>';
+    h+='</form><div id="ai-buyers-result"></div></div></div>';
+    /* 매칭된 바이어 목록 */
+    if(S.buyers.filter(function(b){return b.source==='ai_generated';}).length>0){
+      h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>🤝 매칭 바이어</span><span style="font-size:12px;color:var(--w40)">'+S.buyers.filter(function(b){return b.source==='ai_generated';}).length+'건</span></div><div class="card-b">';
+      S.buyers.filter(function(b){return b.source==='ai_generated';}).slice(0,5).forEach(function(b){
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:var(--w08);margin-bottom:4px"><div style="width:32px;height:32px;border-radius:50%;background:rgba(0,212,255,.1);display:flex;align-items:center;justify-content:center;font-size:12px">🏢</div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(b.company_name)+'</div><div style="font-size:10px;color:var(--w40)">'+U.esc(b.country||'')+(b.trust_score?' · 매칭 '+b.trust_score+'점':'')+'</div></div></div>';
+      });
+      h+='</div></div>';
+    }
+    h+=renderStageChecklist(p,'buyer_search');
+    /* 이메일 발송 안내 */
+    h+='<div style="padding:14px;border-radius:10px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12)"><div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:4px">💡 바이어 발굴 팁</div><div style="font-size:12px;color:var(--w60);line-height:1.6">AI 매칭 후 이메일로 접근하세요. 바이어가 응답하면 자동으로 채팅이 활성화됩니다.</div><button class="btn btn-acc btn-sm" style="margin-top:8px" onclick="App.nav(\'emailhub\')">✉️ 이메일 발송</button></div>';
+  }
+
+  /* ===== NEGOTIATION/PRODUCTION/SHIPPING/COMPLETED (no chat — fallback) ===== */
+  else{
+    /* 바이어 미매칭 상태에서 협상 이후 단계 표시 */
+    h+='<div style="text-align:center;padding:40px 20px;color:var(--w40)"><div style="font-size:48px;margin-bottom:12px">💬</div>';
+    h+='<div style="font-size:16px;font-weight:700;margin-bottom:8px">바이어 매칭 후 채팅이 활성화됩니다</div>';
+    h+='<div style="font-size:13px;margin-bottom:16px">바이어 발굴 단계에서 AI 매칭을 실행하세요</div>';
+    h+='<button class="btn btn-pri" onclick="App.setPjViewStage(\'buyer_search\')">바이어 발굴로 이동</button></div>';
+    h+=renderStageChecklist(p,viewStage);
+  }
+
+  /* Tip + Notes (common across all non-chat stages) */
+  if(stRM.tip){
+    h+='<div style="padding:12px;border-radius:10px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12);margin-top:14px"><div style="font-size:11px;font-weight:700;color:var(--acc);margin-bottom:4px">💡 TIP</div><div style="font-size:12px;color:var(--w70);line-height:1.6">'+stRM.tip+'</div></div>';
+  }
+  if(stRM.cost&&stRM.cost!=='-'){
+    h+='<div style="display:flex;gap:12px;margin-top:10px;font-size:12px;color:var(--w40)"><span>💰 예상 비용: <strong style="color:var(--acc)">'+stRM.cost+'</strong></span>';
+    if(stRM.time)h+='<span>⏱ 소요: <strong style="color:var(--pri)">'+stRM.time+'</strong></span>';
+    h+='</div>';
+  }
+  /* Notes section */
+  if(notes.length>0){
+    h+='<div class="card" style="margin-top:14px"><div class="card-h"><span>📝 메모</span></div><div class="card-b">';
+    notes.slice(-3).forEach(function(n,i){h+='<div style="padding:6px;border-radius:6px;background:var(--w08);margin-bottom:4px;font-size:12px"><span style="color:var(--w40)">'+U.fd(n.date,'rel')+'</span> '+U.esc(n.text)+'</div>';});
+    h+='</div></div>';
+  }
+  return h;
 }
 
 /* 여정 체크리스트 렌더링 (인라인) */
@@ -6719,7 +6883,7 @@ function calcMarginSim(){
   el.innerHTML=h;
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,closeDeal:closeDeal,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,saveCompanyProfile:saveCompanyProfile,UI:UI};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,closeDeal:closeDeal,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,saveCompanyProfile:saveCompanyProfile,UI:UI};
 _handleTossCallback();
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);});
