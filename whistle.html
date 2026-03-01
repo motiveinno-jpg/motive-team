@@ -327,7 +327,7 @@ function reqExpertReview(docId){
 }
 
 /* === STATE === */
-var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],meetings:[],samples:[],shipments:[],paymentMilestones:[],alibabaStores:[],alibabaInquiries:[],savedDocs:[],receivedReviews:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400,_searchCache:{},_docPrefill:null,_actFilter:'all',_aiStartTime:null,_costCurrency:'USD',_showVoucher:false,_companyDocs:[],_chatBuyer:null,_chatMessages:[],_chatLastMsgs:{},_chatUnread:{},_chatBuyerFilter:'',marketplaceRequests:[],_myProposals:{},_marketFilter:'open',_viewMarketRequest:null,_loggingIn:false,_trendData:[],_trendDaily:[],_trendCountry:'all',_trendCategory:'all',_trendPeriod:'7d',_trendLoading:false,matchings:[],_sharedDocs:[],_deals:[],_dealFilter:'all',_currentDeal:null,_dealChatMsgs:[],_dealDocForm:null,_dealSampleAction:null,_dealOrderForm:false,_dealShipForm:false};
+var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],meetings:[],samples:[],shipments:[],paymentMilestones:[],alibabaStores:[],alibabaInquiries:[],savedDocs:[],receivedReviews:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400,_searchCache:{},_docPrefill:null,_actFilter:'all',_aiStartTime:null,_costCurrency:'USD',_showVoucher:false,_companyDocs:[],_chatBuyer:null,_chatMessages:[],_chatLastMsgs:{},_chatUnread:{},_chatBuyerFilter:'',marketplaceRequests:[],_myProposals:{},_marketFilter:'open',_viewMarketRequest:null,_loggingIn:false,_trendData:[],_trendDaily:[],_trendCountry:'all',_trendCategory:'all',_trendPeriod:'7d',_trendLoading:false,matchings:[],_sharedDocs:[],_deals:[],_dealFilter:'all',_currentDeal:null,_dealChatMsgs:[],_dealDocForm:null,_dealSampleAction:null,_dealOrderForm:false,_dealShipForm:false,_trendAutoFreq:'off',_trendReport:null,_trendReports:[],_trendReportLoading:false,_chatTranslations:{}};
 window._exRate=1400;
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -362,7 +362,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){loadChatSummaries();initChatRealtime();var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
       });
     });
   });
@@ -5365,6 +5365,191 @@ function loadTrends(){
 }
 function setTrendFilter(key,val){S[key]=val;loadTrends();}
 
+/* ── Trend Report: Auto-frequency setting ── */
+function setTrendAutoFreq(freq){
+  S._trendAutoFreq=freq;
+  // Persist preference
+  if(S.user){
+    sb.from('user_settings').upsert({user_id:S.user.id,setting_key:'trend_auto_freq',setting_value:freq},{onConflict:'user_id,setting_key'}).then(function(){});
+  }
+  if(freq!=='off'){
+    pushNotif('trend','트렌드 리포트 자동 발송 활성화',freq==='weekly'?'매주 월요일':'매월 1일'+' 자동 생성됩니다','trends');
+  }
+  render();
+}
+
+/* ── Trend Report: Generate AI Report ── */
+function genTrendReport(){
+  if(!S._trendData.length){UI.toast('트렌드 데이터가 없습니다. 바이어 검색이 쌓인 후 시도하세요.','error');return;}
+  S._trendReportLoading=true;render();
+
+  // Build report from current trend data
+  var top5=S._trendData.slice(0,5).map(function(d){
+    var topC=Object.keys(d.countries).sort(function(a,b){return d.countries[b]-d.countries[a];})[0]||'N/A';
+    var ctrPct=d.count?Math.round(d.clicks/d.count*100):0;
+    var insight=ctrPct>=30?'높은 구매 의향':'';
+    if(!insight&&d.count>=50)insight='검색량 급증';
+    if(!insight)insight=topC+' 중심';
+    return {keyword:d.keyword,count:d.count,clicks:d.clicks,ctr:ctrPct,top_country:topC,insight:insight};
+  });
+
+  var totalSearches=S._trendData.reduce(function(s,d){return s+d.count;},0);
+  var totalKw=S._trendData.length;
+  var allCountries={};
+  S._trendData.forEach(function(d){for(var c in d.countries)allCountries[c]=(allCountries[c]||0)+d.countries[c];});
+  var countrySorted=Object.keys(allCountries).sort(function(a,b){return allCountries[b]-allCountries[a];});
+  var topCountry=countrySorted[0]||'N/A';
+  var period=S._trendPeriod==='30d'?'30일':S._trendPeriod==='90d'?'90일':'7일';
+
+  // Use relay AI if available, otherwise generate locally
+  var prompt='다음 바이어 검색 트렌드 데이터를 분석하여 한국어로 수출 인사이트 리포트를 작성해주세요:\n';
+  prompt+='기간: 최근 '+period+'\n총 검색수: '+totalSearches+'\n고유 키워드: '+totalKw+'\n';
+  prompt+='상위 국가: '+countrySorted.slice(0,5).join(', ')+'\n';
+  prompt+='TOP 5 키워드: '+top5.map(function(k){return k.keyword+'('+k.count+'회,CTR:'+k.ctr+'%)';}).join(', ')+'\n';
+  prompt+='다음 형식으로 JSON 응답:\n{"summary":"200자 요약","market_insights":"시장분석 300자","recommendations":[{"icon":"이모지","title":"제목","desc":"설명"}]}';
+
+  fetch('http://localhost:3456/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:1024})})
+  .then(function(r){return r.json();})
+  .then(function(data){
+    var aiText=(data.content&&data.content[0]&&data.content[0].text)||'';
+    var parsed=null;
+    try{
+      var jsonMatch=aiText.match(/\{[\s\S]*\}/);
+      if(jsonMatch)parsed=JSON.parse(jsonMatch[0]);
+    }catch(e){}
+
+    var report={
+      id:'tr-'+Date.now(),
+      title:'AI 트렌드 리포트 — 최근 '+period+' ('+new Date().toLocaleDateString('ko-KR')+')',
+      generated_at:new Date().toISOString(),
+      period:S._trendPeriod,
+      total_searches:totalSearches,
+      top_keywords:top5,
+      summary:parsed&&parsed.summary?parsed.summary:'최근 '+period+' 동안 총 '+totalSearches+'건의 바이어 검색이 있었습니다. 가장 많은 검색은 '+topCountry+'에서 발생했으며, "'+top5[0].keyword+'" 키워드가 '+top5[0].count+'회로 1위를 기록했습니다. 전체적으로 '+totalKw+'개 고유 키워드에 걸쳐 활발한 소싱 활동이 감지됩니다.',
+      market_insights:parsed&&parsed.market_insights?parsed.market_insights:'주요 검색 국가: '+countrySorted.slice(0,3).join(', ')+'. '+(top5[0].ctr>=20?top5[0].keyword+' 키워드의 클릭률이 '+top5[0].ctr+'%로 높아 구매 전환 가능성이 큽니다. ':'')+'해당 키워드 관련 제품을 보유한 제조사는 적극적인 바이어 매칭을 추천합니다.',
+      recommendations:parsed&&parsed.recommendations?parsed.recommendations:[
+        {icon:'🎯',title:top5[0].keyword+' 관련 제품 등록',desc:'검색 1위 키워드에 맞는 제품을 등록하면 바이어 매칭 확률이 높아집니다.'},
+        {icon:'🌏',title:topCountry+' 시장 집중 공략',desc:'검색량이 가장 높은 '+topCountry+' 시장에 맞춘 인증 및 마케팅을 준비하세요.'},
+        {icon:'📦',title:'샘플 즉시 발송 준비',desc:'높은 CTR 키워드의 바이어에게 빠른 샘플 발송이 계약 전환의 핵심입니다.'},
+        {icon:'📊',title:'가격 경쟁력 확인',desc:'원가 계산기로 해당 시장 수출 가격을 시뮬레이션하고 경쟁력을 확보하세요.'}
+      ]
+    };
+
+    S._trendReport=report;
+    S._trendReports.unshift({id:report.id,title:report.title,created_at:report.generated_at});
+    S._trendReportLoading=false;
+
+    // Save to DB
+    if(S.user){
+      sb.from('trend_reports').insert({user_id:S.user.id,title:report.title,report_data:report,period:report.period}).then(function(){});
+    }
+
+    // Push notification
+    pushNotif('trend','AI 트렌드 리포트 생성 완료',report.title,'trends',null,true);
+    render();
+  })
+  .catch(function(){
+    // Fallback: generate without AI
+    var report={
+      id:'tr-'+Date.now(),
+      title:'트렌드 리포트 — 최근 '+period+' ('+new Date().toLocaleDateString('ko-KR')+')',
+      generated_at:new Date().toISOString(),
+      period:S._trendPeriod,
+      total_searches:totalSearches,
+      top_keywords:top5,
+      summary:'최근 '+period+' 동안 총 '+totalSearches+'건의 바이어 검색이 있었습니다. 가장 많은 검색은 '+topCountry+'에서 발생했으며, "'+top5[0].keyword+'" 키워드가 '+top5[0].count+'회로 1위를 기록했습니다.',
+      market_insights:'주요 검색 국가: '+countrySorted.slice(0,3).join(', ')+'. 해당 키워드 관련 제품을 보유한 제조사는 적극적인 바이어 매칭을 추천합니다.',
+      recommendations:[
+        {icon:'🎯',title:top5[0].keyword+' 관련 제품 등록',desc:'검색 1위 키워드에 맞는 제품을 등록하면 바이어 매칭 확률이 높아집니다.'},
+        {icon:'🌏',title:topCountry+' 시장 집중 공략',desc:'검색량이 가장 높은 '+topCountry+' 시장에 맞춘 인증 및 마케팅을 준비하세요.'},
+        {icon:'📦',title:'샘플 즉시 발송 준비',desc:'높은 CTR 키워드의 바이어에게 빠른 샘플 발송이 계약 전환의 핵심입니다.'}
+      ]
+    };
+    S._trendReport=report;
+    S._trendReports.unshift({id:report.id,title:report.title,created_at:report.generated_at});
+    S._trendReportLoading=false;
+    pushNotif('trend','트렌드 리포트 생성 완료',report.title,'trends',null,true);
+    render();
+  });
+}
+
+/* ── Trend Report: Load saved report ── */
+function loadTrendReport(id){
+  sb.from('trend_reports').select('*').eq('id',id).single().then(function(r){
+    if(r.data&&r.data.report_data){S._trendReport=r.data.report_data;render();}
+  });
+}
+
+/* ── Trend Report: Load report list on init ── */
+function loadTrendReports(){
+  if(!S.user)return;
+  sb.from('trend_reports').select('id,title,created_at').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(10).then(function(r){
+    S._trendReports=r.data||[];
+  });
+  // Load auto-freq setting
+  sb.from('user_settings').select('setting_value').eq('user_id',S.user.id).eq('setting_key','trend_auto_freq').single().then(function(r){
+    if(r.data)S._trendAutoFreq=r.data.setting_value;
+  });
+}
+
+/* ── Trend Report: Share via notification ── */
+function shareTrendReport(){
+  if(!S._trendReport){return;}
+  UI.toast('리포트가 팀 알림으로 공유되었습니다.','ok');
+  pushNotif('trend','📊 트렌드 리포트 공유',S._trendReport.title,'trends',null,true);
+}
+
+/* ── Trend Report: Download as formatted text (print-ready) ── */
+function downloadTrendReport(){
+  if(!S._trendReport)return;
+  var rp=S._trendReport;
+  var txt='═══════════════════════════════════════\n';
+  txt+='  '+rp.title+'\n';
+  txt+='  생성일: '+new Date(rp.generated_at).toLocaleString('ko-KR')+'\n';
+  txt+='═══════════════════════════════════════\n\n';
+  txt+='[요약]\n'+rp.summary+'\n\n';
+  txt+='[핫 키워드 TOP 5]\n';
+  if(rp.top_keywords)rp.top_keywords.forEach(function(k,i){
+    txt+=(i+1)+'. '+k.keyword+' — '+k.count+'회 검색 (CTR: '+k.ctr+'%) '+k.insight+'\n';
+  });
+  txt+='\n[시장 인사이트]\n'+(rp.market_insights||'')+'\n\n';
+  txt+='[추천 액션]\n';
+  if(rp.recommendations)rp.recommendations.forEach(function(r,i){
+    txt+=(i+1)+'. '+r.title+'\n   '+r.desc+'\n';
+  });
+  txt+='\n═══════════════════════════════════════\n';
+  txt+='Whistle AI — AI-Powered Export Platform\n';
+  txt+='© 2026 Motive Innovation Co., Ltd.\n';
+  var blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='trend-report-'+new Date().toISOString().slice(0,10)+'.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  UI.toast('리포트 다운로드 완료','ok');
+}
+
+/* ── Trend Report: Auto-send check (called on login) ── */
+function checkTrendAutoSend(){
+  if(!S.user||S._trendAutoFreq==='off')return;
+  var now=new Date();
+  var day=now.getDay();// 0=Sun,1=Mon
+  var date=now.getDate();
+  var shouldSend=false;
+  if(S._trendAutoFreq==='weekly'&&day===1)shouldSend=true;
+  if(S._trendAutoFreq==='monthly'&&date===1)shouldSend=true;
+  if(!shouldSend)return;
+  // Check if already sent today
+  var todayStr=now.toISOString().slice(0,10);
+  sb.from('trend_reports').select('id').eq('user_id',S.user.id).gte('created_at',todayStr).limit(1).then(function(r){
+    if(!r.data||r.data.length===0){
+      // Load trends data first, then generate
+      loadTrends();
+      setTimeout(function(){if(S._trendData.length)genTrendReport();},3000);
+    }
+  });
+}
+
 function pgTrends(){
   if(!S._trendData.length&&!S._trendLoading){loadTrends();}
   var h='';
@@ -5490,6 +5675,94 @@ function pgTrends(){
     h+='<td>'+spark+'</td></tr>';
   });
   h+='</tbody></table></div></div></div>';
+
+  // AI Trend Report Section
+  h+='<div class="card" style="margin-top:16px"><div class="card-h">📊 AI 트렌드 리포트</div><div class="card-b">';
+  h+='<div style="font-size:12px;color:var(--w60);margin-bottom:12px">바이어 검색 트렌드를 AI가 분석하여 상품 기획에 도움이 되는 인사이트 리포트를 생성합니다. 정기 자동 발송을 설정하면 매주/매월 자동으로 리포트가 생성됩니다.</div>';
+
+  // Auto-send settings
+  var autoFreq=S._trendAutoFreq||'off';
+  h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px;background:var(--w04);border-radius:var(--r-s);border:1px solid var(--bd)">';
+  h+='<div style="font-size:12px;font-weight:600;min-width:100px">🔔 자동 발송</div>';
+  h+='<select class="form-select" style="width:auto;min-width:140px" onchange="App.setTrendAutoFreq(this.value)">';
+  h+='<option value="off"'+(autoFreq==='off'?' selected':'')+'>비활성화</option>';
+  h+='<option value="weekly"'+(autoFreq==='weekly'?' selected':'')+'>매주 월요일</option>';
+  h+='<option value="monthly"'+(autoFreq==='monthly'?' selected':'')+'>매월 1일</option>';
+  h+='</select>';
+  h+='<div style="flex:1;font-size:11px;color:var(--w40)">'+(autoFreq!=='off'?'✅ 활성화됨 — 리포트가 알림으로 자동 발송됩니다':'설정하면 트렌드 리포트가 자동으로 생성·발송됩니다')+'</div>';
+  h+='</div>';
+
+  // Generate now button + recent reports
+  h+='<div style="display:flex;gap:8px;margin-bottom:16px">';
+  h+='<button class="btn btn-pri" onclick="App.genTrendReport()" '+(S._trendReportLoading?'disabled':'')+'>'+(S._trendReportLoading?'<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-right:6px"></span>생성 중...':'🤖 AI 트렌드 리포트 즉시 생성')+'</button>';
+  h+='</div>';
+
+  // Display generated report if exists
+  if(S._trendReport){
+    var rp=S._trendReport;
+    h+='<div style="border:1px solid var(--pri);border-radius:var(--r);padding:16px;background:rgba(0,212,255,.02)">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+    h+='<div style="font-size:14px;font-weight:700;color:var(--pri)">'+U.esc(rp.title)+'</div>';
+    h+='<div style="font-size:10px;color:var(--w40)">'+U.fd(rp.generated_at,'short')+'</div></div>';
+
+    // Executive Summary
+    h+='<div style="background:var(--w08);border-radius:var(--r-s);padding:12px;margin-bottom:12px">';
+    h+='<div style="font-size:11px;font-weight:600;margin-bottom:6px">📋 요약</div>';
+    h+='<div style="font-size:12px;color:var(--w70);line-height:1.7">'+U.esc(rp.summary)+'</div></div>';
+
+    // Top Keywords Insight
+    if(rp.top_keywords&&rp.top_keywords.length){
+      h+='<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;margin-bottom:8px">🔥 핫 키워드 TOP 5</div>';
+      rp.top_keywords.forEach(function(kw,i){
+        h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px">';
+        h+='<span style="width:22px;height:22px;border-radius:11px;background:var(--pri-g);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0">'+(i+1)+'</span>';
+        h+='<span style="font-weight:600;flex:1">'+U.esc(kw.keyword)+'</span>';
+        h+='<span style="color:var(--pri);font-weight:700">'+kw.count+'회</span>';
+        h+='<span style="color:var(--w40);font-size:10px">'+U.esc(kw.insight)+'</span>';
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+
+    // Market Insights
+    if(rp.market_insights){
+      h+='<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;margin-bottom:8px">🌍 시장 인사이트</div>';
+      h+='<div style="font-size:12px;color:var(--w70);line-height:1.7;white-space:pre-line">'+U.esc(rp.market_insights)+'</div></div>';
+    }
+
+    // Recommendations
+    if(rp.recommendations&&rp.recommendations.length){
+      h+='<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;margin-bottom:8px">💡 추천 액션</div>';
+      rp.recommendations.forEach(function(rec){
+        h+='<div style="display:flex;align-items:flex-start;gap:8px;padding:8px;margin-bottom:6px;border-radius:var(--r-s);background:var(--w04)">';
+        h+='<span style="font-size:14px;flex-shrink:0">'+rec.icon+'</span>';
+        h+='<div><div style="font-size:12px;font-weight:600;color:var(--w)">'+U.esc(rec.title)+'</div>';
+        h+='<div style="font-size:11px;color:var(--w60);margin-top:2px">'+U.esc(rec.desc)+'</div></div></div>';
+      });
+      h+='</div>';
+    }
+
+    h+='<div style="display:flex;gap:8px;margin-top:12px">';
+    h+='<button class="btn btn-ghost btn-sm" onclick="App.shareTrendReport()">📤 팀에게 공유</button>';
+    h+='<button class="btn btn-ghost btn-sm" onclick="App.downloadTrendReport()">📥 PDF 다운로드</button>';
+    h+='</div>';
+    h+='</div>';
+  }
+
+  // Recent reports list
+  if(S._trendReports&&S._trendReports.length){
+    h+='<div style="margin-top:16px"><div style="font-size:11px;font-weight:600;margin-bottom:8px">📁 이전 리포트</div>';
+    S._trendReports.slice(0,5).forEach(function(r){
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--bd);cursor:pointer" onclick="App.loadTrendReport(\''+r.id+'\')">';
+      h+='<span style="font-size:11px;color:var(--w40);min-width:80px">'+U.fd(r.created_at,'short')+'</span>';
+      h+='<span style="font-size:12px;font-weight:600;flex:1">'+U.esc(r.title||'트렌드 리포트')+'</span>';
+      h+='<span style="font-size:10px;color:var(--pri)">보기 →</span>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  h+='</div></div>';
 
   return h;
 }
@@ -5796,7 +6069,7 @@ function submitPartnership(){
   fetch(RELAY_URL+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(d){UI.toast('제휴 문의가 접수되었습니다. 담당자가 빠르게 연락드리겠습니다.','ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';}).catch(function(){UI.toast('전송 실패. 잠시 후 다시 시도해주세요.','err');});
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,closeDeal:closeDeal,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,closeDeal:closeDeal,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport};
 _handleTossCallback();
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);});
