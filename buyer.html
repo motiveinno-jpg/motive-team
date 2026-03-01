@@ -474,7 +474,17 @@ function renderNotifDropdown(){
 }
 
 /* === AUTH PAGE === */
+function doUpdatePassword(f){
+  var pw=f.newpw.value;if(pw.length<6)return set({authError:'Password must be at least 6 characters.'});
+  sb.auth.updateUser({password:pw}).then(function(r){
+    if(r.error)return set({authError:_authErr(r.error.message)});
+    set({_pwRecovery:false});toast('Password updated successfully!','ok');loadUser();
+  });
+}
 function pgAuth(){
+  if(S._pwRecovery){
+    return '<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><div class="auth-logo-icon">W</div><div><div class="auth-title">Whistle AI</div><div class="auth-sub">Set New Password</div></div></div>'+(S.authError?'<div class="auth-error">'+esc(S.authError)+'</div>':'')+'<form onsubmit="event.preventDefault();B.doUpdatePassword(this)"><div class="form-group"><label class="form-label">New Password</label><input class="form-input" name="newpw" type="password" placeholder="At least 6 characters" required></div><button class="btn btn-pri btn-block btn-lg" type="submit">Update Password</button></form></div></div>';
+  }
   var isL=S.authMode==='login';
   var h='<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><div class="auth-logo-icon">W</div><div><div class="auth-title">Whistle AI</div><div class="auth-sub">BUYER PORTAL</div></div></div>';
   h+='<div class="auth-tabs"><div class="auth-tab'+(isL?' active':'')+'" onclick="B.set({authMode:\'login\',authError:\'\'})">Sign In</div><div class="auth-tab'+(!isL?' active':'')+'" onclick="B.set({authMode:\'signup\',authError:\'\'})">Sign Up</div></div>';
@@ -493,10 +503,21 @@ function pgAuth(){
 }
 
 /* === AUTH ACTIONS === */
+var _authErrMap={
+  'Invalid login credentials':'Invalid email or password. Please check and try again.',
+  'Email not confirmed':'Please verify your email first. Check your inbox for the confirmation link.',
+  'User already registered':'This email is already registered. Try signing in instead.',
+  'Email rate limit exceeded':'Too many attempts. Please wait a moment and try again.',
+  'Invalid email':'Please enter a valid email address.',
+  'Signup requires a valid password':'Please enter a valid password (at least 6 characters).',
+  'Password should be at least 6':'Password must be at least 6 characters.',
+  'For security purposes':'For security, please wait a moment before trying again.'
+};
+function _authErr(msg){if(!msg)return msg;for(var k in _authErrMap){if(msg.indexOf(k)>=0)return _authErrMap[k];}return msg;}
 function doLogin(f){
   set({authError:'',_loggingIn:true});
   sb.auth.signInWithPassword({email:f.email.value,password:f.password.value}).then(function(r){
-    if(r.error){set({_loggingIn:false,authError:r.error.message==='Invalid login credentials'?'Invalid email or password':r.error.message});return;}
+    if(r.error){set({_loggingIn:false,authError:_authErr(r.error.message)});return;}
     set({_loggingIn:false});
     loadUser();
   }).catch(function(){set({_loggingIn:false,authError:'Login failed. Please try again.'});});
@@ -505,7 +526,7 @@ function doSignup(f){
   if(f.password.value.length<6)return set({authError:'Password must be at least 6 characters'});
   set({authError:''});
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:{role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value}}}).then(function(r){
-    if(r.error)return set({authError:r.error.message.includes('already registered')?'Email already registered':r.error.message});
+    if(r.error)return set({authError:_authErr(r.error.message)});
     // Also upsert into users table
     var uid=r.data&&r.data.user?r.data.user.id:null;
     if(uid){
@@ -522,7 +543,7 @@ function socialLogin(provider){
 }
 function doReset(f){
   sb.auth.resetPasswordForEmail(f.email.value).then(function(r){
-    if(r.error)return set({authError:r.error.message});
+    if(r.error)return set({authError:_authErr(r.error.message)});
     toast('Reset link sent to your email','ok');
     set({authMode:'login'});
   });
@@ -2444,6 +2465,7 @@ try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from(
 sb.auth.onAuthStateChange(function(event,session){
   if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){loadUser();}
   else if(event==='SIGNED_OUT'){S.user=null;S.loading=false;render();}
+  else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
 });
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user)nav(hp);});
 loadUser();
@@ -2519,7 +2541,7 @@ function submitPartnership(){
 /* === PUBLIC API === */
 window.B={
   set:set,render:render,nav:nav,
-  doLogin:doLogin,doSignup:doSignup,doReset:doReset,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,
+  doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,
   doSearch:doSearch,quickSearch:quickSearch,setSource:setSource,setFilter:setFilter,clearFilters:clearFilters,openProductDetail:openProductDetail,
   openInquiry:openInquiry,openCustomSourcing:openCustomSourcing,submitInquiry:submitInquiry,closeModal:closeModal,
   saveProduct:saveProduct,unsaveProduct:unsaveProduct,
