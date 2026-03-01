@@ -327,7 +327,7 @@ function reqExpertReview(docId){
 }
 
 /* === STATE === */
-var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],meetings:[],samples:[],shipments:[],paymentMilestones:[],alibabaStores:[],alibabaInquiries:[],savedDocs:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400,_searchCache:{},_docPrefill:null,_actFilter:'all',_aiStartTime:null,_costCurrency:'USD',_showVoucher:false,_companyDocs:[],_chatBuyer:null,_chatMessages:[],_chatLastMsgs:{},_chatUnread:{},_chatBuyerFilter:'',marketplaceRequests:[],_myProposals:{},_marketFilter:'open',_viewMarketRequest:null,_loggingIn:false,_trendData:[],_trendDaily:[],_trendCountry:'all',_trendCategory:'all',_trendPeriod:'7d',_trendLoading:false};
+var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],meetings:[],samples:[],shipments:[],paymentMilestones:[],alibabaStores:[],alibabaInquiries:[],savedDocs:[],receivedReviews:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400,_searchCache:{},_docPrefill:null,_actFilter:'all',_aiStartTime:null,_costCurrency:'USD',_showVoucher:false,_companyDocs:[],_chatBuyer:null,_chatMessages:[],_chatLastMsgs:{},_chatUnread:{},_chatBuyerFilter:'',marketplaceRequests:[],_myProposals:{},_marketFilter:'open',_viewMarketRequest:null,_loggingIn:false,_trendData:[],_trendDaily:[],_trendCountry:'all',_trendCategory:'all',_trendPeriod:'7d',_trendLoading:false};
 window._exRate=1400;
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -362,7 +362,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals()]).then(function(){loadChatSummaries();initChatRealtime();var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews()]).then(function(){loadChatSummaries();initChatRealtime();var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
       });
     });
   });
@@ -574,6 +574,24 @@ function pgDash(){
     h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')"><span style="font-size:16px">'+typeIcon+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(m.title,25)+'</div><div style="font-size:11px;color:var(--w40)">'+(buyer?buyer.company_name:'—')+' · '+dtStr+'</div></div>'+(isToday?'<span class="badge badge-acc" style="font-size:10px">오늘</span>':'')+'</div>';
   });}
   h+='</div></div></div>';
+  /* 받은 리뷰 위젯 */
+  if(S.receivedReviews.length){
+    var avgRating=S.receivedReviews.reduce(function(s,rv){return s+rv.rating;},0)/S.receivedReviews.length;
+    h+='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>⭐ 바이어 리뷰</span>'+UI.badge(S.receivedReviews.length+'건','acc')+'</div><div class="card-b">';
+    h+='<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px"><div style="text-align:center"><div style="font-size:28px;font-weight:800;color:var(--acc)">'+avgRating.toFixed(1)+'</div><div style="font-size:20px">'+('⭐'.repeat(Math.round(avgRating)))+'</div><div style="font-size:10px;color:var(--w40)">'+S.receivedReviews.length+'개 평가</div></div>';
+    h+='<div style="flex:1">';
+    [5,4,3,2,1].forEach(function(star){var cnt=S.receivedReviews.filter(function(rv){return rv.rating===star;}).length;var pct=Math.round((cnt/S.receivedReviews.length)*100);h+='<div style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="color:var(--w40);width:12px">'+star+'</span><div style="flex:1;height:6px;background:var(--w08);border-radius:3px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:var(--acc);border-radius:3px"></div></div><span style="color:var(--w30);width:24px;text-align:right">'+cnt+'</span></div>';});
+    h+='</div></div>';
+    S.receivedReviews.slice(0,3).forEach(function(rv){
+      h+='<div style="padding:8px 0;border-top:1px solid var(--w08)">';
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+('⭐'.repeat(rv.rating))+'<span style="font-size:10px;color:var(--w30)">'+U.fd(rv.created_at,'rel')+'</span></div>';
+      if(rv.title)h+='<div style="font-size:12px;font-weight:600;margin-bottom:2px">'+U.esc(rv.title)+'</div>';
+      if(rv.content)h+='<div style="font-size:11px;color:var(--w60);line-height:1.5">'+U.esc(rv.content).substring(0,120)+'</div>';
+      if(rv.tags&&rv.tags.length)h+='<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">'+rv.tags.map(function(t){return'<span style="font-size:9px;padding:2px 6px;border-radius:8px;background:rgba(0,212,255,.08);color:var(--pri)">'+U.esc(t)+'</span>';}).join('')+'</div>';
+      h+='</div>';
+    });
+    h+='</div></div>';
+  }
   /* 주문+서비스 행 */
   h+='<div class="grid-2">';
   h+='<div class="card"><div class="card-h">📋 주문 현황</div><div class="card-b">';
@@ -2077,6 +2095,17 @@ function loadAlibabaStores(){return sb.from('alibaba_stores').select('*').eq('us
 function loadAlibabaInquiries(){return sb.from('alibaba_inquiries').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){S.alibabaInquiries=r.data||[];});}
 function loadDocs(){return sb.from('documents').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(30).then(function(r){S.savedDocs=r.data||[];});}
 
+function loadReceivedReviews(){
+  if(!S.user)return Promise.resolve();
+  return sb.from('reviews').select('*').eq('target_type','matching').order('created_at',{ascending:false}).limit(50).then(function(r){
+    var all=r.data||[];
+    var myMatchIds={};
+    (S.buyers||[]).forEach(function(b){
+      (b.matchings||[]).forEach(function(m){myMatchIds[m.id]=true;});
+    });
+    S.receivedReviews=all.filter(function(rv){return myMatchIds[rv.target_id];});
+  });
+}
 
 /* === BUYER CHAT === */
 function pgChat(){

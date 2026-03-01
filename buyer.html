@@ -245,6 +245,8 @@ var S={
   // deals / pipeline
   deals:[],matchings:[],samples:[],dealFilter:'all',
   currentDeal:null,dealMessages:[],dealChatOpen:true,
+  // reviews
+  reviews:[],reviewDraft:{rating:0,title:'',content:'',tags:[]},
   // currency
   currency:'USD'
 };
@@ -600,6 +602,7 @@ function loadAllData(){
   loadMyRequests();
   loadNotifications();
   loadMatchings();
+  loadReviews();
   importLandingSavedProducts();
   var hp=location.hash.replace('#','');if(hp&&_BPL[hp])S.page=hp;
   render();
@@ -2055,7 +2058,85 @@ function renderStageContent(deal,stageIdx){
     h+='</div>';
   }
 
+  // Review section — show for completed deals
+  var canReview=deal.stage==='completed'||deal.stage==='delivered';
+  if(deal.order&&(deal.order.status==='completed'||deal.order.status==='delivered'))canReview=true;
+  if(canReview){
+    var existingReview=S.reviews.find(function(rv){return rv.target_id===deal.matching.id&&rv.target_type==='matching';});
+    h+='<div class="stage-card"><div class="stage-card-title">&#x2B50; Review & Rating</div>';
+    if(existingReview){
+      h+='<div style="padding:8px 0">';
+      h+='<div style="margin-bottom:6px">'+('&#x2B50;'.repeat(existingReview.rating))+'<span style="color:var(--w40);margin-left:4px;font-size:12px">'+existingReview.rating+'/5</span></div>';
+      if(existingReview.title)h+='<div style="font-weight:600;font-size:13px;margin-bottom:4px">'+esc(existingReview.title)+'</div>';
+      if(existingReview.content)h+='<div style="font-size:12px;color:var(--w60);line-height:1.6">'+esc(existingReview.content)+'</div>';
+      if(existingReview.tags&&existingReview.tags.length)h+='<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">'+existingReview.tags.map(function(t){return'<span class="badge badge-ghost" style="font-size:10px">'+esc(t)+'</span>';}).join('')+'</div>';
+      h+='<div style="font-size:10px;color:var(--w20);margin-top:8px">Submitted '+new Date(existingReview.created_at).toLocaleDateString()+'</div>';
+      h+='</div>';
+    }else{
+      h+='<div style="padding:8px 0;font-size:12px;color:var(--w60);margin-bottom:10px">Share your experience with this seller to help other buyers.</div>';
+      h+='<div id="review-stars" style="display:flex;gap:4px;margin-bottom:10px">';
+      for(var star=1;star<=5;star++){
+        h+='<span onclick="B.setReviewStar('+star+')" style="cursor:pointer;font-size:24px;color:'+(S.reviewDraft.rating>=star?'var(--acc)':'var(--w12)')+';transition:color .2s">&#x2B50;</span>';
+      }
+      if(S.reviewDraft.rating)h+='<span style="color:var(--w40);font-size:12px;align-self:center;margin-left:6px">'+S.reviewDraft.rating+'/5</span>';
+      h+='</div>';
+      h+='<input type="text" placeholder="Review title (optional)" value="'+esc(S.reviewDraft.title||'')+'" oninput="B._rvTitle=this.value" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;margin-bottom:8px;outline:none">';
+      h+='<textarea placeholder="Write your review..." oninput="B._rvContent=this.value" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;min-height:60px;resize:vertical;outline:none;font-family:inherit">'+esc(S.reviewDraft.content||'')+'</textarea>';
+      var rvTags=['Fast Response','Good Quality','Fair Price','Professional','Reliable','Great Communication'];
+      h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">';
+      rvTags.forEach(function(tag){
+        var sel=S.reviewDraft.tags.indexOf(tag)>-1;
+        h+='<span onclick="B.toggleReviewTag(\''+tag+'\')" class="badge '+(sel?'badge-pri':'badge-ghost')+'" style="cursor:pointer;font-size:10px">'+tag+'</span>';
+      });
+      h+='</div>';
+      h+='<button class="btn btn-pri btn-sm" onclick="B.submitReview(\''+deal.matching.id+'\')" style="margin-top:6px"'+(S.reviewDraft.rating?'':' disabled')+'>Submit Review</button>';
+    }
+    h+='</div>';
+  }
+
   return h;
+}
+
+/* === REVIEWS === */
+function loadReviews(){
+  if(!S.user)return;
+  sb.from('reviews').select('*').eq('reviewer_id',S.user.id).order('created_at',{ascending:false}).then(function(r){
+    S.reviews=r.data||[];render();
+  });
+}
+
+function setReviewStar(n){
+  S.reviewDraft.rating=n;render();
+}
+
+function toggleReviewTag(tag){
+  var idx=S.reviewDraft.tags.indexOf(tag);
+  if(idx>-1)S.reviewDraft.tags.splice(idx,1);
+  else S.reviewDraft.tags.push(tag);
+  render();
+}
+
+function submitReview(matchingId){
+  if(!S.user||!S.reviewDraft.rating)return;
+  var title=B._rvTitle||S.reviewDraft.title||'';
+  var content=B._rvContent||S.reviewDraft.content||'';
+  sb.from('reviews').insert({
+    reviewer_id:S.user.id,
+    reviewer_role:'buyer',
+    target_id:matchingId,
+    target_type:'matching',
+    rating:S.reviewDraft.rating,
+    title:title||null,
+    content:content||null,
+    tags:S.reviewDraft.tags.length?S.reviewDraft.tags:null,
+    is_public:true
+  }).then(function(r){
+    if(r.error){toast('Failed to submit review: '+r.error.message,'err');return;}
+    toast('Review submitted! Thank you.','ok');
+    S.reviewDraft={rating:0,title:'',content:'',tags:[]};
+    B._rvTitle='';B._rvContent='';
+    loadReviews();
+  });
 }
 
 /* === MESSAGES / CHAT === */
@@ -2566,6 +2647,9 @@ window.B={
   openChat:openChat,closeChat:closeChat,sendChat:sendChat,
   // Orders
   showOrderDetail:showOrderDetail,
+  // Reviews
+  setReviewStar:setReviewStar,toggleReviewTag:toggleReviewTag,submitReview:submitReview,
+  _rvTitle:'',_rvContent:'',
   // Documents
   showDocDetail:showDocDetail,
   // Notifications
