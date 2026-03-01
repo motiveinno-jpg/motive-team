@@ -1,0 +1,76 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate HTML
+        run: |
+          for f in *.html; do
+            echo "Checking $f..."
+            if grep -q '<script>' "$f"; then
+              # Extract JS and check syntax
+              awk '/<script>/{f=1;c++;next} /<\/script>/{f=0;next} f&&c==1' "$f" > /tmp/check.js
+              if [ -s /tmp/check.js ]; then
+                node -c /tmp/check.js || echo "WARN: JS syntax issue in $f"
+              fi
+            fi
+          done
+
+      - name: Check for security issues
+        run: |
+          echo "Checking for hardcoded secrets..."
+          if grep -rn "sk_live\|sk_test\|password.*=.*['\"]" --include="*.html" --include="*.js" .; then
+            echo "WARNING: Potential hardcoded secrets found"
+          else
+            echo "No hardcoded secrets detected"
+          fi
+
+      - name: Validate file sizes
+        run: |
+          echo "Checking file sizes..."
+          for f in *.html; do
+            size=$(wc -c < "$f")
+            echo "$f: ${size} bytes"
+            if [ "$size" -gt 1000000 ]; then
+              echo "WARNING: $f exceeds 1MB"
+            fi
+          done
+
+  deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
