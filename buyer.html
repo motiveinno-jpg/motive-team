@@ -302,6 +302,7 @@ function renderPage(){
   switch(S.page){
     case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
+    case'sourcing':return pgSourcing();
     case'inquiries':return pgInquiries();
     case'saved':return pgSaved();
     case'profile':return pgProfile();
@@ -413,6 +414,190 @@ function completeBuyerOnboarding(){
   S.user.onboarding_completed=true;S.page='search';render();
 }
 
+/* === SOURCING — CATEGORY-BASED MANUFACTURER MATCHING === */
+var _srcCat=null,_srcResults=[],_srcLoading=false;
+var _SOURCING_CATS=[
+  {id:'K-Beauty',icon:'&#x1F484;',label:'K-Beauty / Cosmetics',desc:'Skincare, makeup, sheet masks, serums, SPF products',sellers:0,color:'#ec4899'},
+  {id:'K-Food',icon:'&#x1F35C;',label:'K-Food / Beverages',desc:'Snacks, noodles, sauces, health drinks, kimchi',sellers:0,color:'#f59e0b'},
+  {id:'K-Health',icon:'&#x1F48A;',label:'Health Supplements',desc:'Red ginseng, probiotics, vitamins, functional foods',sellers:0,color:'#10b981'},
+  {id:'Electronics',icon:'&#x1F4F1;',label:'Electronics / IT',desc:'Consumer electronics, components, LED, IoT devices',sellers:0,color:'#3b82f6'},
+  {id:'Fashion',icon:'&#x1F45C;',label:'Fashion & Apparel',desc:'Clothing, bags, accessories, K-fashion brands',sellers:0,color:'#8b5cf6'},
+  {id:'Organic',icon:'&#x1F33F;',label:'Organic & Natural',desc:'Organic cosmetics, eco products, natural supplements',sellers:0,color:'#22c55e'},
+  {id:'Home',icon:'&#x1F3E0;',label:'Home & Living',desc:'Kitchen, bathroom, home decor, smart home',sellers:0,color:'#06b6d4'},
+  {id:'Medical',icon:'&#x1FA7A;',label:'Medical Devices',desc:'Dental, aesthetic, diagnostic, rehabilitation',sellers:0,color:'#ef4444'},
+  {id:'Industrial',icon:'&#x2699;&#xFE0F;',label:'Industrial Materials',desc:'Automotive parts, machinery, chemicals, raw materials',sellers:0,color:'#6b7280'}
+];
+
+function pgSourcing(){
+  // Count sellers per category
+  var sellersByCat={};
+  S.whistleResults.forEach(function(p){
+    var cat=p.category||'Other';
+    _SOURCING_CATS.forEach(function(sc){if(cat.toLowerCase().indexOf(sc.id.toLowerCase().replace('k-',''))>-1)sellersByCat[sc.id]=(sellersByCat[sc.id]||0)+1;});
+  });
+
+  if(_srcCat) return pgSourcingDetail();
+
+  var h='<div style="margin-bottom:20px">';
+  h+='<div style="font-size:14px;color:var(--w60);margin-bottom:16px">Browse Korean manufacturers by product category. Select a category to see available manufacturers and submit sourcing requests.</div>';
+
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px" class="grid-responsive">';
+  _SOURCING_CATS.forEach(function(cat){
+    var cnt=sellersByCat[cat.id]||0;
+    h+='<div class="card" style="cursor:pointer;transition:all .2s;border-color:transparent" onclick="B.openSourcingCat(\''+cat.id+'\')" onmouseover="this.style.borderColor=\''+cat.color+'30\'" onmouseout="this.style.borderColor=\'transparent\'">';
+    h+='<div class="card-b" style="padding:16px">';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
+    h+='<span style="font-size:28px">'+cat.icon+'</span>';
+    h+='<div><div style="font-weight:700;font-size:14px">'+cat.label+'</div>';
+    h+='<div style="font-size:11px;color:var(--w40)">'+cat.desc+'</div></div></div>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--bd)">';
+    h+='<span style="font-size:11px;color:'+cat.color+'">Explore manufacturers &rarr;</span>';
+    h+='</div></div></div>';
+  });
+  h+='</div>';
+
+  // Quick sourcing request
+  h+='<div class="card" style="margin-top:20px"><div class="card-h">&#x1F4E8; Custom Sourcing Request</div><div class="card-b">';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">Can\'t find what you need? Describe your product and our Korea-based team will find the right manufacturer.</div>';
+  h+='<textarea id="src-desc" placeholder="Describe the product you\'re looking for (category, specifications, MOQ, target price...)" style="width:100%;padding:10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;min-height:80px;resize:vertical;outline:none;font-family:inherit"></textarea>';
+  h+='<button class="btn btn-pri btn-sm" onclick="B.submitSourcingReq()" style="margin-top:8px">Submit Request</button>';
+  h+='</div></div>';
+
+  h+='</div>';
+  return h;
+}
+
+function pgSourcingDetail(){
+  var cat=_SOURCING_CATS.find(function(c){return c.id===_srcCat;});
+  if(!cat)return pgSourcing();
+
+  var h='<div>';
+  h+='<button class="btn btn-ghost btn-sm" onclick="B.backToSourcing()" style="margin-bottom:12px">&larr; All Categories</button>';
+  h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">';
+  h+='<span style="font-size:36px">'+cat.icon+'</span>';
+  h+='<div><div style="font-size:18px;font-weight:800">'+cat.label+'</div>';
+  h+='<div style="font-size:12px;color:var(--w40)">'+cat.desc+'</div></div></div>';
+
+  // Sub-categories / specialties
+  var specs=_getCatSpecs(cat.id);
+  if(specs.length){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">';
+    specs.forEach(function(sp){
+      h+='<span class="badge badge-ghost" style="cursor:pointer;font-size:11px" onclick="B.searchFromSourcing(\''+sp+'\')">'+sp+'</span>';
+    });
+    h+='</div>';
+  }
+
+  // Matching features
+  h+='<div class="grid-3" style="gap:12px;margin-bottom:20px">';
+  h+='<div class="stat-card"><div style="font-size:20px;margin-bottom:4px">&#x1F50D;</div><div style="font-size:11px;font-weight:700">AI Matching</div><div style="font-size:10px;color:var(--w40)">AI analyzes your needs and matches with verified manufacturers</div></div>';
+  h+='<div class="stat-card"><div style="font-size:20px;margin-bottom:4px">&#x1F3ED;</div><div style="font-size:11px;font-weight:700">Factory Verified</div><div style="font-size:10px;color:var(--w40)">Our Korea team verifies factory capabilities</div></div>';
+  h+='<div class="stat-card"><div style="font-size:20px;margin-bottom:4px">&#x1F4B0;</div><div style="font-size:11px;font-weight:700">Direct Pricing</div><div style="font-size:10px;color:var(--w40)">No middlemen — factory direct quotes</div></div>';
+  h+='</div>';
+
+  // Sourcing inquiry form
+  h+='<div class="card"><div class="card-h">&#x1F4CB; '+cat.label+' Sourcing Inquiry</div><div class="card-b">';
+  h+='<div class="grid-2" style="gap:10px;margin-bottom:10px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:4px">Product Type *</label>';
+  h+='<input type="text" id="src-product" placeholder="e.g. Snail mucin cream, Sheet masks..." style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:4px">Target MOQ</label>';
+  h+='<input type="text" id="src-moq" placeholder="e.g. 500 units" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+  h+='</div>';
+  h+='<div class="grid-2" style="gap:10px;margin-bottom:10px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:4px">Target Price (USD)</label>';
+  h+='<input type="text" id="src-price" placeholder="e.g. $5-8 per unit" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:4px">Destination Country</label>';
+  h+='<input type="text" id="src-country" placeholder="e.g. USA, Japan, UAE..." style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+  h+='</div>';
+  h+='<label style="font-size:11px;color:var(--w40);display:block;margin-bottom:4px">Additional Requirements</label>';
+  h+='<textarea id="src-notes" placeholder="Certifications needed, packaging requirements, special specifications..." style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;min-height:60px;resize:vertical;outline:none;font-family:inherit"></textarea>';
+  h+='<div style="display:flex;gap:8px;margin-top:10px">';
+  h+='<button class="btn btn-pri" onclick="B.submitCatSourcing(\''+cat.id+'\')">Submit Sourcing Request</button>';
+  h+='<button class="btn btn-ghost" onclick="B.searchFromSourcing(\''+cat.id+'\')">Search Products Instead</button>';
+  h+='</div></div></div>';
+
+  // Tips
+  h+='<div class="card" style="margin-top:12px"><div class="card-h">&#x1F4A1; '+cat.label+' Sourcing Tips</div><div class="card-b" style="font-size:12px;color:var(--w60);line-height:1.7">';
+  var tips=_getCatTips(cat.id);
+  tips.forEach(function(tip){h+='<div style="padding:4px 0">&bull; '+tip+'</div>';});
+  h+='</div></div>';
+
+  h+='</div>';
+  return h;
+}
+
+function _getCatSpecs(catId){
+  var m={
+    'K-Beauty':['Skincare','Makeup','Sheet Masks','Serums','Sunscreen','Hair Care','Lip Products','Anti-aging'],
+    'K-Food':['Snacks','Noodles','Sauces','Kimchi','Rice Cakes','Beverages','Seasoning','Organic Food'],
+    'K-Health':['Red Ginseng','Probiotics','Vitamins','Collagen','Diet Supplements','Functional Food'],
+    'Electronics':['LED','IoT Devices','Audio','Components','Smart Home','Batteries'],
+    'Fashion':['Streetwear','Bags','Jewelry','K-Fashion','Sportswear','Eyewear'],
+    'Organic':['Organic Skincare','Eco Products','Natural Supplements','Vegan Cosmetics'],
+    'Home':['Kitchenware','Bathroom','Home Decor','Storage','Smart Home'],
+    'Medical':['Dental','Aesthetic','Diagnostic','Rehabilitation','Surgical'],
+    'Industrial':['Auto Parts','Machinery','Chemicals','Steel','Textiles']
+  };
+  return m[catId]||[];
+}
+
+function _getCatTips(catId){
+  var m={
+    'K-Beauty':['Korean cosmetics require KFDA (MFDS) approval. Ask manufacturers about existing certifications.','MOQ for cosmetics typically starts from 500-1,000 units.','OEM/ODM is very common in Korean cosmetics — most factories accept custom formulation.','Request stability test results and ingredient lists before ordering.'],
+    'K-Food':['Food exports require HACCP certification. Verify the manufacturer has it.','Shelf life and packaging requirements vary by destination country.','Korean food labeling must comply with import country regulations.','Request product samples and certificates of analysis (COA).'],
+    'K-Health':['Health supplements require specific import licenses in most countries.','Korean red ginseng products need GMP certification.','Functional health claims must comply with destination country regulations.','Request clinical study data if the manufacturer claims specific health benefits.'],
+    'Electronics':['Check CE/FCC/KC certification requirements for your target market.','Request product specification sheets and compliance documentation.','LED and IoT products may need additional electromagnetic compatibility (EMC) testing.'],
+    'Fashion':['Korean fashion brands often have minimum orders of 50-200 pieces per style.','Request fabric composition details and care instructions.','Consider seasonal timing for fashion orders — lead times can be 4-8 weeks.'],
+    'Organic':['Verify organic certification (USDA Organic, EU Organic, or equivalent).','Natural and organic products may have stricter shelf-life requirements.'],
+    'Home':['Check material safety certifications (BPA-free, food-grade for kitchenware).','Smart home products need wireless certification for your market.'],
+    'Medical':['Medical devices require extensive regulatory approval (FDA 510(k), CE marking, etc.).','GMP manufacturing certification is mandatory.','Request complete regulatory documentation and clinical data.'],
+    'Industrial':['Industrial materials often require ISO 9001 certification from manufacturers.','Request material test certificates and technical specifications.','MOQs for industrial materials are typically higher than consumer goods.']
+  };
+  return m[catId]||['Start with small sample orders to verify quality.','Ask about existing export certifications.','Request references from previous international buyers.'];
+}
+
+function openSourcingCat(catId){_srcCat=catId;render();}
+function backToSourcing(){_srcCat=null;render();}
+
+function searchFromSourcing(query){
+  S.page='search';S.searchQuery=query;
+  render();
+  doSearch();
+}
+
+function submitSourcingReq(){
+  var desc=document.getElementById('src-desc');
+  if(!desc||!desc.value.trim()){toast('Please describe the product you\'re looking for.','err');return;}
+  if(!S.user){toast('Please sign in to submit a request.','err');return;}
+  sb.from('contact_requests').insert({
+    email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
+    inquiry_type:'sourcing',message:desc.value.trim(),status:'pending',source:'buyer-sourcing'
+  }).then(function(r){
+    if(r.error){toast('Failed: '+r.error.message,'err');return;}
+    toast('Sourcing request submitted! Our team will contact you within 24 hours.','ok');
+    desc.value='';
+  });
+}
+
+function submitCatSourcing(catId){
+  var product=document.getElementById('src-product');
+  if(!product||!product.value.trim()){toast('Please enter the product type.','err');return;}
+  if(!S.user){toast('Please sign in to submit a request.','err');return;}
+  var moq=(document.getElementById('src-moq')||{}).value||'';
+  var price=(document.getElementById('src-price')||{}).value||'';
+  var country=(document.getElementById('src-country')||{}).value||'';
+  var notes=(document.getElementById('src-notes')||{}).value||'';
+  var msg='[Category: '+catId+']\nProduct: '+product.value.trim()+'\nMOQ: '+(moq||'N/A')+'\nTarget Price: '+(price||'N/A')+'\nDestination: '+(country||'N/A')+'\n\n'+notes;
+  sb.from('contact_requests').insert({
+    email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
+    inquiry_type:'sourcing',message:msg,status:'pending',source:'buyer-sourcing-'+catId.toLowerCase()
+  }).then(function(r){
+    if(r.error){toast('Failed: '+r.error.message,'err');return;}
+    toast('Sourcing request for '+catId+' submitted! We\'ll match you with manufacturers within 24 hours.','ok');
+    _srcCat=null;render();
+  });
+}
+
 function pgPartnership(){
   var h='<div style="max-width:720px;margin:0 auto">';
   h+='<div class="card"><div class="card-h">&#x1F91D; Partnership Inquiry</div><div class="card-b">';
@@ -440,6 +625,7 @@ function renderSidebar(){
   var items=[
     {id:'dashboard',icon:'&#x1F4CA;',label:'Dashboard'},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
+    {id:'sourcing',icon:'&#x1F3ED;',label:'Find Manufacturers'},
     {id:'deals',icon:'&#x1F680;',label:'Sourcing Pipeline',count:activeDeals},
     {id:'inquiries',icon:'&#x1F4CB;',label:'Inquiries',count:S.inquiries.filter(function(i){return i.status==='pending';}).length},
     {id:'marketplace',icon:'&#x1F3EA;',label:'Marketplace',count:S.myRequests.filter(function(r){return r.status==='open';}).length},
@@ -462,7 +648,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  var titles={dashboard:'Dashboard',search:'Product Search',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Request Board',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents'};
+  var titles={dashboard:'Dashboard',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Request Board',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents'};
   var h='<div class="topbar"><div class="topbar-title">'+(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Notification bell
   h+='<div class="notif-bell" onclick="event.stopPropagation();B.toggleNotif()">&#x1F514;';
@@ -594,7 +780,7 @@ function loadUser(){
   });
 }
 
-var _BPL={dashboard:1,search:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1};
+var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1};
 function loadAllData(){
   loadBuyerLinks();
   loadInquiries();
@@ -2661,6 +2847,9 @@ window.B={
   viewRequest:viewRequest,backToRequests:backToRequests,
   acceptProposal:acceptProposal,rejectProposal:rejectProposal,
   closeRequest:closeRequest,
+  // Sourcing
+  openSourcingCat:openSourcingCat,backToSourcing:backToSourcing,searchFromSourcing:searchFromSourcing,
+  submitSourcingReq:submitSourcingReq,submitCatSourcing:submitCatSourcing,
   // Onboarding
   toggleBuyerCat:toggleBuyerCat,setBuyerExp:setBuyerExp,nextBuyerOb:nextBuyerOb,
   skipBuyerOnboarding:skipBuyerOnboarding,completeBuyerOnboarding:completeBuyerOnboarding,
