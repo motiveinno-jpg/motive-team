@@ -4620,13 +4620,13 @@ function nextOb(step){
     if(S.company&&S.company.id){
       sb.from('companies').update(companyData).eq('id',S.company.id).then(function(){
         S.company=Object.assign(S.company||{},companyData);
-        sb.from('users').update({onboarding_step:1}).eq('id',S.user.id);
+        sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
         S.user.onboarding_step=1;render();
       });
     }else{
       sb.from('companies').insert(companyData).select().single().then(function(r){
         if(r.data)S.company=r.data;
-        sb.from('users').update({onboarding_step:1}).eq('id',S.user.id);
+        sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
         S.user.onboarding_step=1;render();
       });
     }
@@ -4636,19 +4636,19 @@ function nextOb(step){
     sb.from('products').insert(prod).select().single().then(function(r){
       if(r.data)S.products.push(r.data);
       S._obProductUrl=d.product_url||'';
-      sb.from('users').update({onboarding_step:2}).eq('id',S.user.id);
+      sb.from('users').update({onboarding_step:2}).eq('id',S.user.id).then(function(){});
       S.user.onboarding_step=2;render();
     });
   }
 }
 
 function skipOnboarding(){
-  sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id);
+  sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id).then(function(){});
   S.user.onboarding_completed=true;render();
 }
 
 function completeOnboarding(startAnalysis){
-  sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id);
+  sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id).then(function(){});
   S.user.onboarding_completed=true;
   if(startAnalysis){
     var p=S.products[S.products.length-1];
@@ -4752,7 +4752,7 @@ function openDeal(dealId){
   // Subscribe to realtime messages
   if(S._dealChatChannel)sb.removeChannel(S._dealChatChannel);
   S._dealChatChannel=sb.channel('deal-seller-'+deal.buyerId).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'buyer_id=eq.'+deal.buyerId},function(payload){
-    var m=payload.new;if(m.user_id!==S.user.id)return;
+    var m=payload.new;
     if(!S._dealChatMsgs.find(function(x){return x.id===m.id;})){S._dealChatMsgs.push(m);render();setTimeout(function(){var mc=document.getElementById('deal-chat-scroll');if(mc)mc.scrollTop=mc.scrollHeight;},50);}
     if(m.sender_type==='buyer')sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id);
   }).subscribe();
@@ -5105,11 +5105,11 @@ function submitDealDoc(){
       body:'[서류 전송] '+(typeNames[f.type]||f.type)+' - '+docNum+' (총액: $'+total.toFixed(2)+')',
       message:' '+(typeNames[f.type]||f.type)+' - '+docNum,
       msg_type:'system',channel:'platform',direction:'outbound'
-    });
+    }).then(function(){});
     S._dealDocForm=null;
     // Advance deal if first document
     if(deal.stage==='matched'){
-      sb.from('matchings').update({status:'quotation'}).eq('id',deal.id);
+      sb.from('matchings').update({status:'quotation'}).eq('id',deal.id).then(function(){});
       deal.matching.status='quotation';
     }
     loadSharedDocs().then(function(){loadMatchings();});
@@ -5244,7 +5244,7 @@ function advanceDeal(newStatus){
     var stageLabels={sample:'샘플',negotiation:'협상',order:'주문',completed:'완료'};
     sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
       body:'[단계 전환] → '+(stageLabels[newStatus]||newStatus)+' 단계로 이동',
-      message:'Stage advanced to '+newStatus,msg_type:'system',channel:'platform',direction:'outbound'});
+      message:'Stage advanced to '+newStatus,msg_type:'system',channel:'platform',direction:'outbound'}).then(function(){});
     UI.toast((stageLabels[newStatus]||newStatus)+' 단계로 이동했습니다.','ok');
     buildSellerDeals();
     S._currentDeal=S._deals.find(function(d){return d.id===deal.id;});
@@ -5259,7 +5259,7 @@ function advanceDealOrder(newOrderStatus){
     var labels={production:'생산 시작',inspection:'검수 중',shipping:'출하 준비'};
     sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
       body:'[주문 업데이트] '+(labels[newOrderStatus]||newOrderStatus),
-      message:'Order status: '+newOrderStatus,msg_type:'system',channel:'platform',direction:'outbound'});
+      message:'Order status: '+newOrderStatus,msg_type:'system',channel:'platform',direction:'outbound'}).then(function(){});
     UI.toast('주문 상태가 업데이트되었습니다.','ok');
     loadOrders().then(function(){loadMatchings();});
   });
@@ -5267,14 +5267,15 @@ function advanceDealOrder(newOrderStatus){
 
 function completeDeal(){
   var deal=S._currentDeal;if(!deal)return;
-  sb.from('matchings').update({status:'completed'}).eq('id',deal.id);
-  if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id);
-  if(deal.shipment)sb.from('shipments').update({status:'delivered'}).eq('id',deal.shipment.id);
-  sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
-    body:'[거래 완료] 🎉 거래가 성공적으로 완료되었습니다!',
-    message:'Deal completed',msg_type:'system',channel:'platform',direction:'outbound'});
-  UI.toast('거래가 완료 처리되었습니다!','ok');
-  loadOrders().then(function(){loadShipments().then(function(){loadMatchings();});});
+  sb.from('matchings').update({status:'completed'}).eq('id',deal.id).then(function(){
+    if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){});
+    if(deal.shipment)sb.from('shipments').update({status:'delivered'}).eq('id',deal.shipment.id).then(function(){});
+    sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
+      body:'[거래 완료] 🎉 거래가 성공적으로 완료되었습니다!',
+      message:'Deal completed',msg_type:'system',channel:'platform',direction:'outbound'}).then(function(){});
+    UI.toast('거래가 완료 처리되었습니다!','ok');
+    loadOrders().then(function(){loadShipments().then(function(){loadMatchings();});});
+  });
 }
 
 /* === SAMPLE MANAGEMENT === */
@@ -5286,9 +5287,9 @@ function acceptSampleReq(sampleId){
     if(deal){
       sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
         body:'[샘플] 샘플 요청을 수락했습니다. 발송 준비 중입니다.',
-        message:'Sample request accepted',msg_type:'system',channel:'platform',direction:'outbound'});
+        message:'Sample request accepted',msg_type:'system',channel:'platform',direction:'outbound'}).then(function(){});
       if(deal.matching.status!=='sample'){
-        sb.from('matchings').update({status:'sample'}).eq('id',deal.id);
+        sb.from('matchings').update({status:'sample'}).eq('id',deal.id).then(function(){});
         deal.matching.status='sample';
       }
     }
@@ -5380,7 +5381,7 @@ function setTrendAutoFreq(freq){
 
 /* ── Trend Report: Generate AI Report ── */
 function genTrendReport(){
-  if(!S._trendData.length){UI.toast('트렌드 데이터가 없습니다. 바이어 검색이 쌓인 후 시도하세요.','error');return;}
+  if(!S._trendData.length){UI.toast('트렌드 데이터가 없습니다. 바이어 검색이 쌓인 후 시도하세요.','err');return;}
   S._trendReportLoading=true;render();
 
   // Build report from current trend data
