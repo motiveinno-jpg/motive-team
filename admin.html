@@ -164,9 +164,9 @@ var S={
   searchFilter:'',statusFilter:'all',dateFilter:'all',
   _pg:{},
   selectedUser:null,selectedAnalysis:null,selectedSR:null,
-  selectedBuyer:null,selectedSeller:null,selectedMatching:null,selectedOrder:null,
+  selectedBuyer:null,selectedSeller:null,selectedMatching:null,selectedOrder:null,selectedDispute:null,
   tab:'all',analyticsTab:'users',paymentTab:'revenue',
-  subscriptions:[],escrowTxns:[],
+  subscriptions:[],escrowTxns:[],disputes:[],
   alibabaStores:[],alibabaInquiries:[],_buyerTab:'all'
 };
 
@@ -209,7 +209,8 @@ function loadAll(){
     sb.from('subscriptions').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.subscriptions=r.data||[];}),
     sb.from('escrow_transactions').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.escrowTxns=r.data||[];}),
     sb.from('alibaba_stores').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaStores=r.data||[];}),
-    sb.from('alibaba_inquiries').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaInquiries=r.data||[];})
+    sb.from('alibaba_inquiries').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaInquiries=r.data||[];}),
+    sb.from('disputes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.disputes=r.data||[];})
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();});
 }
 
@@ -956,6 +957,108 @@ function pgOrderDetail(){
   '<div class="card"><div class="card-h"><span>결제 마일스톤</span>'+UI.badge(pms.length+'건','pri')+'</div><div class="card-b" style="padding:0">'+(pms.length?'<table class="tbl"><thead><tr><th>설명</th><th>금액</th><th>상태</th><th>결제일</th><th>액션</th></tr></thead><tbody>'+pms.map(function(p){return '<tr><td style="font-weight:600">'+U.esc(p.description||p.name||'—')+'</td><td style="font-family:JetBrains Mono">'+U.usd(p.amount)+'</td><td>'+UI.badge(p.status==='paid'?'완료':'대기',p.status==='paid'?'ok':'ghost')+'</td><td style="font-size:12px;color:var(--w40)">'+(p.paid_at?U.fd(p.paid_at):'—')+'</td><td>'+(p.status!=='paid'?'<button class="btn btn-ok btn-sm" onclick="event.stopPropagation();Adm.markMilestonePaid(\''+p.id+'\')">완료처리</button>':'<span style="font-size:11px;color:var(--ok)">완료</span>')+'</td></tr>';}).join('')+'</tbody></table>':'<div style="padding:18px">'+UI.empty('💳','결제 없음','')+'</div>')+'</div></div>';
 }
 
+/* ── Disputes ── */
+var DST={open:'접수',investigating:'조사중',resolved:'해결',closed:'종결',escalated:'에스컬레이션'};
+var DST_B={open:'err',investigating:'acc',resolved:'ok',closed:'ghost',escalated:'purple'};
+var DTY={quality:'품질',delivery:'배송',payment:'결제',communication:'커뮤니케이션',fraud:'사기',other:'기타'};
+var DPR={low:'낮음',medium:'보통',high:'높음',critical:'긴급'};
+var DPR_C={low:'var(--w40)',medium:'var(--acc)',high:'var(--warn)',critical:'var(--err)'};
+function pgDisputes(){
+  if(S.selectedDispute) return pgDisputeDetail();
+  var sts={open:0,investigating:0,resolved:0,closed:0,escalated:0};
+  S.disputes.forEach(function(d){if(sts[d.status]!==undefined)sts[d.status]++;});
+  var total=S.disputes.length;var openCnt=sts.open+sts.investigating+sts.escalated;
+  var resolvedRate=total?Math.round((sts.resolved+sts.closed)/total*100):0;
+  var tabs=['all','open','investigating','escalated','resolved','closed'];
+  var filtered=S.disputes.slice();if(S.tab!=='all')filtered=filtered.filter(function(d){return d.status===S.tab;});
+  filtered=filterBySearch(filtered,['subject','description','type']);
+  return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">\u26A0\uFE0F 분쟁 관리</h2><div style="display:flex;gap:8px">'+UI.badge(total+'건','pri')+'<button class="btn btn-admin btn-sm" onclick="Adm.showDisputeForm()">+ 분쟁 등록</button></div></div>'+
+  '<div class="grid-4" style="margin-bottom:16px">'+UI.stat('전체 분쟁',total,'','var(--pri)')+UI.stat('미해결',openCnt,'접수+조사+에스컬','var(--err)')+UI.stat('해결률',resolvedRate+'%','','var(--ok)')+UI.stat('에스컬레이션',sts.escalated,'','var(--purple)')+'</div>'+
+  '<div class="card" style="margin-bottom:16px"><div class="card-h">분쟁 현황</div><div class="card-b">'+[{k:'open',c:'var(--err)'},{k:'investigating',c:'var(--acc)'},{k:'escalated',c:'var(--purple)'},{k:'resolved',c:'var(--ok)'},{k:'closed',c:'var(--w40)'}].map(function(st){return hBar(DST[st.k],sts[st.k],Math.max.apply(null,Object.values(sts).concat([1])),st.c);}).join('')+'</div></div>'+
+  '<div class="tab-bar">'+tabs.map(function(t){var label=t==='all'?'전체':DST[t];var c=t==='all'?total:(sts[t]||0);return '<div class="tab-item '+(S.tab===t?'active':'')+'" onclick="Adm.setTab(\''+t+'\')">'+label+' <span style="font-size:10px;color:var(--w20)">'+c+'</span></div>';}).join('')+'</div>'+
+  '<div class="search-box" style="margin-bottom:12px"><input placeholder="검색 (제목, 설명, 유형...)" value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)"></div>'+
+  (function(){var pg=paginate(filtered,'disputes');return '<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>유형</th><th>제목</th><th>신고자</th><th>우선순위</th><th>상태</th><th>날짜</th></tr></thead><tbody>'+
+  (pg.items.length?pg.items.map(function(d){return '<tr onclick="Adm.viewDispute(\''+d.id+'\')"><td>'+UI.badge(DTY[d.type]||d.type,'ghost')+'</td><td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+U.esc(d.subject)+'</td><td>'+getUserName(d.reporter_id)+'</td><td><span style="color:'+(DPR_C[d.priority]||'var(--w40)')+';font-weight:600;font-size:12px">'+(DPR[d.priority]||d.priority)+'</span></td><td>'+UI.badge(DST[d.status]||d.status,DST_B[d.status]||'ghost')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(d.created_at)+'</td></tr>';}).join(''):'<tr><td colspan="6">'+UI.empty('\u26A0\uFE0F','분쟁 없음','아직 등록된 분쟁이 없습니다')+'</td></tr>')+'</tbody></table></div></div>'+paginationBar('disputes',pg);})()
+}
+function pgDisputeDetail(){
+  var d=S.selectedDispute;if(!d)return'';
+  var order=d.order_id?S.orders.find(function(o){return o.id===d.order_id;}):null;
+  var matching=d.matching_id?S.matchings.find(function(m){return m.id===d.matching_id;}):null;
+  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><button class="btn btn-ghost btn-sm" onclick="Adm.set({selectedDispute:null})">← 목록</button><h2 style="font-size:18px;font-weight:800;flex:1">'+U.esc(d.subject)+'</h2>'+UI.badge(DST[d.status]||d.status,DST_B[d.status]||'ghost')+'</div>'+
+  '<div class="grid-4" style="margin-bottom:16px">'+UI.stat('유형',DTY[d.type]||d.type,'','var(--pri)')+UI.stat('우선순위',DPR[d.priority]||d.priority,'','var(--acc)')+UI.stat('상태',DST[d.status]||d.status,'','var(--ok)')+UI.stat('등록일',U.fd(d.created_at),'','var(--purple)')+'</div>'+
+  '<div class="grid-2" style="margin-bottom:16px">'+
+    '<div class="card"><div class="card-h">분쟁 정보</div><div class="card-b">'+
+      '<div class="detail-row"><div class="detail-label">제목</div><div class="detail-value" style="font-weight:600">'+U.esc(d.subject)+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">유형</div><div class="detail-value">'+UI.badge(DTY[d.type]||d.type,'pri')+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">신고자</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewUser(\''+d.reporter_id+'\')">'+getUserName(d.reporter_id)+' <span style="font-size:10px;color:var(--w40)">('+(d.reporter_role||'—')+')</span></div></div>'+
+      (d.respondent_id?'<div class="detail-row"><div class="detail-label">피신고자</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewUser(\''+d.respondent_id+'\')">'+getUserName(d.respondent_id)+'</div></div>':'')+
+      '<div class="detail-row"><div class="detail-label">우선순위</div><div class="detail-value"><select onchange="Adm.changeDisputePriority(\''+d.id+'\',this.value)" style="padding:5px 10px;border-radius:6px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;font-weight:600">'+['low','medium','high','critical'].map(function(p){return '<option value="'+p+'"'+(d.priority===p?' selected':'')+'>'+DPR[p]+'</option>';}).join('')+'</select></div></div>'+
+      '<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><select onchange="Adm.changeDisputeStatus(\''+d.id+'\',this.value)" style="padding:5px 10px;border-radius:6px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;font-weight:600">'+['open','investigating','resolved','closed','escalated'].map(function(s){return '<option value="'+s+'"'+(d.status===s?' selected':'')+'>'+DST[s]+'</option>';}).join('')+'</select></div></div>'+
+      (order?'<div class="detail-row"><div class="detail-label">관련 주문</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewOrder(\''+order.id+'\')">'+U.esc(order.order_number||order.id.slice(0,8))+'</div></div>':'')+
+      (matching?'<div class="detail-row"><div class="detail-label">관련 매칭</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewMatching(\''+matching.id+'\')">'+getUserName(matching.user_id)+' ↔ '+getBuyerName(matching.buyer_id)+'</div></div>':'')+
+    '</div></div>'+
+    '<div class="card"><div class="card-h">설명</div><div class="card-b"><div style="font-size:13px;color:var(--w70);line-height:1.7;white-space:pre-wrap">'+(d.description?U.esc(d.description):UI.empty('\u26A0\uFE0F','설명 없음',''))+'</div></div></div>'+
+  '</div>'+
+  '<div class="card"><div class="card-h">해결 내용</div><div class="card-b">'+
+    '<textarea id="dispute-resolution" rows="4" style="width:100%;padding:10px;border-radius:6px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:13px;resize:vertical">'+U.esc(d.resolution||'')+'</textarea>'+
+    '<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-pri btn-sm" onclick="Adm.saveDisputeResolution(\''+d.id+'\')">해결 내용 저장</button>'+(d.status!=='resolved'&&d.status!=='closed'?'<button class="btn btn-ok btn-sm" onclick="Adm.resolveDispute(\''+d.id+'\')">해결 완료</button>':'')+(d.status!=='closed'?'<button class="btn btn-ghost btn-sm" onclick="Adm.closeDispute(\''+d.id+'\')">종결</button>':'')+'</div>'+
+    (d.resolved_by?'<div style="margin-top:10px;font-size:11px;color:var(--w40)">해결: '+getUserName(d.resolved_by)+' | '+U.fd(d.resolved_at)+'</div>':'')+
+  '</div></div>';
+}
+function showDisputeForm(){
+  var body='<div class="modal-overlay show" id="modal-dispute"><div class="modal" style="max-width:540px"><div class="modal-h"><h3>분쟁 등록</h3><button class="modal-close" onclick="Adm.closeModal(\'modal-dispute\')">×</button></div><div class="modal-b"><form onsubmit="Adm.saveDisputeForm(event)">'+
+    '<div class="form-group"><label class="form-label">유형 *</label><select name="type" class="form-select" required>'+Object.keys(DTY).map(function(k){return '<option value="'+k+'">'+DTY[k]+'</option>';}).join('')+'</select></div>'+
+    '<div class="form-group"><label class="form-label">제목 *</label><input name="subject" class="form-input" required placeholder="분쟁 제목"></div>'+
+    '<div class="form-group"><label class="form-label">설명</label><textarea name="description" class="form-textarea" rows="4" placeholder="상세 내용을 입력하세요"></textarea></div>'+
+    '<div class="grid-2"><div class="form-group"><label class="form-label">우선순위</label><select name="priority" class="form-select">'+['low','medium','high','critical'].map(function(p){return '<option value="'+p+'"'+(p==='medium'?' selected':'')+'>'+DPR[p]+'</option>';}).join('')+'</select></div>'+
+    '<div class="form-group"><label class="form-label">신고자 역할</label><select name="reporter_role" class="form-select"><option value="manufacturer">제조사</option><option value="buyer">바이어</option><option value="admin">관리자</option></select></div></div>'+
+    '<div class="grid-2"><div class="form-group"><label class="form-label">관련 주문 ID</label><input name="order_id" class="form-input" placeholder="(선택사항)"></div>'+
+    '<div class="form-group"><label class="form-label">관련 매칭 ID</label><input name="matching_id" class="form-input" placeholder="(선택사항)"></div></div>'+
+    '<div class="modal-f" style="padding:14px 0 0"><button class="btn btn-admin" type="submit">분쟁 등록</button></div>'+
+  '</form></div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',body);
+}
+function saveDisputeForm(e){
+  e.preventDefault();var f=e.target;
+  var data={type:f.type.value,subject:f.subject.value,description:f.description.value,priority:f.priority.value,reporter_role:f.reporter_role.value,reporter_id:S.user.id,status:'open'};
+  if(f.order_id.value)data.order_id=f.order_id.value;
+  if(f.matching_id.value)data.matching_id=f.matching_id.value;
+  sb.from('disputes').insert(data).select().then(function(r){
+    if(r.error)return UI.toast('등록 실패: '+r.error.message,'err');
+    S.disputes.unshift(r.data[0]);closeModal('modal-dispute');UI.toast('분쟁이 등록되었습니다','ok');render();
+  });
+}
+function changeDisputeStatus(id,val){
+  var upd={status:val,updated_at:new Date().toISOString()};
+  if(val==='resolved'||val==='closed'){upd.resolved_by=S.user.id;upd.resolved_at=new Date().toISOString();}
+  sb.from('disputes').update(upd).eq('id',id).select().then(function(r){
+    if(r.error)return UI.toast('변경 실패','err');
+    var d=r.data[0];var idx=S.disputes.findIndex(function(x){return x.id===id;});if(idx>=0)S.disputes[idx]=d;
+    if(S.selectedDispute&&S.selectedDispute.id===id)S.selectedDispute=d;
+    UI.toast('상태 변경: '+DST[val],'ok');render();
+  });
+}
+function changeDisputePriority(id,val){
+  sb.from('disputes').update({priority:val,updated_at:new Date().toISOString()}).eq('id',id).select().then(function(r){
+    if(r.error)return UI.toast('변경 실패','err');
+    var d=r.data[0];var idx=S.disputes.findIndex(function(x){return x.id===id;});if(idx>=0)S.disputes[idx]=d;
+    if(S.selectedDispute&&S.selectedDispute.id===id)S.selectedDispute=d;
+    UI.toast('우선순위 변경: '+DPR[val],'ok');render();
+  });
+}
+function saveDisputeResolution(id){
+  var el=document.getElementById('dispute-resolution');if(!el)return;
+  sb.from('disputes').update({resolution:el.value,updated_at:new Date().toISOString()}).eq('id',id).select().then(function(r){
+    if(r.error)return UI.toast('저장 실패','err');
+    var d=r.data[0];var idx=S.disputes.findIndex(function(x){return x.id===id;});if(idx>=0)S.disputes[idx]=d;
+    if(S.selectedDispute&&S.selectedDispute.id===id)S.selectedDispute=d;
+    UI.toast('해결 내용 저장됨','ok');render();
+  });
+}
+function resolveDispute(id){changeDisputeStatus(id,'resolved');}
+function closeDispute(id){changeDisputeStatus(id,'closed');}
+function viewDispute(did){var d=S.disputes.find(function(x){return x.id===did;});if(d){S.selectedDispute=d;S.page='disputes';render();}}
+
 /* ── Chat Monitor ── */
 function pgChat(){
   var unread=S.messages.filter(function(m){return !m.is_read;}).length;
@@ -1355,8 +1458,8 @@ function paginationBar(key,info){
 }
 
 /* ============ NAV & RENDER ============ */
-var _APL={dashboard:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1};
-function nav(p){S.page=p;S.searchFilter='';S.tab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.analyticsTab='users';S.paymentTab='revenue';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
+var _APL={dashboard:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1};
+function nav(p){S.page=p;S.searchFilter='';S.tab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.analyticsTab='users';S.paymentTab='revenue';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 function setSearch(v){S.searchFilter=v;S._pg={};render();}
 function setTab(t){S.tab=t;S._pg={};render();}
@@ -1371,7 +1474,7 @@ function viewOrder(oid){var o=S.orders.find(function(x){return x.id===oid;});if(
 function setAnalyticsTab(t){S.analyticsTab=t;render();}
 function setPaymentTab(t){S.paymentTab=t;render();}
 
-var PL={dashboard:'📊 대시보드',analytics:'📈 분석/통계',sellers:'🏭 제조사 관리',buyersMgmt:'🌍 바이어 관리',matchings:'🤝 매칭/딜',ordersMgmt:'💰 주문/매출',payments:'💳 결제/에스크로',chat:'💬 채팅 모니터',users:'👥 유저 관리',analyses:'🔬 AI 분석',services:'💼 서비스 요청',products:'📦 제품 관리',projects:'🚀 프로젝트',documents:'📄 서류',health:'🛡️ 시스템 상태',settings:'⚙️ 설정',alibabaMgmt:'🏪 알리바바 관리'};
+var PL={dashboard:'📊 대시보드',analytics:'📈 분석/통계',sellers:'🏭 제조사 관리',buyersMgmt:'🌍 바이어 관리',matchings:'🤝 매칭/딜',ordersMgmt:'💰 주문/매출',disputes:'⚠️ 분쟁 관리',payments:'💳 결제/에스크로',chat:'💬 채팅 모니터',users:'👥 유저 관리',analyses:'🔬 AI 분석',services:'💼 서비스 요청',products:'📦 제품 관리',projects:'🚀 프로젝트',documents:'📄 서류',health:'🛡️ 시스템 상태',settings:'⚙️ 설정',alibabaMgmt:'🏪 알리바바 관리'};
 
 function renderPage(){
   switch(S.page){
@@ -1382,6 +1485,7 @@ function renderPage(){
     case'matchings':return pgMatchings();
     case'ordersMgmt':return pgOrders();
     case'payments':return pgPayments();
+    case'disputes':return pgDisputes();
     case'chat':return pgChat();
     case'users':return pgUsers();
     case'analyses':return pgAnalyses();
@@ -1413,6 +1517,7 @@ function renderSidebar(){
     {id:'div'},
     {id:'matchings',icon:'🤝',label:'매칭/딜',count:activeDeals||null},
     {id:'ordersMgmt',icon:'💰',label:'주문/매출'},
+    {id:'disputes',icon:'⚠️',label:'분쟁 관리',count:S.disputes.filter(function(d){return d.status==='open'||d.status==='escalated';}).length||0},
     {id:'payments',icon:'💳',label:'결제/에스크로'},
     {id:'chat',icon:'💬',label:'채팅 모니터',count:unreadMsgs||null},
     {id:'div'},
@@ -1697,6 +1802,9 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   saveMatchingMemo:saveMatchingMemo,addMatchingTag:addMatchingTag,rmMatchingTag:rmMatchingTag,
   changeMatchingStatus:changeMatchingStatus,changeOrderStatus:changeOrderStatus,
   changeOrderPayment:changeOrderPayment,markMilestonePaid:markMilestonePaid,
+  viewDispute:viewDispute,showDisputeForm:showDisputeForm,saveDisputeForm:saveDisputeForm,
+  changeDisputeStatus:changeDisputeStatus,changeDisputePriority:changeDisputePriority,
+  saveDisputeResolution:saveDisputeResolution,resolveDispute:resolveDispute,closeDispute:closeDispute,
   setPg:setPg,
   editAlibabaSync:editAlibabaSync,saveAlibabaSync:saveAlibabaSync};
 loadUser();
