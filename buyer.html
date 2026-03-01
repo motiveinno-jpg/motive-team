@@ -2134,26 +2134,71 @@ function renderStageContent(deal,stageIdx){
       if(deal.inquiry){h+='<div style="margin-top:8px;font-size:12px"><strong>Product:</strong> '+esc(deal.inquiry.product_query||'')+'<br><strong>Type:</strong> '+esc(deal.inquiry.inquiry_type||'')+'<br><strong>Status:</strong> <span class="badge badge-ghost">'+esc(deal.inquiry.status||'pending')+'</span></div>';}
       break;
     case'matched':
-      h+='<div style="font-size:12px;color:var(--w60)">You\'ve been matched with <strong>'+esc(getSellerName(deal.sellerId))+'</strong>! Use the chat to introduce yourself and discuss your requirements.</div>';
-      h+='<div style="margin-top:8px"><button class="btn btn-pri btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">Start Chatting &#x2192;</button></div>';
+      h+='<div style="font-size:12px;color:var(--w60)">You\'ve been matched with <strong>'+esc(getSellerName(deal.sellerId))+'</strong>! Start a conversation to discuss your needs.</div>';
+      h+='<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
+      h+='<button class="btn btn-pri btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Start Chatting</button>';
+      h+='<button class="btn btn-ghost btn-sm" onclick="B.requestQuote(\''+deal.matching.id+'\')">&#x1F4B0; Request Quotation</button>';
+      h+='</div>';
       break;
     case'quotation':
-      h+='<div style="font-size:12px;color:var(--w60)">The seller has shared documents. Review the quotation and discuss any adjustments via chat.</div>';
+      h+='<div style="font-size:12px;color:var(--w60)">The seller has shared a quotation. Review the documents below, then accept or request changes.</div>';
+      // Show document action buttons
+      var piDocs=deal.documents.filter(function(d){return d.doc_type==='pi';});
+      if(piDocs.length){
+        h+='<div style="margin-top:8px;padding:10px;background:rgba(0,212,255,.05);border-radius:8px;border:1px solid rgba(0,212,255,.15)">';
+        var latestPI=piDocs[0];
+        var piContent=null;try{piContent=JSON.parse(latestPI.content);}catch(e){}
+        if(piContent){
+          h+='<div style="font-size:12px;font-weight:700;margin-bottom:6px">&#x1F4B0; Proforma Invoice — '+esc(latestPI.doc_number||'')+'</div>';
+          if(piContent.items&&piContent.items.length){
+            h+='<div style="font-size:11px;margin-bottom:6px">';
+            piContent.items.forEach(function(it){h+='<div>'+esc(it.name||'Item')+' × '+(it.qty||0)+' '+esc(it.unit||'PCS')+' @ $'+(parseFloat(it.unit_price)||0).toFixed(2)+' = <strong>$'+((parseFloat(it.qty)||0)*(parseFloat(it.unit_price)||0)).toFixed(2)+'</strong></div>';});
+            h+='<div style="margin-top:4px;font-weight:700;color:var(--acc)">Total: $'+(piContent.total||0).toFixed(2)+'</div>';
+            h+='</div>';
+          }
+          if(piContent.payment_terms)h+='<div style="font-size:11px;color:var(--w40)">Payment: '+esc(piContent.payment_terms)+'</div>';
+          if(piContent.incoterms)h+='<div style="font-size:11px;color:var(--w40)">Incoterms: '+esc(piContent.incoterms)+'</div>';
+        }
+        h+='<div style="display:flex;gap:8px;margin-top:10px">';
+        h+='<button class="btn btn-pri btn-sm" onclick="B.acceptQuote(\''+deal.matching.id+'\')">&#x2705; Accept &amp; Proceed</button>';
+        h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Negotiate</button>';
+        h+='</div></div>';
+      }
       break;
     case'sample':
-      h+='<div style="font-size:12px;color:var(--w60)">Sample stage in progress. Track your sample status below.</div>';
+      h+='<div style="font-size:12px;color:var(--w60)">Sample stage — track your sample request status below. Once you receive and approve the sample, we can proceed to negotiation.</div>';
+      var deliveredSamples=deal.dealSamples.filter(function(s){return s.status==='delivered';});
+      if(deliveredSamples.length){
+        h+='<div style="display:flex;gap:8px;margin-top:10px">';
+        h+='<button class="btn btn-pri btn-sm" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Sample Approved — Proceed to Negotiation</button>';
+        h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Request Changes</button>';
+        h+='</div>';
+      }
       break;
     case'negotiation':
-      h+='<div style="font-size:12px;color:var(--w60)">You\'re in negotiation with the seller. Discuss pricing, terms, and contract details via chat.</div>';
+      h+='<div style="font-size:12px;color:var(--w60)">Finalize pricing, MOQ, delivery schedule, and payment terms with the seller. Once agreed, the seller will create the order.</div>';
+      h+='<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
+      h+='<button class="btn btn-pri btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Continue Discussion</button>';
+      h+='<button class="btn btn-ghost btn-sm" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</button>';
+      h+='</div>';
       break;
     case'order':
-      h+='<div style="font-size:12px;color:var(--w60)">Your order has been confirmed! Track payment milestones below.</div>';
+      h+='<div style="font-size:12px;color:var(--w60)">Your order has been confirmed! Track payment milestones and production status below.</div>';
+      if(deal.order&&deal.order.payment_status!=='paid'){
+        h+='<div style="margin-top:8px;padding:8px;background:rgba(255,165,0,.08);border-radius:6px;font-size:11px;color:var(--acc)">&#x26A0;&#xFE0F; Payment pending — contact the seller via chat to arrange payment details.</div>';
+      }
       break;
     case'production':
-      h+='<div style="font-size:12px;color:var(--w60)">Your order is being manufactured. The seller will update you on progress via chat.</div>';
+      h+='<div style="font-size:12px;color:var(--w60)">Your order is being manufactured. The seller will update progress and notify you when ready for shipment.</div>';
+      h+='<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Check Production Status</button></div>';
       break;
     case'shipping':
-      h+='<div style="font-size:12px;color:var(--w60)">Your shipment is on its way! Track the delivery status below.</div>';
+      h+='<div style="font-size:12px;color:var(--w60)">Your shipment is on its way! Track delivery status below.</div>';
+      if(deal.shipment&&deal.shipment.status==='delivered'){
+        h+='<div style="display:flex;gap:8px;margin-top:10px">';
+        h+='<button class="btn btn-pri btn-sm" onclick="B.confirmDelivery(\''+deal.matching.id+'\')">&#x1F4E6; Confirm Receipt</button>';
+        h+='</div>';
+      }
       break;
     case'completed':
       h+='<div style="font-size:12px;color:var(--ok)">This deal is complete. Thank you for using Whistle AI!</div>';
@@ -2353,6 +2398,80 @@ function submitReview(matchingId){
     S.reviewDraft={rating:0,title:'',content:'',tags:[]};
     B._rvTitle='';B._rvContent='';
     loadReviews();
+  });
+}
+
+/* === DEAL ACTIONS (BUYER SIDE) === */
+function requestQuote(matchingId){
+  var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
+  if(!deal)return;
+  sb.from('messages').insert({
+    buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
+    body:'Hi! I\'d like to request a formal quotation (Proforma Invoice) for this product. Please include pricing, MOQ, lead time, and payment terms.',
+    message:'Quotation request',msg_type:'text',channel:'platform',direction:'inbound'
+  }).then(function(){
+    toast('Quotation request sent to seller!','ok');
+    render();
+  });
+}
+
+function acceptQuote(matchingId){
+  var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
+  if(!deal)return;
+  // Move to sample stage
+  sb.from('matchings').update({status:'sample'}).eq('id',matchingId).then(function(){
+    sb.from('messages').insert({
+      buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
+      body:'[Quotation Accepted] I accept the quotation. Let\'s proceed — would you like to send a sample first?',
+      message:'Quote accepted',msg_type:'system',channel:'platform',direction:'inbound'
+    });
+    toast('Quotation accepted! Moving to sample stage.','ok');
+    deal.matching.status='sample';
+    buildDeals();render();
+  });
+}
+
+function confirmSampleOk(matchingId){
+  var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
+  if(!deal)return;
+  sb.from('matchings').update({status:'negotiation'}).eq('id',matchingId).then(function(){
+    sb.from('messages').insert({
+      buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
+      body:'[Sample Approved] The sample quality meets our requirements. Let\'s finalize the order terms.',
+      message:'Sample approved',msg_type:'system',channel:'platform',direction:'inbound'
+    });
+    toast('Sample approved! Moving to negotiation.','ok');
+    deal.matching.status='negotiation';
+    buildDeals();render();
+  });
+}
+
+function confirmReadyToOrder(matchingId){
+  var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
+  if(!deal)return;
+  sb.from('messages').insert({
+    buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
+    body:'[Ready to Order] We\'re ready to proceed with the order. Please create the purchase order with the agreed terms.',
+    message:'Ready to order',msg_type:'system',channel:'platform',direction:'inbound'
+  }).then(function(){
+    toast('Order readiness confirmed! The seller will create the order.','ok');
+    render();
+  });
+}
+
+function confirmDelivery(matchingId){
+  var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
+  if(!deal)return;
+  sb.from('matchings').update({status:'completed'}).eq('id',matchingId);
+  if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id);
+  sb.from('messages').insert({
+    buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
+    body:'[Delivery Confirmed] Goods received successfully. Thank you!',
+    message:'Delivery confirmed',msg_type:'system',channel:'platform',direction:'inbound'
+  }).then(function(){
+    toast('Delivery confirmed! Deal completed.','ok');
+    deal.matching.status='completed';
+    buildDeals();render();
   });
 }
 
@@ -2904,6 +3023,9 @@ window.B={
   // Reviews
   setReviewStar:setReviewStar,toggleReviewTag:toggleReviewTag,submitReview:submitReview,
   _rvTitle:'',_rvContent:'',
+  // Deal Actions
+  requestQuote:requestQuote,acceptQuote:acceptQuote,confirmSampleOk:confirmSampleOk,
+  confirmReadyToOrder:confirmReadyToOrder,confirmDelivery:confirmDelivery,
   // Samples
   toggleSampleForm:toggleSampleForm,submitSampleReq:submitSampleReq,
   // Documents
