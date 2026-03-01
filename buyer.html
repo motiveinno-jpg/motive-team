@@ -246,7 +246,7 @@ var S={
   deals:[],matchings:[],samples:[],dealFilter:'all',
   currentDeal:null,dealMessages:[],dealChatOpen:true,
   // reviews
-  reviews:[],reviewDraft:{rating:0,title:'',content:'',tags:[]},
+  reviews:[],reviewDraft:{rating:0,title:'',content:'',tags:[]},_sampleFormOpen:null,
   // currency
   currency:'USD'
 };
@@ -2191,6 +2191,37 @@ function renderStageContent(deal,stageIdx){
     h+='</div>';
   }
 
+  // Sample Request — available for matched/negotiation/sample stages when seller is known
+  var canRequestSample=deal.matching&&deal.sellerId&&!deal.order&&['matched','quotation','negotiation','sample'].indexOf(deal.stage)>-1;
+  var hasPendingSample=deal.dealSamples.some(function(s){return s.status==='requested'||s.status==='preparing';});
+  if(canRequestSample&&!hasPendingSample){
+    if(S._sampleFormOpen===deal.id){
+      h+='<div class="stage-card"><div class="stage-card-title">&#x1F4E6; Request Sample</div>';
+      h+='<div style="font-size:12px;color:var(--w60);margin-bottom:10px">Request a product sample from this seller before placing a full order.</div>';
+      h+='<div style="display:grid;gap:8px">';
+      h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">Quantity</label>';
+      h+='<input type="number" id="smp-qty" min="1" value="1" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+      h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">Shipping Address</label>';
+      h+='<input type="text" id="smp-addr" placeholder="Full shipping address with postal code" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+      h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">Preferred Shipping Method</label>';
+      h+='<select id="smp-method" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none">';
+      h+='<option value="express">Express (DHL/FedEx/UPS)</option>';
+      h+='<option value="standard">Standard Post</option>';
+      h+='<option value="economy">Economy</option>';
+      h+='<option value="seller_choice">Seller\'s Choice</option>';
+      h+='</select></div>';
+      h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">Notes (optional)</label>';
+      h+='<textarea id="smp-notes" rows="2" placeholder="e.g., specific variant, color, packaging requirements..." style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;resize:vertical;outline:none;font-family:inherit"></textarea></div>';
+      h+='</div>';
+      h+='<div style="display:flex;gap:8px;margin-top:10px">';
+      h+='<button class="btn btn-pri btn-sm" onclick="B.submitSampleReq(\''+deal.matching.id+'\')">&#x1F4E8; Submit Request</button>';
+      h+='<button class="btn btn-ghost btn-sm" onclick="B.toggleSampleForm(null)">Cancel</button>';
+      h+='</div></div>';
+    }else{
+      h+='<div style="padding:8px 0"><button class="btn btn-ghost btn-sm" onclick="B.toggleSampleForm(\''+deal.id+'\')" style="width:100%;border:1px dashed var(--bd)">&#x1F4E6; Request Sample</button></div>';
+    }
+  }
+
   // Order section
   if(deal.order){
     var o=deal.order;
@@ -2322,6 +2353,43 @@ function submitReview(matchingId){
     S.reviewDraft={rating:0,title:'',content:'',tags:[]};
     B._rvTitle='';B._rvContent='';
     loadReviews();
+  });
+}
+
+/* === SAMPLE REQUESTS === */
+function toggleSampleForm(dealId){
+  S._sampleFormOpen=dealId;render();
+}
+
+function submitSampleReq(matchingId){
+  if(!S.user)return;
+  var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
+  if(!deal)return;
+  var qty=parseInt(document.getElementById('smp-qty').value)||1;
+  var addr=document.getElementById('smp-addr').value.trim();
+  var method=document.getElementById('smp-method').value;
+  var notes=document.getElementById('smp-notes').value.trim();
+  if(!addr){toast('Please enter a shipping address','err');return;}
+  sb.from('samples').insert({
+    user_id:deal.sellerId,
+    buyer_id:deal.buyerLinkId,
+    status:'requested',
+    quantity:qty,
+    shipping_method:method,
+    notes:(addr?'Ship to: '+addr:'')+(notes?'\n'+notes:'')
+  }).then(function(r){
+    if(r.error){toast('Failed to request sample: '+r.error.message,'err');return;}
+    toast('Sample request sent! The seller will review your request.','ok');
+    S._sampleFormOpen=null;
+    loadSamples();
+    // Also send a chat message to the seller
+    sb.from('messages').insert({
+      buyer_id:deal.buyerLinkId,
+      user_id:deal.sellerId,
+      sender_type:'buyer',
+      message:'[Sample Request] Qty: '+qty+' | Shipping: '+method+(notes?' | Notes: '+notes:''),
+      msg_type:'system'
+    });
   });
 }
 
@@ -2836,6 +2904,8 @@ window.B={
   // Reviews
   setReviewStar:setReviewStar,toggleReviewTag:toggleReviewTag,submitReview:submitReview,
   _rvTitle:'',_rvContent:'',
+  // Samples
+  toggleSampleForm:toggleSampleForm,submitSampleReq:submitSampleReq,
   // Documents
   showDocDetail:showDocDetail,
   // Notifications
