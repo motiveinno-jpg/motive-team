@@ -1513,6 +1513,11 @@ function pgPayments(){
 
 function pgPayRevenue(){
   var mrr=calcMRR();var arr=mrr*12;var hold=calcEscrowHold();var comm=calcEscrowComm();var flt=calcFloat();
+  /* 미수금 합계 (pending billing events) */
+  var pendingBilling=(S.billingEvents||[]).filter(function(e){return e.status==='pending';});
+  var pendingTotal=pendingBilling.reduce(function(s,e){return s+(Number(e.amount)||0);},0);
+  var pendingDocCount=pendingBilling.filter(function(e){return e.event_type==='document_generation';}).length;
+  var pendingAICount=pendingBilling.filter(function(e){return e.event_type==='ai_analysis';}).length;
   var activeSubs=S.subscriptions.filter(function(s){return s.status==='active';}).length||S.users.filter(function(u){return PLAN_PRICE[u.plan];}).length;
   var activeEsc=S.escrowTxns.filter(function(e){return['funded','in_production','shipped','inspection'].indexOf(e.escrow_status)>=0;}).length;
 
@@ -1567,6 +1572,12 @@ function pgPayRevenue(){
     UI.stat('전환율',convR.toFixed(1)+'%','Free→Paid','var(--acc)')+
     UI.stat('활동률 (30일)',actR.toFixed(1)+'%','최근 로그인','var(--purple)')+
   '</div>'+
+  /* 미수금 현황 카드 */
+  (pendingTotal>0?'<div class="card" style="margin-bottom:16px;border:1px solid rgba(255,184,0,.3)"><div class="card-h" style="color:var(--acc)"><span>💰 미수금 현황 (청구 대기)</span></div><div class="card-b"><div class="grid-3">'+
+    '<div style="text-align:center;padding:12px;border-radius:8px;background:rgba(255,184,0,.06)"><div style="font-size:11px;color:var(--w40)">총 미수금</div><div style="font-size:22px;font-weight:900;color:var(--acc);font-family:JetBrains Mono">₩'+(pendingTotal).toLocaleString()+'</div></div>'+
+    '<div style="text-align:center;padding:12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40)">서류 과금</div><div style="font-size:18px;font-weight:800;color:var(--pri)">'+pendingDocCount+'건</div></div>'+
+    '<div style="text-align:center;padding:12px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40)">AI 분석 과금</div><div style="font-size:18px;font-weight:800;color:var(--pri)">'+pendingAICount+'건</div></div>'+
+  '</div></div></div>':'')+
   /* Usage-based billing summary */
   '<div class="card" style="margin-bottom:16px"><div class="card-h"><span>📊 기능별 사용량 (이번 달)</span></div><div class="card-b"><div class="grid-5">'+
     usageFeatures.map(function(f){var u=usageStat[f]||{count:0,revenue:0};return '<div style="text-align:center;padding:10px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">'+(usageLabels[f]||f)+'</div><div style="font-size:18px;font-weight:800;color:var(--pri)">'+u.count+'</div><div style="font-size:10px;color:var(--acc);font-family:JetBrains Mono">'+U.usd(u.revenue)+'</div></div>';}).join('')+
