@@ -119,14 +119,16 @@ function renderDocumentCard(msg, myRole) {
   let approveHtml = '';
   if (DOC_FINAL_STATES.includes(status)) {
     approveHtml = `<span class="dr-btn" style="opacity:.6;cursor:default;">${status === 'approved' ? '✓ 승인됨' : status}</span>`;
+  } else if (status === 'revision_requested') {
+    approveHtml = isBuyer
+      ? `<span class="dr-btn" style="opacity:.6;cursor:default;">수정요청됨</span>`
+      : `<span class="dr-btn" style="background:#f59e0b;color:#fff;border-color:#f59e0b;cursor:default;">수정 필요</span>`;
   } else if (status === 'sent') {
     approveHtml = isBuyer
       ? `${btn('승인', 'document_approve')}${btn('수정요청', 'document_revision')}`
       : `<span class="dr-btn" style="opacity:.6;cursor:default;">바이어 승인 대기</span>`;
   } else if (status === 'draft') {
-    approveHtml = isBuyer
-      ? `<span class="dr-btn" style="opacity:.6;cursor:default;">Draft</span>`
-      : `<span class="dr-btn" style="opacity:.6;cursor:default;">Draft</span>`;
+    approveHtml = `<span class="dr-btn" style="opacity:.6;cursor:default;">Draft</span>`;
   }
 
   const downloadHtml = safeUrl(downloadUrl)

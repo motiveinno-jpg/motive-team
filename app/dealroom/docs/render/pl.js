@@ -36,8 +36,8 @@ export function renderPLToPdf(document) {
   doc.text('CONSIGNEE', margin + halfWidth + 5, y);
   y += 5;
   doc.setFont(undefined, 'normal');
-  const seller = c.seller || {};
-  const buyer = c.buyer || {};
+  const seller = c.shipper || c.seller || {};
+  const buyer = c.consignee || c.buyer || {};
   doc.text(seller.company || seller.name || 'N/A', margin, y);
   doc.text(buyer.company || buyer.name || 'N/A', margin + halfWidth + 5, y);
   y += 8;
@@ -52,7 +52,7 @@ export function renderPLToPdf(document) {
       item.unit || 'PCS',
       item.net_weight ? fmt(item.net_weight) + ' kg' : '-',
       item.gross_weight ? fmt(item.gross_weight) + ' kg' : '-',
-      item.cbm ? fmt(item.cbm) + ' CBM' : '-',
+      (item.cbm || item.volume) ? fmt(item.cbm || item.volume) + ' CBM' : '-',
     ]);
 
     doc.autoTable({

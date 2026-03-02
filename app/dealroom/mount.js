@@ -116,13 +116,20 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     const msgs = state.messages || [];
     const myRole = state.me?.role || 'seller';
     const isBuyer = myRole.startsWith('buyer');
+    const stage = state.currentStage || 'prospect';
     const hasQuote = msgs.some(m => m.message_type === 'quote_card');
     const pendingQuote = msgs.some(m => m.message_type === 'quote_card' && !['approved','rejected','expired','cancelled'].includes(m.payload?.status));
     const hasApprovedQuote = msgs.some(m => m.message_type === 'quote_card' && m.payload?.status === 'approved');
     const revisionQuote = msgs.some(m => m.message_type === 'quote_card' && m.payload?.status === 'revision_requested');
-    const hasPIDraft = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'draft');
-    const hasPISent = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'sent');
-    const hasPIApproved = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'approved');
+    const docStatus = (d) => d.status_v2 || d.status;
+    const hasPIDraft = docs.some(d => d.doc_type === 'PI' && docStatus(d) === 'draft');
+    const hasPISent = docs.some(d => d.doc_type === 'PI' && docStatus(d) === 'sent');
+    const hasPIApproved = docs.some(d => d.doc_type === 'PI' && docStatus(d) === 'approved');
+    const hasCIDraft = docs.some(d => d.doc_type === 'CI' && docStatus(d) === 'draft');
+    const hasCISent = docs.some(d => d.doc_type === 'CI' && docStatus(d) === 'sent');
+    const hasPLDraft = docs.some(d => d.doc_type === 'PL' && docStatus(d) === 'draft');
+    const hasPLSent = docs.some(d => d.doc_type === 'PL' && docStatus(d) === 'sent');
+    const hasRevisionDoc = docs.some(d => docStatus(d) === 'revision_requested');
     const participants = state.participants || [];
 
     if (isBuyer) {
@@ -133,16 +140,22 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
       if (hasPISent) {
         actions.push({ icon: '📋', text: 'PI를 확인하고 승인하세요', action: null });
       }
-      if (hasPIApproved) {
+      if (hasCISent || hasPLSent) {
+        actions.push({ icon: '🧾', text: 'CI/PL 서류를 확인하고 승인하세요', action: null });
+      }
+      if (hasPIApproved && !hasCISent && !hasPLSent) {
         actions.push({ icon: '✅', text: 'PI 승인 완료! 결제를 진행하세요', action: null });
       }
-      if (!pendingQuote && !hasPISent && !hasPIApproved) {
+      if (!pendingQuote && !hasPISent && !hasPIApproved && !hasCISent && !hasPLSent) {
         actions.push({ icon: '⏳', text: '셀러의 견적/서류를 기다리는 중', action: null });
       }
     } else {
       // ─── Seller Next Actions ───
       if (participants.length < 2) {
         actions.push({ icon: '👥', text: '바이어를 초대하세요', action: 'invite' });
+      }
+      if (hasRevisionDoc) {
+        actions.push({ icon: '✏️', text: '바이어 수정요청! 서류를 확인하세요', action: 'doc' });
       }
       if (revisionQuote) {
         actions.push({ icon: '✏️', text: '바이어 수정요청! 견적을 수정하세요', action: 'quote' });
@@ -160,8 +173,11 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
       if (hasPISent) {
         actions.push({ icon: '⏳', text: '바이어 PI 승인 대기 중', action: null });
       }
-      if (hasPIApproved) {
-        actions.push({ icon: '✅', text: 'PI 승인 완료! 다음 서류를 준비하세요', action: 'doc' });
+      if (hasPIApproved && (hasCIDraft || hasPLDraft)) {
+        actions.push({ icon: '📤', text: 'CI/PL을 검토 후 전송하세요', action: 'send_doc' });
+      }
+      if (hasCISent || hasPLSent) {
+        actions.push({ icon: '⏳', text: '바이어 CI/PL 승인 대기 중', action: null });
       }
     }
     if (actions.length === 0) {
@@ -352,6 +368,18 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     store.dispatch('STATE_CHANGED', store.getState());
   });
 
+  // Realtime deal stage changes
+  const dealChannel = supabase
+    .channel(`deal-${dealId}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'deals', filter: `id=eq.${dealId}` }, (payload) => {
+      const newDeal = payload.new;
+      if (newDeal) {
+        store.setState({ deal: newDeal, currentStage: newDeal.stage || store.getState().currentStage });
+        store.dispatch('STATE_CHANGED', store.getState());
+      }
+    })
+    .subscribe();
+
   // Action router (dealroom:action events from card buttons)
   const offActions = attachDealroomActionRouter({ supabase, store, dealId });
 
@@ -362,6 +390,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
   return function cleanup() {
     try { unsubscribe?.(); } catch (_) {}
     try { unsubDocs?.(); } catch (_) {}
+    try { supabase.removeChannel(dealChannel); } catch (_) {}
     try { offActions?.(); } catch (_) {}
     try { offActionBar?.(); } catch (_) {}
     try { offAny?.(); } catch (_) {}
