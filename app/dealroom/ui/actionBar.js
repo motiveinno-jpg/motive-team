@@ -21,7 +21,7 @@ export function wireActionBar({ rootEl, supabase, store, dealId }) {
     const a = btn.getAttribute('data-dr');
 
     if (a === 'invite') openInviteModal({ supabase, dealId });
-    if (a === 'quote') openQuoteModal({ supabase, dealId });
+    if (a === 'quote') openQuoteModal({ supabase, dealId, userId: store.getState().me?.id });
     if (a === 'doc') openDocGenModal({ supabase, store, dealId });
   };
 

@@ -7,7 +7,7 @@ function el(html) {
 
 function n(v) { const x = Number(v); return Number.isFinite(x) ? x : 0; }
 
-export function openQuoteModal({ supabase, dealId }) {
+export function openQuoteModal({ supabase, dealId, userId }) {
   const overlay = el(`
     <div style="position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.35);
       display:flex;align-items:center;justify-content:center;padding:18px;">
@@ -118,9 +118,17 @@ export function openQuoteModal({ supabase, dealId }) {
 
     try {
       // 1) Create draft quote
+      // Get current user for seller_id
+      let sellerId = userId;
+      if (!sellerId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        sellerId = session?.user?.id;
+      }
+
       const { data: quote, error: qErr } = await supabase.from('quotes')
         .insert({
           deal_id: dealId,
+          seller_id: sellerId,
           status: 'draft',
           currency: $currency.value,
           incoterms: $incoterms.value,

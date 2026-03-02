@@ -17,9 +17,24 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
         return;
       }
 
-      if (action === 'quote_approve' || action === 'quote_revision') {
-        // TODO: wire approve-quote / revision Edge Function
-        console.warn('[dealroom] quote action not yet wired:', action);
+      if (action === 'quote_approve') {
+        const quoteId = msg?.ref_id || payload.quote_id;
+        if (!quoteId) throw new Error('missing quote_id');
+        const { error } = await supabase.functions.invoke('approve-quote', {
+          body: { quote_id: quoteId, action: 'approve' },
+        });
+        if (error) throw error;
+        return;
+      }
+
+      if (action === 'quote_revision') {
+        const quoteId = msg?.ref_id || payload.quote_id;
+        if (!quoteId) throw new Error('missing quote_id');
+        const reason = prompt('수정 사유를 입력하세요:') || '';
+        const { error } = await supabase.functions.invoke('approve-quote', {
+          body: { quote_id: quoteId, action: 'revision', reason },
+        });
+        if (error) throw error;
         return;
       }
 
