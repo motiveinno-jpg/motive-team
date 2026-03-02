@@ -160,7 +160,7 @@ var PAGE_SIZE=20;
 var S={
   user:null,page:'dashboard',loading:true,authError:'',authMode:'login',
   users:[],analyses:[],products:[],projects:[],serviceRequests:[],companies:[],matchings:[],documents:[],
-  orders:[],buyers:[],messages:[],shipments:[],paymentMilestones:[],paymentProofs:[],pageViews:[],buyerRequests:[],proposals:[],
+  orders:[],buyers:[],messages:[],shipments:[],paymentMilestones:[],paymentProofs:[],pageViews:[],buyerRequests:[],proposals:[],clientErrors:[],
   searchFilter:'',statusFilter:'all',dateFilter:'all',
   _pg:{},
   selectedUser:null,selectedAnalysis:null,selectedSR:null,
@@ -217,7 +217,8 @@ function loadAll(){
     sb.from('deals').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.deals=r.data||[];}),
     sb.from('deal_participants').select('*').limit(500).then(function(r){S.dealParticipants=r.data||[];}),
     sb.from('deal_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.dealEvents=r.data||[];}),
-    sb.from('quotes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.quotes=r.data||[];})
+    sb.from('quotes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.quotes=r.data||[];}),
+    sb.from('client_errors').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.clientErrors=r.data||[];})
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();});
 }
 
@@ -1960,6 +1961,56 @@ function exportCSV(table){
 
 function refreshAll(){loadAll();UI.toast('새로고침 중...','info');}
 
+/* === ERROR MONITOR === */
+function pgErrorMonitor(){
+  var errs=S.clientErrors||[];
+  var sf=S.searchFilter||'';
+  if(sf){errs=errs.filter(function(e){return (e.error_message||'').toLowerCase().indexOf(sf.toLowerCase())>=0||(e.page||'').toLowerCase().indexOf(sf.toLowerCase())>=0||((e.extra&&e.extra.rid)||'').toLowerCase().indexOf(sf.toLowerCase())>=0;});}
+  /* Top 10 errors (24h) */
+  var now=Date.now();var h24=now-86400000;
+  var recent=errs.filter(function(e){return new Date(e.created_at).getTime()>h24;});
+  var msgCount={};recent.forEach(function(e){var k=(e.error_message||'unknown').slice(0,80);msgCount[k]=(msgCount[k]||0)+1;});
+  var top10=Object.keys(msgCount).map(function(k){return{msg:k,cnt:msgCount[k]};}).sort(function(a,b){return b.cnt-a.cnt;}).slice(0,10);
+  /* Stats */
+  var total=errs.length;var today=recent.length;
+  var pages=new Set();errs.forEach(function(e){if(e.page)pages.add(e.page);});
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px"><div><input oninput="Adm.setSearch(this.value)" value="'+U.esc(sf)+'" placeholder="RID, 메시지, 페이지 검색..." style="padding:8px 14px;border-radius:8px;background:var(--w08);border:1px solid var(--bd);color:var(--w);font-size:12px;width:300px;outline:none"></div><button class="btn btn-ghost btn-sm" onclick="Adm.refreshErrors()">🔄 새로고침</button></div>';
+  /* KPI cards */
+  h+='<div class="grid-4" style="margin-bottom:20px">';
+  h+='<div class="stat-card"><div class="stat-label">총 에러</div><div class="stat-value" style="color:var(--err)">'+total+'</div></div>';
+  h+='<div class="stat-card"><div class="stat-label">24시간 내</div><div class="stat-value" style="color:var(--acc)">'+today+'</div></div>';
+  h+='<div class="stat-card"><div class="stat-label">영향 페이지</div><div class="stat-value" style="color:var(--pri)">'+pages.size+'</div></div>';
+  h+='<div class="stat-card"><div class="stat-label">에러 유형</div><div class="stat-value" style="color:var(--w60)">'+Object.keys(msgCount).length+'</div></div>';
+  h+='</div>';
+  /* Top 10 */
+  if(top10.length){
+    h+='<div class="card" style="margin-bottom:20px"><div class="card-h">Top 에러 (24시간)</div><div class="card-b"><table class="tbl"><thead><tr><th>횟수</th><th>에러 메시지</th></tr></thead><tbody>';
+    top10.forEach(function(t){h+='<tr><td><span class="badge badge-err">'+t.cnt+'</span></td><td style="font-size:12px;word-break:break-all">'+U.esc(t.msg)+'</td></tr>';});
+    h+='</tbody></table></div></div>';
+  }
+  /* Recent errors table */
+  var pinfo=paginate(errs,'errorMonitor');
+  h+='<div class="card"><div class="card-h">최근 에러 ('+total+'건)</div><div class="card-b"><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>시간</th><th>RID</th><th>페이지</th><th>메시지</th><th>유저</th></tr></thead><tbody>';
+  if(!pinfo.items.length){h+='<tr><td colspan="5" style="text-align:center;color:var(--w40);padding:20px">에러 없음</td></tr>';}
+  pinfo.items.forEach(function(e){
+    var dt=new Date(e.created_at);var ts=dt.toLocaleDateString('ko-KR',{month:'short',day:'numeric'})+' '+dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    var rid=(e.extra&&e.extra.rid)||'-';
+    var uid=e.user_id?getUserName(e.user_id):'<span style="color:var(--w20)">비로그인</span>';
+    h+='<tr><td style="font-size:11px;white-space:nowrap">'+ts+'</td>';
+    h+='<td><span style="font-family:monospace;font-size:10px;padding:2px 6px;border-radius:4px;background:var(--w08);cursor:pointer" onclick="navigator.clipboard.writeText(\''+U.esc(rid)+'\');Adm.UI.toast(\'복사됨\',\'ok\')" title="클릭하여 복사">'+U.esc(rid)+'</span></td>';
+    h+='<td style="font-size:11px">'+U.esc((e.page||'').replace(/#/g,' #'))+'</td>';
+    h+='<td style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+U.esc(e.error_message||'')+'">'+U.esc((e.error_message||'').slice(0,100))+'</td>';
+    h+='<td style="font-size:11px">'+uid+'</td></tr>';
+  });
+  h+='</tbody></table></div>'+paginationBar('errorMonitor',pinfo)+'</div></div>';
+  return h;
+}
+function refreshErrors(){
+  sb.from('client_errors').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){
+    S.clientErrors=r.data||[];render();UI.toast('에러 목록 갱신','ok');
+  });
+}
+
 /* === PAGINATION === */
 function getPg(key){return S._pg[key]||0;}
 function setPg(key,p){S._pg[key]=p;render();}
@@ -1989,7 +2040,7 @@ function paginationBar(key,info){
 }
 
 /* ============ NAV & RENDER ============ */
-var _APL={dashboard:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1};
+var _APL={dashboard:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1,errorMonitor:1};
 function nav(p){S.page=p;S.searchFilter='';S.tab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.selectedDeal=null;S.analyticsTab='users';S.paymentTab='revenue';S.dealsTab='all';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 function setSearch(v){S.searchFilter=v;S._pg={};render();}
@@ -2005,7 +2056,7 @@ function viewOrder(oid){var o=S.orders.find(function(x){return x.id===oid;});if(
 function setAnalyticsTab(t){S.analyticsTab=t;render();}
 function setPaymentTab(t){S.paymentTab=t;render();}
 
-var PL={dashboard:'📊 대시보드',analytics:'📈 분석/통계',sellers:'🏭 제조사 관리',buyersMgmt:'🌍 바이어 관리',matchings:'🤝 매칭/딜',ordersMgmt:'💰 주문/매출',disputes:'⚠️ 분쟁 관리',payments:'💳 결제/에스크로',chat:'💬 채팅 모니터',users:'👥 유저 관리',analyses:'🔬 AI 분석',services:'💼 서비스 요청',products:'📦 제품 관리',projects:'🚀 프로젝트',documents:'📄 서류',health:'🛡️ 시스템 상태',settings:'⚙️ 설정',alibabaMgmt:'🏪 알리바바 관리',dealsMgmt:'🏢 딜룸 거래 관리'};
+var PL={dashboard:'📊 대시보드',analytics:'📈 분석/통계',sellers:'🏭 제조사 관리',buyersMgmt:'🌍 바이어 관리',matchings:'🤝 매칭/딜',ordersMgmt:'💰 주문/매출',disputes:'⚠️ 분쟁 관리',payments:'💳 결제/에스크로',chat:'💬 채팅 모니터',users:'👥 유저 관리',analyses:'🔬 AI 분석',services:'💼 서비스 요청',products:'📦 제품 관리',projects:'🚀 프로젝트',documents:'📄 서류',health:'🛡️ 시스템 상태',settings:'⚙️ 설정',alibabaMgmt:'🏪 알리바바 관리',dealsMgmt:'🏢 딜룸 거래 관리',errorMonitor:'🚨 에러 모니터링'};
 
 function renderPage(){
   switch(S.page){
@@ -2028,6 +2079,7 @@ function renderPage(){
     case'settings':return pgSettings();
     case'alibabaMgmt':return pgAlibabaMgmt();
     case'dealsMgmt':return pgDeals();
+    case'errorMonitor':return pgErrorMonitor();
     default:return pgDash();
   }
 }
@@ -2061,6 +2113,7 @@ function renderSidebar(){
     {id:'div'},
     {id:'alibabaMgmt',icon:'🏪',label:'알리바바 관리'},
     {id:'div'},
+    {id:'errorMonitor',icon:'🚨',label:'에러 모니터링',count:S.clientErrors.length||null},
     {id:'health',icon:'🛡️',label:'시스템 상태'},
     {id:'settings',icon:'⚙️',label:'설정'}
   ];
@@ -2341,7 +2394,7 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   setPg:setPg,
   editAlibabaSync:editAlibabaSync,saveAlibabaSync:saveAlibabaSync,
   viewDeal:viewDeal,setDealsTab:setDealsTab,changeDealStage:changeDealStage,
-  viewProofDetail:viewProofDetail,approveProof:approveProof,rejectProof:rejectProof,setProofTab:setProofTab};
+  viewProofDetail:viewProofDetail,approveProof:approveProof,rejectProof:rejectProof,setProofTab:setProofTab,refreshErrors:refreshErrors,UI:UI};
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp]&&S.user)nav(hp);});
 sb.auth.onAuthStateChange(function(event, session){
