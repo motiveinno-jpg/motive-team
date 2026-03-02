@@ -475,7 +475,10 @@ function toggleCurrency(){
 
 /* === DATA === */
 function loadUser(){
+  /* 5초 타임아웃: 로딩이 끝나지 않으면 로그인 화면 표시 */
+  var _loadTimeout=setTimeout(function(){if(S.loading){set({loading:false});}},5000);
   sb.auth.getSession().then(function(res){
+    clearTimeout(_loadTimeout);
     var session=res.data.session;
     if(!session)return set({loading:false});
     sb.from('users').select('*').eq('id',session.user.id).single().then(function(r){
@@ -1011,9 +1014,17 @@ function genReport(d){
   var hsDetail=cd.hs_detail||{hs2:cd.hs.split('.')[0],hs4:cd.hs.split('.')[0],hs6:cd.hs};
   var ftaTariffs=(cd.fta_tariffs||[]).filter(function(ft){return mkts.indexOf(ft.mkt)>=0;});
   if(!ftaTariffs.length)ftaTariffs=cd.fta_tariffs||[];
+  /* 시장 코드 → 대표 국가 코드 매핑 (REST Countries 실데이터 연동) */
+  var _mktCountry={US:'US',JP:'JP',CN:'CN',EU:'DE',SEA:'VN',ME:'AE',AU:'AU',LATAM:'BR'};
+  var _cd=window._countryData||{};
+  function _enrichCountry(code){var c=_cd[code];if(!c)return null;return{population:c.population?((c.population/1e6).toFixed(1)+'M명'):'—',currency:c.currency||'—',currencyName:c.currencyName||'—',language:c.language||'—',capital:c.capital||'—',timezone:c.timezone||'—',flag:c.flag||null};}
   var mktAnalysis=mkts.map(function(m){
     var data={US:{name:'미국',size:'$580B',grow:'+4.2%',entry:'중간',note:'FDA 등록 필수. 아마존 FBA 최적. 한인마트 채널도 유효.'},JP:{name:'일본',size:'$330B',grow:'+2.1%',entry:'높음',note:'품질 기준 까다로움. Qoo10/라쿠텐 채널. PMDA 통보 필요.'},CN:{name:'중국',size:'$820B',grow:'+6.8%',entry:'매우 높음',note:'NMPA 등록 필수. 동물실험 이슈. 따이공/왕홍 마케팅 중요.'},EU:{name:'유럽',size:'$450B',grow:'+3.5%',entry:'높음',note:'CPNP 등록. 성분 규제 엄격. 독일/프랑스가 최대 시장.'},SEA:{name:'동남아',size:'$120B',grow:'+8.5%',entry:'낮음',note:'Shopee/Lazada 중심. 할랄 인증 시 시장 2배. 가격 민감.'},ME:{name:'중동',size:'$45B',grow:'+7.2%',entry:'중간',note:'할랄 인증 필수. 두바이 허브 활용. 프리미엄 선호.'},AU:{name:'호주',size:'$28B',grow:'+3.8%',entry:'중간',note:'TGA 등록. 클린뷰티 트렌드. 한인 커뮤니티 테스트 시장.'},LATAM:{name:'남미',size:'$65B',grow:'+5.5%',entry:'중간',note:'브라질/멕시코 중심. ANVISA 등록. 한류 영향력 성장 중.'}};
-    return data[m]||{name:m,size:'—',grow:'—',entry:'—',note:'—'};
+    var base=data[m]||{name:m,size:'—',grow:'—',entry:'—',note:'—'};
+    var cc=_mktCountry[m];var ci=cc?_enrichCountry(cc):null;
+    if(ci){base.country_profile={population:ci.population,currency:ci.currency+' ('+ci.currencyName+')',language:ci.language,capital:ci.capital,timezone:ci.timezone,flag:ci.flag};
+      var exRate=window._exRate||1400;base.currency_rate=ci.currency==='USD'?null:(ci.currency+'/KRW 환율: 실시간 연동');}
+    return base;
   });
   var existCerts=(d.existing_certs||[]);var needCerts=cd.certs.filter(function(c){var base=c.split(' ')[0];return existCerts.indexOf(base)<0&&existCerts.indexOf(c)<0;});
   return {
@@ -1330,6 +1341,8 @@ function pgAReport(){
       if(m.fta)_mktInner+='<span style="font-size:11px;color:var(--ok)">'+UI.esc(m.fta)+'</span>';
       _mktInner+='</div>';
       _mktInner+='<p style="font-size:13px;color:var(--w60);line-height:1.8;margin-bottom:8px">'+UI.esc(m.note||'')+'</p>';
+      if(m.country_profile){var cp=m.country_profile;_mktInner+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(0,212,255,.04);border-radius:8px;border:1px solid var(--bd)">';if(cp.flag)_mktInner+='<span style="font-size:20px">'+cp.flag+'</span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">인구 <strong style="color:var(--w70)">'+UI.esc(cp.population||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">통화 <strong style="color:var(--w70)">'+UI.esc(cp.currency||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">언어 <strong style="color:var(--w70)">'+UI.esc(cp.language||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">수도 <strong style="color:var(--w70)">'+UI.esc(cp.capital||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">시간대 <strong style="color:var(--w70)">'+UI.esc(cp.timezone||'—')+'</strong></span>';_mktInner+='</div>';}
+      if(m.currency_rate)_mktInner+='<div style="font-size:11px;color:var(--acc);margin-bottom:6px">💱 '+UI.esc(m.currency_rate)+'</div>';
       if(m.consumer_profile)_mktInner+='<div style="font-size:12px;color:var(--w50);margin-bottom:6px"><strong style="color:var(--w70)">소비자 프로필:</strong> '+UI.esc(m.consumer_profile)+'</div>';
       if(m.entry_strategy)_mktInner+='<div style="font-size:12px;color:var(--w50);margin-bottom:6px"><strong style="color:var(--w70)">진입 전략:</strong> '+UI.esc(m.entry_strategy)+'</div>';
       if(m.key_certs&&m.key_certs.length){_mktInner+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">';m.key_certs.forEach(function(c){_mktInner+='<span class="badge badge-err" style="font-size:9px">'+UI.esc(c)+'</span>';});_mktInner+='</div>';}
