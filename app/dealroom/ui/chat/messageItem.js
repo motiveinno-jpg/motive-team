@@ -56,7 +56,7 @@ function renderSystem(msg) {
   `);
 }
 
-function renderQuoteCard(msg) {
+function renderQuoteCard(msg, myRole) {
   const p = msg.payload || {};
   const total = p.total_amount ?? p.total ?? '';
   const currency = p.currency ?? '';
@@ -64,6 +64,21 @@ function renderQuoteCard(msg) {
   const validUntil = p.valid_until ? fmtDate(p.valid_until) : '';
   const status = p.status ?? '';
   const quoteNo = p.quote_no ?? p.quoteNo ?? '';
+  const isBuyer = (myRole || '').startsWith('buyer');
+
+  // Action buttons depend on role and status
+  let actionsHtml = '';
+  if (QUOTE_FINAL_STATES.includes(status)) {
+    actionsHtml = `<span class="dr-btn" style="opacity:.6;cursor:default;">${status === 'approved' ? '✓ 승인됨' : status}</span>`;
+  } else if (status === 'revision_requested') {
+    actionsHtml = isBuyer
+      ? `<span class="dr-btn" style="opacity:.6;cursor:default;">수정요청됨</span>`
+      : `${btn('견적 수정', 'quote_revise')}`;
+  } else {
+    actionsHtml = isBuyer
+      ? `${btn('승인', 'quote_approve')}${btn('수정요청', 'quote_revision')}`
+      : `<span class="dr-btn" style="opacity:.6;cursor:default;">바이어 응답 대기</span>`;
+  }
 
   const node = el(`
     <div class="dr-msg">
@@ -74,11 +89,7 @@ function renderQuoteCard(msg) {
         <div class="dr-card-row">Total: ${escapeHtml(currency)} ${escapeHtml(total)}</div>
         <div class="dr-card-row">Incoterms: ${escapeHtml(incoterms)}</div>
         <div class="dr-card-row">Valid until: ${escapeHtml(validUntil)}</div>
-        <div class="dr-card-actions">
-          ${QUOTE_FINAL_STATES.includes(status)
-            ? `<span class="dr-btn" style="opacity:.6;cursor:default;">${status === 'approved' ? '✓ 승인됨' : status}</span>`
-            : `${btn('승인', 'quote_approve')}${btn('수정요청', 'quote_revision')}`}
-        </div>
+        <div class="dr-card-actions">${actionsHtml}</div>
       </div>
     </div>
   `);
@@ -95,13 +106,32 @@ function renderQuoteCard(msg) {
   return node;
 }
 
-function renderDocumentCard(msg) {
+function renderDocumentCard(msg, myRole) {
   const p = msg.payload || {};
   const docType = p.doc_type ?? p.type ?? '';
   const docNo = p.doc_no ?? '';
   const status = p.status_v2 ?? p.status ?? '';
   const version = p.version ?? '';
   const downloadUrl = p.download_url ?? p.file_url ?? null;
+  const isBuyer = (myRole || '').startsWith('buyer');
+
+  // Approve button: buyers can approve sent docs, sellers see status
+  let approveHtml = '';
+  if (DOC_FINAL_STATES.includes(status)) {
+    approveHtml = `<span class="dr-btn" style="opacity:.6;cursor:default;">${status === 'approved' ? '✓ 승인됨' : status}</span>`;
+  } else if (status === 'sent') {
+    approveHtml = isBuyer
+      ? `${btn('승인', 'document_approve')}${btn('수정요청', 'document_revision')}`
+      : `<span class="dr-btn" style="opacity:.6;cursor:default;">바이어 승인 대기</span>`;
+  } else if (status === 'draft') {
+    approveHtml = isBuyer
+      ? `<span class="dr-btn" style="opacity:.6;cursor:default;">Draft</span>`
+      : `<span class="dr-btn" style="opacity:.6;cursor:default;">Draft</span>`;
+  }
+
+  const downloadHtml = safeUrl(downloadUrl)
+    ? `<a class="dr-btn" href="${escapeHtml(safeUrl(downloadUrl))}" target="_blank" rel="noopener">다운로드</a>`
+    : btn('다운로드', 'document_download');
 
   const node = el(`
     <div class="dr-msg">
@@ -111,10 +141,8 @@ function renderDocumentCard(msg) {
         <div class="dr-card-row">Status: ${escapeHtml(status)}</div>
         <div class="dr-card-row">Version: ${escapeHtml(version)}</div>
         <div class="dr-card-actions">
-          ${DOC_FINAL_STATES.includes(status)
-            ? `<span class="dr-btn" style="opacity:.6;cursor:default;">${status === 'approved' ? '✓ 승인됨' : status}</span>`
-            : btn('승인', 'document_approve')}
-          ${safeUrl(downloadUrl) ? `<a class="dr-btn" href="${escapeHtml(safeUrl(downloadUrl))}" target="_blank" rel="noopener">다운로드</a>` : btn('다운로드', 'document_download')}
+          ${approveHtml}
+          ${downloadHtml}
         </div>
       </div>
     </div>
@@ -170,11 +198,11 @@ function renderAiGuide(msg) {
   return node;
 }
 
-export function renderMessageItem(msg) {
+export function renderMessageItem(msg, myRole) {
   const type = msg.message_type || 'text';
   if (type === 'system') return renderSystem(msg);
-  if (type === 'quote_card') return renderQuoteCard(msg);
-  if (type === 'document_card') return renderDocumentCard(msg);
+  if (type === 'quote_card') return renderQuoteCard(msg, myRole);
+  if (type === 'document_card') return renderDocumentCard(msg, myRole);
   if (type === 'ai_guide') return renderAiGuide(msg);
   return renderText(msg);
 }

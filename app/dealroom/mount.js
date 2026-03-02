@@ -48,8 +48,8 @@ function escapeHtml(s) {
     .replaceAll("'", '&#039;');
 }
 
-function renderMessages($list, messages) {
-  $list.replaceChildren(...(messages || []).map(renderMessageItem));
+function renderMessages($list, messages, myRole) {
+  $list.replaceChildren(...(messages || []).map(m => renderMessageItem(m, myRole)));
   $list.scrollTop = $list.scrollHeight;
 }
 
@@ -92,7 +92,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
   // Store -> UI bindings
   const offAny = store.onAny((event, payload, state) => {
     if (event === 'MESSAGES_SET' || event === 'MESSAGE_RECEIVED' || event === 'GAP_MESSAGES_APPENDED') {
-      renderMessages($chatList, state.messages);
+      renderMessages($chatList, state.messages, state.me?.role);
     }
     if (event === 'LOADING_SET' || event === 'ERROR_SET') {
       $status.textContent = state.loading ? 'Loading…' : (state.error ? 'Error' : 'Ready');
@@ -114,33 +114,55 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     const actions = [];
     const docs = state.documents || [];
     const msgs = state.messages || [];
-    const stage = state.currentStage || 'prospect';
+    const myRole = state.me?.role || 'seller';
+    const isBuyer = myRole.startsWith('buyer');
     const hasQuote = msgs.some(m => m.message_type === 'quote_card');
+    const pendingQuote = msgs.some(m => m.message_type === 'quote_card' && !['approved','rejected','expired','cancelled'].includes(m.payload?.status));
     const hasApprovedQuote = msgs.some(m => m.message_type === 'quote_card' && m.payload?.status === 'approved');
+    const revisionQuote = msgs.some(m => m.message_type === 'quote_card' && m.payload?.status === 'revision_requested');
     const hasPIDraft = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'draft');
     const hasPISent = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'sent');
     const hasPIApproved = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'approved');
     const participants = state.participants || [];
 
-    if (participants.length < 2) {
-      actions.push({ icon: '👥', text: '바이어를 초대하세요', action: 'invite' });
-    }
-    if (!hasQuote) {
-      actions.push({ icon: '📝', text: '견적을 작성하세요', action: 'quote' });
-    } else if (!hasApprovedQuote) {
-      actions.push({ icon: '⏳', text: '바이어 견적 승인 대기 중', action: null });
-    }
-    if (hasApprovedQuote && !hasPIDraft && !hasPISent && !hasPIApproved) {
-      actions.push({ icon: '📋', text: 'PI를 생성하세요', action: 'doc' });
-    }
-    if (hasPIDraft) {
-      actions.push({ icon: '📤', text: 'PI를 바이어에게 전송하세요', action: 'send_doc' });
-    }
-    if (hasPISent) {
-      actions.push({ icon: '⏳', text: '바이어 PI 승인 대기 중', action: null });
-    }
-    if (hasPIApproved) {
-      actions.push({ icon: '✅', text: 'PI 승인 완료! 다음 서류를 준비하세요', action: 'doc' });
+    if (isBuyer) {
+      // ─── Buyer Next Actions ───
+      if (pendingQuote) {
+        actions.push({ icon: '📝', text: '견적을 검토하고 승인하세요', action: null });
+      }
+      if (hasPISent) {
+        actions.push({ icon: '📋', text: 'PI를 확인하고 승인하세요', action: null });
+      }
+      if (hasPIApproved) {
+        actions.push({ icon: '✅', text: 'PI 승인 완료! 결제를 진행하세요', action: null });
+      }
+      if (!pendingQuote && !hasPISent && !hasPIApproved) {
+        actions.push({ icon: '⏳', text: '셀러의 견적/서류를 기다리는 중', action: null });
+      }
+    } else {
+      // ─── Seller Next Actions ───
+      if (participants.length < 2) {
+        actions.push({ icon: '👥', text: '바이어를 초대하세요', action: 'invite' });
+      }
+      if (revisionQuote) {
+        actions.push({ icon: '✏️', text: '바이어 수정요청! 견적을 수정하세요', action: 'quote' });
+      } else if (!hasQuote) {
+        actions.push({ icon: '📝', text: '견적을 작성하세요', action: 'quote' });
+      } else if (!hasApprovedQuote && !revisionQuote) {
+        actions.push({ icon: '⏳', text: '바이어 견적 승인 대기 중', action: null });
+      }
+      if (hasApprovedQuote && !hasPIDraft && !hasPISent && !hasPIApproved) {
+        actions.push({ icon: '📋', text: 'PI를 생성하세요', action: 'doc' });
+      }
+      if (hasPIDraft) {
+        actions.push({ icon: '📤', text: 'PI를 바이어에게 전송하세요', action: 'send_doc' });
+      }
+      if (hasPISent) {
+        actions.push({ icon: '⏳', text: '바이어 PI 승인 대기 중', action: null });
+      }
+      if (hasPIApproved) {
+        actions.push({ icon: '✅', text: 'PI 승인 완료! 다음 서류를 준비하세요', action: 'doc' });
+      }
     }
     if (actions.length === 0) {
       actions.push({ icon: '🚀', text: '거래를 시작하세요', action: null });
@@ -295,6 +317,11 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
 
     if (participants) {
       store.setState({ participants });
+      // Set my role from actual participant data
+      const myParticipant = participants.find(p => p.user_id === currentUser?.id);
+      if (myParticipant) {
+        store.setState({ me: { ...store.getState().me, role: myParticipant.participant_role } });
+      }
     }
 
     // Load documents
