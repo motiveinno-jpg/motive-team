@@ -457,7 +457,29 @@ function _loadCountryData(){
       };
     });
     console.log('Country data loaded:',Object.keys(window._countryData).length+' countries');
+    /* World Bank GDP/수출입 데이터 로드 (주요 수출 대상국) */
+    _loadWorldBankData();
   }).catch(function(e){console.log('Country data load failed:',e.message);});
+}
+/* World Bank API — GDP + 수출 규모 (무료, 인증 불필요) */
+function _loadWorldBankData(){
+  if(window._wbData)return;window._wbData={};
+  var countries='USA;JPN;CHN;DEU;VNM;ARE;AUS;BRA;GBR;SGP;THA;IDN;MYS;PHL;IND';
+  var indicators=['NY.GDP.MKTP.CD','NE.EXP.GNFS.CD'];
+  indicators.forEach(function(ind){
+    fetch('https://api.worldbank.org/v2/country/'+countries+'/indicator/'+ind+'?format=json&date=2022:2024&per_page=100').then(function(r){return r.json();}).then(function(d){
+      if(!d||!d[1])return;
+      d[1].forEach(function(row){
+        if(!row.value)return;
+        var iso3=row.countryiso3code;
+        if(!window._wbData[iso3])window._wbData[iso3]={};
+        if(!window._wbData[iso3][ind]||row.date>window._wbData[iso3][ind].year){
+          window._wbData[iso3][ind]={value:row.value,year:row.date};
+        }
+      });
+      console.log('World Bank '+ind+' loaded');
+    }).catch(function(){});
+  });
 }
 function toggleCurrency(){
   S.currency=S.currency==='KRW'?'USD':'KRW';
@@ -1018,10 +1040,12 @@ function genReport(d){
   var hsDetail=cd.hs_detail||{hs2:cd.hs.split('.')[0],hs4:cd.hs.split('.')[0],hs6:cd.hs};
   var ftaTariffs=(cd.fta_tariffs||[]).filter(function(ft){return mkts.indexOf(ft.mkt)>=0;});
   if(!ftaTariffs.length)ftaTariffs=cd.fta_tariffs||[];
-  /* 시장 코드 → 대표 국가 코드 매핑 (REST Countries 실데이터 연동) */
+  /* 시장 코드 → 대표 국가 코드 매핑 (REST Countries + World Bank 실데이터 연동) */
   var _mktCountry={US:'US',JP:'JP',CN:'CN',EU:'DE',SEA:'VN',ME:'AE',AU:'AU',LATAM:'BR'};
-  var _cd=window._countryData||{};
+  var _mktISO3={US:'USA',JP:'JPN',CN:'CHN',EU:'DEU',SEA:'VNM',ME:'ARE',AU:'AUS',LATAM:'BRA'};
+  var _cd=window._countryData||{};var _wb=window._wbData||{};
   function _enrichCountry(code){var c=_cd[code];if(!c)return null;return{population:c.population?((c.population/1e6).toFixed(1)+'M명'):'—',currency:c.currency||'—',currencyName:c.currencyName||'—',language:c.language||'—',capital:c.capital||'—',timezone:c.timezone||'—',flag:c.flag||null};}
+  function _getWBData(iso3){var w=_wb[iso3];if(!w)return null;var gdp=w['NY.GDP.MKTP.CD'];var exp=w['NE.EXP.GNFS.CD'];return{gdp:gdp?'$'+(gdp.value/1e9).toFixed(1)+'B ('+gdp.year+')':null,exports:exp?'$'+(exp.value/1e9).toFixed(1)+'B ('+exp.year+')':null};}
   var mktAnalysis=mkts.map(function(m){
     var data={US:{name:'미국',size:'$580B',grow:'+4.2%',entry:'중간',note:'FDA 등록 필수. 아마존 FBA 최적. 한인마트 채널도 유효.'},JP:{name:'일본',size:'$330B',grow:'+2.1%',entry:'높음',note:'품질 기준 까다로움. Qoo10/라쿠텐 채널. PMDA 통보 필요.'},CN:{name:'중국',size:'$820B',grow:'+6.8%',entry:'매우 높음',note:'NMPA 등록 필수. 동물실험 이슈. 따이공/왕홍 마케팅 중요.'},EU:{name:'유럽',size:'$450B',grow:'+3.5%',entry:'높음',note:'CPNP 등록. 성분 규제 엄격. 독일/프랑스가 최대 시장.'},SEA:{name:'동남아',size:'$120B',grow:'+8.5%',entry:'낮음',note:'Shopee/Lazada 중심. 할랄 인증 시 시장 2배. 가격 민감.'},ME:{name:'중동',size:'$45B',grow:'+7.2%',entry:'중간',note:'할랄 인증 필수. 두바이 허브 활용. 프리미엄 선호.'},AU:{name:'호주',size:'$28B',grow:'+3.8%',entry:'중간',note:'TGA 등록. 클린뷰티 트렌드. 한인 커뮤니티 테스트 시장.'},LATAM:{name:'남미',size:'$65B',grow:'+5.5%',entry:'중간',note:'브라질/멕시코 중심. ANVISA 등록. 한류 영향력 성장 중.'}};
     var base=data[m]||{name:m,size:'—',grow:'—',entry:'—',note:'—'};
@@ -1030,6 +1054,7 @@ function genReport(d){
       var fx=window._fxRates||{};var krwRate=fx[ci.currency];
       if(krwRate&&ci.currency!=='KRW'){base.currency_rate='1 KRW = '+(krwRate<0.01?krwRate.toFixed(6):krwRate.toFixed(4))+' '+ci.currency+' (실시간)';}
       else if(ci.currency!=='KRW'&&ci.currency!=='USD'){base.currency_rate=ci.currency+'/KRW 환율 조회 중';}}
+    var wb=_getWBData(_mktISO3[m]);if(wb){if(wb.gdp)base.gdp=wb.gdp;if(wb.exports)base.exports=wb.exports;}
     return base;
   });
   var existCerts=(d.existing_certs||[]);var needCerts=cd.certs.filter(function(c){var base=c.split(' ')[0];return existCerts.indexOf(base)<0&&existCerts.indexOf(c)<0;});
@@ -1348,6 +1373,7 @@ function pgAReport(){
       _mktInner+='</div>';
       _mktInner+='<p style="font-size:13px;color:var(--w60);line-height:1.8;margin-bottom:8px">'+UI.esc(m.note||'')+'</p>';
       if(m.country_profile){var cp=m.country_profile;_mktInner+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;padding:8px 12px;background:rgba(0,212,255,.04);border-radius:8px;border:1px solid var(--bd)">';if(cp.flag)_mktInner+='<span style="font-size:20px">'+cp.flag+'</span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">인구 <strong style="color:var(--w70)">'+UI.esc(cp.population||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">통화 <strong style="color:var(--w70)">'+UI.esc(cp.currency||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">언어 <strong style="color:var(--w70)">'+UI.esc(cp.language||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">수도 <strong style="color:var(--w70)">'+UI.esc(cp.capital||'—')+'</strong></span>';_mktInner+='<span style="font-size:11px;color:var(--w50)">시간대 <strong style="color:var(--w70)">'+UI.esc(cp.timezone||'—')+'</strong></span>';_mktInner+='</div>';}
+      if(m.gdp||m.exports){_mktInner+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px">';if(m.gdp)_mktInner+='<span style="font-size:11px;color:var(--w50)">📊 GDP <strong style="color:var(--pri)">'+UI.esc(m.gdp)+'</strong></span>';if(m.exports)_mktInner+='<span style="font-size:11px;color:var(--w50)">📦 총수출 <strong style="color:var(--ok)">'+UI.esc(m.exports)+'</strong></span>';_mktInner+='</div>';}
       if(m.currency_rate)_mktInner+='<div style="font-size:11px;color:var(--acc);margin-bottom:6px">💱 '+UI.esc(m.currency_rate)+'</div>';
       if(m.consumer_profile)_mktInner+='<div style="font-size:12px;color:var(--w50);margin-bottom:6px"><strong style="color:var(--w70)">소비자 프로필:</strong> '+UI.esc(m.consumer_profile)+'</div>';
       if(m.entry_strategy)_mktInner+='<div style="font-size:12px;color:var(--w50);margin-bottom:6px"><strong style="color:var(--w70)">진입 전략:</strong> '+UI.esc(m.entry_strategy)+'</div>';
