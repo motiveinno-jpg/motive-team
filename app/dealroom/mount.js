@@ -103,15 +103,78 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     }
   });
 
-  // Sidebar renderer
+  // Sidebar renderer with Next Actions
+  const STAGE_COLORS = {
+    prospect: '#94a3b8', inquiry: '#f59e0b', negotiation: '#3b82f6',
+    contract: '#8b5cf6', payment: '#22c55e', shipping: '#14b8a6',
+    completed: '#22c55e', cancelled: '#ef4444',
+  };
+
+  function getNextActions(state) {
+    const actions = [];
+    const docs = state.documents || [];
+    const msgs = state.messages || [];
+    const stage = state.currentStage || 'prospect';
+    const hasQuote = msgs.some(m => m.message_type === 'quote_card');
+    const hasApprovedQuote = msgs.some(m => m.message_type === 'quote_card' && m.payload?.status === 'approved');
+    const hasPIDraft = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'draft');
+    const hasPISent = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'sent');
+    const hasPIApproved = docs.some(d => d.doc_type === 'PI' && (d.status_v2 || d.status) === 'approved');
+    const participants = state.participants || [];
+
+    if (participants.length < 2) {
+      actions.push({ icon: '👥', text: '바이어를 초대하세요', action: 'invite' });
+    }
+    if (!hasQuote) {
+      actions.push({ icon: '📝', text: '견적을 작성하세요', action: 'quote' });
+    } else if (!hasApprovedQuote) {
+      actions.push({ icon: '⏳', text: '바이어 견적 승인 대기 중', action: null });
+    }
+    if (hasApprovedQuote && !hasPIDraft && !hasPISent && !hasPIApproved) {
+      actions.push({ icon: '📋', text: 'PI를 생성하세요', action: 'doc' });
+    }
+    if (hasPIDraft) {
+      actions.push({ icon: '📤', text: 'PI를 바이어에게 전송하세요', action: 'send_doc' });
+    }
+    if (hasPISent) {
+      actions.push({ icon: '⏳', text: '바이어 PI 승인 대기 중', action: null });
+    }
+    if (hasPIApproved) {
+      actions.push({ icon: '✅', text: 'PI 승인 완료! 다음 서류를 준비하세요', action: 'doc' });
+    }
+    if (actions.length === 0) {
+      actions.push({ icon: '🚀', text: '거래를 시작하세요', action: null });
+    }
+    return actions.slice(0, 3);
+  }
+
   function renderSidebar(state) {
+    const stage = state.currentStage || 'prospect';
+    const stageColor = STAGE_COLORS[stage] || '#94a3b8';
+    const nextActions = getNextActions(state);
+
     $sidebar.innerHTML = `
       <div class="dr-panel">
         <div class="dr-panel-title">Stage</div>
-        <div class="dr-panel-body" style="font-weight:600;">${escapeHtml(state.currentStage || 'prospect')}</div>
+        <div class="dr-panel-body" style="display:flex;align-items:center;gap:8px;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${stageColor};"></span>
+          <span style="font-weight:700;text-transform:uppercase;font-size:13px;">${escapeHtml(stage)}</span>
+        </div>
       </div>
       <div class="dr-panel">
-        <div class="dr-panel-title">Participants</div>
+        <div class="dr-panel-title">Next Actions</div>
+        <div class="dr-panel-body" style="display:flex;flex-direction:column;gap:6px;">
+          ${nextActions.map(a => `
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:#f8fafc;border-radius:8px;font-size:13px;${a.action ? 'cursor:pointer;' : 'opacity:.8;'}"
+              ${a.action ? `data-sidebar-action="${a.action}"` : ''}>
+              <span style="font-size:16px;">${a.icon}</span>
+              <span>${escapeHtml(a.text)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div class="dr-panel">
+        <div class="dr-panel-title">Participants (${(state.participants || []).length})</div>
         <div class="dr-panel-body">
           ${(state.participants || []).length
             ? (state.participants || []).map(p => `<span class="dr-pill">${escapeHtml(p.participant_role || '')}</span>`).join(' ')
@@ -120,6 +183,17 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
       </div>
       ${renderDocumentsPanel(state.documents)}
     `;
+
+    // Wire sidebar action clicks
+    $sidebar.querySelectorAll('[data-sidebar-action]').forEach(el => {
+      el.addEventListener('click', () => {
+        const act = el.getAttribute('data-sidebar-action');
+        if (act === 'invite' || act === 'quote' || act === 'doc') {
+          const barBtn = $actionBar.querySelector(`[data-dr="${act}"]`);
+          if (barBtn) barBtn.click();
+        }
+      });
+    });
   }
 
   const offSidebar = store.subscribe('STATE_CHANGED', (s) => renderSidebar(s));
