@@ -87,6 +87,35 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
         return;
       }
 
+      if (action === 'quote_revise') {
+        // Seller revises and resends a quote that was revision_requested
+        const quoteId = msg?.ref_id || payload.quote_id;
+        if (!quoteId) throw new Error('견적 ID를 찾을 수 없습니다');
+        if (actionBtn) { actionBtn.disabled = true; actionBtn.textContent = '처리 중...'; }
+        const { data, error } = await supabase.functions.invoke('approve-quote', {
+          body: { quote_id: quoteId, action: 'revise_resend' },
+        });
+        if (error) throw error;
+        if (data && !data.ok) throw new Error(data.error?.message || '수정 발송 실패');
+        showToast('수정된 견적이 발송되었습니다', 'success');
+        return;
+      }
+
+      if (action === 'document_revision') {
+        // Buyer requests revision on a sent document
+        const documentId = msg?.ref_id || payload.document_id;
+        if (!documentId) throw new Error('문서 ID를 찾을 수 없습니다');
+        const reason = await openRevisionModal();
+        if (reason === null) return;
+        if (actionBtn) { actionBtn.disabled = true; actionBtn.textContent = '처리 중...'; }
+        const { error } = await supabase.functions.invoke('approve-document', {
+          body: { deal_id: dealId, document_id: documentId, action: 'revision', reason },
+        });
+        if (error) throw error;
+        showToast('문서 수정요청이 전송되었습니다', 'success');
+        return;
+      }
+
       if (action === 'ai_suggestion') {
         const input = document.querySelector('#dr-chat-input');
         if (input && d.text) {
