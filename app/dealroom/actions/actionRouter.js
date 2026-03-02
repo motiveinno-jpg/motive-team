@@ -1,5 +1,7 @@
 // /app/dealroom/actions/actionRouter.js
 import { renderPIToPdf } from '../docs/render/pi.js';
+import { renderCIToPdf } from '../docs/render/ci.js';
+import { renderPLToPdf } from '../docs/render/pl.js';
 
 function showToast(msg, type = 'error') {
   const existing = document.getElementById('dr-toast');
@@ -108,8 +110,10 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
           if (!docData) throw new Error('문서를 찾을 수 없습니다');
 
           const docType = (docData.doc_type || '').toUpperCase();
-          if (docType === 'PI') {
-            renderPIToPdf(docData);
+          const renderers = { PI: renderPIToPdf, CI: renderCIToPdf, PL: renderPLToPdf };
+          const renderer = renderers[docType];
+          if (renderer) {
+            renderer(docData);
             showToast('PDF 다운로드 시작', 'success');
           } else {
             showToast(`${docType} PDF 생성은 준비 중입니다`, 'info');
