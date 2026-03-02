@@ -2369,6 +2369,90 @@ function rmDocItem(i){S.docItems.splice(i,1);render();}
 function fillDocProd(idx,pid){if(!pid)return;var p=S.products.find(function(x){return x.id===pid;});if(!p)return;var el=document.getElementById('di'+idx);if(!el)return;var ni=el.querySelector('[name=itn_'+idx+']');if(ni)ni.value=p.name_en||p.name_ko||'';var di=el.querySelector('[name=itd_'+idx+']');if(di)di.value=p.description_en||'';var pi=el.querySelector('[name=itp_'+idx+']');if(pi&&p.fob_price)pi.value=p.fob_price;}
 function fillBuyerDoc(){var sel=document.querySelector('[name=buyer_from]');if(!sel||!sel.value)return;var b=S.buyers.find(function(x){return x.id===sel.value;});if(!b)return;var ci=document.querySelector('[name=buyer_company]');if(ci)ci.value=b.company_name||'';var cn=document.querySelector('[name=buyer_contact]');if(cn)cn.value=b.contact_name||'';var ca=document.querySelector('[name=buyer_address]');if(ca)ca.value=b.address||'';var cc=document.querySelector('[name=buyer_country]');if(cc)cc.value=b.country||'';}
 
+/* === DOCUMENT VALIDATION (P0-Doc) === */
+function _validateDoc(type,items,buyer,ref,company,phase){
+  // phase: 'create' | 'send'
+  var issues=[];var isPL=type==='pl'||type==='bl';
+  var isPriced=['pi','ci','sc'].indexOf(type)>=0;
+  var noItems=['ic','cd','lc','hsc','cfs','fc','msds'].indexOf(type)>=0;
+  // A. Required fields
+  if(ref){if(!ref.doc_no)issues.push({f:'doc_no',m:'서류 번호 필수',lv:'err'});if(!ref.doc_date)issues.push({f:'doc_date',m:'서류 날짜 필수',lv:'err'});}
+  if(!noItems&&buyer){if(!buyer.buyer_company&&!buyer.company_name)issues.push({f:'buyer_company',m:'바이어 회사명 필수',lv:'err'});}
+  // B. Item validation
+  if(!noItems&&items){
+    if(!items.length)issues.push({f:'items',m:'최소 1개 품목 필수',lv:'err'});
+    var tA=0,tGW=0,tNW=0,tCBM=0;
+    items.forEach(function(it,i){
+      var n=i+1;
+      if(!it.name)issues.push({f:'item_'+n,m:'품목 #'+n+' 품명 필수',lv:'err'});
+      var qty=Number(it.qty);
+      if(!Number.isFinite(qty)||qty<=0)issues.push({f:'item_'+n+'_qty',m:'품목 #'+n+' 수량 > 0 필요',lv:'err'});
+      if(isPriced){
+        var price=Number(it.price!=null?it.price:it.unit_price)||0;
+        if(!Number.isFinite(price)||price<0)issues.push({f:'item_'+n+'_price',m:'품목 #'+n+' 단가 올바르지 않음',lv:'err'});
+        var amt=qty*price;
+        if(!Number.isFinite(amt))issues.push({f:'item_'+n+'_amt',m:'품목 #'+n+' 금액 계산 오류 (NaN)',lv:'err'});
+        tA+=amt;
+      }
+      if(isPL){
+        var gw=Number(it.gw||0),nw=Number(it.nw||0),cbm=Number(it.cbm||0);
+        if(!Number.isFinite(gw)||gw<0)issues.push({f:'item_'+n+'_gw',m:'품목 #'+n+' 총중량 올바르지 않음',lv:'err'});
+        if(!Number.isFinite(nw)||nw<0)issues.push({f:'item_'+n+'_nw',m:'품목 #'+n+' 순중량 올바르지 않음',lv:'err'});
+        if(nw>0&&gw>0&&nw>gw)issues.push({f:'item_'+n+'_nwgw',m:'품목 #'+n+' 순중량이 총중량보다 큼',lv:'warn'});
+        tGW+=gw;tNW+=nw;tCBM+=cbm;
+      }
+    });
+    // Totals check
+    if(isPriced&&items.length>0){
+      if(tA<=0)issues.push({f:'total',m:'총 금액이 $0 — 단가를 확인하세요',lv:'warn'});
+      if(!Number.isFinite(tA))issues.push({f:'total',m:'총 금액 계산 오류 (NaN/Infinity)',lv:'err'});
+    }
+    if(isPL&&items.length>0){
+      if(tGW<=0)issues.push({f:'total_gw',m:'총 중량(G.W.)이 0kg — 확인 필요',lv:'warn'});
+      if(tCBM<=0)issues.push({f:'total_cbm',m:'총 CBM이 0 — 확인 필요',lv:'warn'});
+    }
+  }
+  // C. Company info (send phase)
+  if(phase==='send'&&company){
+    if(!company.name_en&&!company.name_ko)issues.push({f:'company',m:'회사명을 설정에서 입력하세요',lv:'err'});
+  }
+  // D. Payment/incoterms (PI/CI/SC)
+  if(isPriced&&ref){
+    var pay=ref.payment||ref.payment_terms||'';
+    if(!pay&&phase==='send')issues.push({f:'payment',m:'결제 조건 필수 (전송 시)',lv:'err'});
+    var terms=ref.terms||ref.incoterms||'';
+    if(!terms&&phase==='send')issues.push({f:'terms',m:'인코텀즈 필수 (전송 시)',lv:'err'});
+  }
+  // E. Bank info for T/T on send
+  if(phase==='send'&&isPriced&&company){
+    var pt=String(ref&&(ref.payment||ref.payment_terms)||'').toUpperCase();
+    if(pt.indexOf('T/T')>=0||pt.indexOf('TT')>=0){
+      if(!company.bank_name)issues.push({f:'bank',m:'T/T 결제 시 은행 정보 필요 (설정에서 입력)',lv:'warn'});
+    }
+  }
+  var errs=issues.filter(function(i){return i.lv==='err';});
+  return {ok:errs.length===0,issues:issues};
+}
+function _showDocIssues(result){
+  var errs=result.issues.filter(function(i){return i.lv==='err';});
+  var warns=result.issues.filter(function(i){return i.lv==='warn';});
+  var h='<div style="max-height:320px;overflow-y:auto">';
+  if(errs.length){
+    h+='<div style="font-weight:700;color:#EF4444;margin-bottom:8px">\u26D4 오류 ('+errs.length+'개) — 수정 필수</div>';
+    errs.forEach(function(i){h+='<div style="padding:5px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,.08)"><span style="color:#EF4444">\u2715</span> '+U.esc(i.m)+'</div>';});
+  }
+  if(warns.length){
+    h+='<div style="font-weight:700;color:#FF9100;margin:'+(errs.length?'12':'0')+'px 0 8px">\u26A0 경고 ('+warns.length+'개)</div>';
+    warns.forEach(function(i){h+='<div style="padding:5px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,.08)"><span style="color:#FF9100">\u26A0</span> '+U.esc(i.m)+'</div>';});
+  }
+  h+='</div>';
+  var rid='DOC-'+Date.now().toString(36).slice(-5).toUpperCase();
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'doc-val',title:'\u26A0 서류 검증 '+(errs.length?'실패':'경고'),body:h,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'doc-val\')">닫기</button>'+(errs.length?'':'<button class="btn btn-pri" onclick="App.closeModal(\'doc-val\');App._docValContinue&&App._docValContinue()">경고 무시하고 계속</button>'),width:'460px'}));
+  UI.showModal('doc-val');
+  if(errs.length)UI.toast('서류 검증 실패 — '+errs.length+'개 오류','err',6000,rid);
+  return errs.length===0; // true if only warnings
+}
+
 var _lastDoc=null;
 function genDoc(){
   var _noItemTypes=['ic','cd','lc','hsc','cfs','fc','msds'];
@@ -2384,7 +2468,22 @@ function genDoc(){
     items.push(it);
   }
   if(!_isNoItem&&(!items[0]||!items[0].name)){UI.toast('품목명 입력','warn');return;}
-  var c=S.company||{};var tN={pi:'PROFORMA INVOICE',ci:'COMMERCIAL INVOICE',pl:'PACKING LIST',co:'CERTIFICATE OF ORIGIN',bl:'BILL OF LADING',sc:'SALES CONTRACT',ic:'INSURANCE CERTIFICATE',cd:'CUSTOMS DECLARATION',lc:'LETTER OF CREDIT',isc:'INSPECTION CERTIFICATE',hsc:'HEALTH / SANITARY CERTIFICATE',cfs:'CERTIFICATE OF FREE SALE',fc:'FUMIGATION CERTIFICATE',msds:'MATERIAL SAFETY DATA SHEET'};
+  var c=S.company||{};
+  // Document validation (P0-Doc)
+  if(!_isNoItem){
+    var _vr=_validateDoc(S.docType,items,bd,rd,c,'create');
+    if(!_vr.ok){_showDocIssues(_vr);return;}
+    if(_vr.issues.length>0){
+      var _canContinue=_showDocIssues(_vr);
+      if(!_canContinue){App._docValContinue=function(){App._docValContinue=null;_genDocInner(items,bd,rd,c);};return;}
+    }
+  }
+  _genDocInner(items,bd,rd,c);
+}
+function _genDocInner(items,bd,rd,c){
+  var isPL=S.docType==='pl';var isCO=S.docType==='co';var isSC=S.docType==='sc';var isBL=S.docType==='bl';
+  var isIC=S.docType==='ic';var isCD=S.docType==='cd';var isLC=S.docType==='lc';var isISC=S.docType==='isc';var isHSC=S.docType==='hsc';var isCFS=S.docType==='cfs';var isFC=S.docType==='fc';var isMSDS=S.docType==='msds';var isNewDoc=isIC||isCD||isLC||isISC||isHSC||isCFS||isFC||isMSDS;
+  var tN={pi:'PROFORMA INVOICE',ci:'COMMERCIAL INVOICE',pl:'PACKING LIST',co:'CERTIFICATE OF ORIGIN',bl:'BILL OF LADING',sc:'SALES CONTRACT',ic:'INSURANCE CERTIFICATE',cd:'CUSTOMS DECLARATION',lc:'LETTER OF CREDIT',isc:'INSPECTION CERTIFICATE',hsc:'HEALTH / SANITARY CERTIFICATE',cfs:'CERTIFICATE OF FREE SALE',fc:'FUMIGATION CERTIFICATE',msds:'MATERIAL SAFETY DATA SHEET'};
   var tA=0,tQ=0,tNW=0,tGW=0,tCBM=0,tC=0;
   items.forEach(function(x){tA+=x.qty*x.price;tQ+=x.qty;if(isPL){tNW+=x.nw;tGW+=x.gw;tCBM+=x.cbm;tC+=x.ctn;}});
 
@@ -5948,6 +6047,21 @@ function rmDealDocItem(idx){if(S._dealDocForm&&S._dealDocForm.items.length>1)S._
 function updateDocField(field,val){if(S._dealDocForm)S._dealDocForm[field]=val;}
 
 function submitDealDoc(){
+  var deal=S._currentDeal;var f=S._dealDocForm;
+  if(!deal||!f||!S.user)return;
+  // Document validation (P0-Doc) — send phase since this goes directly to buyer
+  var _vItems=f.items.map(function(it){return {name:it.name,qty:it.qty,unit_price:it.unit_price,unit:it.unit};});
+  var _vBuyer={buyer_company:deal.buyer?(deal.buyer.company_name||deal.buyer.contact_name):''};
+  var _vRef={doc_no:'auto',doc_date:new Date().toISOString().split('T')[0],payment_terms:f.payment_terms,incoterms:f.incoterms};
+  var _vr=_validateDoc(f.type,_vItems,_vBuyer,_vRef,S.company||{},'send');
+  if(!_vr.ok){_showDocIssues(_vr);return;}
+  if(_vr.issues.length>0){
+    var _canContinue=_showDocIssues(_vr);
+    if(!_canContinue){App._docValContinue=function(){App._docValContinue=null;_submitDealDocInner();};return;}
+  }
+  _submitDealDocInner();
+}
+function _submitDealDocInner(){
   var deal=S._currentDeal;var f=S._dealDocForm;
   if(!deal||!f||!S.user)return;
   var total=f.items.reduce(function(s,it){return s+((parseFloat(it.qty)||0)*(parseFloat(it.unit_price)||0));},0);
