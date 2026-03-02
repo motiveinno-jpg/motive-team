@@ -215,6 +215,9 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 <script>
 (function(){
 'use strict';
+/* Global error handler */
+window.addEventListener('error',function(ev){console.error('[buyer global error]',ev.error||ev.message);var root=document.getElementById('root');if(root&&root.innerHTML.indexOf('Loading')>-1){root.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">Error occurred</div><div style="font-size:12px;color:#888;margin-bottom:16px">'+(ev.message||'')+'</div><button onclick="location.reload()" style="padding:10px 24px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">Reload</button></div>';}});
+window.addEventListener('unhandledrejection',function(ev){console.error('[buyer unhandled rejection]',ev.reason);});
 var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
 var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
 var RELAY=(!location.hostname||location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:')?'http://localhost:3456':'';
@@ -305,6 +308,7 @@ function _doRender(){
 
   if(S.loading){root.innerHTML='<div class="auth-wrap"><div style="text-align:center"><div style="font-size:36px;margin-bottom:12px">W</div><div style="color:var(--w40)">Loading...</div></div></div>';return;}
   if(!S.user){root.innerHTML=pgAuth();return;}
+  try{
   var isDealRoom=S.page==='deals'&&S.currentDeal;
   root.innerHTML='<div class="mob-menu" onclick="B.toggleMob()">&#9776;</div><div class="mob-overlay" onclick="B.closeMob()"></div><div class="app-layout">'+renderSidebar()+'<div class="main-area">'+renderTopbar()+'<div class="page-content" id="pageContent" style="'+(isDealRoom?'padding:12px;overflow:hidden':'')+'">'+renderPage()+'</div></div></div>'+(S.modal?renderModal():'');
 
@@ -317,6 +321,7 @@ function _doRender(){
       if(focusSel&&el.setSelectionRange)try{el.setSelectionRange(focusSel.s,focusSel.e);}catch(e){}
     }
   }
+  }catch(renderErr){console.error('[buyer render error]',renderErr);root.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">Page Rendering Error</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+esc(renderErr.message)+'</div><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">Reload</button></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:renderErr.stack,url:location.href,page:S.page,portal:'buyer'}).then(function(){});}catch(e){}}
 }
 
 function renderPage(){
@@ -1320,7 +1325,7 @@ function pgProductDetail(){
     // Thumbnail strip
     if(p.images.length>1){
       h+='<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px">';
-      p.images.forEach(function(img,i){
+      (p.images||[]).forEach(function(img,i){
         h+='<img src="'+esc(img)+'" onclick="B.pdSetImg('+i+')" style="width:56px;height:56px;object-fit:cover;border-radius:6px;cursor:pointer;border:2px solid '+(i===curImg?'var(--pri)':'transparent')+';opacity:'+(i===curImg?'1':'0.6')+'" onerror="this.style.display=\'none\'">';
       });
       h+='</div>';
@@ -2161,7 +2166,7 @@ function computeStage(deal){
     if(ms==='negotiation'||ms==='contract')return 'negotiation';
     if(ms==='sample')return 'sample';
     if(ms==='completed')return 'completed';
-    if(deal.documents.length)return 'quotation';
+    if((deal.documents||[]).length)return 'quotation';
     return 'matched';
   }
   return 'inquiry';
@@ -2238,7 +2243,7 @@ function pgDeals(){
     h+='</div>';
     // Extra info
     if(deal.order){h+='<div style="font-size:11px;color:var(--acc);margin-top:8px">Order: '+esc(deal.order.order_number)+' &middot; $'+Number(deal.order.total_amount||0).toLocaleString()+'</div>';}
-    if(deal.documents.length){h+='<div style="font-size:11px;color:var(--w40);margin-top:4px">&#x1F4C4; '+deal.documents.length+' document(s)</div>';}
+    if((deal.documents||[]).length){h+='<div style="font-size:11px;color:var(--w40);margin-top:4px">&#x1F4C4; '+(deal.documents||[]).length+' document(s)</div>';}
     h+='</div>';
   });
   return h;
@@ -2408,8 +2413,8 @@ function renderDealActionChips(deal,stageIdx){
       }
       break;
     case'sample':
-      var hasPending=deal.dealSamples.some(function(s){return s.status==='requested'||s.status==='preparing';});
-      var hasDelivered=deal.dealSamples.some(function(s){return s.status==='delivered';});
+      var hasPending=(deal.dealSamples||[]).some(function(s){return s.status==='requested'||s.status==='preparing';});
+      var hasDelivered=(deal.dealSamples||[]).some(function(s){return s.status==='delivered';});
       if(hasDelivered){
         h+='<div class="chat-action-chip ok" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Approve Sample</div>';
         h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Request Changes</div>';
@@ -2486,10 +2491,10 @@ function renderDealSidebar(deal,stageIdx){
   h+='</div>';
 
   // Documents
-  if(deal.documents.length){
+  if((deal.documents||[]).length){
     h+='<div class="stage-card" style="padding:10px">';
-    h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">&#x1F4C4; Documents ('+deal.documents.length+')</div>';
-    deal.documents.forEach(function(doc){
+    h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">&#x1F4C4; Documents ('+(deal.documents||[]).length+')</div>';
+    (deal.documents||[]).forEach(function(doc){
       var typeNames={pi:'PI',ci:'CI',pl:'PL',co:'CO',sc:'SC'};
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px">';
       h+='<span class="badge badge-acc" style="font-size:9px;padding:1px 6px">'+(typeNames[doc.doc_type]||'DOC')+'</span>';
@@ -2501,10 +2506,10 @@ function renderDealSidebar(deal,stageIdx){
   }
 
   // Samples
-  if(deal.dealSamples.length){
+  if((deal.dealSamples||[]).length){
     h+='<div class="stage-card" style="padding:10px">';
     h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">&#x1F4E6; Samples</div>';
-    deal.dealSamples.forEach(function(s){
+    (deal.dealSamples||[]).forEach(function(s){
       var stCls=s.status==='delivered'?'badge-ok':s.status==='shipped'?'badge-pri':'badge-ghost';
       h+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px">';
       h+='<span class="badge '+stCls+'" style="font-size:9px">'+esc(s.status)+'</span>';
@@ -2631,7 +2636,7 @@ function renderStageContent(deal,stageIdx){
       break;
     case'sample':
       h+='<div style="font-size:12px;color:var(--w60)">Sample stage — track your sample request status below. Once you receive and approve the sample, we can proceed to negotiation.</div>';
-      var deliveredSamples=deal.dealSamples.filter(function(s){return s.status==='delivered';});
+      var deliveredSamples=(deal.dealSamples||[]).filter(function(s){return s.status==='delivered';});
       if(deliveredSamples.length){
         h+='<div style="display:flex;gap:8px;margin-top:10px">';
         h+='<button class="btn btn-pri btn-sm" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Sample Approved — Proceed to Negotiation</button>';
@@ -2671,9 +2676,9 @@ function renderStageContent(deal,stageIdx){
   h+='</div>';
 
   // Documents section
-  if(deal.documents.length){
-    h+='<div class="stage-card"><div class="stage-card-title">&#x1F4C4; Documents ('+deal.documents.length+')</div>';
-    deal.documents.forEach(function(doc){
+  if((deal.documents||[]).length){
+    h+='<div class="stage-card"><div class="stage-card-title">&#x1F4C4; Documents ('+(deal.documents||[]).length+')</div>';
+    (deal.documents||[]).forEach(function(doc){
       var typeNames={pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract'};
       h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08)">';
       h+='<span class="badge badge-acc" style="font-size:10px">'+esc(doc.doc_type||'').toUpperCase()+'</span>';
@@ -2685,9 +2690,9 @@ function renderStageContent(deal,stageIdx){
   }
 
   // Samples section
-  if(deal.dealSamples.length){
-    h+='<div class="stage-card"><div class="stage-card-title">&#x1F4E6; Samples ('+deal.dealSamples.length+')</div>';
-    deal.dealSamples.forEach(function(s){
+  if((deal.dealSamples||[]).length){
+    h+='<div class="stage-card"><div class="stage-card-title">&#x1F4E6; Samples ('+(deal.dealSamples||[]).length+')</div>';
+    (deal.dealSamples||[]).forEach(function(s){
       var stCls=s.status==='delivered'?'badge-ok':s.status==='shipped'?'badge-pri':'badge-ghost';
       h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0">';
       h+='<span class="badge '+stCls+'">'+esc(s.status)+'</span>';
@@ -2702,7 +2707,7 @@ function renderStageContent(deal,stageIdx){
 
   // Sample Request — available for matched/negotiation/sample stages when seller is known
   var canRequestSample=deal.matching&&deal.sellerId&&!deal.order&&['matched','quotation','negotiation','sample'].indexOf(deal.stage)>-1;
-  var hasPendingSample=deal.dealSamples.some(function(s){return s.status==='requested'||s.status==='preparing';});
+  var hasPendingSample=(deal.dealSamples||[]).some(function(s){return s.status==='requested'||s.status==='preparing';});
   if(canRequestSample&&!hasPendingSample){
     if(S._sampleFormOpen===deal.id){
       h+='<div class="stage-card"><div class="stage-card-title">&#x1F4E6; Request Sample</div>';
@@ -2777,7 +2782,7 @@ function renderStageContent(deal,stageIdx){
   }
 
   // If no extra content, show helpful tips
-  if(!deal.documents.length&&!deal.dealSamples.length&&!deal.order&&!deal.shipment&&deal.stage!=='inquiry'){
+  if(!(deal.documents||[]).length&&!(deal.dealSamples||[]).length&&!deal.order&&!deal.shipment&&deal.stage!=='inquiry'){
     h+='<div style="padding:20px;text-align:center;color:var(--w40);font-size:12px">';
     h+='<div style="font-size:24px;margin-bottom:8px">&#x1F4A1;</div>';
     h+='Use the chat to discuss requirements, request quotes, and exchange documents with your seller.';
@@ -3011,8 +3016,8 @@ function pgMessages(){
       h+='<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:600;font-size:13px">'+esc(getSellerName(c.sellerId))+'</div>';
       if(c.unread)h+='<span class="badge badge-err" style="font-size:9px">'+c.unread+'</span>';
       h+='</div>';
-      h+='<div style="font-size:11px;color:var(--w40);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.lastMsg.body||'').substring(0,50))+'</div>';
-      h+='<div style="font-size:10px;color:var(--w20);margin-top:2px">'+timeAgo(c.lastMsg.created_at)+'</div>';
+      h+='<div style="font-size:11px;color:var(--w40);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.lastMsg&&c.lastMsg.body||'').substring(0,50))+'</div>';
+      h+='<div style="font-size:10px;color:var(--w20);margin-top:2px">'+timeAgo(c.lastMsg&&c.lastMsg.created_at)+'</div>';
       h+='</div>';
     });
   }
