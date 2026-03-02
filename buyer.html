@@ -324,12 +324,52 @@ function _doRender(){
   }catch(renderErr){console.error('[buyer render error]',renderErr);root.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">Page Rendering Error</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+esc(renderErr.message)+'</div><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">Reload</button></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:renderErr.stack,url:location.href,page:S.page,portal:'buyer'}).then(function(){});}catch(e){}}
 }
 
+/* === HUB TAB HELPERS === */
+function _buyHubTabBar(tabs,stateKey,defaultTab){
+  var cur=S[stateKey]||defaultTab;
+  var h='<div style="display:flex;gap:4px;margin-bottom:16px;background:var(--w08);border-radius:10px;padding:4px">';
+  tabs.forEach(function(t){
+    h+='<div onclick="B.setBuyHubTab(\''+stateKey+'\',\''+t.id+'\')" style="flex:1;text-align:center;padding:10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;background:'+(cur===t.id?'rgba(0,212,255,.12)':'transparent')+';color:'+(cur===t.id?'var(--pri)':'var(--w40)')+'">'+t.icon+' '+t.label+'</div>';
+  });
+  return h+'</div>';
+}
+function setBuyHubTab(key,val){S[key]=val;render();}
+
+function pgPipeline(){
+  var tabs=[{id:'deals',icon:'&#x1F680;',label:'Active Deals'},{id:'inquiries',icon:'&#x1F4CB;',label:'Inquiries'}];
+  var cur=S._pipelineTab||'deals';
+  var h=_buyHubTabBar(tabs,'_pipelineTab','deals');
+  if(cur==='inquiries')h+=pgInquiries();
+  else h+=S.currentDeal?pgDealRoom():pgDeals();
+  return h;
+}
+function pgOrderShip(){
+  var tabs=[{id:'orders',icon:'&#x1F4E6;',label:'Orders'},{id:'shipments',icon:'&#x1F6A2;',label:'Shipments'}];
+  var cur=S._orderShipTab||'orders';
+  var h=_buyHubTabBar(tabs,'_orderShipTab','orders');
+  if(cur==='shipments')h+=pgShipments();
+  else h+=pgOrders();
+  return h;
+}
+function pgProfileHub(){
+  var tabs=[{id:'profile',icon:'&#x1F464;',label:'Profile'},{id:'saved',icon:'&#x1F4BE;',label:'Saved Products'},{id:'partnership',icon:'&#x1F91D;',label:'Partnership'}];
+  var cur=S._profileHubTab||'profile';
+  var h=_buyHubTabBar(tabs,'_profileHubTab','profile');
+  if(cur==='saved')h+=pgSaved();
+  else if(cur==='partnership')h+=pgPartnership();
+  else h+=pgProfile();
+  return h;
+}
+
 function renderPage(){
   if(S.user&&!S.user.onboarding_completed&&S.page==='dashboard')return pgBuyerOnboarding();
   switch(S.page){
     case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
     case'sourcing':return pgSourcing();
+    case'pipeline':return pgPipeline();
+    case'ordership':return pgOrderShip();
+    case'profilehub':return pgProfileHub();
     case'inquiries':return pgInquiries();
     case'saved':return pgSaved();
     case'profile':return pgProfile();
@@ -694,24 +734,29 @@ function pgPartnership(){
 /* === SIDEBAR === */
 function renderSidebar(){
   var activeDeals=S.deals.filter(function(d){return d.stage!=='completed'&&d.stage!=='inquiry';}).length;
+  var pendingInq=S.inquiries.filter(function(i){return i.status==='pending';}).length;
+  var pipelineCount=activeDeals+(pendingInq||0);
+  var activeOrders=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length;
   var items=[
+    {id:'sec',label:'Home'},
     {id:'dashboard',icon:'&#x1F4CA;',label:'Dashboard'},
+    {id:'sec',label:'Discover'},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
     {id:'sourcing',icon:'&#x1F3ED;',label:'Find Manufacturers'},
-    {id:'deals',icon:'&#x1F680;',label:'Sourcing Pipeline',count:activeDeals},
-    {id:'inquiries',icon:'&#x1F4CB;',label:'Inquiries',count:S.inquiries.filter(function(i){return i.status==='pending';}).length},
     {id:'marketplace',icon:'&#x1F3EA;',label:'Marketplace',count:S.myRequests.filter(function(r){return r.status==='open';}).length},
-    {id:'messages',icon:'&#x1F4AC;',label:'Messages',count:S.chatUnread},
-    {id:'orders',icon:'&#x1F4E6;',label:'Orders',count:S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length},
-    {id:'shipments',icon:'&#x1F6A2;',label:'Shipments'},
+    {id:'sec',label:'Trade'},
+    {id:'pipeline',icon:'&#x1F680;',label:'Sourcing Pipeline',count:pipelineCount||0,subs:['deals','inquiries','pipeline']},
+    {id:'ordership',icon:'&#x1F4E6;',label:'Orders & Shipping',count:activeOrders||0,subs:['orders','shipments','ordership']},
     {id:'documents',icon:'&#x1F4C4;',label:'Documents'},
-    {id:'saved',icon:'&#x1F4BE;',label:'Saved Products',count:S.savedProducts.length},
-    {id:'profile',icon:'&#x1F464;',label:'Profile'},
-    {id:'partnership',icon:'&#x1F91D;',label:'Partnership'}
+    {id:'messages',icon:'&#x1F4AC;',label:'Messages',count:S.chatUnread},
+    {id:'sec',label:'Account'},
+    {id:'profilehub',icon:'&#x1F464;',label:'Profile & Settings',subs:['profile','saved','partnership','profilehub']}
   ];
   var h='<div class="sidebar"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">BUYER PORTAL</div></div></div><div class="sidebar-nav">';
   items.forEach(function(it){
-    h+='<div class="nav-item'+(S.page===it.id?' active':'')+'" onclick="B.nav(\''+it.id+'\')"><span class="icon">'+it.icon+'</span><span>'+it.label+'</span>'+(it.count?'<span class="badge-count">'+it.count+'</span>':'')+'</div>';
+    if(it.id==='sec')return void(h+='<div style="font-size:9px;font-weight:700;color:var(--w20);text-transform:uppercase;letter-spacing:1px;padding:12px 16px 4px;margin-top:4px">'+it.label+'</div>');
+    var isActive=it.subs?(it.subs.indexOf(S.page)!==-1):(S.page===it.id);
+    h+='<div class="nav-item'+(isActive?' active':'')+'" onclick="B.nav(\''+it.id+'\')"><span class="icon">'+it.icon+'</span><span>'+it.label+'</span>'+(it.count?'<span class="badge-count">'+it.count+'</span>':'')+'</div>';
   });
   h+='<div class="nav-section"></div>';
   h+='<div class="nav-item" onclick="B.doLogout()"><span class="icon">&#x1F6AA;</span><span>Logout</span></div>';
@@ -720,7 +765,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  var titles={dashboard:'Dashboard',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Request Board',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents','product-detail':'Product Details',partnership:'Partnership'};
+  var titles={dashboard:'Dashboard',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Marketplace',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents','product-detail':'Product Details',partnership:'Partnership',pipeline:'Sourcing Pipeline',ordership:'Orders & Shipping',profilehub:'Profile & Settings'};
   var h='<div class="topbar"><div class="topbar-title">'+(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Notification bell
   h+='<div class="notif-bell" onclick="event.stopPropagation();B.toggleNotif()">&#x1F514;';
@@ -853,7 +898,7 @@ function loadUser(){
   });
 }
 
-var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1};
+var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,pipeline:1,ordership:1,profilehub:1};
 function loadAllData(){
   loadBuyerLinks();
   loadInquiries();
@@ -3579,7 +3624,7 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function stripHtml(s){return s?s.replace(/<[^>]*>/g,''):''}
 function formatDate(d){if(!d)return'';var dt=new Date(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
 function timeAgo(d){if(!d)return'';var s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';if(s<604800)return Math.floor(s/86400)+'d';return formatDate(d);}
-function nav(page){S.page=page;S._inqFilter=null;S.notifOpen=false;if(page!=='deals')S.currentDeal=null;if(page!=='product-detail')S._productDetailPage=null;if(history.pushState)history.pushState(null,null,'#'+page);else if(history.replaceState)history.replaceState(null,null,'#'+page);closeMob();render();window.scrollTo(0,0);
+function nav(page){S.page=page;S._inqFilter=null;S.notifOpen=false;if(page!=='deals'&&page!=='pipeline')S.currentDeal=null;if(page!=='product-detail')S._productDetailPage=null;if(history.pushState)history.pushState(null,null,'#'+page);else if(history.replaceState)history.replaceState(null,null,'#'+page);closeMob();render();window.scrollTo(0,0);
 try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:page,role:S.user?S.user.role:'buyer',session_id:window._pvSid,portal:'buyer'}).then(function(){});}catch(e){}}
 
 /* === INIT === */
@@ -3588,8 +3633,8 @@ sb.auth.onAuthStateChange(function(event,session){
   else if(event==='SIGNED_OUT'){S.user=null;S.loading=false;render();}
   else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
 });
-window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;if(hp!=='deals')S.currentDeal=null;if(hp!=='product-detail')S._productDetailPage=null;closeMob();render();window.scrollTo(0,0);}});
-window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;if(hp!=='deals')S.currentDeal=null;if(hp!=='product-detail')S._productDetailPage=null;render();}});
+window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;if(hp!=='deals'&&hp!=='pipeline')S.currentDeal=null;if(hp!=='product-detail')S._productDetailPage=null;closeMob();render();window.scrollTo(0,0);}});
+window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;if(hp!=='deals'&&hp!=='pipeline')S.currentDeal=null;if(hp!=='product-detail')S._productDetailPage=null;render();}});
 loadUser();
 
 /* === STRIPE CHECKOUT (Buyer) === */
@@ -3613,7 +3658,7 @@ function initBuyerStripe(planId){
   var cycleEl=document.querySelector('input[name=b_cycle]:checked');
   var cycle=cycleEl?cycleEl.value:'m';
   var priceId=STRIPE_CFG.prices[planId]&&STRIPE_CFG.prices[planId][cycle];
-  if(!priceId||priceId.indexOf('price_buyer')===0){toast('Payment setup in progress. Contact support@motiveinno.com','info');return;}
+  if(!priceId||priceId==='price_buyer_starter_m'||priceId==='price_buyer_starter_s'||priceId==='price_buyer_starter_a'||priceId==='price_buyer_pro_m'||priceId==='price_buyer_pro_s'||priceId==='price_buyer_pro_a'||priceId==='price_buyer_enterprise_m'){toast('Payment setup in progress. Contact support@motiveinno.com','info');return;}
   var btn=document.getElementById('bck-btn');
   if(btn){btn.disabled=true;btn.textContent='Connecting...';}
   sb.auth.getSession().then(function(r){
@@ -3703,6 +3748,8 @@ window.B={
   skipBuyerOnboarding:skipBuyerOnboarding,completeBuyerOnboarding:completeBuyerOnboarding,
   setCurrency:setCurrency,
   toggleMob:toggleMob,closeMob:closeMob,
+  // Hub tabs
+  setBuyHubTab:setBuyHubTab,
   // Product detail page
   pdPrevImg:pdPrevImg,pdNextImg:pdNextImg,pdSetImg:pdSetImg,
   pdRequestQuotation:pdRequestQuotation,pdRequestSample:pdRequestSample,
