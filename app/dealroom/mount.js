@@ -3,6 +3,8 @@ import { createStore } from './state/store.js';
 import { renderLayout } from './ui/layout.js';
 import { renderMessageItem } from './ui/chat/messageItem.js';
 import { subscribeDealMessages, loadInitialDealMessages } from './realtime/messages.js';
+import { attachDealroomActionRouter } from './actions/actionRouter.js';
+import { wireActionBar } from './ui/actionBar.js';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -122,14 +124,6 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
 
   const offSidebar = store.subscribe('STATE_CHANGED', (s) => renderSidebar(s));
 
-  // Action bar placeholder buttons
-  $actionBar.innerHTML = `
-    <button class="dr-btn" data-action="quote" disabled>견적작성</button>
-    <button class="dr-btn" data-action="doc" disabled>서류생성</button>
-    <button class="dr-btn" data-action="ship" disabled>출하등록</button>
-    <button class="dr-btn" data-action="stage" disabled>단계전이</button>
-  `;
-
   // Mobile sidebar toggle
   const $toggle = rootEl.querySelector('#dr-sidebar-toggle');
   if ($toggle) {
@@ -238,9 +232,17 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
   // Realtime subscribe
   const unsubscribe = subscribeDealMessages(supabase, dealId, store);
 
+  // Action router (dealroom:action events from card buttons)
+  const offActions = attachDealroomActionRouter({ supabase, store, dealId });
+
+  // Action bar (invite, quote, etc.)
+  const offActionBar = wireActionBar({ rootEl, supabase, store, dealId });
+
   // Cleanup (unmount)
   return function cleanup() {
     try { unsubscribe?.(); } catch (_) {}
+    try { offActions?.(); } catch (_) {}
+    try { offActionBar?.(); } catch (_) {}
     try { offAny?.(); } catch (_) {}
     try { offSidebar?.(); } catch (_) {}
     rootEl.replaceChildren();
