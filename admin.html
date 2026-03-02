@@ -160,7 +160,7 @@ var PAGE_SIZE=20;
 var S={
   user:null,page:'dashboard',loading:true,authError:'',authMode:'login',
   users:[],analyses:[],products:[],projects:[],serviceRequests:[],companies:[],matchings:[],documents:[],
-  orders:[],buyers:[],messages:[],shipments:[],paymentMilestones:[],pageViews:[],buyerRequests:[],proposals:[],
+  orders:[],buyers:[],messages:[],shipments:[],paymentMilestones:[],paymentProofs:[],pageViews:[],buyerRequests:[],proposals:[],
   searchFilter:'',statusFilter:'all',dateFilter:'all',
   _pg:{},
   selectedUser:null,selectedAnalysis:null,selectedSR:null,
@@ -204,6 +204,7 @@ function loadAll(){
     sb.from('messages').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.messages=r.data||[];}),
     sb.from('shipments').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.shipments=r.data||[];}),
     sb.from('payment_milestones').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.paymentMilestones=r.data||[];}),
+    sb.from('payment_proofs').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.paymentProofs=r.data||[];}),
     sb.from('page_views').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.pageViews=r.data||[];}),
     sb.from('buyer_requests').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.buyerRequests=r.data||[];}),
     sb.from('buyer_request_proposals').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.proposals=r.data||[];}),
@@ -1103,7 +1104,7 @@ function pgHealth(){
     '<div class="card"><div class="card-h">Supabase</div><div class="card-b"><div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot active"></span>연결됨</div></div><div class="detail-row"><div class="detail-label">프로젝트</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px">lylktgxngrlxmsldxdqj</div></div></div></div>'+
   '</div>'+
   '<div class="card" style="margin-bottom:16px"><div class="card-h">DB 레코드 현황</div><div class="card-b"><div class="grid-4" style="gap:8px">'+
-    [['users',S.users.length],['companies',S.companies.length],['products',S.products.length],['analyses',S.analyses.length],['buyers',S.buyers.length],['matchings',S.matchings.length],['orders',S.orders.length],['messages',S.messages.length],['shipments',S.shipments.length],['payments',S.paymentMilestones.length],['documents',S.documents.length],['page_views',S.pageViews.length],['buyer_req',S.buyerRequests.length],['proposals',S.proposals.length],['service_req',S.serviceRequests.length],['projects',S.projects.length]].map(function(e){return '<div style="padding:8px;border-radius:6px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40);font-family:JetBrains Mono">'+e[0]+'</div><div style="font-size:18px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+e[1]+'</div></div>';}).join('')+
+    [['users',S.users.length],['companies',S.companies.length],['products',S.products.length],['analyses',S.analyses.length],['buyers',S.buyers.length],['matchings',S.matchings.length],['orders',S.orders.length],['messages',S.messages.length],['shipments',S.shipments.length],['milestones',S.paymentMilestones.length],['proofs',S.paymentProofs.length],['documents',S.documents.length],['page_views',S.pageViews.length],['buyer_req',S.buyerRequests.length],['proposals',S.proposals.length],['service_req',S.serviceRequests.length],['projects',S.projects.length]].map(function(e){return '<div style="padding:8px;border-radius:6px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40);font-family:JetBrains Mono">'+e[0]+'</div><div style="font-size:18px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+e[1]+'</div></div>';}).join('')+
   '</div></div></div>';
 }
 function checkRelayHealth(){var el=document.getElementById('health-relay');if(!el)return;fetch(RELAY_URL+'/api/health',{signal:AbortSignal.timeout(5000)}).then(function(r){return r.json();}).then(function(){el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot active"></span>온라인</div></div><div class="detail-row"><div class="detail-label">URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+RELAY_URL+'</div></div>';}).catch(function(){el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot inactive"></span>오프라인</div></div><div class="detail-row"><div class="detail-label">URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+RELAY_URL+'</div></div>';});}
@@ -1265,6 +1266,30 @@ function pgDealDetail(deal){
     }).join('')+
     '</div></div></div>';
 
+  // Payment milestones for this deal
+  var dealMilestones=(S.paymentMilestones||[]).filter(function(m){return m.deal_id===d.id;});
+  var dealProofs=(S.paymentProofs||[]).filter(function(p){return p.deal_id===d.id;});
+  var msStatusCol={pending:'acc',proof_submitted:'pri',paid:'ok',rejected:'err'};
+  var msStatusL={pending:'\uB300\uAE30',proof_submitted:'\uC99D\uBE59\uC81C\uCD9C',paid:'\uACB0\uC81C\uC644\uB8CC',rejected:'\uBC18\uB824'};
+  var msTypeL={deposit:'\uACC4\uC57D\uAE08',pre_shipment:'\uC120\uC801\uC804',balance:'\uC794\uAE08',full_payment:'\uC77C\uC2DC\uBD88',custom:'\uAE30\uD0C0'};
+  var milestonesHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">\uD83D\uDCB3 \uACB0\uC81C \uB9C8\uC77C\uC2A4\uD1A4 ('+dealMilestones.length+')</div><div class="card-b">'+
+    (dealMilestones.length?'<table class="tbl"><thead><tr><th>\uB9C8\uC77C\uC2A4\uD1A4</th><th>\uD0C0\uC785</th><th>\uAE08\uC561</th><th>\uC0C1\uD0DC</th><th>\uC99D\uBE59</th><th>\uC0DD\uC131\uC77C</th></tr></thead><tbody>'+
+      dealMilestones.map(function(m){
+        var proofCount=dealProofs.filter(function(p){return p.milestone_id===m.id;}).length;
+        var pendingProof=dealProofs.filter(function(p){return p.milestone_id===m.id&&p.status==='pending';}).length;
+        var fmtAmt=m.amount?((m.currency||'USD')+' '+Number(m.amount).toLocaleString()):'—';
+        return '<tr>'+
+          '<td style="font-weight:600;font-size:12px">'+U.esc(m.name||'—')+'</td>'+
+          '<td style="font-size:11px">'+U.esc(msTypeL[m.milestone_type]||m.milestone_type||'—')+'</td>'+
+          '<td style="font-family:JetBrains Mono;font-weight:700;font-size:12px">'+fmtAmt+'</td>'+
+          '<td>'+UI.badge(msStatusL[m.status]||m.status,msStatusCol[m.status]||'ghost')+'</td>'+
+          '<td>'+(proofCount?proofCount+'\uAC74'+(pendingProof?' <span style="color:var(--acc);font-weight:600">(\uB300\uAE30 '+pendingProof+')</span>':''):'—')+'</td>'+
+          '<td style="font-size:11px;color:var(--w40)">'+U.fd(m.created_at)+'</td>'+
+        '</tr>';
+      }).join('')+
+    '</tbody></table>':'<div style="color:var(--w40);font-size:13px">\uACB0\uC81C \uB9C8\uC77C\uC2A4\uD1A4 \uC5C6\uC74C</div>')+
+  '</div></div>';
+
   // Events timeline
   var eventsHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">📜 이벤트 로그 (최근 20건)</div><div class="card-b" style="max-height:300px;overflow-y:auto">'+
     (events.length?events.map(function(ev){
@@ -1276,7 +1301,7 @@ function pgDealDetail(deal){
     }).join(''):'<div style="color:var(--w40);font-size:13px">이벤트 없음</div>')+
   '</div></div>';
 
-  return backBtn+header+infoGrid+'<div class="grid-2">'+participantsHtml+stageManageHtml+'</div>'+quotesHtml+docsHtml+eventsHtml;
+  return backBtn+header+infoGrid+'<div class="grid-2">'+participantsHtml+stageManageHtml+'</div>'+quotesHtml+docsHtml+milestonesHtml+eventsHtml;
 }
 
 function viewDeal(did){
@@ -1322,10 +1347,12 @@ function pgSettings(){
 
 /* ── Payments / Escrow ── */
 function pgPayments(){
-  var tabs=['revenue','subscriptions','escrow','policy'];
-  var tabL={revenue:'\uC218\uC775 \uB300\uC2DC\uBCF4\uB4DC',subscriptions:'\uAD6C\uB3C5 \uAD00\uB9AC',escrow:'\uC5D0\uC2A4\uD06C\uB85C',policy:'\uCDE8\uC18C/\uD658\uBD88 \uC815\uCC45'};
+  var pendingProofs=S.paymentProofs.filter(function(p){return p.status==='pending';}).length;
+  var tabs=['revenue','proofs','subscriptions','escrow','policy'];
+  var tabL={revenue:'\uC218\uC775 \uB300\uC2DC\uBCF4\uB4DC',proofs:'\uACB0\uC81C\uC99D\uBE59 \uB9AC\uBDF0'+(pendingProofs?' ('+pendingProofs+')':''),subscriptions:'\uAD6C\uB3C5 \uAD00\uB9AC',escrow:'\uC5D0\uC2A4\uD06C\uB85C',policy:'\uCDE8\uC18C/\uD658\uBD88 \uC815\uCC45'};
   var tabBar='<div class="tab-bar">'+tabs.map(function(t){return '<div class="tab-item '+(S.paymentTab===t?'active':'')+'" onclick="Adm.setPaymentTab(\''+t+'\')">'+tabL[t]+'</div>';}).join('')+'</div>';
   var title='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">\uD83D\uDCB3 \uACB0\uC81C / \uC5D0\uC2A4\uD06C\uB85C</h2></div>';
+  if(S.paymentTab==='proofs')return title+tabBar+pgPayProofs();
   if(S.paymentTab==='subscriptions')return title+tabBar+pgPaySubs();
   if(S.paymentTab==='escrow')return title+tabBar+pgPayEscrow();
   if(S.paymentTab==='policy')return title+tabBar+pgPayPolicy();
@@ -1511,6 +1538,219 @@ function pgPayPolicy(){
     '</tbody></table></div></div>';
   })();
 }
+
+/* ── Payment Proofs Review ── */
+function pgPayProofs(){
+  var proofs=S.paymentProofs||[];
+  var milestones=S.paymentMilestones||[];
+  var tab=S._proofTab||'all';
+
+  // Stats
+  var pending=proofs.filter(function(p){return p.status==='pending';}).length;
+  var approved=proofs.filter(function(p){return p.status==='approved';}).length;
+  var rejected=proofs.filter(function(p){return p.status==='rejected';}).length;
+  var totalAmt=milestones.filter(function(m){return m.status==='paid';}).reduce(function(s,m){return s+(Number(m.amount)||0);},0);
+
+  // Filter by tab
+  var filtered=proofs;
+  if(tab!=='all')filtered=proofs.filter(function(p){return p.status===tab;});
+
+  // Search
+  var search=(S.searchFilter||'').toLowerCase();
+  if(search){
+    filtered=filtered.filter(function(p){
+      var ms=milestones.find(function(m){return m.id===p.milestone_id;});
+      var deal=ms?S.deals.find(function(d){return d.id===ms.deal_id;}):null;
+      return (p.file_name||'').toLowerCase().indexOf(search)>=0||
+        (ms&&ms.name&&ms.name.toLowerCase().indexOf(search)>=0)||
+        (deal&&deal.title&&deal.title.toLowerCase().indexOf(search)>=0)||
+        (p.id||'').indexOf(search)>=0;
+    });
+  }
+
+  // Pagination
+  var pKey='payProofs';
+  var pg=S._pg[pKey]||0;
+  var perPage=15;
+  var paged=filtered.slice(pg*perPage,(pg+1)*perPage);
+
+  var statsHtml='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat('\uB300\uAE30 \uC911',pending,'\uB9AC\uBDF0 \uD544\uC694','var(--acc)')+
+    UI.stat('\uC2B9\uC778',approved,'','var(--ok)')+
+    UI.stat('\uBC18\uB824',rejected,'','var(--err)')+
+    UI.stat('\uACB0\uC81C \uC644\uB8CC \uCD1D\uC561','$'+Number(totalAmt).toLocaleString(),milestones.filter(function(m){return m.status==='paid';}).length+'\uAC74','var(--pri)')+
+  '</div>';
+
+  // Tabs
+  var tabCounts={all:proofs.length,pending:pending,approved:approved,rejected:rejected};
+  var tabLabels={all:'\uC804\uCCB4',pending:'\uB300\uAE30',approved:'\uC2B9\uC778',rejected:'\uBC18\uB824'};
+  var tabHtml='<div style="display:flex;gap:6px;margin-bottom:12px">'+
+    ['all','pending','approved','rejected'].map(function(t){
+      return '<button class="btn btn-sm '+(tab===t?'btn-pri':'btn-ghost')+'" onclick="Adm.setProofTab(\''+t+'\')">'+tabLabels[t]+' ('+tabCounts[t]+')</button>';
+    }).join('')+
+  '</div>';
+
+  var searchHtml='<div style="margin-bottom:12px"><input placeholder="\uC99D\uBE59 \uAC80\uC0C9 (\uD30C\uC77C\uBA85, \uB9C8\uC77C\uC2A4\uD1A4, \uB51C)..." value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="width:100%;max-width:400px;padding:10px 14px;border-radius:10px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:13px"></div>';
+
+  // Table
+  var tableHtml='<div class="card"><div class="card-h"><span>\uACB0\uC81C \uC99D\uBE59 \uBAA9\uB85D</span>'+UI.badge(filtered.length+'\uAC74','pri')+'</div><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>\uB51C</th><th>\uB9C8\uC77C\uC2A4\uD1A4</th><th>\uAE08\uC561</th><th>\uC5C5\uB85C\uB354</th><th>\uD30C\uC77C</th><th>\uC0C1\uD0DC</th><th>\uC81C\uCD9C\uC77C</th><th>\uC561\uC158</th></tr></thead><tbody>'+
+    (paged.length?paged.map(function(p){
+      var ms=milestones.find(function(m){return m.id===p.milestone_id;})||{};
+      var deal=S.deals.find(function(d){return d.id===(ms.deal_id||p.deal_id);})||{};
+      var statusCol={pending:'acc',approved:'ok',rejected:'err'};
+      var statusL={pending:'\uB300\uAE30',approved:'\uC2B9\uC778',rejected:'\uBC18\uB824'};
+      var fmtAmt=ms.amount?((ms.currency||'USD')+' '+Number(ms.amount).toLocaleString()):'—';
+      var uploaderName=getUserName(p.uploader_id);
+
+      var actionBtns='';
+      if(p.status==='pending'){
+        actionBtns='<button class="btn btn-sm" style="background:#22c55e;color:#fff;border-color:#22c55e;padding:3px 10px;font-size:11px" onclick="event.stopPropagation();Adm.approveProof(\''+p.id+'\')">승인</button>'+
+          '<button class="btn btn-sm" style="background:#ef4444;color:#fff;border-color:#ef4444;padding:3px 10px;font-size:11px;margin-left:4px" onclick="event.stopPropagation();Adm.rejectProof(\''+p.id+'\')">반려</button>';
+      } else if(p.status==='approved'){
+        actionBtns='<span style="color:#22c55e;font-size:11px;font-weight:600">\u2713 '+U.fd(p.reviewed_at)+'</span>';
+      } else {
+        actionBtns='<span style="color:#ef4444;font-size:11px">'+U.esc(p.reviewer_notes||'\uBC18\uB824\uB428')+'</span>';
+      }
+
+      return '<tr style="cursor:pointer" onclick="Adm.viewProofDetail(\''+p.id+'\')">'+
+        '<td style="font-size:12px">'+U.esc(U.tr(deal.title||'—',20))+'</td>'+
+        '<td style="font-size:12px;font-weight:600">'+U.esc(ms.name||'—')+'</td>'+
+        '<td style="font-family:JetBrains Mono;font-weight:700;font-size:12px">'+fmtAmt+'</td>'+
+        '<td style="font-size:12px">'+uploaderName+'</td>'+
+        '<td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+U.esc(p.file_name||'—')+'</td>'+
+        '<td>'+UI.badge(statusL[p.status]||p.status,statusCol[p.status]||'ghost')+'</td>'+
+        '<td style="font-size:11px;color:var(--w40)">'+U.fd(p.created_at)+'</td>'+
+        '<td onclick="event.stopPropagation()">'+actionBtns+'</td>'+
+      '</tr>';
+    }).join(''):'<tr><td colspan="8">'+UI.empty('\uD83D\uDCCE','\uACB0\uC81C \uC99D\uBE59 \uC5C6\uC74C','\uBC14\uC774\uC5B4\uAC00 \uACB0\uC81C \uC99D\uBE59\uC744 \uC5C5\uB85C\uB4DC\uD558\uBA74 \uC5EC\uAE30\uC5D0 \uD45C\uC2DC\uB429\uB2C8\uB2E4')+'</td></tr>')+
+  '</tbody></table></div></div>';
+
+  var pagination=paginationBar(pKey,filtered.length,perPage);
+
+  // Milestones overview card
+  var msOverview='<div class="card" style="margin-top:16px"><div class="card-h"><span>\uACB0\uC81C \uB9C8\uC77C\uC2A4\uD1A4 \uC804\uCCB4</span>'+UI.badge(milestones.length+'\uAC74','pri')+'</div><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>\uB51C</th><th>\uB9C8\uC77C\uC2A4\uD1A4</th><th>\uD0C0\uC785</th><th>\uAE08\uC561</th><th>\uACB0\uC81C\uBC29\uBC95</th><th>\uC0C1\uD0DC</th><th>\uC0DD\uC131\uC77C</th></tr></thead><tbody>'+
+    (milestones.length?milestones.slice(0,20).map(function(m){
+      var deal=S.deals.find(function(d){return d.id===m.deal_id;})||{};
+      var msStatusCol={pending:'acc',proof_submitted:'pri',paid:'ok',rejected:'err'};
+      var msStatusL={pending:'\uB300\uAE30',proof_submitted:'\uC99D\uBE59\uC81C\uCD9C',paid:'\uACB0\uC81C\uC644\uB8CC',rejected:'\uBC18\uB824'};
+      var fmtAmt=m.amount?((m.currency||'USD')+' '+Number(m.amount).toLocaleString()):'—';
+      var typeL={deposit:'\uACC4\uC57D\uAE08',pre_shipment:'\uC120\uC801\uC804',balance:'\uC794\uAE08',full_payment:'\uC77C\uC2DC\uBD88',custom:'\uAE30\uD0C0'};
+      var methodL={wire_transfer:'T/T \uC1A1\uAE08',lc:'L/C \uC2E0\uC6A9\uC7A5',cash:'\uD604\uAE08'};
+      return '<tr>'+
+        '<td style="font-size:12px">'+U.esc(U.tr(deal.title||'—',18))+'</td>'+
+        '<td style="font-size:12px;font-weight:600">'+U.esc(m.name||'—')+'</td>'+
+        '<td style="font-size:11px">'+U.esc(typeL[m.milestone_type]||m.milestone_type||'—')+'</td>'+
+        '<td style="font-family:JetBrains Mono;font-weight:700;font-size:12px">'+fmtAmt+'</td>'+
+        '<td style="font-size:11px">'+U.esc(methodL[m.payment_method]||m.payment_method||'—')+'</td>'+
+        '<td>'+UI.badge(msStatusL[m.status]||m.status,msStatusCol[m.status]||'ghost')+'</td>'+
+        '<td style="font-size:11px;color:var(--w40)">'+U.fd(m.created_at)+'</td>'+
+      '</tr>';
+    }).join(''):'<tr><td colspan="7">'+UI.empty('\uD83D\uDCB3','\uB9C8\uC77C\uC2A4\uD1A4 \uC5C6\uC74C','')+'</td></tr>')+
+  '</tbody></table></div></div>';
+
+  return statsHtml+searchHtml+tabHtml+tableHtml+pagination+msOverview;
+}
+
+function viewProofDetail(proofId){
+  var proof=S.paymentProofs.find(function(p){return p.id===proofId;});
+  if(!proof)return;
+  var ms=(S.paymentMilestones||[]).find(function(m){return m.id===proof.milestone_id;})||{};
+  var deal=S.deals.find(function(d){return d.id===(ms.deal_id||proof.deal_id);})||{};
+  var fmtAmt=ms.amount?((ms.currency||'USD')+' '+Number(ms.amount).toLocaleString()):'—';
+  var statusCol={pending:'#f59e0b',approved:'#22c55e',rejected:'#ef4444'};
+  var statusL={pending:'\uB300\uAE30 \uC911',approved:'\uC2B9\uC778\uB428',rejected:'\uBC18\uB824\uB428'};
+  var sc=statusCol[proof.status]||'#94a3b8';
+
+  // Build file preview
+  var filePreview='';
+  if(proof.storage_path){
+    var isImage=(proof.file_type||'').startsWith('image/');
+    var fileUrl=sb.storage.from('payment-proofs').getPublicUrl(proof.storage_path).data.publicUrl;
+    if(isImage){
+      filePreview='<div style="text-align:center;margin:16px 0"><img src="'+U.esc(fileUrl)+'" style="max-width:100%;max-height:400px;border-radius:10px;border:1px solid var(--bd)" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'"><div style="display:none;padding:20px;color:var(--w40);font-size:12px">\uC774\uBBF8\uC9C0 \uB85C\uB4DC \uC2E4\uD328</div></div>';
+    } else {
+      filePreview='<div style="text-align:center;margin:16px 0"><a href="'+U.esc(fileUrl)+'" target="_blank" rel="noopener" class="btn btn-pri" style="display:inline-flex;align-items:center;gap:6px">\uD83D\uDCC4 PDF \uD30C\uC77C \uBCF4\uAE30 / \uB2E4\uC6B4\uB85C\uB4DC</a></div>';
+    }
+  }
+
+  var actionBtns='';
+  if(proof.status==='pending'){
+    actionBtns='<div style="display:flex;gap:8px;margin-top:16px">'+
+      '<button class="btn" style="flex:1;background:#22c55e;color:#fff;border-color:#22c55e;padding:10px;font-weight:700;font-size:14px" onclick="Adm.approveProof(\''+proof.id+'\')">\u2713 \uACB0\uC81C \uC2B9\uC778</button>'+
+      '<button class="btn" style="flex:1;background:#ef4444;color:#fff;border-color:#ef4444;padding:10px;font-weight:700;font-size:14px" onclick="Adm.rejectProof(\''+proof.id+'\')">\u2717 \uBC18\uB824</button>'+
+    '</div>';
+  }
+
+  var reviewInfo='';
+  if(proof.reviewer_id){
+    reviewInfo='<div class="detail-row"><div class="detail-label">\uB9AC\uBDF0\uC5B4</div><div class="detail-value">'+getUserName(proof.reviewer_id)+'</div></div>'+
+      '<div class="detail-row"><div class="detail-label">\uB9AC\uBDF0\uC77C\uC2DC</div><div class="detail-value">'+U.fd(proof.reviewed_at)+'</div></div>'+
+      (proof.reviewer_notes?'<div class="detail-row"><div class="detail-label">\uBA54\uBAA8</div><div class="detail-value" style="color:var(--err)">'+U.esc(proof.reviewer_notes)+'</div></div>':'');
+  }
+
+  var body=
+    '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">'+
+      '<span class="badge" style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'44;padding:4px 12px;font-size:13px;font-weight:700;border-radius:8px">'+U.esc(statusL[proof.status]||proof.status)+'</span>'+
+      '<span style="font-size:12px;color:var(--w40)">'+U.fd(proof.created_at)+'</span>'+
+    '</div>'+
+    '<div class="grid-2" style="gap:16px">'+
+      '<div>'+
+        '<div class="detail-row"><div class="detail-label">\uB51C</div><div class="detail-value" style="font-weight:600">'+U.esc(deal.title||'—')+'</div></div>'+
+        '<div class="detail-row"><div class="detail-label">\uB9C8\uC77C\uC2A4\uD1A4</div><div class="detail-value" style="font-weight:600">'+U.esc(ms.name||'—')+'</div></div>'+
+        '<div class="detail-row"><div class="detail-label">\uAE08\uC561</div><div class="detail-value" style="font-family:JetBrains Mono;font-weight:800;font-size:16px;color:var(--pri)">'+fmtAmt+'</div></div>'+
+        '<div class="detail-row"><div class="detail-label">\uC5C5\uB85C\uB354</div><div class="detail-value">'+getUserName(proof.uploader_id)+' <span class="badge badge-ghost" style="font-size:10px">'+U.esc(proof.uploader_role||'—')+'</span></div></div>'+
+        '<div class="detail-row"><div class="detail-label">\uD30C\uC77C\uBA85</div><div class="detail-value" style="font-size:12px;word-break:break-all">'+U.esc(proof.file_name||'—')+'</div></div>'+
+        '<div class="detail-row"><div class="detail-label">\uD30C\uC77C\uD06C\uAE30</div><div class="detail-value">'+(proof.file_size?Math.round(proof.file_size/1024)+'KB':'—')+'</div></div>'+
+        reviewInfo+
+      '</div>'+
+      '<div>'+filePreview+'</div>'+
+    '</div>'+
+    actionBtns;
+
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'proof-detail',title:'\uD83D\uDCCE \uACB0\uC81C \uC99D\uBE59 \uC0C1\uC138',body:body,width:'720px'}));
+  UI.showModal('proof-detail');
+}
+
+function approveProof(proofId){
+  if(!confirm('\uC774 \uACB0\uC81C \uC99D\uBE59\uC744 \uC2B9\uC778\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?'))return;
+  sb.functions.invoke('verify-payment-proof',{body:{proof_id:proofId,action:'approve'}}).then(function(r){
+    if(r.error){UI.toast('\uC2B9\uC778 \uC2E4\uD328: '+(r.error.message||r.error),'err');return;}
+    var d=r.data;
+    if(d&&!d.ok){UI.toast('\uC2B9\uC778 \uC2E4\uD328: '+(d.error||'unknown'),'err');return;}
+    // Update local state
+    var proof=S.paymentProofs.find(function(p){return p.id===proofId;});
+    if(proof){proof.status='approved';proof.reviewed_at=new Date().toISOString();proof.reviewer_id=S.user?S.user.id:null;}
+    // Update milestone if returned
+    if(d&&d.milestone_id){
+      var ms=S.paymentMilestones.find(function(m){return m.id===d.milestone_id;});
+      if(ms)ms.status='paid';
+    }
+    closeModal('proof-detail');
+    UI.toast('\uACB0\uC81C \uC99D\uBE59\uC774 \uC2B9\uC778\uB418\uC5C8\uC2B5\uB2C8\uB2E4','ok');
+    render();
+  });
+}
+
+function rejectProof(proofId){
+  var reason=prompt('\uBC18\uB824 \uC0AC\uC720\uB97C \uC785\uB825\uD558\uC138\uC694:');
+  if(reason===null)return;
+  sb.functions.invoke('verify-payment-proof',{body:{proof_id:proofId,action:'reject',reason:reason||'\uC99D\uBE59 \uBD80\uC801\uD569'}}).then(function(r){
+    if(r.error){UI.toast('\uBC18\uB824 \uC2E4\uD328: '+(r.error.message||r.error),'err');return;}
+    var d=r.data;
+    if(d&&!d.ok){UI.toast('\uBC18\uB824 \uC2E4\uD328: '+(d.error||'unknown'),'err');return;}
+    var proof=S.paymentProofs.find(function(p){return p.id===proofId;});
+    if(proof){proof.status='rejected';proof.reviewed_at=new Date().toISOString();proof.reviewer_notes=reason||'\uC99D\uBE59 \uBD80\uC801\uD569';proof.reviewer_id=S.user?S.user.id:null;}
+    if(d&&d.milestone_id){
+      var ms=S.paymentMilestones.find(function(m){return m.id===d.milestone_id;});
+      if(ms)ms.status='rejected';
+    }
+    closeModal('proof-detail');
+    UI.toast('\uACB0\uC81C \uC99D\uBE59\uC774 \uBC18\uB824\uB418\uC5C8\uC2B5\uB2C8\uB2E4','ok');
+    render();
+  });
+}
+
+function setProofTab(t){S._proofTab=t;S._pg={};render();}
 
 /* ============ ACTIONS ============ */
 function editUserPlan(uid){
@@ -1722,7 +1962,7 @@ function renderSidebar(){
     {id:'dealsMgmt',icon:'🏢',label:'딜룸 거래',count:S.deals.filter(function(d){return d.status==='active';}).length||null},
     {id:'ordersMgmt',icon:'💰',label:'주문/매출'},
     {id:'disputes',icon:'⚠️',label:'분쟁 관리',count:S.disputes.filter(function(d){return d.status==='open'||d.status==='escalated';}).length||0},
-    {id:'payments',icon:'💳',label:'결제/에스크로'},
+    {id:'payments',icon:'💳',label:'결제/에스크로',count:S.paymentProofs.filter(function(p){return p.status==='pending';}).length||null},
     {id:'chat',icon:'💬',label:'채팅 모니터',count:unreadMsgs||null},
     {id:'div'},
     {id:'analyses',icon:'🔬',label:'분석 이력',count:analyzingA||null},
@@ -2011,7 +2251,8 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   saveDisputeResolution:saveDisputeResolution,resolveDispute:resolveDispute,closeDispute:closeDispute,
   setPg:setPg,
   editAlibabaSync:editAlibabaSync,saveAlibabaSync:saveAlibabaSync,
-  viewDeal:viewDeal,setDealsTab:setDealsTab,changeDealStage:changeDealStage};
+  viewDeal:viewDeal,setDealsTab:setDealsTab,changeDealStage:changeDealStage,
+  viewProofDetail:viewProofDetail,approveProof:approveProof,rejectProof:rejectProof,setProofTab:setProofTab};
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp]&&S.user)nav(hp);});
 sb.auth.onAuthStateChange(function(event, session){

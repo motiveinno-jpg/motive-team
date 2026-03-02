@@ -200,11 +200,68 @@ function renderAiGuide(msg) {
   return node;
 }
 
+function renderPaymentCard(msg, myRole) {
+  const p = msg.payload || {};
+  const name = p.name ?? '';
+  const amount = p.amount ?? '';
+  const currency = p.currency ?? 'USD';
+  const status = p.status ?? '';
+  const action = p.action ?? '';
+  const notes = p.notes ?? '';
+  const milestoneId = p.milestone_id ?? '';
+  const isBuyer = (myRole || '').startsWith('buyer');
+
+  const statusColors = { pending: '#f59e0b', proof_submitted: '#3b82f6', paid: '#22c55e', rejected: '#ef4444' };
+  const statusLabels = { pending: '결제 대기', proof_submitted: '증빙 제출됨', paid: '결제 완료', rejected: '반려됨' };
+  const statusColor = statusColors[status] || '#94a3b8';
+  const statusLabel = statusLabels[status] || status;
+
+  let actionsHtml = '';
+  if (status === 'pending' && isBuyer) {
+    actionsHtml = btn('증빙 업로드', 'upload_proof');
+  } else if (status === 'rejected' && isBuyer) {
+    actionsHtml = `<span style="color:#ef4444;font-size:12px;">${escapeHtml(notes)}</span>${btn('재업로드', 'upload_proof')}`;
+  } else if (status === 'paid') {
+    actionsHtml = `<span class="dr-btn" style="background:#22c55e20;color:#22c55e;border-color:#22c55e;cursor:default;">✓ 확인됨</span>`;
+  }
+
+  const fmtAmt = Number(amount) ? `${currency} ${Number(amount).toLocaleString()}` : '';
+
+  const node = el(`
+    <div class="dr-msg">
+      <div class="dr-msg-meta">PAYMENT · ${fmtDate(msg.created_at)}</div>
+      <div class="dr-msg-bubble" style="border-left:3px solid ${statusColor};">
+        <div class="dr-card-title">💳 ${escapeHtml(name)}</div>
+        <div class="dr-card-row">금액: ${escapeHtml(fmtAmt)}</div>
+        <div class="dr-card-row">상태: <span style="color:${statusColor};font-weight:600;">${escapeHtml(statusLabel)}</span></div>
+        ${action === 'proof_uploaded' ? '<div class="dr-card-row" style="color:#3b82f6;">📎 결제 증빙이 업로드되었습니다</div>' : ''}
+        <div class="dr-card-actions">${actionsHtml}</div>
+      </div>
+    </div>
+  `);
+
+  node.querySelectorAll('[data-action]').forEach((b) => {
+    b.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('dealroom:action', {
+        detail: {
+          action: b.getAttribute('data-action'),
+          message: msg,
+          payload: p,
+          milestone: { id: milestoneId, name, amount, currency },
+        },
+      }));
+    });
+  });
+
+  return node;
+}
+
 export function renderMessageItem(msg, myRole) {
   const type = msg.message_type || 'text';
   if (type === 'system') return renderSystem(msg);
   if (type === 'quote_card') return renderQuoteCard(msg, myRole);
   if (type === 'document_card') return renderDocumentCard(msg, myRole);
+  if (type === 'payment_card') return renderPaymentCard(msg, myRole);
   if (type === 'ai_guide') return renderAiGuide(msg);
   return renderText(msg);
 }

@@ -7,6 +7,7 @@ import { attachDealroomActionRouter } from './actions/actionRouter.js';
 import { wireActionBar } from './ui/actionBar.js';
 import { fetchDealDocuments, subscribeDealDocuments } from './data/documents.js';
 import { renderDocumentsPanel } from './ui/sidebar/documentsPanel.js';
+import { renderPaymentPanel } from './ui/sidebar/paymentPanel.js';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -75,6 +76,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     me: { id: currentUser?.id ?? null, role: role ?? null },
     ui: { mobileSidebarOpen: false },
     lastSeenAt: null,
+    paymentMilestones: [],
   });
 
   // Render layout (self-contained CSS)
@@ -180,6 +182,18 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
         actions.push({ icon: '⏳', text: '바이어 CI/PL 승인 대기 중', action: null });
       }
     }
+    // ─── Payment Actions ───
+    const milestones = state.paymentMilestones || [];
+    const pendingMs = milestones.filter(m => m.status === 'pending');
+    const proofMs = milestones.filter(m => m.status === 'proof_submitted');
+
+    if (isBuyer && pendingMs.length > 0) {
+      actions.push({ icon: '💳', text: `결제 증빙을 업로드하세요 (${pendingMs.length}건)`, action: null });
+    }
+    if (!isBuyer && proofMs.length > 0) {
+      actions.push({ icon: '🔍', text: `결제 증빙 확인 필요 (${proofMs.length}건)`, action: null });
+    }
+
     if (actions.length === 0) {
       actions.push({ icon: '🚀', text: '거래를 시작하세요', action: null });
     }
@@ -220,13 +234,26 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
         </div>
       </div>
       ${renderDocumentsPanel(state.documents)}
+      ${renderPaymentPanel(state.paymentMilestones)}
     `;
+
+    // Wire payment proof upload buttons in sidebar
+    $sidebar.querySelectorAll('[data-action="upload_proof"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        try {
+          const ms = JSON.parse(btn.getAttribute('data-ms') || '{}');
+          window.dispatchEvent(new CustomEvent('dealroom:action', {
+            detail: { action: 'upload_proof', milestone: ms },
+          }));
+        } catch (_) {}
+      });
+    });
 
     // Wire sidebar action clicks
     $sidebar.querySelectorAll('[data-sidebar-action]').forEach(el => {
       el.addEventListener('click', () => {
         const act = el.getAttribute('data-sidebar-action');
-        if (act === 'invite' || act === 'quote' || act === 'doc' || act === 'send_doc') {
+        if (act === 'invite' || act === 'quote' || act === 'doc' || act === 'send_doc' || act === 'payment') {
           const barBtn = $actionBar.querySelector(`[data-dr="${act}"]`);
           if (barBtn) barBtn.click();
         }
@@ -344,6 +371,14 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     const documents = await fetchDealDocuments(supabase, dealId);
     store.setState({ documents });
 
+    // Load payment milestones
+    const { data: milestones } = await supabase
+      .from('payment_milestones')
+      .select('*')
+      .eq('deal_id', dealId)
+      .order('created_at', { ascending: true });
+    if (milestones) store.setState({ paymentMilestones: milestones });
+
     store.dispatch('LOADING_SET', false);
   } catch (e) {
     store.setState({ error: e?.message || String(e), loading: false });
@@ -368,6 +403,24 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     store.dispatch('STATE_CHANGED', store.getState());
   });
 
+  // Realtime payment milestones
+  const milestoneChannel = supabase
+    .channel(`deal-${dealId}:milestones`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_milestones', filter: `deal_id=eq.${dealId}` }, (payload) => {
+      const state = store.getState();
+      let ms = [...(state.paymentMilestones || [])];
+      if (payload.eventType === 'INSERT') {
+        if (!ms.some(m => m.id === payload.new.id)) ms.push(payload.new);
+      } else if (payload.eventType === 'UPDATE') {
+        ms = ms.map(m => m.id === payload.new.id ? payload.new : m);
+      } else if (payload.eventType === 'DELETE') {
+        ms = ms.filter(m => m.id !== payload.old?.id);
+      }
+      store.setState({ paymentMilestones: ms });
+      store.dispatch('STATE_CHANGED', store.getState());
+    })
+    .subscribe();
+
   // Realtime deal stage changes
   const dealChannel = supabase
     .channel(`deal-${dealId}`)
@@ -390,6 +443,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
   return function cleanup() {
     try { unsubscribe?.(); } catch (_) {}
     try { unsubDocs?.(); } catch (_) {}
+    try { supabase.removeChannel(milestoneChannel); } catch (_) {}
     try { supabase.removeChannel(dealChannel); } catch (_) {}
     try { offActions?.(); } catch (_) {}
     try { offActionBar?.(); } catch (_) {}

@@ -2,6 +2,7 @@
 import { renderPIToPdf } from '../docs/render/pi.js';
 import { renderCIToPdf } from '../docs/render/ci.js';
 import { renderPLToPdf } from '../docs/render/pl.js';
+import { openProofUploadModal } from '../ui/modals/proofUploadModal.js';
 
 function showToast(msg, type = 'error') {
   const existing = document.getElementById('dr-toast');
@@ -113,6 +114,13 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
         });
         if (error) throw error;
         showToast('문서 수정요청이 전송되었습니다', 'success');
+        return;
+      }
+
+      if (action === 'upload_proof') {
+        const milestone = d.milestone || payload.milestone;
+        if (!milestone?.id) { showToast('마일스톤 정보를 찾을 수 없습니다'); return; }
+        openProofUploadModal({ supabase, store, dealId, milestone });
         return;
       }
 
