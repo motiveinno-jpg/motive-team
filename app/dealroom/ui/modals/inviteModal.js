@@ -76,29 +76,33 @@ export function openInviteModal({ supabase, dealId }) {
     $status.textContent = '생성 중…';
     $create.disabled = true;
 
-    const inviteToken = token();
-    const expHours = Number($exp.value || 168);
-    const maxUses = Number($max.value || 5);
-    const expiresAt = new Date(Date.now() + expHours * 3600 * 1000).toISOString();
+    try {
+      const inviteToken = token();
+      const expHours = Number($exp.value || 168);
+      const maxUses = Number($max.value || 5);
+      const expiresAt = new Date(Date.now() + expHours * 3600 * 1000).toISOString();
 
-    const { error } = await supabase.from('deal_invites').insert({
-      invite_token: inviteToken,
-      deal_id: dealId,
-      expires_at: expiresAt,
-      max_uses: maxUses,
-    });
+      const { error } = await supabase.from('deal_invites').insert({
+        invite_token: inviteToken,
+        deal_id: dealId,
+        expires_at: expiresAt,
+        max_uses: maxUses,
+      });
 
-    $create.disabled = false;
+      if (error) {
+        $status.textContent = `실패: ${error.message}`;
+        return;
+      }
 
-    if (error) {
-      $status.textContent = `실패: ${error.message}`;
-      return;
+      const inviteUrl = `${location.origin}${location.pathname}#dealroom?token=${encodeURIComponent(inviteToken)}`;
+      $url.value = inviteUrl;
+      $copy.disabled = false;
+      $status.textContent = `생성 완료 (expires: ${new Date(expiresAt).toLocaleString()})`;
+    } catch (err) {
+      $status.textContent = `실패: ${err.message || '알 수 없는 오류'}`;
+    } finally {
+      $create.disabled = false;
     }
-
-    const inviteUrl = `${location.origin}${location.pathname}#dealroom?token=${encodeURIComponent(inviteToken)}`;
-    $url.value = inviteUrl;
-    $copy.disabled = false;
-    $status.textContent = `생성 완료 (expires: ${new Date(expiresAt).toLocaleString()})`;
   }
 
   async function copyUrl() {

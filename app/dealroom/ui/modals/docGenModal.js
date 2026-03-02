@@ -88,19 +88,43 @@ export function openDocGenModal({ supabase, store, dealId }) {
       const userId = session?.user?.id;
       if (!userId) throw new Error('로그인이 필요합니다');
 
-      // Insert document
+      // Build content with deal/user context
+      const dealState = store?.getState?.() || {};
+      const deal = dealState.deal || {};
+      const me = dealState.me || {};
+      const docContent = {
+        doc_type: docType,
+        language,
+        deal_id: dealId,
+        deal_title: deal.title || '',
+        seller: {
+          name: me.display_name || me.email || '',
+          company: deal.seller_company || '',
+        },
+        buyer: {
+          name: deal.buyer_name || deal.buyer_company || '',
+          company: deal.buyer_company || '',
+        },
+        notes: notes || '',
+        generated_at: new Date().toISOString(),
+      };
+
+      // Auto-generate doc number if not provided
+      const autoDocNumber = docNumber || `${docType}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+
+      // Insert document as draft first
       const { data: doc, error: docErr } = await supabase
         .from('documents')
         .insert({
           user_id: userId,
           deal_id: dealId,
           doc_type: docType,
-          doc_number: docNumber || null,
-          status: 'sent',
-          status_v2: 'sent',
+          doc_number: autoDocNumber,
+          status: 'draft',
+          status_v2: 'draft',
           language,
           notes: notes || null,
-          content: {},
+          content: docContent,
           version: 1,
         })
         .select()
@@ -116,12 +140,12 @@ export function openDocGenModal({ supabase, store, dealId }) {
           sender_id: userId,
           sender_role: 'seller',
           message_type: 'document_card',
-          content: `${docType} ${docNumber || ''} 문서가 생성되었습니다.`,
+          content: `${docType} ${autoDocNumber} 문서가 생성되었습니다. (Draft)`,
           payload: {
             document_id: doc.id,
             doc_type: docType,
-            doc_no: docNumber || '',
-            status_v2: 'sent',
+            doc_no: autoDocNumber,
+            status_v2: 'draft',
             version: 1,
           },
           ref_type: 'document',
@@ -133,6 +157,7 @@ export function openDocGenModal({ supabase, store, dealId }) {
     } catch (err) {
       errEl.textContent = err.message || '생성 실패';
       errEl.style.display = 'block';
+    } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = '서류 생성';
     }
