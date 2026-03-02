@@ -14,7 +14,7 @@ const DOC_TYPES = [
 
 /**
  * Open document generation modal inside the dealroom.
- * Creates a document record linked to the deal and posts a document_card message.
+ * Calls create-document Edge Function (server-side document creation).
  */
 export function openDocGenModal({ supabase, store, dealId }) {
   // Remove existing modal if any
@@ -40,10 +40,6 @@ export function openDocGenModal({ supabase, store, dealId }) {
           <select id="dr-docgen-type" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
             ${optionsHtml}
           </select>
-        </div>
-        <div>
-          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">서류 번호 (선택)</label>
-          <input id="dr-docgen-number" type="text" placeholder="예: PI-2026-001" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;box-sizing:border-box;" />
         </div>
         <div>
           <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">언어</label>
@@ -72,7 +68,6 @@ export function openDocGenModal({ supabase, store, dealId }) {
 
   overlay.querySelector('#dr-docgen-submit').addEventListener('click', async () => {
     const docType = overlay.querySelector('#dr-docgen-type').value;
-    const docNumber = overlay.querySelector('#dr-docgen-number').value.trim();
     const language = overlay.querySelector('#dr-docgen-lang').value;
     const notes = overlay.querySelector('#dr-docgen-notes').value.trim();
     const errEl = overlay.querySelector('#dr-docgen-error');
@@ -83,75 +78,18 @@ export function openDocGenModal({ supabase, store, dealId }) {
     submitBtn.textContent = '생성 중...';
 
     try {
-      // Get current user
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-      if (!userId) throw new Error('로그인이 필요합니다');
-
-      // Build content with deal/user context
-      const dealState = store?.getState?.() || {};
-      const deal = dealState.deal || {};
-      const me = dealState.me || {};
-      const docContent = {
-        doc_type: docType,
-        language,
-        deal_id: dealId,
-        deal_title: deal.title || '',
-        seller: {
-          name: me.display_name || me.email || '',
-          company: deal.seller_company || '',
-        },
-        buyer: {
-          name: deal.buyer_name || deal.buyer_company || '',
-          company: deal.buyer_company || '',
-        },
-        notes: notes || '',
-        generated_at: new Date().toISOString(),
-      };
-
-      // Auto-generate doc number if not provided
-      const autoDocNumber = docNumber || `${docType}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
-
-      // Insert document as draft first
-      const { data: doc, error: docErr } = await supabase
-        .from('documents')
-        .insert({
-          user_id: userId,
+      // Call server-side Edge Function (no client-side insert)
+      const { data, error } = await supabase.functions.invoke('create-document', {
+        body: {
           deal_id: dealId,
           doc_type: docType,
-          doc_number: autoDocNumber,
-          status: 'draft',
-          status_v2: 'draft',
           language,
           notes: notes || null,
-          content: docContent,
-          version: 1,
-        })
-        .select()
-        .single();
+        },
+      });
 
-      if (docErr) throw docErr;
-
-      // Post document_card message in deal chat
-      await supabase
-        .from('deal_messages')
-        .insert({
-          deal_id: dealId,
-          sender_id: userId,
-          sender_role: 'seller',
-          message_type: 'document_card',
-          content: `${docType} ${autoDocNumber} 문서가 생성되었습니다. (Draft)`,
-          payload: {
-            document_id: doc.id,
-            doc_type: docType,
-            doc_no: autoDocNumber,
-            status_v2: 'draft',
-            version: 1,
-          },
-          ref_type: 'document',
-          ref_id: doc.id,
-          is_system: true,
-        });
+      if (error) throw new Error(error.message || '서류 생성 실패');
+      if (data && !data.ok) throw new Error(data.error || '서류 생성 실패');
 
       close();
     } catch (err) {

@@ -34,6 +34,15 @@ function docIcon(docType) {
   return icons[docType?.toUpperCase()] || '📄';
 }
 
+function safeUrl(u) {
+  if (!u) return null;
+  try {
+    const x = new URL(u, location.origin);
+    if (x.protocol !== 'https:' && x.protocol !== 'http:') return null;
+    return x.toString();
+  } catch { return null; }
+}
+
 /**
  * Render the documents panel HTML.
  * @param {Array} documents
@@ -66,8 +75,8 @@ export function renderDocumentsPanel(documents) {
         </div>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;">
           ${badge}
-          ${hasUrl
-            ? `<a href="${escapeHtml(doc.pdf_url)}" target="_blank" rel="noopener" class="dr-btn" style="font-size:11px;padding:3px 6px;">↓</a>`
+          ${safeUrl(doc.pdf_url)
+            ? `<a href="${escapeHtml(safeUrl(doc.pdf_url))}" target="_blank" rel="noopener" class="dr-btn" style="font-size:11px;padding:3px 6px;">↓</a>`
             : ''}
         </div>
       </div>
