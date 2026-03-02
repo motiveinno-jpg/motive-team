@@ -434,6 +434,10 @@ function _loadExRateFallback(){
   fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;console.log('Exchange rate (Frankfurter):',d.rates.KRW);}
   }).catch(function(){console.log('Exchange rate fallback failed, using default 1400');});
+  /* 다통화 환율 로드 (KRW 기준 → 시장별 통화 표시용) */
+  fetch('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB').then(function(r){return r.json();}).then(function(d){
+    if(d&&d.rates){window._fxRates=d.rates;console.log('Multi-currency rates loaded:',Object.keys(d.rates).join(','));}
+  }).catch(function(){});
 }
 /* 국가 정보 로딩 (REST Countries API — 완전 무료) */
 function _loadCountryData(){
@@ -1023,7 +1027,9 @@ function genReport(d){
     var base=data[m]||{name:m,size:'—',grow:'—',entry:'—',note:'—'};
     var cc=_mktCountry[m];var ci=cc?_enrichCountry(cc):null;
     if(ci){base.country_profile={population:ci.population,currency:ci.currency+' ('+ci.currencyName+')',language:ci.language,capital:ci.capital,timezone:ci.timezone,flag:ci.flag};
-      var exRate=window._exRate||1400;base.currency_rate=ci.currency==='USD'?null:(ci.currency+'/KRW 환율: 실시간 연동');}
+      var fx=window._fxRates||{};var krwRate=fx[ci.currency];
+      if(krwRate&&ci.currency!=='KRW'){base.currency_rate='1 KRW = '+(krwRate<0.01?krwRate.toFixed(6):krwRate.toFixed(4))+' '+ci.currency+' (실시간)';}
+      else if(ci.currency!=='KRW'&&ci.currency!=='USD'){base.currency_rate=ci.currency+'/KRW 환율 조회 중';}}
     return base;
   });
   var existCerts=(d.existing_certs||[]);var needCerts=cd.certs.filter(function(c){var base=c.split(' ')[0];return existCerts.indexOf(base)<0&&existCerts.indexOf(c)<0;});
