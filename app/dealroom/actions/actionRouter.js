@@ -51,26 +51,38 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
 
     try {
       if (action === 'document_approve') {
+        if (actionBtn?.disabled) return;
         const documentId = msg?.ref_id || payload.document_id;
         if (!documentId) throw new Error('문서 ID를 찾을 수 없습니다');
         if (actionBtn) { actionBtn.disabled = true; actionBtn.textContent = '처리 중...'; }
-        const { error } = await supabase.functions.invoke('approve-document', {
-          body: { deal_id: dealId, document_id: documentId },
-        });
-        if (error) throw error;
-        showToast('문서가 승인되었습니다', 'success');
+        try {
+          const { error } = await supabase.functions.invoke('approve-document', {
+            body: { deal_id: dealId, document_id: documentId },
+          });
+          if (error) throw error;
+          showToast('문서가 승인되었습니다', 'success');
+        } catch (err) {
+          if (actionBtn) actionBtn.disabled = false;
+          throw err;
+        }
         return;
       }
 
       if (action === 'quote_approve') {
+        if (actionBtn?.disabled) return;
         const quoteId = msg?.ref_id || payload.quote_id;
         if (!quoteId) throw new Error('견적 ID를 찾을 수 없습니다');
         if (actionBtn) { actionBtn.disabled = true; actionBtn.textContent = '처리 중...'; }
-        const { error } = await supabase.functions.invoke('approve-quote', {
-          body: { quote_id: quoteId, action: 'approve' },
-        });
-        if (error) throw error;
-        showToast('견적이 승인되었습니다. PI가 자동 생성됩니다.', 'success');
+        try {
+          const { error } = await supabase.functions.invoke('approve-quote', {
+            body: { quote_id: quoteId, action: 'approve' },
+          });
+          if (error) throw error;
+          showToast('견적이 승인되었습니다. PI가 자동 생성됩니다.', 'success');
+        } catch (err) {
+          if (actionBtn) actionBtn.disabled = false;
+          throw err;
+        }
         return;
       }
 

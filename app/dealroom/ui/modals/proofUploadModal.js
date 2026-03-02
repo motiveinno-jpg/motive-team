@@ -124,8 +124,12 @@ export function openProofUploadModal({ supabase, store, dealId, milestone }) {
   overlay.querySelector('#dr-proof-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
+  let isUploading = false;
   submitBtn.addEventListener('click', async () => {
     if (!selectedFile) return;
+    if (isUploading) return;
+    isUploading = true;
+
     errEl.style.display = 'none';
     submitBtn.disabled = true;
     submitBtn.textContent = '업로드 중...';
@@ -163,6 +167,8 @@ export function openProofUploadModal({ supabase, store, dealId, milestone }) {
       barEl.style.width = '0%';
       submitBtn.disabled = false;
       submitBtn.textContent = '증빙 업로드';
+    } finally {
+      isUploading = false;
     }
   });
 

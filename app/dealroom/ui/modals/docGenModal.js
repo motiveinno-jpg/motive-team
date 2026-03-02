@@ -66,7 +66,11 @@ export function openDocGenModal({ supabase, store, dealId }) {
   overlay.querySelector('#dr-docgen-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
+  let isCreating = false;
   overlay.querySelector('#dr-docgen-submit').addEventListener('click', async () => {
+    if (isCreating) return;
+    isCreating = true;
+
     const docType = overlay.querySelector('#dr-docgen-type').value;
     const language = overlay.querySelector('#dr-docgen-lang').value;
     const notes = overlay.querySelector('#dr-docgen-notes').value.trim();
@@ -96,6 +100,7 @@ export function openDocGenModal({ supabase, store, dealId }) {
       errEl.textContent = err.message || '생성 실패';
       errEl.style.display = 'block';
     } finally {
+      isCreating = false;
       submitBtn.disabled = false;
       submitBtn.textContent = '서류 생성';
     }

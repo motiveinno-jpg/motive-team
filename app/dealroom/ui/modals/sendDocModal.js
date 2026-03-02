@@ -61,12 +61,17 @@ export function openSendDocModal({ supabase, store, dealId }) {
   overlay.querySelector('#dr-senddoc-cancel').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
+  let isSending = false;
   overlay.querySelector('#dr-senddoc-submit').addEventListener('click', async () => {
+    if (isSending) return;
+    isSending = true;
+
     const selected = overlay.querySelector('input[name="dr-send-doc"]:checked');
     if (!selected) {
       const errEl = overlay.querySelector('#dr-senddoc-error');
       errEl.textContent = '문서를 선택해주세요';
       errEl.style.display = 'block';
+      isSending = false;
       return;
     }
 
@@ -91,6 +96,7 @@ export function openSendDocModal({ supabase, store, dealId }) {
       errEl.textContent = err.message || '전송 실패';
       errEl.style.display = 'block';
     } finally {
+      isSending = false;
       submitBtn.disabled = false;
       submitBtn.textContent = '전송';
     }

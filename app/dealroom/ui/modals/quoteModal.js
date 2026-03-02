@@ -97,7 +97,11 @@ export function openQuoteModal({ supabase, dealId, userId }) {
 
   $add.addEventListener('click', () => addItemRow());
 
+  let isSendingQuote = false;
   async function send() {
+    if (isSendingQuote) return;
+    isSendingQuote = true;
+
     $status.textContent = 'Sending…';
     $send.disabled = true;
 
@@ -111,6 +115,7 @@ export function openQuoteModal({ supabase, dealId, userId }) {
     if (!items.length) {
       $status.textContent = 'At least 1 item is required';
       $send.disabled = false;
+      isSendingQuote = false;
       return;
     }
 
@@ -157,6 +162,7 @@ export function openQuoteModal({ supabase, dealId, userId }) {
       console.error('[quote send error]', e);
       $status.textContent = `Error: ${e?.message || String(e)}`;
     } finally {
+      isSendingQuote = false;
       $send.disabled = false;
     }
   }
