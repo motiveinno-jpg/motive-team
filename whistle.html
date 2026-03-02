@@ -396,6 +396,18 @@ function toggleCurrency(){
   render();
 }
 
+/* === ERROR TRACKER === */
+(function(){
+  var _errQueue=[];
+  window.__trackError=function(opts){
+    if(!opts||!opts.error_message)return;
+    _errQueue.push({user_id:S.user?S.user.id:null,error_message:String(opts.error_message).slice(0,2000),error_stack:String(opts.error_stack||'').slice(0,5000),page:opts.page||location.hash,extra:opts.extra||{},user_agent:navigator.userAgent,url:location.href});
+    if(_errQueue.length>=5||!window._errTimer){window._errTimer=setTimeout(function(){var batch=_errQueue.splice(0,10);if(batch.length&&window.sb)sb.from('client_errors').insert(batch).then(function(){});window._errTimer=null;},2000);}
+  };
+  window.addEventListener('error',function(e){window.__trackError({error_message:e.message||'Unknown',error_stack:e.error?e.error.stack:e.filename+':'+e.lineno});});
+  window.addEventListener('unhandledrejection',function(e){window.__trackError({error_message:e.reason?e.reason.message||String(e.reason):'Unhandled rejection',error_stack:e.reason?e.reason.stack:''});});
+})();
+
 /* === DATA === */
 function loadUser(){
   sb.auth.getSession().then(function(res){
