@@ -5,6 +5,8 @@ import { renderMessageItem } from './ui/chat/messageItem.js';
 import { subscribeDealMessages, loadInitialDealMessages } from './realtime/messages.js';
 import { attachDealroomActionRouter } from './actions/actionRouter.js';
 import { wireActionBar } from './ui/actionBar.js';
+import { fetchDealDocuments, subscribeDealDocuments } from './data/documents.js';
+import { renderDocumentsPanel } from './ui/sidebar/documentsPanel.js';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -64,6 +66,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
 
   const store = createStore({
     messages: [],
+    documents: [],
     deal: { id: dealId },
     participants: [],
     currentStage: '',
@@ -115,10 +118,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
             : '<span style="opacity:.6">No participants yet</span>'}
         </div>
       </div>
-      <div class="dr-panel">
-        <div class="dr-panel-title">Documents</div>
-        <div class="dr-panel-body" style="opacity:.6">Coming in Sprint 1.5</div>
-      </div>
+      ${renderDocumentsPanel(state.documents)}
     `;
   }
 
@@ -223,6 +223,10 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
       store.setState({ participants });
     }
 
+    // Load documents
+    const documents = await fetchDealDocuments(supabase, dealId);
+    store.setState({ documents });
+
     store.dispatch('LOADING_SET', false);
   } catch (e) {
     store.setState({ error: e?.message || String(e), loading: false });
@@ -231,6 +235,21 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
 
   // Realtime subscribe
   const unsubscribe = subscribeDealMessages(supabase, dealId, store);
+
+  // Realtime document changes
+  const unsubDocs = subscribeDealDocuments(supabase, dealId, (eventType, newDoc) => {
+    const state = store.getState();
+    let docs = [...(state.documents || [])];
+    if (eventType === 'INSERT') {
+      docs = [newDoc, ...docs];
+    } else if (eventType === 'UPDATE') {
+      docs = docs.map(d => d.id === newDoc.id ? newDoc : d);
+    } else if (eventType === 'DELETE') {
+      docs = docs.filter(d => d.id !== newDoc.id);
+    }
+    store.setState({ documents: docs });
+    store.dispatch('STATE_CHANGED', store.getState());
+  });
 
   // Action router (dealroom:action events from card buttons)
   const offActions = attachDealroomActionRouter({ supabase, store, dealId });
@@ -241,6 +260,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
   // Cleanup (unmount)
   return function cleanup() {
     try { unsubscribe?.(); } catch (_) {}
+    try { unsubDocs?.(); } catch (_) {}
     try { offActions?.(); } catch (_) {}
     try { offActionBar?.(); } catch (_) {}
     try { offAny?.(); } catch (_) {}

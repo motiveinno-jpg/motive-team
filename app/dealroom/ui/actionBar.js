@@ -1,6 +1,7 @@
 // /app/dealroom/ui/actionBar.js
 import { openInviteModal } from './modals/inviteModal.js';
 import { openQuoteModal } from './modals/quoteModal.js';
+import { openDocGenModal } from './modals/docGenModal.js';
 
 export function wireActionBar({ rootEl, supabase, store, dealId }) {
   const bar = rootEl.querySelector('#dr-action-bar');
@@ -9,7 +10,7 @@ export function wireActionBar({ rootEl, supabase, store, dealId }) {
   bar.innerHTML = `
     <button class="dr-btn" data-dr="invite" type="button">바이어 초대</button>
     <button class="dr-btn" data-dr="quote" type="button">견적작성</button>
-    <button class="dr-btn" data-dr="doc" type="button" disabled>서류생성</button>
+    <button class="dr-btn" data-dr="doc" type="button">서류생성</button>
     <button class="dr-btn" data-dr="ship" type="button" disabled>출하등록</button>
     <button class="dr-btn" data-dr="stage" type="button" disabled>단계전이</button>
   `;
@@ -21,6 +22,7 @@ export function wireActionBar({ rootEl, supabase, store, dealId }) {
 
     if (a === 'invite') openInviteModal({ supabase, dealId });
     if (a === 'quote') openQuoteModal({ supabase, dealId });
+    if (a === 'doc') openDocGenModal({ supabase, store, dealId });
   };
 
   bar.addEventListener('click', onClick);
