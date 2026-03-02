@@ -210,6 +210,10 @@ function loadAll(){
     sb.from('buyer_request_proposals').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.proposals=r.data||[];}),
     sb.from('subscriptions').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.subscriptions=r.data||[];}),
     sb.from('escrow_transactions').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.escrowTxns=r.data||[];}),
+    sb.from('billing_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.billingEvents=r.data||[];}),
+    sb.from('usage_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.usageEvents=r.data||[];}),
+    sb.from('invoices').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.invoices=r.data||[];}),
+    sb.from('revenue_config').select('*').then(function(r){S.revenueConfig=r.data||[];}),
     sb.from('alibaba_stores').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaStores=r.data||[];}),
     sb.from('alibaba_inquiries').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaInquiries=r.data||[];}),
     sb.from('disputes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.disputes=r.data||[];}),
@@ -282,6 +286,14 @@ function calcMRR(){var mrr=0;if(S.subscriptions.length){S.subscriptions.filter(f
 function calcEscrowHold(){return S.escrowTxns.filter(function(e){return['funded','in_production','shipped','inspection'].indexOf(e.escrow_status)>=0;}).reduce(function(s,e){return s+(Number(e.amount)||0);},0);}
 function calcEscrowComm(){return S.escrowTxns.filter(function(e){return e.escrow_status==='released';}).reduce(function(s,e){return s+(Number(e.commission_amount)||0);},0);}
 function calcFloat(){return S.escrowTxns.reduce(function(s,e){return s+(Number(e.float_revenue_estimate)||0);},0);}
+
+/* === ENHANCED KPI FUNCTIONS === */
+function calcARPU(){var paid=S.users.filter(function(u){return u.plan&&u.plan!=='free';});if(!paid.length)return 0;return calcMRR()/paid.length;}
+function calcChurnRate(){var cancelled=S.subscriptions.filter(function(s){return s.status==='cancelled';}).length;var total=S.subscriptions.length;if(!total)return 0;return(cancelled/total*100);}
+function calcConversionRate(){var total=S.users.length;if(!total)return 0;var paid=S.users.filter(function(u){return u.plan&&u.plan!=='free';}).length;return(paid/total*100);}
+function calcLTV(){var arpu=calcARPU();var churn=calcChurnRate()/100;if(churn<=0)return arpu*12;return arpu/churn;}
+function calcActiveRate(){var total=S.users.length;if(!total)return 0;var thirtyDaysAgo=new Date(Date.now()-30*864e5).toISOString();var active=S.users.filter(function(u){return u.last_sign_in_at&&u.last_sign_in_at>thirtyDaysAgo;}).length;return(active/total*100);}
+function calcUsageSummary(){var summary={};if(!S.usageEvents)return summary;S.usageEvents.forEach(function(e){if(!summary[e.feature])summary[e.feature]={count:0,revenue:0};summary[e.feature].count+=e.quantity||1;summary[e.feature].revenue+=(e.unit_price||0)*(e.quantity||1);});return summary;}
 
 /* ============ PAGES ============ */
 
@@ -1485,13 +1497,34 @@ function pgPayRevenue(){
   var streams=[{l:'\uAD6C\uB3C5 \uC218\uC775 (MRR)',v:mrr,c:'var(--pri)'},{l:'\uC5D0\uC2A4\uD06C\uB85C \uC218\uC218\uB8CC',v:comm,c:'var(--acc)'},{l:'\uD50C\uB85C\uD2B8 \uC218\uC775 (\uC790\uAE08\uBCF4\uC720 \uC774\uC790)',v:flt,c:'var(--ok)'}];
   var maxStr=Math.max.apply(null,streams.map(function(s){return s.v;}).concat([1]));
 
+  var arpu=calcARPU();var churnR=calcChurnRate();var convR=calcConversionRate();var ltv=calcLTV();var actR=calcActiveRate();
+  var usageStat=calcUsageSummary();
+  var usageFeatures=['ai_analysis','document_gen','buyer_matching','email_send','trend_report'];
+  var usageLabels={ai_analysis:'AI 분석',document_gen:'서류 생성',buyer_matching:'바이어 매칭',email_send:'이메일',trend_report:'트렌드 분석'};
+
   return '<div class="grid-5" style="margin-bottom:20px">'+
-    UI.stat('MRR (\uC6D4 \uBC18\uBCF5\uB9E4\uCD9C)',U.usd(mrr),'\uAD6C\uB3C5 '+activeSubs+'\uAC74','var(--pri)')+
-    UI.stat('ARR (\uC5F0 \uBC18\uBCF5\uB9E4\uCD9C)',U.usd(arr),'','var(--ok)')+
-    UI.stat('\uC5D0\uC2A4\uD06C\uB85C \uBCF4\uC720\uAE08',U.usd(hold),activeEsc+'\uAC74 \uC9C4\uD589\uC911','var(--acc)')+
-    UI.stat('\uB204\uC801 \uC218\uC218\uB8CC',U.usd(comm),'\uC5D0\uC2A4\uD06C\uB85C \uC815\uC0B0','var(--admin)')+
-    UI.stat('\uD50C\uB85C\uD2B8 \uC218\uC775',U.usd(flt),'\uC790\uAE08\uBCF4\uC720 \uC774\uC790','var(--purple)')+
+    UI.stat('MRR (월 반복매출)',U.usd(mrr),'구독 '+activeSubs+'건','var(--pri)')+
+    UI.stat('ARR (연 반복매출)',U.usd(arr),'','var(--ok)')+
+    UI.stat('에스크로 보유금',U.usd(hold),activeEsc+'건 진행중','var(--acc)')+
+    UI.stat('누적 수수료',U.usd(comm),'에스크로 정산','var(--admin)')+
+    UI.stat('플로트 수익',U.usd(flt),'자금보유 이자','var(--purple)')+
   '</div>'+
+  /* Enhanced KPI row */
+  '<div class="grid-5" style="margin-bottom:20px">'+
+    UI.stat('ARPU',U.usd(arpu),'유료 유저당 월 매출','var(--pri)')+
+    UI.stat('LTV (추정)',U.usd(ltv),'고객 생애 가치','var(--ok)')+
+    UI.stat('이탈률',churnR.toFixed(1)+'%','해지/전체 비율','var(--err)')+
+    UI.stat('전환율',convR.toFixed(1)+'%','Free→Paid','var(--acc)')+
+    UI.stat('활동률 (30일)',actR.toFixed(1)+'%','최근 로그인','var(--purple)')+
+  '</div>'+
+  /* Usage-based billing summary */
+  '<div class="card" style="margin-bottom:16px"><div class="card-h"><span>📊 기능별 사용량 (이번 달)</span></div><div class="card-b"><div class="grid-5">'+
+    usageFeatures.map(function(f){var u=usageStat[f]||{count:0,revenue:0};return '<div style="text-align:center;padding:10px;border-radius:8px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">'+(usageLabels[f]||f)+'</div><div style="font-size:18px;font-weight:800;color:var(--pri)">'+u.count+'</div><div style="font-size:10px;color:var(--acc);font-family:JetBrains Mono">'+U.usd(u.revenue)+'</div></div>';}).join('')+
+  '</div></div></div>'+
+  /* Billing events feed */
+  '<div class="card" style="margin-bottom:16px"><div class="card-h"><span>🔔 최근 결제 이벤트</span></div><div class="card-b" style="max-height:200px;overflow-y:auto">'+
+    ((S.billingEvents||[]).slice(0,10).map(function(e){var u=S.users.find(function(x){return x.id===e.user_id;});return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--w08)"><span style="font-size:10px;color:var(--w30)">'+new Date(e.created_at).toLocaleDateString('ko-KR')+'</span><span style="font-size:11px;color:var(--w60)">'+(u?u.display_name||u.email:'?')+'</span><span class="badge badge-pri" style="font-size:9px">'+e.event_type+'</span>'+(e.amount?'<span style="font-size:11px;font-weight:700;color:var(--acc);margin-left:auto;font-family:JetBrains Mono">'+U.usd(e.amount)+'</span>':'')+'</div>';}).join('')||'<div style="font-size:12px;color:var(--w30);text-align:center;padding:20px">결제 이벤트 없음</div>')+
+  '</div></div>'+
   '<div class="grid-2" style="margin-bottom:16px">'+
     '<div class="card"><div class="card-h">\uC218\uC775 \uAD6C\uC870 (3\uCD95)</div><div class="card-b">'+
       streams.map(function(s){return hBar(s.l,U.usd(s.v),maxStr,s.c);}).join('')+
