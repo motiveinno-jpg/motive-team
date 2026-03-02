@@ -1,4 +1,5 @@
 // /app/dealroom/actions/actionRouter.js
+import { renderPIToPdf } from '../docs/render/pi.js';
 
 function showToast(msg, type = 'error') {
   const existing = document.getElementById('dr-toast');
@@ -94,7 +95,28 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
       }
 
       if (action === 'document_download') {
-        console.log('[dealroom] document download:', payload);
+        const documentId = msg?.ref_id || payload.document_id;
+        if (!documentId) { showToast('문서 ID를 찾을 수 없습니다'); return; }
+        if (actionBtn) { actionBtn.disabled = true; actionBtn.textContent = '...'; }
+        try {
+          const { data: docData, error: docErr } = await supabase
+            .from('documents')
+            .select('*')
+            .eq('id', documentId)
+            .single();
+          if (docErr) throw docErr;
+          if (!docData) throw new Error('문서를 찾을 수 없습니다');
+
+          const docType = (docData.doc_type || '').toUpperCase();
+          if (docType === 'PI') {
+            renderPIToPdf(docData);
+            showToast('PDF 다운로드 시작', 'success');
+          } else {
+            showToast(`${docType} PDF 생성은 준비 중입니다`, 'info');
+          }
+        } finally {
+          if (actionBtn) { actionBtn.disabled = false; actionBtn.textContent = '다운로드'; }
+        }
         return;
       }
     } catch (err) {

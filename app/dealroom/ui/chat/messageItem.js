@@ -114,7 +114,7 @@ function renderDocumentCard(msg) {
           ${DOC_FINAL_STATES.includes(status)
             ? `<span class="dr-btn" style="opacity:.6;cursor:default;">${status === 'approved' ? '✓ 승인됨' : status}</span>`
             : btn('승인', 'document_approve')}
-          ${safeUrl(downloadUrl) ? `<a class="dr-btn" href="${escapeHtml(safeUrl(downloadUrl))}" target="_blank" rel="noopener">다운로드</a>` : btn('다운로드', 'document_download', true)}
+          ${safeUrl(downloadUrl) ? `<a class="dr-btn" href="${escapeHtml(safeUrl(downloadUrl))}" target="_blank" rel="noopener">다운로드</a>` : btn('다운로드', 'document_download')}
         </div>
       </div>
     </div>
