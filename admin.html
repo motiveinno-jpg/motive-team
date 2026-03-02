@@ -167,7 +167,8 @@ var S={
   selectedBuyer:null,selectedSeller:null,selectedMatching:null,selectedOrder:null,selectedDispute:null,
   tab:'all',analyticsTab:'users',paymentTab:'revenue',
   subscriptions:[],escrowTxns:[],disputes:[],reviews:[],
-  alibabaStores:[],alibabaInquiries:[],_buyerTab:'all'
+  alibabaStores:[],alibabaInquiries:[],_buyerTab:'all',
+  deals:[],dealParticipants:[],dealEvents:[],dealMessages:[],quotes:[],selectedDeal:null,dealsTab:'all'
 };
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -211,7 +212,11 @@ function loadAll(){
     sb.from('alibaba_stores').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaStores=r.data||[];}),
     sb.from('alibaba_inquiries').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaInquiries=r.data||[];}),
     sb.from('disputes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.disputes=r.data||[];}),
-    sb.from('reviews').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.reviews=r.data||[];})
+    sb.from('reviews').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.reviews=r.data||[];}),
+    sb.from('deals').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.deals=r.data||[];}),
+    sb.from('deal_participants').select('*').limit(500).then(function(r){S.dealParticipants=r.data||[];}),
+    sb.from('deal_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.dealEvents=r.data||[];}),
+    sb.from('quotes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.quotes=r.data||[];})
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();});
 }
 
@@ -347,6 +352,14 @@ function pgDash(){
     UI.stat('\uB204\uC801 \uB9E4\uCD9C',U.usd(totalRevenue),S.orders.length+'\uAC74 \uC8FC\uBB38','var(--admin)')+
     UI.stat('\uAD6D\uAC00\uC218',countryCount,'\uBC14\uC774\uC5B4 '+S.buyers.length+'\uBA85','var(--purple)')+
   '</div>'+
+
+  (S.deals.length?'<div class="card" style="margin-bottom:16px;cursor:pointer" onclick="Adm.nav(\'dealsMgmt\')"><div class="card-h">🏢 딜룸 거래 현황</div><div class="card-b"><div class="grid-5">'+
+    UI.stat('전체 딜',S.deals.length,'','var(--pri)')+
+    UI.stat('Active',S.deals.filter(function(d){return d.status==='active';}).length,'','var(--ok)')+
+    UI.stat('Negotiation',S.deals.filter(function(d){return d.stage==='negotiation';}).length,'','var(--acc)')+
+    UI.stat('Contract',S.deals.filter(function(d){return d.stage==='contract';}).length,'','#8b5cf6')+
+    UI.stat('견적 수',S.quotes.length,'승인 '+S.quotes.filter(function(q){return q.status==='approved';}).length,'var(--admin)')+
+  '</div></div></div>':'')+
 
   '<div class="grid-2" style="margin-bottom:20px">'+
     // Plan distribution
@@ -1095,6 +1108,194 @@ function pgHealth(){
 }
 function checkRelayHealth(){var el=document.getElementById('health-relay');if(!el)return;fetch(RELAY_URL+'/api/health',{signal:AbortSignal.timeout(5000)}).then(function(r){return r.json();}).then(function(){el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot active"></span>온라인</div></div><div class="detail-row"><div class="detail-label">URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+RELAY_URL+'</div></div>';}).catch(function(){el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot inactive"></span>오프라인</div></div><div class="detail-row"><div class="detail-label">URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+RELAY_URL+'</div></div>';});}
 
+/* ── Deals Management ── */
+function pgDeals(){
+  if(S.selectedDeal)return pgDealDetail(S.selectedDeal);
+  var deals=S.deals||[];
+  var tab=S.dealsTab||'all';
+  var search=(S.searchFilter||'').toLowerCase();
+  // Filter by tab (stage)
+  if(tab!=='all')deals=deals.filter(function(d){return d.stage===tab;});
+  // Search filter
+  if(search)deals=deals.filter(function(d){return (d.title||'').toLowerCase().indexOf(search)>=0||d.id.indexOf(search)>=0;});
+
+  var stages=['prospect','inquiry','negotiation','contract','payment','shipping','completed','cancelled'];
+  var stageColors={prospect:'#94a3b8',inquiry:'#f59e0b',negotiation:'#3b82f6',contract:'#8b5cf6',payment:'#22c55e',shipping:'#14b8a6',completed:'#22c55e',cancelled:'#ef4444'};
+
+  // Stage summary cards
+  var stageCounts={};stages.forEach(function(s){stageCounts[s]=S.deals.filter(function(d){return d.stage===s;}).length;});
+  var totalDeals=S.deals.length;
+  var activeDeals=S.deals.filter(function(d){return d.status==='active';}).length;
+
+  var statsHtml='<div class="grid-5" style="margin-bottom:16px">'+
+    '<div class="card" style="cursor:pointer" onclick="Adm.setDealsTab(\'all\')"><div class="card-b" style="text-align:center;padding:12px"><div style="font-size:24px;font-weight:800;color:var(--pri)">'+totalDeals+'</div><div style="font-size:11px;color:var(--w40)">전체</div></div></div>'+
+    stages.slice(0,4).map(function(s){
+      return '<div class="card" style="cursor:pointer;border-left:3px solid '+stageColors[s]+'" onclick="Adm.setDealsTab(\''+s+'\')"><div class="card-b" style="text-align:center;padding:12px"><div style="font-size:20px;font-weight:800">'+stageCounts[s]+'</div><div style="font-size:11px;color:var(--w40)">'+s.toUpperCase()+'</div></div></div>';
+    }).join('')+
+  '</div>';
+
+  // Tab bar
+  var tabHtml='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
+    ['all'].concat(stages).map(function(t){
+      var isActive=tab===t;
+      var label=t==='all'?'전체 ('+S.deals.length+')':t.toUpperCase()+' ('+stageCounts[t]+')';
+      return '<button class="btn btn-sm '+(isActive?'btn-pri':'btn-ghost')+'" onclick="Adm.setDealsTab(\''+t+'\')">'+label+'</button>';
+    }).join('')+
+  '</div>';
+
+  // Search bar
+  var searchHtml='<div style="margin-bottom:12px"><input placeholder="딜 검색 (제목, ID)..." value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="width:100%;max-width:400px;padding:10px 14px;border-radius:10px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:13px"></div>';
+
+  // Deals table
+  var pKey='deals';
+  var pg=S._pg[pKey]||0;
+  var perPage=15;
+  var paged=deals.slice(pg*perPage,(pg+1)*perPage);
+
+  var tableHtml='<table class="tbl"><thead><tr><th style="width:60px">Stage</th><th>제목</th><th>통화</th><th>인코텀즈</th><th>참여자</th><th>서류</th><th>견적</th><th>최근 활동</th><th>생성일</th></tr></thead><tbody>'+
+    (paged.length?paged.map(function(d){
+      var pCount=(S.dealParticipants||[]).filter(function(p){return p.deal_id===d.id;}).length;
+      var dCount=(S.documents||[]).filter(function(doc){return doc.deal_id===d.id;}).length;
+      var qCount=(S.quotes||[]).filter(function(q){return q.deal_id===d.id;}).length;
+      var sc=stageColors[d.stage]||'#94a3b8';
+      return '<tr style="cursor:pointer" onclick="Adm.viewDeal(\''+d.id+'\')">'+
+        '<td><span class="badge" style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'44;font-size:10px;padding:2px 8px;border-radius:6px">'+U.esc(d.stage)+'</span></td>'+
+        '<td><div style="font-weight:600;font-size:13px">'+U.esc(d.title||'Untitled')+'</div><div style="font-size:10px;color:var(--w40);font-family:JetBrains Mono">'+d.id.substring(0,8)+'…</div></td>'+
+        '<td>'+U.esc(d.currency||'USD')+'</td>'+
+        '<td>'+U.esc(d.incoterms||'-')+'</td>'+
+        '<td style="text-align:center">'+pCount+'</td>'+
+        '<td style="text-align:center">'+dCount+'</td>'+
+        '<td style="text-align:center">'+qCount+'</td>'+
+        '<td style="font-size:11px">'+U.fd(d.last_activity_at)+'</td>'+
+        '<td style="font-size:11px">'+U.fd(d.created_at)+'</td>'+
+      '</tr>';
+    }).join(''):'<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--w40)">딜이 없습니다</td></tr>')+
+  '</tbody></table>';
+
+  var pagination=paginationBar(pKey,deals.length,perPage);
+
+  return statsHtml+searchHtml+tabHtml+tableHtml+pagination;
+}
+
+function pgDealDetail(deal){
+  var d=typeof deal==='string'?S.deals.find(function(x){return x.id===deal;}):deal;
+  if(!d)return '<div class="card"><div class="card-b">딜을 찾을 수 없습니다</div></div>';
+  S.selectedDeal=d;
+
+  var stageColors={prospect:'#94a3b8',inquiry:'#f59e0b',negotiation:'#3b82f6',contract:'#8b5cf6',payment:'#22c55e',shipping:'#14b8a6',completed:'#22c55e',cancelled:'#ef4444'};
+  var sc=stageColors[d.stage]||'#94a3b8';
+
+  var participants=(S.dealParticipants||[]).filter(function(p){return p.deal_id===d.id;});
+  var docs=(S.documents||[]).filter(function(doc){return doc.deal_id===d.id;});
+  var quotes=(S.quotes||[]).filter(function(q){return q.deal_id===d.id;});
+  var events=(S.dealEvents||[]).filter(function(e){return e.deal_id===d.id;}).sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);}).slice(0,20);
+
+  // Back button
+  var backBtn='<div style="margin-bottom:16px"><button class="btn btn-ghost btn-sm" onclick="S.selectedDeal=null;render();">&larr; 목록으로</button></div>';
+
+  // Header
+  var header='<div class="card" style="margin-bottom:16px"><div class="card-b" style="display:flex;align-items:center;justify-content:space-between">'+
+    '<div><h2 style="font-size:18px;font-weight:800;margin:0">'+U.esc(d.title||'Untitled Deal')+'</h2>'+
+    '<div style="font-size:11px;color:var(--w40);font-family:JetBrains Mono;margin-top:4px">'+d.id+'</div></div>'+
+    '<div style="display:flex;align-items:center;gap:12px">'+
+      '<span class="badge" style="background:'+sc+'22;color:'+sc+';border:1px solid '+sc+'44;padding:4px 12px;font-size:13px;font-weight:700;border-radius:8px">'+U.esc(d.stage).toUpperCase()+'</span>'+
+      '<span class="badge '+(d.status==='active'?'badge-ok':'badge-err')+'">'+U.esc(d.status)+'</span>'+
+    '</div></div></div>';
+
+  // Info grid
+  var infoGrid='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat('통화',d.currency||'USD','💱')+
+    UI.stat('인코텀즈',d.incoterms||'-','🚢')+
+    UI.stat('결제조건',d.payment_terms||'-','💳')+
+    UI.stat('참여자',participants.length+'명','👥')+
+  '</div>';
+
+  // Participants
+  var participantsHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">👥 참여자 ('+participants.length+')</div><div class="card-b">'+
+    (participants.length?'<table class="tbl"><thead><tr><th>User ID</th><th>역할</th><th>Company ID</th></tr></thead><tbody>'+
+      participants.map(function(p){
+        var user=S.users.find(function(u){return u.id===p.user_id;});
+        return '<tr><td><div style="font-size:12px">'+U.esc(user?user.email:p.user_id.substring(0,8)+'…')+'</div></td>'+
+          '<td><span class="badge badge-pri">'+U.esc(p.participant_role||'unknown')+'</span></td>'+
+          '<td style="font-size:11px;font-family:JetBrains Mono">'+(p.company_id?p.company_id.substring(0,8)+'…':'-')+'</td></tr>';
+      }).join('')+
+    '</tbody></table>':'<div style="color:var(--w40);font-size:13px">참여자 없음</div>')+
+  '</div></div>';
+
+  // Quotes
+  var quotesHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">📝 견적 ('+quotes.length+')</div><div class="card-b">'+
+    (quotes.length?'<table class="tbl"><thead><tr><th>견적번호</th><th>상태</th><th>금액</th><th>통화</th><th>버전</th><th>생성일</th></tr></thead><tbody>'+
+      quotes.map(function(q){
+        var statusBadge=q.status==='approved'?'badge-ok':q.status==='revision_requested'?'badge-admin':q.status==='rejected'?'badge-err':'badge-pri';
+        return '<tr><td style="font-weight:600">'+U.esc(q.quote_no||'-')+'</td>'+
+          '<td><span class="badge '+statusBadge+'">'+U.esc(q.status)+'</span></td>'+
+          '<td style="text-align:right;font-weight:600">'+(q.total_amount?Number(q.total_amount).toLocaleString():'-')+'</td>'+
+          '<td>'+U.esc(q.currency||'-')+'</td>'+
+          '<td>v'+(q.version||1)+'</td>'+
+          '<td style="font-size:11px">'+U.fd(q.created_at)+'</td></tr>';
+      }).join('')+
+    '</tbody></table>':'<div style="color:var(--w40);font-size:13px">견적 없음</div>')+
+  '</div></div>';
+
+  // Documents
+  var docIcons={PI:'📋',CI:'🧾',PL:'📦',CO:'📜',SC:'📝'};
+  var docsHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">📄 서류 ('+docs.length+')</div><div class="card-b">'+
+    (docs.length?'<table class="tbl"><thead><tr><th>타입</th><th>문서번호</th><th>상태</th><th>버전</th><th>언어</th><th>생성일</th></tr></thead><tbody>'+
+      docs.map(function(doc){
+        var st=doc.status_v2||doc.status;
+        var statusBadge=st==='approved'?'badge-ok':st==='sent'?'badge-pri':st==='draft'?'':'badge-admin';
+        return '<tr><td>'+(docIcons[doc.doc_type]||'📄')+' '+U.esc(doc.doc_type)+'</td>'+
+          '<td style="font-weight:600;font-size:12px">'+U.esc(doc.doc_number||'-')+'</td>'+
+          '<td><span class="badge '+statusBadge+'">'+U.esc(st)+'</span></td>'+
+          '<td>v'+(doc.version||1)+'</td>'+
+          '<td>'+U.esc(doc.language||'en')+'</td>'+
+          '<td style="font-size:11px">'+U.fd(doc.created_at)+'</td></tr>';
+      }).join('')+
+    '</tbody></table>':'<div style="color:var(--w40);font-size:13px">서류 없음</div>')+
+  '</div></div>';
+
+  // Stage management
+  var stages=['prospect','inquiry','negotiation','contract','payment','shipping','completed','cancelled'];
+  var stageManageHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">🔄 스테이지 변경</div><div class="card-b">'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+    stages.map(function(s){
+      var active=d.stage===s;
+      var color=stageColors[s];
+      return '<button class="btn btn-sm" style="'+(active?'background:'+color+';color:#fff;border-color:'+color:'opacity:.6')+'" onclick="Adm.changeDealStage(\''+d.id+'\',\''+s+'\')">'+s.toUpperCase()+'</button>';
+    }).join('')+
+    '</div></div></div>';
+
+  // Events timeline
+  var eventsHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">📜 이벤트 로그 (최근 20건)</div><div class="card-b" style="max-height:300px;overflow-y:auto">'+
+    (events.length?events.map(function(ev){
+      return '<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12px">'+
+        '<div style="min-width:120px;color:var(--w40)">'+U.fd(ev.created_at)+'</div>'+
+        '<div><span class="badge" style="font-size:10px">'+U.esc(ev.event_type)+'</span></div>'+
+        '<div style="color:var(--w60)">'+U.esc(ev.actor_role||'system')+'</div>'+
+      '</div>';
+    }).join(''):'<div style="color:var(--w40);font-size:13px">이벤트 없음</div>')+
+  '</div></div>';
+
+  return backBtn+header+infoGrid+'<div class="grid-2">'+participantsHtml+stageManageHtml+'</div>'+quotesHtml+docsHtml+eventsHtml;
+}
+
+function viewDeal(did){
+  var d=S.deals.find(function(x){return x.id===did;});
+  if(d){S.selectedDeal=d;S.page='dealsMgmt';render();}
+}
+
+function setDealsTab(t){S.dealsTab=t;S._pg={};render();}
+
+function changeDealStage(dealId,newStage){
+  sb.from('deals').update({stage:newStage,updated_at:new Date().toISOString()}).eq('id',dealId).then(function(r){
+    if(r.error){UI.toast('스테이지 변경 실패: '+r.error.message,'err');return;}
+    var d=S.deals.find(function(x){return x.id===dealId;});
+    if(d){d.stage=newStage;S.selectedDeal=d;}
+    UI.toast('스테이지가 '+newStage.toUpperCase()+'로 변경되었습니다','ok');
+    render();
+  });
+}
+
 /* ── Settings ── */
 function pgSettings(){
   return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">⚙️ 시스템 설정</h2></div>'+
@@ -1459,8 +1660,8 @@ function paginationBar(key,info){
 }
 
 /* ============ NAV & RENDER ============ */
-var _APL={dashboard:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1};
-function nav(p){S.page=p;S.searchFilter='';S.tab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.analyticsTab='users';S.paymentTab='revenue';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
+var _APL={dashboard:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1};
+function nav(p){S.page=p;S.searchFilter='';S.tab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.selectedDeal=null;S.analyticsTab='users';S.paymentTab='revenue';S.dealsTab='all';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 function setSearch(v){S.searchFilter=v;S._pg={};render();}
 function setTab(t){S.tab=t;S._pg={};render();}
@@ -1475,7 +1676,7 @@ function viewOrder(oid){var o=S.orders.find(function(x){return x.id===oid;});if(
 function setAnalyticsTab(t){S.analyticsTab=t;render();}
 function setPaymentTab(t){S.paymentTab=t;render();}
 
-var PL={dashboard:'📊 대시보드',analytics:'📈 분석/통계',sellers:'🏭 제조사 관리',buyersMgmt:'🌍 바이어 관리',matchings:'🤝 매칭/딜',ordersMgmt:'💰 주문/매출',disputes:'⚠️ 분쟁 관리',payments:'💳 결제/에스크로',chat:'💬 채팅 모니터',users:'👥 유저 관리',analyses:'🔬 AI 분석',services:'💼 서비스 요청',products:'📦 제품 관리',projects:'🚀 프로젝트',documents:'📄 서류',health:'🛡️ 시스템 상태',settings:'⚙️ 설정',alibabaMgmt:'🏪 알리바바 관리'};
+var PL={dashboard:'📊 대시보드',analytics:'📈 분석/통계',sellers:'🏭 제조사 관리',buyersMgmt:'🌍 바이어 관리',matchings:'🤝 매칭/딜',ordersMgmt:'💰 주문/매출',disputes:'⚠️ 분쟁 관리',payments:'💳 결제/에스크로',chat:'💬 채팅 모니터',users:'👥 유저 관리',analyses:'🔬 AI 분석',services:'💼 서비스 요청',products:'📦 제품 관리',projects:'🚀 프로젝트',documents:'📄 서류',health:'🛡️ 시스템 상태',settings:'⚙️ 설정',alibabaMgmt:'🏪 알리바바 관리',dealsMgmt:'🏢 딜룸 거래 관리'};
 
 function renderPage(){
   switch(S.page){
@@ -1497,6 +1698,7 @@ function renderPage(){
     case'health':return pgHealth();
     case'settings':return pgSettings();
     case'alibabaMgmt':return pgAlibabaMgmt();
+    case'dealsMgmt':return pgDeals();
     default:return pgDash();
   }
 }
@@ -1517,6 +1719,7 @@ function renderSidebar(){
     {id:'users',icon:'&#x1F465;',label:'유저 관리',count:S.users.length},
     {id:'div'},
     {id:'matchings',icon:'🤝',label:'매칭/딜',count:activeDeals||null},
+    {id:'dealsMgmt',icon:'🏢',label:'딜룸 거래',count:S.deals.filter(function(d){return d.status==='active';}).length||null},
     {id:'ordersMgmt',icon:'💰',label:'주문/매출'},
     {id:'disputes',icon:'⚠️',label:'분쟁 관리',count:S.disputes.filter(function(d){return d.status==='open'||d.status==='escalated';}).length||0},
     {id:'payments',icon:'💳',label:'결제/에스크로'},
@@ -1807,7 +2010,8 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   changeDisputeStatus:changeDisputeStatus,changeDisputePriority:changeDisputePriority,
   saveDisputeResolution:saveDisputeResolution,resolveDispute:resolveDispute,closeDispute:closeDispute,
   setPg:setPg,
-  editAlibabaSync:editAlibabaSync,saveAlibabaSync:saveAlibabaSync};
+  editAlibabaSync:editAlibabaSync,saveAlibabaSync:saveAlibabaSync,
+  viewDeal:viewDeal,setDealsTab:setDealsTab,changeDealStage:changeDealStage};
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp]&&S.user)nav(hp);});
 sb.auth.onAuthStateChange(function(event, session){
