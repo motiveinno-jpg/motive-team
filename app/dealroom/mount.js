@@ -188,7 +188,7 @@ export async function mountDealRoom(rootEl, { supabase, dealId, currentUser, rol
     $sidebar.querySelectorAll('[data-sidebar-action]').forEach(el => {
       el.addEventListener('click', () => {
         const act = el.getAttribute('data-sidebar-action');
-        if (act === 'invite' || act === 'quote' || act === 'doc') {
+        if (act === 'invite' || act === 'quote' || act === 'doc' || act === 'send_doc') {
           const barBtn = $actionBar.querySelector(`[data-dr="${act}"]`);
           if (barBtn) barBtn.click();
         }
