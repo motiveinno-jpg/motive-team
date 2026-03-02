@@ -421,12 +421,39 @@ function set(u){for(var k in u)S[k]=u[k];render();}
 
 /* === EXCHANGE RATE === */
 function loadExchangeRate(){
+  /* 1차: 릴레이 서버 */
   _relayReady.then(function(){
-    if(!RELAY_URL)return;
+    if(!RELAY_URL)return _loadExRateFallback();
     fetch(RELAY_URL+'/api/exchange-rate').then(function(r){return r.json();}).then(function(d){
-      if(d&&d.ok&&d.rate){S.exchangeRate=d.rate;window._exRate=d.rate;}
-    }).catch(function(){});
+      if(d&&d.ok&&d.rate){S.exchangeRate=d.rate;window._exRate=d.rate;}else{_loadExRateFallback();}
+    }).catch(function(){_loadExRateFallback();});
   });
+}
+/* 2차: Frankfurter API (완전 무료, 인증 불필요) */
+function _loadExRateFallback(){
+  fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
+    if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;console.log('Exchange rate (Frankfurter):',d.rates.KRW);}
+  }).catch(function(){console.log('Exchange rate fallback failed, using default 1400');});
+}
+/* 국가 정보 로딩 (REST Countries API — 완전 무료) */
+function _loadCountryData(){
+  if(window._countryData)return;
+  fetch('https://restcountries.com/v3.1/all?fields=name,cca2,cca3,currencies,languages,capital,population,region,subregion,flags,timezones').then(function(r){return r.json();}).then(function(data){
+    window._countryData={};
+    data.forEach(function(c){
+      var code=c.cca2;if(!code)return;
+      var cur=c.currencies?Object.keys(c.currencies)[0]:null;
+      var lang=c.languages?Object.values(c.languages)[0]:null;
+      window._countryData[code]={
+        name:c.name.common,nameKo:c.name.nativeName&&c.name.nativeName.kor?c.name.nativeName.kor.common:c.name.common,
+        cca3:c.cca3,currency:cur,currencyName:cur&&c.currencies[cur]?c.currencies[cur].name:null,
+        language:lang,capital:c.capital?c.capital[0]:null,
+        population:c.population,region:c.region,subregion:c.subregion,
+        flag:c.flags?c.flags.svg||c.flags.png:null,timezone:c.timezones?c.timezones[0]:null
+      };
+    });
+    console.log('Country data loaded:',Object.keys(window._countryData).length+' countries');
+  }).catch(function(e){console.log('Country data load failed:',e.message);});
 }
 function toggleCurrency(){
   S.currency=S.currency==='KRW'?'USD':'KRW';
@@ -456,7 +483,7 @@ function loadUser(){
       S.user=r.data;
       if(r.data.preferred_currency)S.currency=r.data.preferred_currency;
       if(r.data.role==='buyer'&&!r.data.preferred_currency)S.currency='USD';
-      loadExchangeRate();
+      loadExchangeRate();_loadCountryData();
       sb.from('companies').select('*').eq('user_id',r.data.id).maybeSingle().then(function(cr){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
@@ -5614,7 +5641,8 @@ function pgVoucherReport(){
     '<div style="display:flex;justify-content:space-between;padding:10px 14px;border-radius:10px;background:var(--w08)"><span style="font-size:13px">수출 프로세스 대행 요청</span><span style="font-size:13px;font-weight:700;color:var(--ok)">'+mSR+'건</span></div>'+
     '<div style="display:flex;justify-content:space-between;padding:10px 14px;border-radius:10px;background:var(--w08)"><span style="font-size:13px">수출 프로젝트 진행률</span><span style="font-size:13px;font-weight:700;color:var(--purple)">'+pjPct+'%</span></div>'+
   '</div></div></div>'+
-  '<div style="display:flex;gap:8px;margin-bottom:20px"><button class="btn btn-pri" onclick="App.genVoucherReport()">📄 보고서 생성 (인쇄용)</button><button class="btn btn-ghost" onclick="App.saveVoucherReport()">💾 DB 저장</button></div>'+
+  /* 정산 현황 카드 */
+  (function(){var bl=(S.billingEvents||[]).filter(function(e){var d=new Date(e.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;});var bt=bl.reduce(function(s,e){return s+(Number(e.amount)||0);},0);return bt>0?'<div class="card" style="margin-bottom:16px;border-color:rgba(0,200,100,.15)"><div class="card-h">💰 이번 달 정산 현황</div><div class="card-b"><div class="grid-4">'+UI.stat('공급가액','₩'+bt.toLocaleString(),'VAT 별도','var(--ok)')+UI.stat('부가세','₩'+Math.round(bt*0.1).toLocaleString(),'수혜기업 부담','var(--acc)')+UI.stat('합계','₩'+Math.round(bt*1.1).toLocaleString(),'세금계산서 기준','var(--pri)')+UI.stat('건수',bl.length+'건','서비스 이용','var(--purple)')+'</div><div style="margin-top:10px;font-size:11px;color:var(--w30)">* 서비스 완료 확인 → 전자세금계산서 발행 → exportvoucher.com 정산 요청</div></div></div>':'';})()+ '<div style="display:flex;gap:8px;margin-bottom:20px"><button class="btn btn-pri" onclick="App.genVoucherReport()">📄 결과보고서 생성 (인쇄용)</button><button class="btn btn-ghost" onclick="App.saveVoucherReport()">💾 DB 저장</button><button class="btn btn-ghost" onclick="App.genSettlementChecklist()">📋 정산 체크리스트</button></div>'+
   /* 바우처 자격 진단 섹션 */
   '<div class="card" style="margin-bottom:16px"><div class="card-h">🔍 바우처 자격 진단</div><div class="card-b">'+
   '<p style="font-size:12px;color:var(--w40);margin-bottom:12px">아래 정보를 입력하면 신청 가능한 정부 바우처를 자동 진단합니다.</p>'+
@@ -5635,32 +5663,93 @@ function genVoucherReport(){
   var now=new Date();var mm=now.getMonth(),yy=now.getFullYear();
   var period=yy+'년 '+(mm+1)+'월';
   var c=S.company||{};
-  var mAna=S.analyses.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;}).length;
-  var mSR=S.serviceRequests.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;}).length;
+  var mAna=S.analyses.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;});
+  var mSR=S.serviceRequests.filter(function(s){var d=new Date(s.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;});
+  var mDocs=(S.documents||[]).filter(function(d){var dt=new Date(d.created_at);return dt.getMonth()===mm&&dt.getFullYear()===yy;});
+  var mDeals=(S.deals||[]).filter(function(d){var dt=new Date(d.created_at);return dt.getMonth()===mm&&dt.getFullYear()===yy;});
   var pjPct=0;if(S.projects.length){var total=0;S.projects.forEach(function(p){var stages=getProjectStages(p);var idx=stages.indexOf(p.status||'planning');total+=Math.round((idx+1)/stages.length*100);});pjPct=Math.round(total/S.projects.length);}
-  var h='<html><head><meta charset="UTF-8"><title>바우처 성과보고서 — '+period+'</title><style>body{font-family:"Noto Sans KR",sans-serif;max-width:800px;margin:20px auto;color:#222;font-size:13px}table{width:100%;border-collapse:collapse;margin:16px 0}th,td{border:1px solid #bbb;padding:10px;font-size:13px}th{background:#f5f5f5;font-weight:700}.ttl{font-size:22px;font-weight:bold;text-align:center;margin:20px 0;padding:14px;background:#003366;color:white;border-radius:8px}.subtitle{font-size:16px;font-weight:700;color:#003366;margin:24px 0 10px;border-bottom:2px solid #003366;padding-bottom:6px}@media print{body{margin:0}}</style></head><body>';
-  h+='<div class="ttl">수출바우처 성과보고서</div>';
-  h+='<table><tr><td><b>수행기관:</b> (주)모티브이노베이션</td><td><b>보고 기간:</b> '+period+'</td></tr><tr><td><b>수혜기업:</b> '+(c.name_ko||S.user.company_name||'')+'</td><td><b>작성일:</b> '+now.toISOString().split('T')[0]+'</td></tr></table>';
-  h+='<div class="subtitle">1. 서비스 수행 실적</div>';
-  h+='<table><thead><tr><th>구분</th><th>산출물</th><th>수량</th><th>비고</th></tr></thead><tbody>';
-  h+='<tr><td>AI 수출분석</td><td>수출 적합도 분석 보고서</td><td style="text-align:center;font-weight:700">'+mAna+'건</td><td>AI 기반 13개 섹션 분석</td></tr>';
-  h+='<tr><td>제품 관리</td><td>수출용 제품 등록 및 영문화</td><td style="text-align:center;font-weight:700">'+S.products.length+'건</td><td>영문 카탈로그 포함</td></tr>';
-  h+='<tr><td>수출 대행</td><td>수출 프로세스 대행 서비스</td><td style="text-align:center;font-weight:700">'+mSR+'건</td><td>인증/매칭/서류/물류</td></tr>';
-  h+='<tr><td>프로젝트</td><td>수출 프로젝트 진행</td><td style="text-align:center;font-weight:700">'+S.projects.length+'건</td><td>평균 진행률 '+pjPct+'%</td></tr>';
+  var stL2={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적/통관',completed:'완료'};
+  var docTypes={pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract',bl:'Bill of Lading'};
+  var h='<html><head><meta charset="UTF-8"><title>수출바우처 사업결과보고서 — '+period+'</title><style>body{font-family:"Noto Sans KR",sans-serif;max-width:800px;margin:20px auto;color:#222;font-size:13px;line-height:1.7}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{border:1px solid #bbb;padding:8px 10px;font-size:12px}th{background:#f0f4f8;font-weight:700;color:#003366}.ttl{font-size:20px;font-weight:bold;text-align:center;margin:20px 0;padding:14px;background:#003366;color:white;border-radius:8px}.subtitle{font-size:15px;font-weight:700;color:#003366;margin:28px 0 8px;border-bottom:2px solid #003366;padding-bottom:4px}.sub2{font-size:13px;font-weight:700;color:#333;margin:16px 0 6px}.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}.bg{background:#e8f5e9;color:#2e7d32}.by{background:#fff3e0;color:#e65100}.bb{background:#e3f2fd;color:#1565c0}.note{font-size:11px;color:#666;margin-top:4px}@media print{body{margin:0;font-size:12px}}</style></head><body>';
+  h+='<div class="ttl">수출바우처 사업결과보고서</div>';
+  /* 기본정보 */
+  h+='<table><tr><th width="25%">수행기관</th><td>(주)모티브이노베이션</td><th width="25%">보고 기간</th><td>'+period+'</td></tr>';
+  h+='<tr><th>수혜기업</th><td>'+(c.name_ko||S.user.company_name||'-')+'</td><th>사업자번호</th><td>'+(c.biz_number||'-')+'</td></tr>';
+  h+='<tr><th>대표자</th><td>'+(c.ceo_name_ko||c.ceo_name||'-')+'</td><th>작성일</th><td>'+now.toISOString().split('T')[0]+'</td></tr>';
+  h+='<tr><th>서비스 분야</th><td>조사/일반 컨설팅, 서류대행</td><th>담당자</th><td>AI 수출분석팀</td></tr></table>';
+  /* 1. 서비스 수행 개요 */
+  h+='<div class="subtitle">1. 서비스 수행 개요</div>';
+  h+='<table><thead><tr><th>과업</th><th>서비스 내용</th><th>산출물</th><th>수량</th><th>상태</th></tr></thead><tbody>';
+  h+='<tr><td>AI 수출분석</td><td>제품별 수출 적합도 분석<br>(HS코드·FTA·경쟁사·인증·시장)</td><td>AI 분석 보고서 (PDF)</td><td style="text-align:center;font-weight:700">'+mAna.length+'건</td><td><span class="badge bg">완료</span></td></tr>';
+  h+='<tr><td>수출서류 생성</td><td>PI/CI/PL/CO/SC 자동 생성</td><td>수출 서류 원본</td><td style="text-align:center;font-weight:700">'+mDocs.length+'건</td><td><span class="badge bg">완료</span></td></tr>';
+  h+='<tr><td>제품 등록</td><td>수출용 제품 등록 및 영문화</td><td>제품 카드 (영문)</td><td style="text-align:center;font-weight:700">'+S.products.length+'건</td><td><span class="badge bg">완료</span></td></tr>';
+  h+='<tr><td>바이어 매칭</td><td>바이어 발굴 및 매칭 서비스</td><td>매칭 리포트</td><td style="text-align:center;font-weight:700">'+mDeals.length+'건</td><td><span class="badge '+(mDeals.length?'bg':'by')+'">'+( mDeals.length?'진행중':'대기')+'</span></td></tr>';
+  h+='<tr><td>수출 프로세스</td><td>인증/물류/통관 대행</td><td>서비스 요청 처리</td><td style="text-align:center;font-weight:700">'+mSR.length+'건</td><td><span class="badge '+(mSR.length?'bg':'by')+'">'+( mSR.length?'진행중':'대기')+'</span></td></tr>';
   h+='</tbody></table>';
-  h+='<div class="subtitle">2. 수출 프로젝트 현황</div>';
+  /* 2. 과업 수행 상세 */
+  h+='<div class="subtitle">2. 과업별 수행 결과 상세</div>';
+  h+='<div class="sub2">2-1. AI 수출분석 보고서</div>';
+  if(mAna.length){
+    h+='<table><thead><tr><th>#</th><th>제품명</th><th>분석일</th><th>종합점수</th><th>HS코드</th><th>타겟시장</th></tr></thead><tbody>';
+    mAna.forEach(function(a,i){
+      var r=a.ai_result||{};
+      h+='<tr><td>'+(i+1)+'</td><td>'+(a.product_name||'-')+'</td><td>'+(a.created_at||'').split('T')[0]+'</td>';
+      h+='<td style="text-align:center;font-weight:700;color:'+(r.overall_score>=80?'#2e7d32':r.overall_score>=60?'#e65100':'#c62828')+'">'+(r.overall_score||'-')+'점</td>';
+      h+='<td>'+(r.hs_code||'-')+'</td><td>'+(r.target_markets||(a.target_markets||[]).join(', ')||'-')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    h+='<p class="note">* 각 보고서는 HS코드 분류, FTA 관세 시뮬레이션, 경쟁사 분석, 인증 요건, 시장 규모, 가격 전략, 진입 전략 등 25개 섹션으로 구성</p>';
+  }else{h+='<p>이번 달 수행 내역 없음</p>';}
+  h+='<div class="sub2">2-2. 수출서류 생성 내역</div>';
+  if(mDocs.length){
+    h+='<table><thead><tr><th>#</th><th>서류 종류</th><th>생성일</th><th>관련 거래</th></tr></thead><tbody>';
+    mDocs.forEach(function(d,i){
+      h+='<tr><td>'+(i+1)+'</td><td>'+(docTypes[d.doc_type]||d.doc_type||'-')+'</td><td>'+(d.created_at||'').split('T')[0]+'</td><td>'+(d.deal_id?'Deal #'+String(d.deal_id).slice(0,8):'-')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+  }else{h+='<p>이번 달 생성 내역 없음</p>';}
+  /* 3. 프로젝트 현황 */
+  h+='<div class="subtitle">3. 수출 프로젝트 현황</div>';
   if(S.projects.length){
-    h+='<table><thead><tr><th>프로젝트명</th><th>현재 단계</th><th>타겟 시장</th><th>진행률</th></tr></thead><tbody>';
-    var stL2={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상',production:'수출용 생산/검수',shipping:'선적/통관',completed:'완료'};
+    h+='<table><thead><tr><th>프로젝트명</th><th>현재 단계</th><th>타겟 시장</th><th>진행률</th><th>비고</th></tr></thead><tbody>';
     S.projects.forEach(function(p){
       var stages=getProjectStages(p);
       var pp=Math.round((stages.indexOf(p.status||'planning')+1)/stages.length*100);
-      h+='<tr><td>'+p.name+'</td><td>'+(stL2[p.status]||p.status)+'</td><td>'+(p.target_countries||[]).join(', ')+'</td><td style="text-align:center;font-weight:700">'+pp+'%</td></tr>';
+      h+='<tr><td>'+p.name+'</td><td>'+(stL2[p.status]||p.status)+'</td><td>'+(p.target_countries||[]).join(', ')+'</td><td style="text-align:center;font-weight:700">'+pp+'%</td><td>'+(p.notes||'-')+'</td></tr>';
     });
     h+='</tbody></table>';
   }else{h+='<p>진행 중인 프로젝트 없음</p>';}
-  h+='<div class="subtitle">3. 향후 계획</div><p>다음 달 예정 사항:</p><ul><li>수출 분석 및 제품 영문화 지속</li><li>바이어 매칭 및 거래 협상 진행</li><li>인증 취득 및 서류 자동생성 활용</li></ul>';
-  h+='<div style="margin-top:60px;display:flex;justify-content:space-between"><div style="text-align:center;width:45%;border-top:1px solid #333;padding-top:10px;font-size:12px">수행기관: (주)모티브이노베이션</div><div style="text-align:center;width:45%;border-top:1px solid #333;padding-top:10px;font-size:12px">수혜기업: '+(c.name_ko||'')+'</div></div>';
+  /* 4. 수출 성과 지표 */
+  h+='<div class="subtitle">4. 수출 성과 및 기대 효과</div>';
+  h+='<table><thead><tr><th>지표</th><th>이번 달</th><th>누적</th><th>비고</th></tr></thead><tbody>';
+  h+='<tr><td>AI 수출분석 수행</td><td style="text-align:center;font-weight:700">'+mAna.length+'건</td><td style="text-align:center">'+S.analyses.length+'건</td><td>제품별 맞춤 분석</td></tr>';
+  h+='<tr><td>수출 서류 생성</td><td style="text-align:center;font-weight:700">'+mDocs.length+'건</td><td style="text-align:center">'+(S.documents||[]).length+'건</td><td>PI/CI/PL/CO/SC</td></tr>';
+  h+='<tr><td>제품 등록</td><td style="text-align:center;font-weight:700">'+S.products.filter(function(p){var d=new Date(p.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;}).length+'건</td><td style="text-align:center">'+S.products.length+'건</td><td>수출용 영문 카탈로그</td></tr>';
+  h+='<tr><td>바이어 접촉</td><td style="text-align:center;font-weight:700">'+mDeals.length+'건</td><td style="text-align:center">'+(S.deals||[]).length+'건</td><td>바이어 발굴/매칭</td></tr>';
+  h+='<tr><td>서비스 요청 처리</td><td style="text-align:center;font-weight:700">'+mSR.length+'건</td><td style="text-align:center">'+(S.serviceRequests||[]).length+'건</td><td>인증/물류/통관 등</td></tr>';
+  h+='</tbody></table>';
+  h+='<div class="sub2">기대 효과</div>';
+  h+='<ul><li>AI 수출분석을 통한 타겟 시장 및 진입 전략 수립 완료</li><li>수출 서류 자동화로 업무 효율 '+Math.min(80,mDocs.length*10)+'% 향상</li><li>HS코드 자동분류 및 FTA 절감액 시뮬레이션 제공</li>';
+  if(mDeals.length)h+='<li>바이어 '+mDeals.length+'건 매칭 완료, 거래 협상 진행 중</li>';
+  h+='</ul>';
+  /* 5. 향후 계획 */
+  h+='<div class="subtitle">5. 향후 계획</div>';
+  h+='<table><thead><tr><th>기간</th><th>계획</th><th>목표</th></tr></thead><tbody>';
+  h+='<tr><td>다음 달</td><td>추가 AI 수출분석 수행 및 타겟 시장 확대</td><td>분석 '+(mAna.length+3)+'건 이상</td></tr>';
+  h+='<tr><td>다음 달</td><td>바이어 매칭 및 거래 협상 진행</td><td>거래 성사 1건 이상</td></tr>';
+  h+='<tr><td>2개월 내</td><td>해외 인증 취득 지원 및 수출 서류 완비</td><td>인증 준비 완료</td></tr>';
+  h+='<tr><td>3개월 내</td><td>첫 수출 실적 달성</td><td>FOB 기준 수출 개시</td></tr>';
+  h+='</tbody></table>';
+  /* 6. 정산 정보 */
+  var billing=(S.billingEvents||[]).filter(function(e){var d=new Date(e.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;});
+  var billingTotal=billing.reduce(function(s,e){return s+(Number(e.amount)||0);},0);
+  h+='<div class="subtitle">6. 정산 정보</div>';
+  h+='<table><tr><th>공급가액</th><td style="font-weight:700">₩'+billingTotal.toLocaleString()+'</td><th>부가가치세</th><td>₩'+Math.round(billingTotal*0.1).toLocaleString()+' (수혜기업 별도 납부)</td></tr>';
+  h+='<tr><th>합계</th><td style="font-weight:700">₩'+Math.round(billingTotal*1.1).toLocaleString()+'</td><th>전자세금계산서</th><td>서비스 완료 확인 시 발행</td></tr></table>';
+  h+='<p class="note">* 바우처 지원금과 수혜기업 자부담금은 exportvoucher.com 포털 정산 기준에 따름</p>';
+  /* 서명 */
+  h+='<div style="margin-top:60px;display:flex;justify-content:space-between"><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수행기관</div><div style="font-size:12px;margin-top:4px">(주)모티브이노베이션</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 채희웅</div></div><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수혜기업</div><div style="font-size:12px;margin-top:4px">'+(c.name_ko||'-')+'</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 '+(c.ceo_name_ko||c.ceo_name||'_______')+'</div></div></div>';
+  h+='<div style="margin-top:20px;text-align:center;font-size:10px;color:#999">본 보고서는 Whistle AI (휘슬 AI) 플랫폼에서 자동 생성되었습니다. | '+now.toISOString().split('T')[0]+'</div>';
   h+='</body></html>';
   var w=window.open('','_blank','width=850,height=700');
   if(!w||w.closed||typeof w.closed==='undefined'){UI.toast('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.','warn');return;}
@@ -5753,6 +5842,40 @@ function diagnoseVoucher(){
   h+='<div style="margin-top:12px;text-align:center"><button class="btn btn-pri btn-sm" onclick="App.requestVoucherConsulting()">💬 바우처 신청 상담 요청</button></div>';
   h+='</div>';
   document.getElementById('voucher-result').innerHTML=h;
+}
+
+function genSettlementChecklist(){
+  var c=S.company||{};var now=new Date();var mm=now.getMonth(),yy=now.getFullYear();
+  var mAna=S.analyses.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;});
+  var mDocs=(S.documents||[]).filter(function(d){var dt=new Date(d.created_at);return dt.getMonth()===mm&&dt.getFullYear()===yy;});
+  var billing=(S.billingEvents||[]).filter(function(e){var d=new Date(e.created_at);return d.getMonth()===mm&&d.getFullYear()===yy;});
+  var bt=billing.reduce(function(s,e){return s+(Number(e.amount)||0);},0);
+  var items=[
+    {label:'사업결과보고서 작성',done:true,note:'위 "결과보고서 생성" 버튼으로 자동 생성'},
+    {label:'서비스 수행 결과물 준비',done:mAna.length>0||mDocs.length>0,note:'AI분석 '+mAna.length+'건, 서류 '+mDocs.length+'건'},
+    {label:'전자세금계산서 발행',done:false,note:'홈택스에서 발행 (공급가액 ₩'+bt.toLocaleString()+')'},
+    {label:'수혜기업 서비스 완료 확인',done:false,note:'exportvoucher.com 포털에서 수혜기업이 승인'},
+    {label:'수혜기업 부가세 별도 납부 확인',done:false,note:'₩'+Math.round(bt*0.1).toLocaleString()+' 별도 송금 확인'},
+    {label:'exportvoucher.com 정산 요청 등록',done:false,note:'완료일로부터 1개월 이내 신청 필수'},
+    {label:'4대보험 가입자 명부 (수혜기업)',done:false,note:'최근 30일 이내 발급분'}
+  ];
+  var h='<div style="padding:20px"><h3 style="font-size:16px;font-weight:800;margin-bottom:16px">📋 바우처 정산 체크리스트</h3>';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:16px">'+yy+'년 '+(mm+1)+'월 | 수행기관: (주)모티브이노베이션 | 수혜기업: '+(c.name_ko||'-')+'</div>';
+  items.forEach(function(it,i){
+    h+='<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:10px;background:'+(it.done?'rgba(0,200,100,.04)':'var(--w04)')+';margin-bottom:6px;border:1px solid '+(it.done?'rgba(0,200,100,.15)':'var(--w08)')+'">';
+    h+='<span style="font-size:16px;margin-top:2px">'+(it.done?'✅':'⬜')+'</span>';
+    h+='<div><div style="font-size:13px;font-weight:600;color:'+(it.done?'var(--ok)':'var(--w70)')+'">'+it.label+'</div>';
+    h+='<div style="font-size:11px;color:var(--w30);margin-top:2px">'+it.note+'</div></div></div>';
+  });
+  h+='<div style="margin-top:16px;padding:12px;border-radius:10px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.15)"><div style="font-size:12px;font-weight:700;color:var(--acc)">⚠️ 정산 주의사항</div>';
+  h+='<ul style="font-size:11px;color:var(--w40);margin:6px 0 0;padding-left:16px;line-height:1.8">';
+  h+='<li>서비스 완료일로부터 <b>1개월 이내</b> 최초 정산 신청 필수</li>';
+  h+='<li>정산 보완 요청 시 <b>2주일 이내</b> 보완 (최대 3회)</li>';
+  h+='<li>사업연도 서비스 완료 마감: <b>11월 15일</b></li>';
+  h+='<li>포털 외부 계약은 정산 불인정</li>';
+  h+='<li>단순 미팅/자문만으로는 불인정 — <b>실체적 과업물</b> 필수</li></ul></div>';
+  h+='</div>';
+  UI.modal('settle-chk','정산 체크리스트',h);
 }
 
 function requestVoucherConsulting(){
@@ -7731,7 +7854,7 @@ function calcMarginSim(){
   el.innerHTML=h;
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,UI:UI};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,UI:UI};
 _handleTossCallback();
 loadUser();
 window.addEventListener('hashchange',function(){handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);}).catch(function(e){console.error(e);});});
