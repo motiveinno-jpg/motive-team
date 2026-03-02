@@ -793,11 +793,10 @@ function addFiles(fl){
   for(var i=0;i<fl.length;i++){
     var f=fl[i];
     if(f.size>10485760){UI.toast('파일 크기 초과 (최대 10MB): '+f.name,'err');continue;}
-    // base64 변환하여 저장
     (function(file){
       var reader=new FileReader();
       reader.onload=function(e){
-        S.analysisData.files.push({name:file.name,size:file.size,type:file.type,data:e.target.result});
+        S.analysisData.files.push({name:file.name,size:file.size,type:file.type,data:e.target.result,_file:file});
         render();
       };
       reader.readAsDataURL(file);
@@ -833,10 +832,11 @@ function submitA(){
     if(r.error){S._submitting=false;UI.toast('실패: '+r.error.message,'err');return;}
     S.analyses.unshift(r.data);S.analysisStep=0;S.analysisData=null;
     S._aiStartTime=Date.now();set({currentAnalysis:r.data});UI.toast('AI가 실제 수출 분석 중입니다... (30초~2분 소요)','info');if(S._aiTimer)clearInterval(S._aiTimer);S._aiTimer=setInterval(function(){if(!S.currentAnalysis||S.currentAnalysis.status!=='analyzing'){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;return;}sb.from('analyses').select('status,ai_result').eq('id',r.data.id).single().then(function(chk){if(!chk.data||chk.data.status==='analyzing'){render();return;}clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;S._submitting=false;if(chk.data.status==='completed'&&chk.data.ai_result&&chk.data.ai_result.analysis_version){autoCreateProduct(r.data.id,chk.data.ai_result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,chk.data)});UI.toast('AI 분석 완료!','ok');});}else{S._fallbackAnalysis=true;var res=genReport(d);sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){autoCreateProduct(r.data.id,res,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('기본 분석 완료','ok');});});}});},5000);
-    /* AI 분석 API 호출 */
-    /* 파일 base64 데이터 준비 */
-    var fileData=(d.files||[]).map(function(f){return f.data||f;}).filter(function(f){return typeof f==='string'&&f.startsWith('data:');});
-    sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),files:fileData,selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'Edge Function 오류');var data=resp.data;
+    /* AI 분석 API 호출 — 이미지는 Storage 업로드 후 URL 전달 */
+    var _imgFiles=(d.files||[]).filter(function(f){return f._file&&f.type&&f.type.startsWith('image/');});
+    var _uploadP=_imgFiles.length?Promise.all(_imgFiles.map(function(f){var path='analyses/'+S.user.id+'/'+r.data.id+'/'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');return sb.storage.from('whistle-uploads').upload(path,f._file).then(function(ur){if(ur.error)throw ur.error;return sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;});})):Promise.resolve([]);
+    _uploadP.then(function(fileUrls){
+    sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:fileUrls,selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'Edge Function 오류');var data=resp.data;
       if(!data||!data.ok)throw new Error((data&&data.error)||'분석 실패');
       var res=data.result;
       /* EF v5 already updated DB — just reload and display */
@@ -858,6 +858,7 @@ function submitA(){
         });
       });
     });
+    }).catch(function(upErr){console.error('[analyze-export] Image upload error:',upErr);_toastE(upErr,'이미지 업로드');S._submitting=false;});
   });
 }
 
