@@ -597,13 +597,54 @@ function submitSourcingReq(){
   var desc=document.getElementById('src-desc');
   if(!desc||!desc.value.trim()){toast('Please describe the product you\'re looking for.','err');return;}
   if(!S.user){toast('Please sign in to submit a request.','err');return;}
+  var msgText=desc.value.trim();
   sb.from('contact_requests').insert({
     email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
-    inquiry_type:'sourcing',message:desc.value.trim(),status:'pending',source:'buyer-sourcing'
-  }).then(function(r){
+    inquiry_type:'sourcing',message:msgText,status:'pending',source:'buyer-sourcing'
+  }).select().single().then(function(r){
     if(r.error){toast('Failed: '+r.error.message,'err');return;}
     toast('Sourcing request submitted! Our team will contact you within 24 hours.','ok');
     desc.value='';
+    /* Auto-create buyer_request for marketplace matching */
+    _autoCreateBuyerRequest(msgText,'sourcing');
+    /* Notify admins about new sourcing request */
+    _notifyAdminsNewRequest(r.data);
+  });
+}
+
+/* 자동 마켓플레이스 등록 + 제조사 알림 */
+function _autoCreateBuyerRequest(msg,type){
+  if(!S.user)return;
+  sb.from('buyer_requests').insert({
+    buyer_user_id:S.user.id,title:(type==='sourcing'?'Sourcing: ':'Inquiry: ')+msg.slice(0,80),
+    description:msg,category:'',status:'open',budget_range:'',
+    created_at:new Date().toISOString()
+  }).then(function(r){
+    if(r.error){console.error('[auto-buyer-request]',r.error);return;}
+    /* 바이어 마켓플레이스에 자동 등록됨 → 제조사들이 제안 가능 */
+  });
+}
+function _notifyAdminsNewRequest(contactReq){
+  /* 관리자에게 새 바이어 요청 알림 */
+  sb.from('users').select('id').eq('role','admin').then(function(r){
+    if(!r.data||!r.data.length)return;
+    var notifs=r.data.map(function(admin){
+      return {user_id:admin.id,type:'buyer',title:'New buyer sourcing request',
+        body:(contactReq.company_name||contactReq.email)+': '+((contactReq.message||'').slice(0,100)),
+        link_page:'admin-contacts',is_read:false};
+    });
+    sb.from('notifications').insert(notifs).then(function(){});
+  });
+  /* 카테고리 매칭: 관련 제품이 있는 제조사에게도 알림 */
+  sb.from('products').select('user_id').eq('is_public',true).limit(10).then(function(r){
+    if(!r.data||!r.data.length)return;
+    var uids=[...new Set(r.data.map(function(p){return p.user_id;}))];
+    var mfrNotifs=uids.map(function(uid){
+      return {user_id:uid,type:'buyer',title:'New buyer inquiry received',
+        body:'A buyer is looking for products. Check your marketplace for opportunities.',
+        link_page:'marketplace',is_read:false};
+    });
+    if(mfrNotifs.length)sb.from('notifications').insert(mfrNotifs).then(function(){});
   });
 }
 
@@ -619,10 +660,13 @@ function submitCatSourcing(catId){
   sb.from('contact_requests').insert({
     email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
     inquiry_type:'sourcing',message:msg,status:'pending',source:'buyer-sourcing-'+catId.toLowerCase()
-  }).then(function(r){
+  }).select().single().then(function(r){
     if(r.error){toast('Failed: '+r.error.message,'err');return;}
     toast('Sourcing request for '+catId+' submitted! We\'ll match you with manufacturers within 24 hours.','ok');
     _srcCat=null;render();
+    /* Auto marketplace + notify */
+    _autoCreateBuyerRequest(msg,'sourcing-'+catId);
+    _notifyAdminsNewRequest(r.data);
   });
 }
 
@@ -671,7 +715,7 @@ function renderSidebar(){
   });
   h+='<div class="nav-section"></div>';
   h+='<div class="nav-item" onclick="B.doLogout()"><span class="icon">&#x1F6AA;</span><span>Logout</span></div>';
-  h+='</div><div class="sidebar-footer"><div style="font-size:11px;color:var(--w20);margin-bottom:6px">'+esc(S.user.company_name||S.user.email)+'</div><div style="font-size:9px;color:var(--w12);line-height:1.5">(&#xC8FC;)&#xBAA8;&#xD2F0;&#xBE0C;&#xC774;&#xB178;&#xBCA0;&#xC774;&#xC158; | CEO: Chae Heewoong<br>Biz Reg: 956-87-02691<br>E-comm: &#xC81C;2026-&#xC778;&#xCC9C;&#xBBF8;&#xCD94;&#xD640;-0123&#xD638;<br>663-1 Hakik-dong, Michuhol-gu, Incheon, Korea<br>contact@whistleai.co.kr</div></div></div>';
+  h+='</div><div class="sidebar-footer"><div style="padding:6px 0 8px;border-bottom:1px solid var(--bd);margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:var(--w20);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Other Platforms</div><a href="whistle.html" style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:11px;color:var(--w40);text-decoration:none;border-radius:6px;transition:background .15s" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\'transparent\'"><span>&#x1F3ED;</span><span>Manufacturer Portal</span></a></div><div style="font-size:11px;color:var(--w20);margin-bottom:6px">'+esc(S.user.company_name||S.user.email)+'</div><div style="font-size:9px;color:var(--w12);line-height:1.5">(&#xC8FC;)&#xBAA8;&#xD2F0;&#xBE0C;&#xC774;&#xB178;&#xBCA0;&#xC774;&#xC158; | CEO: Chae Heewoong<br>Biz Reg: 956-87-02691<br>E-comm: &#xC81C;2026-&#xC778;&#xCC9C;&#xBBF8;&#xCD94;&#xD640;-0123&#xD638;<br>663-1 Hakik-dong, Michuhol-gu, Incheon, Korea<br>contact@whistleai.co.kr</div></div></div>';
   return h;
 }
 
