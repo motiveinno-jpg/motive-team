@@ -627,6 +627,23 @@ function pgDash(){
   /* hero */
   var h='<div class="dash-hero"><div class="dash-welcome">안녕하세요, '+(u.company_name||u.display_name||'사장님')+' 👋</div><div class="dash-company" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+(S.company?S.company.name_ko:'회사 정보를 설정해주세요')+' '+UI.pb(cur)+'</div>'+quotaHtml;
   h+='<div class="quick-grid"><div class="quick-card" onclick="App.nav(\'analysis\')"><div class="quick-icon">🔬</div><div class="quick-label">AI 분석</div></div><div class="quick-card" onclick="App.nav(\'products\')"><div class="quick-icon">📦</div><div class="quick-label">제품 등록</div></div><div class="quick-card" onclick="App.nav(\'buyers\')"><div class="quick-icon">🤝</div><div class="quick-label">바이어 찾기</div></div><div class="quick-card" onclick="App.nav(\'orders\')"><div class="quick-icon">📋</div><div class="quick-label">주문 관리</div></div></div></div>';
+  /* ★ 프로필 완성도 — 최상단 (100%면 숨김) */
+  var _pf=calcProfileCompletion();
+  if(_pf.score<100){
+    h+='<div class="card" style="margin-bottom:16px;border-color:'+(_pf.score>=80?'rgba(0,230,118,.15)':_pf.score>=50?'rgba(255,184,0,.15)':'rgba(0,212,255,.15)')+'"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><div style="position:relative;width:52px;height:52px;flex-shrink:0"><svg viewBox="0 0 36 36" style="width:52px;height:52px;transform:rotate(-90deg)"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--w08)" stroke-width="3"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="'+(_pf.score>=80?'var(--ok)':_pf.score>=50?'var(--acc)':'var(--pri)')+'" stroke-width="3" stroke-dasharray="'+Math.round(_pf.score*0.974)+' 97.4" stroke-linecap="round"/></svg><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">'+_pf.score+'%</div></div><div style="flex:1;min-width:150px"><div style="font-size:14px;font-weight:700;margin-bottom:2px">프로필 완성도</div><div style="font-size:12px;color:var(--w40)">완성될수록 바이어 컨택률이 높아집니다</div>'+(_pf.missing.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'+_pf.missing.slice(0,4).map(function(m){return '<span style="font-size:10px;padding:3px 10px;border-radius:10px;background:rgba(255,184,0,.08);color:var(--acc);font-weight:600">'+m.label+'</span>';}).join('')+(_pf.missing.length>4?'<span style="font-size:10px;padding:3px 8px;color:var(--w30)">+'+(_pf.missing.length-4)+'</span>':'')+'</div>':'')+'</div><button class="btn btn-pri btn-sm" onclick="App.nav(\'settings\')" style="flex-shrink:0;font-size:13px">완성하기</button></div></div>';
+  }
+  /* ★ 지금 해야 할 일 — 프로필 바로 아래 */
+  var _ns=[];
+  if(!S.company)_ns.push({i:'⚠️',t:'셀러 정보를 입력하세요 (서류 생성에 필요)',a:"App.nav('settings')",b:'설정',c:'var(--acc)'});
+  if((S.products||[]).length===0)_ns.push({i:'📦',t:'첫 제품을 등록하세요',a:"App.showPF()",b:'등록'});
+  else if((S.analyses||[]).length===0)_ns.push({i:'🔬',t:'등록된 제품의 AI 수출 분석을 시작하세요',a:"App.startAForm()",b:'분석'});
+  if((S.analyses||[]).length>0&&(S.projects||[]).length===0)_ns.push({i:'🚀',t:'분석 결과로 수출 프로젝트를 만드세요',a:"App.nav('analysis')",b:'시작'});
+  if((S.buyers||[]).length===0&&(S.analyses||[]).length>0)_ns.push({i:'🤝',t:'바이어를 찾아보세요 (AI 발굴 가능)',a:"App.nav('buyers')",b:'바이어 찾기'});
+  var _upay=(S.orders||[]).filter(function(o){return o.payment_status==='unpaid'&&o.status!=='cancelled';});
+  if(_upay.length)_ns.push({i:'💰',t:_upay.length+'건 미결제 주문이 있습니다',a:"App.nav('orders')",b:'확인',c:'var(--err)'});
+  var _now2=new Date();var _todayMtg=(S.meetings||[]).filter(function(m){var d=new Date(m.scheduled_at);return d.toDateString()===_now2.toDateString()&&m.status!=='cancelled';});
+  if(_todayMtg.length)_ns.push({i:'📅',t:'오늘 미팅 '+_todayMtg.length+'건 예정',a:"App.nav('meetings')",b:'확인',c:'var(--pri)'});
+  if(_ns.length>0){h+='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.2)"><div class="card-h"><span>⚡ 지금 해야 할 일</span>'+UI.badge(_ns.length+'건','pri')+'</div><div class="card-b">';_ns.slice(0,5).forEach(function(s){h+='<div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;background:var(--w08);margin-bottom:6px"><span style="font-size:18px">'+s.i+'</span><span style="flex:1;font-size:13px;color:'+(s.c||'var(--w90)')+'">'+s.t+'</span><button class="btn btn-pri btn-sm" onclick="'+s.a+'">'+s.b+'</button></div>';});h+='</div></div>';}
   /* 바우처 기업 배너 */
   var _hasV=u.user_metadata&&u.user_metadata.has_voucher;
   if(_hasV){h+='<div class="card" style="margin-bottom:16px;border:1px solid rgba(255,184,0,.25);background:rgba(255,184,0,.04)"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><div style="font-size:28px">🏷️</div><div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--acc)">바우처 수혜기업</div><div style="font-size:12px;color:var(--w40);margin-top:2px">모든 서비스를 정부 지원금으로 이용할 수 있습니다. 자부담 30~50%만 부담.</div></div><div style="display:flex;gap:8px"><button class="btn btn-sm" style="background:rgba(255,184,0,.12);color:#FFB800;border:1px solid rgba(255,184,0,.3);font-weight:600;font-size:11px" onclick="App.nav(\'analysis\')">AI 분석 시작</button><button class="btn btn-sm btn-ghost" style="font-size:11px" onclick="App.nav(\'docs\')">서류 자동생성</button></div></div></div>';}
@@ -668,23 +685,6 @@ function pgDash(){
     if(matchings.length)h+='<div class="stat-card" style="flex:1;min-width:160px"><div style="font-size:11px;color:var(--w40)">바이어 매칭</div><div style="font-size:22px;font-weight:800;color:var(--purple)">'+activeMatch+'</div><div style="font-size:10px;color:var(--w30)">총 '+matchings.length+'건</div></div>';
     h+='</div>';
   }
-  /* 프로필 완성도 위젯 */
-  var _pf=calcProfileCompletion();
-  if(_pf.score<100){
-    h+='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.12)"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><div style="position:relative;width:52px;height:52px;flex-shrink:0"><svg viewBox="0 0 36 36" style="width:52px;height:52px;transform:rotate(-90deg)"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--w08)" stroke-width="3"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="'+(_pf.score>=80?'var(--ok)':_pf.score>=50?'var(--acc)':'var(--pri)')+'" stroke-width="3" stroke-dasharray="'+Math.round(_pf.score*0.974)+' 97.4" stroke-linecap="round"/></svg><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">'+_pf.score+'%</div></div><div style="flex:1;min-width:150px"><div style="font-size:13px;font-weight:700;margin-bottom:2px">프로필 완성도</div><div style="font-size:11px;color:var(--w40)">완성될수록 바이어 컨택률이 높아집니다</div>'+(_pf.missing.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'+_pf.missing.slice(0,4).map(function(m){return '<span style="font-size:9px;padding:2px 8px;border-radius:10px;background:rgba(255,184,0,.08);color:var(--acc)">'+m.label+'</span>';}).join('')+(_pf.missing.length>4?'<span style="font-size:9px;padding:2px 8px;color:var(--w30)">+'+(_pf.missing.length-4)+'</span>':'')+'</div>':'')+'</div><button class="btn btn-pri btn-sm" onclick="App.nav(\'settings\')" style="flex-shrink:0">완성하기</button></div></div>';
-  }
-  /* 지금 해야 할 일 */
-  var _ns=[];
-  if(!S.company)_ns.push({i:'⚠️',t:'셀러 정보를 입력하세요 (서류 생성에 필요)',a:"App.nav('settings')",b:'설정',c:'var(--acc)'});
-  if((S.products||[]).length===0)_ns.push({i:'📦',t:'첫 제품을 등록하세요',a:"App.showPF()",b:'등록'});
-  else if((S.analyses||[]).length===0)_ns.push({i:'🔬',t:'등록된 제품의 AI 수출 분석을 시작하세요',a:"App.startAForm()",b:'분석'});
-  if((S.analyses||[]).length>0&&(S.projects||[]).length===0)_ns.push({i:'🚀',t:'분석 결과로 수출 프로젝트를 만드세요',a:"App.nav('analysis')",b:'시작'});
-  if((S.buyers||[]).length===0&&(S.analyses||[]).length>0)_ns.push({i:'🤝',t:'바이어를 찾아보세요 (AI 발굴 가능)',a:"App.nav('buyers')",b:'바이어 찾기'});
-  var _upay=(S.orders||[]).filter(function(o){return o.payment_status==='unpaid'&&o.status!=='cancelled';});
-  if(_upay.length)_ns.push({i:'💰',t:_upay.length+'건 미결제 주문이 있습니다',a:"App.nav('orders')",b:'확인',c:'var(--err)'});
-  var _now2=new Date();var _todayMtg=(S.meetings||[]).filter(function(m){var d=new Date(m.scheduled_at);return d.toDateString()===_now2.toDateString()&&m.status!=='cancelled';});
-  if(_todayMtg.length)_ns.push({i:'📅',t:'오늘 미팅 '+_todayMtg.length+'건 예정',a:"App.nav('meetings')",b:'확인',c:'var(--pri)'});
-  if(_ns.length>0){h+='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.2)"><div class="card-h"><span>⚡ 지금 해야 할 일</span>'+UI.badge(_ns.length+'건','pri')+'</div><div class="card-b">';_ns.slice(0,5).forEach(function(s){h+='<div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;background:var(--w08);margin-bottom:6px"><span style="font-size:18px">'+s.i+'</span><span style="flex:1;font-size:13px;color:'+(s.c||'var(--w90)')+'">'+s.t+'</span><button class="btn btn-pri btn-sm" onclick="'+s.a+'">'+s.b+'</button></div>';});h+='</div></div>';}
   /* 수출 여정 시각화 */
   if(S.projects.length>0){
     var jp=S.projects[0];
@@ -1625,6 +1625,31 @@ function getProjectStages(p){
   if(p&&p.alibaba_customer)base.splice(2,0,'alibaba_listing');
   return base;
 }
+/* ── 프로젝트 준비 vs 바이어 딜 단계 분리 ── */
+function getProjectPrepStages(p){
+  var base=['planning','certification','buyer_search'];
+  if(p&&p.alibaba_customer)base.splice(2,0,'alibaba_listing');
+  return base;
+}
+function isPjInDealPhase(p){
+  var prepStages=['planning','certification','alibaba_listing','buyer_search'];
+  return prepStages.indexOf(p.status)<0||_getPjBuyerIds(p).length>0;
+}
+function getPjDealSummary(p){
+  var buyerIds=_getPjBuyerIds(p);
+  var ds=['proposed','sample','negotiation','contract','order','production','shipping','completed'];
+  var dsL={proposed:'매칭',sample:'샘플',negotiation:'협상',contract:'계약',order:'주문',production:'생산',shipping:'선적',completed:'완료'};
+  var counts={};var maxIdx=-1;var maxLabel='';var minIdx=99;var minLabel='';
+  buyerIds.forEach(function(bid){
+    var m=(S.matchings||[]).find(function(mm){return mm.buyer_id===bid&&mm.user_id===S.user.id;});
+    var st=m?m.status:'proposed';
+    if(!counts[st])counts[st]=0;counts[st]++;
+    var idx=ds.indexOf(st);
+    if(idx>maxIdx){maxIdx=idx;maxLabel=dsL[st]||st;}
+    if(idx<minIdx){minIdx=idx;minLabel=dsL[st]||st;}
+  });
+  return{buyerCount:buyerIds.length,counts:counts,maxStage:maxLabel,maxIdx:maxIdx,minStage:minLabel,minIdx:minIdx,ds:ds,dsL:dsL};
+}
 
 /* ── Category × Market 수출 로드맵 ── */
 var CATEGORY_ROADMAPS={
@@ -1981,17 +2006,31 @@ function pgProjects(){
       var stages=getProjectStages(p);var ci=stages.indexOf(p.status);var sp=p.stage_progress||{};var tI=0,tD=0;
       stages.forEach(function(s){var it=sp[s]||[];tI+=it.length;tD+=it.filter(function(x){return x.done;}).length;});
       var pct=tI?Math.round(tD/tI*100):0;var isSel=pj&&pj.id===p.id;
+      /* Linked buyer (1:1) */
+      var linkedBuyer=null;var linkedBuyerStatus='';
+      if(p.buyer_id){linkedBuyer=S.buyers.find(function(b){return b.id===p.buyer_id;});
+        var m=(S.matchings||[]).find(function(mm){return mm.buyer_id===p.buyer_id&&mm.user_id===S.user.id;});
+        linkedBuyerStatus=m?m.status:'proposed';}
       /* Product thumbnail */
       var prod=S.products.find(function(pr){return pr.id===p.product_id;});
       var thumbUrl=prod&&prod.images&&prod.images[0]?prod.images[0]:'';
+      /* Source project indicator */
+      var isClone=!!p.source_project_id;
       left+='<div class="pju-list-item'+(isSel?' selected':'')+'" onclick="App.viewPj(\''+p.id+'\')">';
       left+='<div style="display:flex;gap:10px;margin-bottom:6px">';
-      /* Thumbnail */
       left+='<div style="width:44px;height:44px;border-radius:8px;background:var(--w08);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">'+(thumbUrl?'<img src="'+U.esc(thumbUrl)+'" style="width:100%;height:100%;object-fit:cover">':'<span style="font-size:20px">📦</span>')+'</div>';
       left+='<div style="flex:1;min-width:0">';
       left+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><div style="flex:1;min-width:0;font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(p.name)+'</div><span style="font-size:12px;font-weight:800;color:'+(pct===100?'var(--ok)':'var(--pri)')+';font-family:JetBrains Mono">'+pct+'%</span></div>';
       left+='<div style="height:3px;border-radius:2px;background:var(--w08);margin-bottom:4px"><div style="height:100%;border-radius:2px;background:'+(pct===100?'var(--ok)':'var(--pri-g)')+';width:'+pct+'%"></div></div>';
-      left+='<div style="display:flex;gap:4px;align-items:center"><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:'+(ci>=stages.length-1?'rgba(0,230,118,.1)':'rgba(0,212,255,.08)')+';color:'+(ci>=stages.length-1?'var(--ok)':'var(--pri)')+';font-weight:600">'+(stL[p.status]||p.status)+'</span><span style="font-size:11px;color:var(--w20)">'+(p.target_countries||[]).slice(0,2).map(function(c){return U.cl(c);}).join(', ')+'</span></div>';
+      left+='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">';
+      left+='<span style="font-size:11px;padding:2px 6px;border-radius:4px;background:'+(ci>=stages.length-1?'rgba(0,230,118,.1)':'rgba(0,212,255,.08)')+';color:'+(ci>=stages.length-1?'var(--ok)':'var(--pri)')+';font-weight:600">'+(stL[p.status]||p.status)+'</span>';
+      if(linkedBuyer){
+        var bN=linkedBuyer.company_name||linkedBuyer.contact_name||'';
+        left+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(255,215,0,.1);color:var(--acc);font-weight:600">👤 '+U.esc(bN.length>10?bN.substring(0,10)+'…':bN)+'</span>';
+      }
+      if(isClone)left+='<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:var(--w08);color:var(--w30)">복사본</span>';
+      left+='<span style="font-size:11px;color:var(--w20)">'+(p.target_countries||[]).slice(0,2).map(function(c){return U.cl(c);}).join(', ')+'</span>';
+      left+='</div>';
       left+='</div></div>';
       left+='</div>';
     });
@@ -2009,6 +2048,7 @@ function pgPjDetail(){
   var p=S.currentProject;if(!p)return'';
   var tab=S._pjTab||'overview';
   var stages=getProjectStages(p);
+  var prepStages=getProjectPrepStages(p);
   var stL={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상/계약',production:'수출용 생산/검수',shipping:'선적/통관',completed:'사후관리'};
   var stIcon={planning:'📋',certification:'🏅',alibaba_listing:'🏪',buyer_search:'🔍',negotiation:'🤝',production:'🏭',shipping:'🚢',completed:'✅'};
   var ci=stages.indexOf(p.status);
@@ -2019,6 +2059,7 @@ function pgPjDetail(){
   stages.forEach(function(s){var it=sp[s]||[];tI+=it.length;tD+=it.filter(function(x){return x.done;}).length;});
   var pct=tI?Math.round(tD/tI*100):0;
   var uniqueBuyers=_getPjBuyerIds(p);
+  var inDealPhase=isPjInDealPhase(p)&&uniqueBuyers.length>0;
   /* Header */
   var h='<div class="pju-detail-head">';
   h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(p.name)+'</div>';
@@ -2028,12 +2069,23 @@ function pgPjDetail(){
   h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px" onclick="App.reqSvcForPj(\''+p.id+'\')">💼 <span>서비스</span></button>';
   h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px;color:var(--err)" onclick="App.delPj(\''+p.id+'\')">🗑️ <span>삭제</span></button>';
   h+='</div></div>';
-  /* Salesforce-style stage progress bar */
+  /* Progress bar: prep stages only */
   h+='<div style="display:flex;gap:2px">';
-  stages.forEach(function(s,i){var done=i<ci;var cur=i===ci;
+  var prepCi=prepStages.indexOf(p.status);var prepDone=prepCi<0;
+  prepStages.forEach(function(s,i){var done=prepDone||i<prepCi;var cur=!prepDone&&i===prepCi;
     h+='<div style="flex:1;text-align:center" title="'+stL[s]+'"><div style="height:5px;border-radius:3px;background:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w08)')+';margin-bottom:4px"></div><div style="font-size:10px;color:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w20)')+';font-weight:'+(cur?'800':'400')+'">'+stL[s]+'</div></div>';
   });
-  h+='</div></div>';
+  h+='</div>';
+  /* Buyer deal summary (when buyers exist) */
+  if(inDealPhase){
+    var dealStageL={proposed:'매칭',sample:'샘플',negotiation:'협상',contract:'계약',order:'주문',production:'생산',shipping:'선적',completed:'완료'};
+    var summary=getPjDealSummary(p);
+    h+='<div style="margin-top:8px;padding:8px 10px;background:var(--w04);border-radius:var(--r-s);display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+    h+='<span style="font-size:12px;font-weight:700;color:var(--w60)">👥 바이어 딜 '+uniqueBuyers.length+'건</span>';
+    ['proposed','sample','negotiation','contract','order','production','shipping','completed'].forEach(function(ds){var c=summary.counts[ds]||0;if(c)h+='<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:'+(ds==='completed'?'rgba(0,230,118,.1)':'rgba(0,212,255,.08)')+';color:'+(ds==='completed'?'var(--ok)':'var(--pri)')+';font-weight:600">'+(dealStageL[ds])+' '+c+'</span>';});
+    h+='</div>';
+  }
+  h+='</div>';
   /* Tab bar */
   var docCount=(S.documents||[]).filter(function(d){return d.project_id===p.id;}).length;
   var orderCount=(S.orders||[]).filter(function(o){return o.project_id===p.id;}).length;
@@ -2047,6 +2099,64 @@ function pgPjDetail(){
   h+='</div>';
   /* Buyer drawer */
   if(S._pjBuyerDrawer)h+=_renderBuyerDrawer(p);
+  return h;
+}
+
+/* ── 바이어 딜 상세 (하위 프로젝트 선택 시) ── */
+function pgBuyerDealDetail(){
+  var p=S.currentProject;if(!p)return'';
+  var bd=S._selectedBuyerDeal;if(!bd)return pgPjDetail();
+  var buyer=S.buyers.find(function(b){return b.id===bd.buyerId;});if(!buyer)return pgPjDetail();
+  var bName=buyer.company_name||buyer.contact_name||buyer.email||'Unknown';
+  var matching=(S.matchings||[]).find(function(m){return m.buyer_id===bd.buyerId&&m.user_id===S.user.id;});
+  var matchStatus=matching?matching.status:'proposed';
+  var dealStages=['proposed','sample','negotiation','contract','order','production','shipping','completed'];
+  var dealStageL={proposed:'매칭/제안',sample:'샘플 발송',negotiation:'협상/조건 조율',contract:'계약 체결',order:'주문 확정',production:'생산/검수',shipping:'선적/통관',completed:'거래 완료'};
+  var curIdx=dealStages.indexOf(matchStatus);if(curIdx<0)curIdx=0;
+  var h='<div class="pju-detail-head">';
+  /* Back button + Buyer name */
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
+  h+='<button class="btn btn-ghost btn-sm" style="font-size:14px;padding:4px 8px" onclick="App.backToPjView()">←</button>';
+  h+='<div style="width:40px;height:40px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(bName.charAt(0))+'</div>';
+  h+='<div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">'+U.esc(bName)+'</div>';
+  h+='<div style="font-size:12px;color:var(--w40);margin-top:2px">'+(buyer.country?U.cl(buyer.country)+' · ':'')+U.esc(p.name)+'</div></div>';
+  h+='<div style="display:flex;gap:6px">';
+  h+='<button class="btn btn-pri btn-sm" style="font-size:12px;padding:6px 12px" onclick="App.openBuyerDrawer(\''+bd.buyerId+'\')">💬 채팅</button>';
+  h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px" onclick="App.copyProjectForBuyer(\''+p.id+'\',\''+bd.buyerId+'\')">📋 재주문 복사</button>';
+  h+='</div></div>';
+  /* Deal stage progress bar */
+  h+='<div style="display:flex;gap:2px">';
+  dealStages.forEach(function(ds,di){var done=di<curIdx;var cur=di===curIdx;
+    h+='<div style="flex:1;text-align:center" title="'+(dealStageL[ds]||ds)+'"><div style="height:5px;border-radius:3px;background:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w08)')+';margin-bottom:4px"></div><div style="font-size:10px;color:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w20)')+';font-weight:'+(cur?'800':'400')+'">'+(dealStageL[ds]||ds)+'</div></div>';
+  });
+  h+='</div></div>';
+  /* Deal detail content */
+  h+='<div class="pju-tab-content" style="padding:16px 0">';
+  /* Current stage info */
+  var curStageName=dealStageL[dealStages[curIdx]]||'';
+  h+='<div class="card" style="margin-bottom:14px;border-color:rgba(0,212,255,.15)"><div class="card-h"><span>📍 현재 단계: '+curStageName+'</span>';
+  if(curIdx<dealStages.length-1)h+='<button class="btn btn-pri btn-sm" onclick="App.advanceBuyerDeal(\''+bd.buyerId+'\',\''+dealStages[curIdx+1]+'\')">다음 단계 →</button>';
+  h+='</div><div class="card-b">';
+  /* Stage-specific checklist */
+  var stageGuide={proposed:['바이어 프로필 확인','제품 카탈로그 전송','초기 가격 제안'],sample:['샘플 준비/포장','국제 운송 수배','샘플 추적 번호 공유','바이어 피드백 대기'],negotiation:['MOQ/단가 협의','결제 조건 합의 (TT/LC)','인코텀즈 확정 (FOB/CIF)','납기일 확정'],contract:['계약서(SC) 작성','양측 서명 완료','계약금 입금 확인'],order:['PI(견적서) 발행','주문서 확인','생산 발주'],production:['생산 진행 모니터링','출하 전 검수(PSI)','포장/라벨링 확인'],shipping:['선적 서류 준비 (BL/AWB)','통관 서류 제출','운송 추적 공유'],completed:['대금 수령 확인','거래 평가','재주문 협의']};
+  var items=stageGuide[dealStages[curIdx]]||[];
+  items.forEach(function(item){h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--w08)"><span style="font-size:13px;color:var(--w60)">☐ '+item+'</span></div>';});
+  h+='</div></div>';
+  /* Documents for this buyer */
+  var buyerDocs=(S.documents||[]).filter(function(d){return d.project_id===p.id&&d.buyer_id===bd.buyerId;});
+  h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>📄 서류 '+buyerDocs.length+'건</span>';
+  h+='<button class="btn btn-pri btn-sm" onclick="App.openPjDocModal(\'pi\')">+ 서류 작성</button></div><div class="card-b">';
+  if(buyerDocs.length){buyerDocs.forEach(function(d){var tN={pi:'견적서(PI)',ci:'상업송장(CI)',pl:'패킹리스트(PL)',co:'원산지증명(CO)',sc:'계약서(SC)'};h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--w08)"><span style="font-size:18px">'+(d.doc_type==='pi'?'📄':d.doc_type==='ci'?'📋':'📦')+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+(tN[d.doc_type]||d.doc_type)+' #'+(d.doc_number||'-')+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(d.created_at)+'</div></div><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(0,212,255,.08);color:var(--pri);font-weight:600">'+(d.status||'draft')+'</span></div>';});}
+  else{h+='<div style="text-align:center;padding:16px;color:var(--w40);font-size:13px">서류가 없습니다. 서류를 작성하여 거래를 진행하세요.</div>';}
+  h+='</div></div>';
+  /* Orders for this buyer */
+  var buyerOrders=(S.orders||[]).filter(function(o){return o.project_id===p.id&&o.buyer_id===bd.buyerId;});
+  if(buyerOrders.length){
+    h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>📋 주문 '+buyerOrders.length+'건</span></div><div class="card-b">';
+    buyerOrders.forEach(function(o){h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--w08)"><span style="font-size:18px">📋</span><div style="flex:1"><div style="font-size:13px;font-weight:600">#'+(o.order_number||o.id.substring(0,8))+'</div><div style="font-size:11px;color:var(--w40)">$'+(Number(o.total_amount||0).toLocaleString())+' · '+U.fd(o.created_at)+'</div></div><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(0,230,118,.1);color:var(--ok);font-weight:600">'+(o.status||'pending')+'</span></div>';});
+    h+='</div></div>';
+  }
+  h+='</div>';
   return h;
 }
 
