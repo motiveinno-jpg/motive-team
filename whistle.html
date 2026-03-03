@@ -1997,6 +1997,8 @@ function subSvc(){
 function pgProjects(){
   var pj=S.currentProject;
   var stL={planning:'기획',certification:'인증',alibaba_listing:'입점',buyer_search:'바이어',negotiation:'협상',production:'생산',shipping:'선적',completed:'완료'};
+  /* 확인한 프로젝트 추적 (localStorage) */
+  var seenPjs=[];try{seenPjs=JSON.parse(localStorage.getItem('_seenPjs')||'[]');}catch(e){}
   /* LEFT PANEL: Project list */
   var left='<div class="pju-list"><div class="pju-list-head"><span style="font-size:16px;font-weight:800">📋 프로젝트</span><button class="btn btn-pri btn-sm" style="font-size:12px;padding:6px 12px" onclick="App.nav(\'analysis\')">+ 새 분석</button></div><div class="pju-list-body">';
   if(!S.projects.length){
@@ -2006,17 +2008,17 @@ function pgProjects(){
       var stages=getProjectStages(p);var ci=stages.indexOf(p.status);var sp=p.stage_progress||{};var tI=0,tD=0;
       stages.forEach(function(s){var it=sp[s]||[];tI+=it.length;tD+=it.filter(function(x){return x.done;}).length;});
       var pct=tI?Math.round(tD/tI*100):0;var isSel=pj&&pj.id===p.id;
+      var isNew=seenPjs.indexOf(p.id)<0;
       /* Linked buyer (1:1) */
-      var linkedBuyer=null;var linkedBuyerStatus='';
-      if(p.buyer_id){linkedBuyer=S.buyers.find(function(b){return b.id===p.buyer_id;});
-        var m=(S.matchings||[]).find(function(mm){return mm.buyer_id===p.buyer_id&&mm.user_id===S.user.id;});
-        linkedBuyerStatus=m?m.status:'proposed';}
+      var linkedBuyer=null;
+      if(p.buyer_id){linkedBuyer=S.buyers.find(function(b){return b.id===p.buyer_id;});}
       /* Product thumbnail */
       var prod=S.products.find(function(pr){return pr.id===p.product_id;});
       var thumbUrl=prod&&prod.images&&prod.images[0]?prod.images[0]:'';
-      /* Source project indicator */
       var isClone=!!p.source_project_id;
-      left+='<div class="pju-list-item'+(isSel?' selected':'')+'" onclick="App.viewPj(\''+p.id+'\')">';
+      left+='<div class="pju-list-item'+(isSel?' selected':'')+'" onclick="App.viewPj(\''+p.id+'\')" style="position:relative">';
+      /* NEW 빨간 점 */
+      if(isNew)left+='<div style="position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;background:var(--err);box-shadow:0 0 6px rgba(255,68,68,.5)"></div>';
       left+='<div style="display:flex;gap:10px;margin-bottom:6px">';
       left+='<div style="width:44px;height:44px;border-radius:8px;background:var(--w08);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">'+(thumbUrl?'<img src="'+U.esc(thumbUrl)+'" style="width:100%;height:100%;object-fit:cover">':'<span style="font-size:20px">📦</span>')+'</div>';
       left+='<div style="flex:1;min-width:0">';
@@ -2048,7 +2050,6 @@ function pgPjDetail(){
   var p=S.currentProject;if(!p)return'';
   var tab=S._pjTab||'overview';
   var stages=getProjectStages(p);
-  var prepStages=getProjectPrepStages(p);
   var stL={planning:'기획',certification:'인증',alibaba_listing:'알리바바 입점',buyer_search:'바이어 발굴',negotiation:'협상/계약',production:'수출용 생산/검수',shipping:'선적/통관',completed:'사후관리'};
   var stIcon={planning:'📋',certification:'🏅',alibaba_listing:'🏪',buyer_search:'🔍',negotiation:'🤝',production:'🏭',shipping:'🚢',completed:'✅'};
   var ci=stages.indexOf(p.status);
@@ -2059,31 +2060,31 @@ function pgPjDetail(){
   stages.forEach(function(s){var it=sp[s]||[];tI+=it.length;tD+=it.filter(function(x){return x.done;}).length;});
   var pct=tI?Math.round(tD/tI*100):0;
   var uniqueBuyers=_getPjBuyerIds(p);
-  var inDealPhase=isPjInDealPhase(p)&&uniqueBuyers.length>0;
   /* Header */
   var h='<div class="pju-detail-head">';
   h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(p.name)+'</div>';
   h+='<div style="font-size:13px;color:var(--w40);margin-top:3px">'+(rmInfo.category||'')+(rmInfo.market?' → '+U.cl(rmInfo.market):'')+'</div></div>';
   h+='<div style="display:flex;gap:8px">';
+  h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px" onclick="App.copyProject(\''+p.id+'\')">📋 <span>복사</span></button>';
   h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px" onclick="App.addPjNote()">📝 <span>메모</span></button>';
   h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px" onclick="App.reqSvcForPj(\''+p.id+'\')">💼 <span>서비스</span></button>';
   h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px;color:var(--err)" onclick="App.delPj(\''+p.id+'\')">🗑️ <span>삭제</span></button>';
   h+='</div></div>';
-  /* Progress bar: prep stages only */
+  /* Progress bar: full stages — 1:1 buyer이므로 단일 진행바 */
   h+='<div style="display:flex;gap:2px">';
-  var prepCi=prepStages.indexOf(p.status);var prepDone=prepCi<0;
-  prepStages.forEach(function(s,i){var done=prepDone||i<prepCi;var cur=!prepDone&&i===prepCi;
+  stages.forEach(function(s,i){var done=i<ci;var cur=i===ci;
     h+='<div style="flex:1;text-align:center" title="'+stL[s]+'"><div style="height:5px;border-radius:3px;background:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w08)')+';margin-bottom:4px"></div><div style="font-size:10px;color:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w20)')+';font-weight:'+(cur?'800':'400')+'">'+stL[s]+'</div></div>';
   });
   h+='</div>';
-  /* Buyer deal summary (when buyers exist) */
-  if(inDealPhase){
-    var dealStageL={proposed:'매칭',sample:'샘플',negotiation:'협상',contract:'계약',order:'주문',production:'생산',shipping:'선적',completed:'완료'};
-    var summary=getPjDealSummary(p);
-    h+='<div style="margin-top:8px;padding:8px 10px;background:var(--w04);border-radius:var(--r-s);display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
-    h+='<span style="font-size:12px;font-weight:700;color:var(--w60)">👥 바이어 딜 '+uniqueBuyers.length+'건</span>';
-    ['proposed','sample','negotiation','contract','order','production','shipping','completed'].forEach(function(ds){var c=summary.counts[ds]||0;if(c)h+='<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:'+(ds==='completed'?'rgba(0,230,118,.1)':'rgba(0,212,255,.08)')+';color:'+(ds==='completed'?'var(--ok)':'var(--pri)')+';font-weight:600">'+(dealStageL[ds])+' '+c+'</span>';});
-    h+='</div>';
+  /* 연결된 바이어 표시 */
+  if(p.buyer_id){
+    var _lb=S.buyers.find(function(b){return b.id===p.buyer_id;});
+    if(_lb){var _lbn=_lb.company_name||_lb.contact_name||'';
+      h+='<div style="margin-top:8px;padding:8px 12px;background:var(--w04);border-radius:var(--r-s);display:flex;align-items:center;gap:10px">';
+      h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(_lbn.charAt(0))+'</div>';
+      h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">'+U.esc(_lbn)+'</div><div style="font-size:11px;color:var(--w40)">'+(_lb.country?U.cl(_lb.country):'')+'</div></div>';
+      h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openBuyerDrawer(\''+p.buyer_id+'\')">💬 채팅</button></div>';
+    }
   }
   h+='</div>';
   /* Tab bar */
@@ -2102,63 +2103,7 @@ function pgPjDetail(){
   return h;
 }
 
-/* ── 바이어 딜 상세 (하위 프로젝트 선택 시) ── */
-function pgBuyerDealDetail(){
-  var p=S.currentProject;if(!p)return'';
-  var bd=S._selectedBuyerDeal;if(!bd)return pgPjDetail();
-  var buyer=S.buyers.find(function(b){return b.id===bd.buyerId;});if(!buyer)return pgPjDetail();
-  var bName=buyer.company_name||buyer.contact_name||buyer.email||'Unknown';
-  var matching=(S.matchings||[]).find(function(m){return m.buyer_id===bd.buyerId&&m.user_id===S.user.id;});
-  var matchStatus=matching?matching.status:'proposed';
-  var dealStages=['proposed','sample','negotiation','contract','order','production','shipping','completed'];
-  var dealStageL={proposed:'매칭/제안',sample:'샘플 발송',negotiation:'협상/조건 조율',contract:'계약 체결',order:'주문 확정',production:'생산/검수',shipping:'선적/통관',completed:'거래 완료'};
-  var curIdx=dealStages.indexOf(matchStatus);if(curIdx<0)curIdx=0;
-  var h='<div class="pju-detail-head">';
-  /* Back button + Buyer name */
-  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">';
-  h+='<button class="btn btn-ghost btn-sm" style="font-size:14px;padding:4px 8px" onclick="App.backToPjView()">←</button>';
-  h+='<div style="width:40px;height:40px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(bName.charAt(0))+'</div>';
-  h+='<div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800">'+U.esc(bName)+'</div>';
-  h+='<div style="font-size:12px;color:var(--w40);margin-top:2px">'+(buyer.country?U.cl(buyer.country)+' · ':'')+U.esc(p.name)+'</div></div>';
-  h+='<div style="display:flex;gap:6px">';
-  h+='<button class="btn btn-pri btn-sm" style="font-size:12px;padding:6px 12px" onclick="App.openBuyerDrawer(\''+bd.buyerId+'\')">💬 채팅</button>';
-  h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px" onclick="App.copyProjectForBuyer(\''+p.id+'\',\''+bd.buyerId+'\')">📋 재주문 복사</button>';
-  h+='</div></div>';
-  /* Deal stage progress bar */
-  h+='<div style="display:flex;gap:2px">';
-  dealStages.forEach(function(ds,di){var done=di<curIdx;var cur=di===curIdx;
-    h+='<div style="flex:1;text-align:center" title="'+(dealStageL[ds]||ds)+'"><div style="height:5px;border-radius:3px;background:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w08)')+';margin-bottom:4px"></div><div style="font-size:10px;color:'+(done?'var(--ok)':cur?'var(--pri)':'var(--w20)')+';font-weight:'+(cur?'800':'400')+'">'+(dealStageL[ds]||ds)+'</div></div>';
-  });
-  h+='</div></div>';
-  /* Deal detail content */
-  h+='<div class="pju-tab-content" style="padding:16px 0">';
-  /* Current stage info */
-  var curStageName=dealStageL[dealStages[curIdx]]||'';
-  h+='<div class="card" style="margin-bottom:14px;border-color:rgba(0,212,255,.15)"><div class="card-h"><span>📍 현재 단계: '+curStageName+'</span>';
-  if(curIdx<dealStages.length-1)h+='<button class="btn btn-pri btn-sm" onclick="App.advanceBuyerDeal(\''+bd.buyerId+'\',\''+dealStages[curIdx+1]+'\')">다음 단계 →</button>';
-  h+='</div><div class="card-b">';
-  /* Stage-specific checklist */
-  var stageGuide={proposed:['바이어 프로필 확인','제품 카탈로그 전송','초기 가격 제안'],sample:['샘플 준비/포장','국제 운송 수배','샘플 추적 번호 공유','바이어 피드백 대기'],negotiation:['MOQ/단가 협의','결제 조건 합의 (TT/LC)','인코텀즈 확정 (FOB/CIF)','납기일 확정'],contract:['계약서(SC) 작성','양측 서명 완료','계약금 입금 확인'],order:['PI(견적서) 발행','주문서 확인','생산 발주'],production:['생산 진행 모니터링','출하 전 검수(PSI)','포장/라벨링 확인'],shipping:['선적 서류 준비 (BL/AWB)','통관 서류 제출','운송 추적 공유'],completed:['대금 수령 확인','거래 평가','재주문 협의']};
-  var items=stageGuide[dealStages[curIdx]]||[];
-  items.forEach(function(item){h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--w08)"><span style="font-size:13px;color:var(--w60)">☐ '+item+'</span></div>';});
-  h+='</div></div>';
-  /* Documents for this buyer */
-  var buyerDocs=(S.documents||[]).filter(function(d){return d.project_id===p.id&&d.buyer_id===bd.buyerId;});
-  h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>📄 서류 '+buyerDocs.length+'건</span>';
-  h+='<button class="btn btn-pri btn-sm" onclick="App.openPjDocModal(\'pi\')">+ 서류 작성</button></div><div class="card-b">';
-  if(buyerDocs.length){buyerDocs.forEach(function(d){var tN={pi:'견적서(PI)',ci:'상업송장(CI)',pl:'패킹리스트(PL)',co:'원산지증명(CO)',sc:'계약서(SC)'};h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--w08)"><span style="font-size:18px">'+(d.doc_type==='pi'?'📄':d.doc_type==='ci'?'📋':'📦')+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+(tN[d.doc_type]||d.doc_type)+' #'+(d.doc_number||'-')+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(d.created_at)+'</div></div><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(0,212,255,.08);color:var(--pri);font-weight:600">'+(d.status||'draft')+'</span></div>';});}
-  else{h+='<div style="text-align:center;padding:16px;color:var(--w40);font-size:13px">서류가 없습니다. 서류를 작성하여 거래를 진행하세요.</div>';}
-  h+='</div></div>';
-  /* Orders for this buyer */
-  var buyerOrders=(S.orders||[]).filter(function(o){return o.project_id===p.id&&o.buyer_id===bd.buyerId;});
-  if(buyerOrders.length){
-    h+='<div class="card" style="margin-bottom:14px"><div class="card-h"><span>📋 주문 '+buyerOrders.length+'건</span></div><div class="card-b">';
-    buyerOrders.forEach(function(o){h+='<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--w08)"><span style="font-size:18px">📋</span><div style="flex:1"><div style="font-size:13px;font-weight:600">#'+(o.order_number||o.id.substring(0,8))+'</div><div style="font-size:11px;color:var(--w40)">$'+(Number(o.total_amount||0).toLocaleString())+' · '+U.fd(o.created_at)+'</div></div><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(0,230,118,.1);color:var(--ok);font-weight:600">'+(o.status||'pending')+'</span></div>';});
-    h+='</div></div>';
-  }
-  h+='</div>';
-  return h;
-}
+/* pgBuyerDealDetail removed — 프로젝트 복사 방식으로 전환 (1 프로젝트 = 1 바이어) */
 
 /* 프로젝트 스테이지 뷰 전환 */
 function setPjViewStage(stage){S._pjViewStage=stage;S._pjChatBuyer=null;S._pjChatMsgs=[];render();
@@ -2432,6 +2377,117 @@ function _getPjBuyerIds(p){
 function setPjTab(tab){S._pjTab=tab;S._pjBuyerDrawer=null;render();}
 function openBuyerDrawer(buyerId){S._pjBuyerDrawer=buyerId;openPjChat(buyerId);}
 function closeBuyerDrawer(){S._pjBuyerDrawer=null;if(S._pjChatChannel){sb.removeChannel(S._pjChatChannel);S._pjChatChannel=null;}S._pjChatMsgs=[];render();}
+
+/* ── 프로젝트 복사 ── */
+function copyProject(sourceId){
+  var src=S.projects.find(function(x){return x.id===sourceId;});if(!src)return;
+  var g=_planGate('project');if(g.blocked){UI.toast(g.label+' 한도 초과!','warn');nav('subscription');return;}
+  /* 바이어 선택 + 복사 옵션 모달 */
+  var body='<form id="cpf">';
+  body+='<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">복사 유형</div>';
+  body+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:var(--w08);margin-bottom:6px;cursor:pointer"><input type="radio" name="copy_type" value="new_buyer" checked> <span style="font-size:13px">새 바이어와 진행</span></label>';
+  body+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:var(--w08);cursor:pointer"><input type="radio" name="copy_type" value="reorder"> <span style="font-size:13px">재주문 (같은 바이어, 서류 복제)</span></label>';
+  body+='</div>';
+  body+='<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">바이어 선택</div>';
+  if(S.buyers.length){
+    body+='<div style="max-height:180px;overflow-y:auto;border:1px solid var(--w08);border-radius:8px;padding:4px">';
+    S.buyers.forEach(function(b){
+      var bn=b.company_name||b.contact_name||b.email||'Unknown';
+      var checked=src.buyer_id===b.id?' checked':'';
+      body+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--w08);cursor:pointer"><input type="radio" name="buyer_id" value="'+b.id+'"'+checked+'> <span style="font-size:13px">'+U.esc(bn)+'</span><span style="font-size:10px;color:var(--w30)">'+(b.country?U.cl(b.country):'')+'</span></label>';
+    });
+    body+='</div>';
+  }else{
+    body+='<div style="text-align:center;padding:16px;color:var(--w40);font-size:12px">등록된 바이어가 없습니다</div>';
+  }
+  body+='</div>';
+  body+='<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;margin-bottom:6px">복사 옵션</div>';
+  body+='<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px"><input type="checkbox" name="copy_product" checked disabled> 제품 정보</label>';
+  body+='<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px"><input type="checkbox" name="copy_checklist" checked> 인증/체크리스트 (진행 상태 포함)</label>';
+  body+='<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px"><input type="checkbox" name="copy_docs" id="cpf_docs"> 서류 복제 (PI/CI/PL 등)</label>';
+  body+='<label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" name="copy_countries" checked> 타겟 국가</label>';
+  body+='</div>';
+  body+='<input type="hidden" name="source_id" value="'+sourceId+'">';
+  body+='</form>';
+  /* 재주문 선택 시 서류 복제 자동 체크 */
+  setTimeout(function(){
+    var form=document.getElementById('cpf');if(!form)return;
+    form.addEventListener('change',function(e){
+      if(e.target.name==='copy_type'){
+        var docsCheck=document.getElementById('cpf_docs');
+        if(docsCheck)docsCheck.checked=e.target.value==='reorder';
+      }
+    });
+  },200);
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'cpm',title:'📋 프로젝트 복사',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'cpm\')">취소</button><button class="btn btn-pri" onclick="App.execCopyProject()">복사 생성</button>',width:'480px'}));
+  UI.showModal('cpm');
+}
+function execCopyProject(){
+  var d=UI.fd('#cpf');if(!d.source_id)return;
+  var src=S.projects.find(function(x){return x.id===d.source_id;});if(!src)return;
+  var isReorder=d.copy_type==='reorder';
+  var buyerId=d.buyer_id||null;
+  var buyer=buyerId?S.buyers.find(function(b){return b.id===buyerId;}):null;
+  var buyerName=buyer?(buyer.company_name||buyer.contact_name||''):'';
+  /* 프로젝트명 생성 */
+  var newName=src.name;
+  if(buyerName)newName=src.name.replace(/ 수출 프로젝트.*$/,'')+' × '+buyerName;
+  if(isReorder)newName+=' (재주문)';
+  /* 시작 단계: 재주문은 negotiation부터, 새 바이어는 buyer_search부터 */
+  var startStatus=isReorder?'negotiation':(buyerId?'buyer_search':'planning');
+  /* 체크리스트 복사 */
+  var newProgress={};
+  if(d.copy_checklist){
+    var srcSp=src.stage_progress||{};
+    Object.keys(srcSp).forEach(function(k){
+      if(k.charAt(0)==='_'){newProgress[k]=srcSp[k];return;}
+      newProgress[k]=srcSp[k].map(function(item){return{text:item.text,done:isReorder?item.done:false};});
+    });
+  }
+  /* 타겟 국가 */
+  var countries=d.copy_countries?src.target_countries:[];
+  /* DB insert */
+  sb.from('projects').insert({
+    user_id:S.user.id,
+    analysis_id:src.analysis_id,
+    product_id:src.product_id,
+    name:newName,
+    target_countries:countries,
+    status:startStatus,
+    stage_progress:newProgress,
+    alibaba_customer:src.alibaba_customer||false,
+    buyer_id:buyerId,
+    source_project_id:src.id,
+    is_reorder:isReorder
+  }).then(function(r){
+    if(r.error){_toastE(r.error);return;}
+    /* 서류 복제 */
+    if(d.copy_docs&&isReorder){
+      var srcDocs=(S.documents||[]).filter(function(doc){return doc.project_id===src.id;});
+      if(srcDocs.length){
+        var newDocs=srcDocs.map(function(doc){
+          var nd=Object.assign({},doc);
+          delete nd.id;delete nd.created_at;delete nd.updated_at;
+          nd.project_id=r.data[0].id;
+          nd.status='draft';
+          nd.doc_number='';
+          if(buyerId)nd.buyer_id=buyerId;
+          return nd;
+        });
+        sb.from('documents').insert(newDocs).then(function(){
+          UI.toast('서류 '+srcDocs.length+'건 복제 완료. 날짜/수량을 확인하세요!','warn');
+        });
+      }
+    }
+    closeModal('cpm');
+    loadPr().then(function(){
+      set({page:'projects',currentProject:null});
+      UI.toast('프로젝트 복사 완료!'+(isReorder?' 재주문 모드':''),'ok');
+      /* 새 프로젝트로 자동 이동 */
+      if(r.data&&r.data[0])viewPj(r.data[0].id);
+    });
+  });
+}
 
 /* Overview tab */
 function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct){
@@ -2714,7 +2770,10 @@ function toggleJourneyStage(stage){
   if(el)el.style.display=el.style.display==='none'?'block':'none';
 }
 
-function viewPj(id){var p=S.projects.find(function(x){return x.id===id;});if(p){S.currentProject=p;S.page='projects';S._pjTab=S._pjTab||'overview';S._pjBuyerDrawer=null;S._pjViewStage=null;render();}}
+function viewPj(id){var p=S.projects.find(function(x){return x.id===id;});if(p){S.currentProject=p;S.page='projects';S._pjTab=S._pjTab||'overview';S._pjBuyerDrawer=null;S._pjViewStage=null;
+  /* 확인 표시 — 빨간 점 제거 */
+  try{var seen=JSON.parse(localStorage.getItem('_seenPjs')||'[]');if(seen.indexOf(id)<0){seen.push(id);localStorage.setItem('_seenPjs',JSON.stringify(seen));}}catch(e){}
+  render();}}
 
 function setPjStage(stage){
   var p=S.currentProject;if(!p)return;
@@ -8613,7 +8672,7 @@ function calcMarginSim(){
   el.innerHTML=h;
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,UI:UI};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,UI:UI};
 _handleTossCallback();
 loadUser();
 window.addEventListener('hashchange',function(){handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);}).catch(function(e){console.error(e);});});
