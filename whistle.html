@@ -2970,6 +2970,181 @@ function runPkgOptimizer(){
   }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">시뮬레이션 실패: '+esc(e.message)+'</div>';});
 }
 
+// === SMART NEGOTIATOR PAGE ===
+function pgSmartNego(){
+  var h='<div style="max-width:900px;margin:0 auto">';
+  h+='<div style="text-align:center;margin-bottom:24px"><span style="font-size:40px">🤝</span><div style="font-size:22px;font-weight:900;margin-top:6px">AI 협상 전략 엔진</div>';
+  h+='<div style="font-size:13px;color:var(--w40);margin-top:4px">거래 조건(인코텀즈/결제/MOQ/가격) AI 최적 전략을 자동 생성합니다</div></div>';
+  h+='<div style="padding:24px;border-radius:16px;background:var(--card);border:1px solid var(--bd);margin-bottom:20px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">제품명*</label><input id="sn-product" value="'+(S.products&&S.products[0]?esc(S.products[0].name||''):'')+'" class="input" style="width:100%;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">FOB 가격 (USD)</label><input id="sn-fob" type="number" placeholder="12.50" class="input" style="width:100%;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">수량</label><input id="sn-qty" type="number" value="3000" class="input" style="width:100%;box-sizing:border-box"></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">바이어 국가</label><input id="sn-country" placeholder="US, JP, DE..." class="input" style="width:100%;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">거래 단계</label><select id="sn-stage" class="input" style="width:100%;box-sizing:border-box"><option value="first_order">첫 거래</option><option value="repeat">재주문</option><option value="long_term">장기 파트너</option></select></div>';
+  h+='</div>';
+  h+='<div style="text-align:center;margin-top:18px"><button class="btn btn-pri" onclick="App.runSmartNego()" style="padding:12px 40px;font-size:14px;font-weight:800">🤝 협상 전략 생성</button></div>';
+  h+='</div><div id="sn-result"></div></div>';
+  return h;
+}
+function runSmartNego(){
+  var product=(document.getElementById('sn-product')||{}).value;
+  if(!product){UI.toast('제품명을 입력하세요','warn');return;}
+  var el=document.getElementById('sn-result');if(!el)return;
+  el.innerHTML='<div style="padding:30px;text-align:center"><div class="spinner"></div><div style="margin-top:12px;font-size:13px;color:var(--w40)">🤝 AI 협상 전략 분석 중... (10~15초)</div></div>';
+  sb.functions.invoke('smart-negotiator',{body:{
+    product:product,
+    fob_price:(document.getElementById('sn-fob')||{}).value||'',
+    quantity:(document.getElementById('sn-qty')||{}).value||'3000',
+    buyer_country:(document.getElementById('sn-country')||{}).value||'',
+    relationship_stage:(document.getElementById('sn-stage')||{}).value||'first_order'
+  }}).then(function(r){
+    if(r.error)throw r.error;
+    var d=r.data;
+    var h='<div style="padding:20px;border-radius:16px;background:var(--card);border:1px solid var(--bd)">';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><span style="font-size:24px">🤝</span><div style="font-size:16px;font-weight:900">AI 협상 전략</div><span style="font-size:11px;color:var(--w30)">주문 가치 $'+(d.order_value||0).toLocaleString()+'</span></div>';
+    // Incoterms
+    if(d.recommended_incoterms&&d.recommended_incoterms.length){
+      h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px">📦 추천 인코텀즈</div>';
+      h+='<div style="display:grid;grid-template-columns:repeat('+Math.min(d.recommended_incoterms.length,3)+',1fr);gap:10px;margin-bottom:16px">';
+      d.recommended_incoterms.forEach(function(ic,i){
+        h+='<div style="padding:14px;border-radius:10px;background:'+(i===0?'rgba(0,212,255,.06)':'var(--w05)')+';border:1.5px solid '+(i===0?'var(--pri)':'var(--bd)')+'">';
+        h+=(i===0?'<div style="font-size:9px;font-weight:800;color:var(--pri);margin-bottom:4px">✓ 최우선 추천</div>':'');
+        h+='<div style="font-size:18px;font-weight:900;color:var(--w)">'+esc(ic.code)+'</div>';
+        h+='<div style="font-size:11px;color:var(--w40);margin-top:4px;line-height:1.5">'+esc(ic.desc||'')+'</div>';
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+    // Payment terms
+    if(d.recommended_payment&&d.recommended_payment.length){
+      h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px">💳 추천 결제조건</div>';
+      d.recommended_payment.forEach(function(pt,i){
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;margin-bottom:6px;border-radius:8px;background:var(--w05);border:1px solid '+(i===0?'var(--ok)':'var(--bd)')+'">';
+        h+='<span style="font-size:16px;font-weight:800;color:'+(i===0?'var(--ok)':'var(--w40)')+'">'+(i+1)+'</span>';
+        h+='<div><div style="font-size:13px;font-weight:700;color:var(--w)">'+esc(pt.label||pt.code)+'</div>';
+        h+='<div style="font-size:10px;color:var(--w30)">판매자 리스크: '+esc(pt.risk_seller||'')+' / 바이어 리스크: '+esc(pt.risk_buyer||'')+'</div></div></div>';
+      });
+      h+='<div style="margin-bottom:16px"></div>';
+    }
+    // MOQ Strategy
+    if(d.moq_strategy&&d.moq_strategy.suggested_moq){
+      var ms=d.moq_strategy;
+      h+='<div style="padding:14px;border-radius:10px;background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.15);margin-bottom:14px">';
+      h+='<div style="font-size:12px;font-weight:700;color:var(--purple);margin-bottom:6px">📊 MOQ 전략</div>';
+      h+='<div style="font-size:12px;color:var(--w60);line-height:1.6">추천 MOQ: <strong>'+ms.suggested_moq+'개</strong> · 현재 수량: '+ms.your_quantity+'개 · 대량 할인: '+ms.bulk_discount_pct+'%</div>';
+      h+='<div style="font-size:11px;color:var(--pri);margin-top:4px">💡 '+esc(ms.negotiation_tip||'')+'</div></div>';
+    }
+    // Price Strategy
+    if(d.price_strategy&&d.price_strategy.listed_price){
+      var ps=d.price_strategy;
+      h+='<div style="padding:14px;border-radius:10px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.15);margin-bottom:14px">';
+      h+='<div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:6px">💰 가격 협상 가이드</div>';
+      h+='<div style="display:flex;gap:16px;margin-bottom:6px">';
+      h+='<div><span style="font-size:10px;color:var(--w30)">공격적</span><div style="font-size:14px;font-weight:800;color:var(--err)">$'+ps.aggressive_low+'</div></div>';
+      h+='<div><span style="font-size:10px;color:var(--w30)">합리적</span><div style="font-size:14px;font-weight:800;color:var(--acc)">$'+ps.reasonable_low+'</div></div>';
+      h+='<div><span style="font-size:10px;color:var(--w30)">정가</span><div style="font-size:14px;font-weight:800;color:var(--w)">$'+ps.listed_price+'</div></div>';
+      h+='</div>';
+      h+='<div style="font-size:11px;color:var(--w40)">할인 가능폭: '+esc(ps.discount_potential_pct||'')+'</div>';
+      h+='<div style="font-size:11px;color:var(--pri);margin-top:4px">💡 '+esc(ps.tactic||'')+'</div></div>';
+    }
+    // AI Terms
+    if(d.ai_negotiation_terms){
+      h+='<div style="padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(0,212,255,.05),rgba(168,85,247,.05));border:1px solid rgba(0,212,255,.15)">';
+      h+='<div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:6px">🤖 AI 맞춤 협상 가이드</div>';
+      h+='<div style="font-size:12px;color:var(--w70);line-height:1.7;white-space:pre-line">'+esc(d.ai_negotiation_terms)+'</div></div>';
+    }
+    h+='</div>';
+    el.innerHTML=h;
+  }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">분석 실패: '+esc(e.message)+'</div>';});
+}
+
+// === SUPPLY CHAIN RISK PAGE ===
+function pgSCRisk(){
+  var h='<div style="max-width:900px;margin:0 auto">';
+  h+='<div style="text-align:center;margin-bottom:24px"><span style="font-size:40px">⚠️</span><div style="font-size:22px;font-weight:900;margin-top:6px">공급망 리스크 모니터</div>';
+  h+='<div style="font-size:13px;color:var(--w40);margin-top:4px">국가 리스크 + 환율 변동 + 해운 루트 위험을 실시간 모니터링합니다</div></div>';
+  h+='<div style="padding:24px;border-radius:16px;background:var(--card);border:1px solid var(--bd);margin-bottom:20px">';
+  h+='<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:6px">수출 대상국 (복수 선택)</label>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  var _scrCountries=[{c:'US',f:'🇺🇸'},{c:'CN',f:'🇨🇳'},{c:'JP',f:'🇯🇵'},{c:'VN',f:'🇻🇳'},{c:'DE',f:'🇩🇪'},{c:'IN',f:'🇮🇳'},{c:'GB',f:'🇬🇧'},{c:'SG',f:'🇸🇬'},{c:'AU',f:'🇦🇺'},{c:'BR',f:'🇧🇷'},{c:'SA',f:'🇸🇦'},{c:'AE',f:'🇦🇪'}];
+  if(!S._scrSel)S._scrSel={US:true,CN:true,JP:true,VN:true,DE:true};
+  _scrCountries.forEach(function(ct){
+    var sel=S._scrSel[ct.c];
+    h+='<div onclick="App._toggleSCR(\''+ct.c+'\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid '+(sel?'var(--acc)':'var(--bd)')+';background:'+(sel?'rgba(245,158,11,.1)':'transparent')+';cursor:pointer;font-size:12px;font-weight:'+(sel?'700':'400')+';color:'+(sel?'var(--acc)':'var(--w40)')+'">'+ct.f+' '+ct.c+'</div>';
+  });
+  h+='</div></div>';
+  h+='<div style="text-align:center"><button class="btn btn-pri" onclick="App.runSCRisk()" style="padding:12px 40px;font-size:14px;font-weight:800">⚠️ 리스크 분석</button></div>';
+  h+='</div><div id="scr-result"></div></div>';
+  return h;
+}
+function _toggleSCR(c){if(!S._scrSel)S._scrSel={};S._scrSel[c]=!S._scrSel[c];render();}
+function runSCRisk(){
+  var countries=Object.keys(S._scrSel||{}).filter(function(k){return S._scrSel[k];});
+  if(!countries.length){UI.toast('대상 국가를 선택하세요','warn');return;}
+  var el=document.getElementById('scr-result');if(!el)return;
+  el.innerHTML='<div style="padding:30px;text-align:center"><div class="spinner"></div><div style="margin-top:12px;font-size:13px;color:var(--w40)">⚠️ 공급망 리스크 분석 중... (10~15초)</div></div>';
+  sb.functions.invoke('supply-chain-risk',{body:{target_countries:countries}}).then(function(r){
+    if(r.error)throw r.error;
+    var d=r.data;
+    var h='<div style="padding:20px;border-radius:16px;background:var(--card);border:1px solid var(--bd)">';
+    // Overall risk
+    h+='<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">';
+    h+='<div style="width:80px;height:80px;border-radius:50%;background:'+d.overall_color+'15;border:3px solid '+d.overall_color+';display:flex;align-items:center;justify-content:center;flex-direction:column">';
+    h+='<div style="font-size:22px;font-weight:900;color:'+d.overall_color+'">'+d.overall_risk+'</div><div style="font-size:8px;color:var(--w40)">/5.0</div></div>';
+    h+='<div><div style="font-size:20px;font-weight:900;color:'+d.overall_color+'">'+esc(d.overall_label)+' Risk</div>';
+    h+='<div style="font-size:12px;color:var(--w40)">국가 리스크 + 해운 루트 + 환율 변동 종합</div></div></div>';
+    // Country risks
+    if(d.country_risks&&d.country_risks.length){
+      h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px">🌍 국가별 리스크</div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:16px">';
+      d.country_risks.forEach(function(cr){
+        var col=cr.overall>=4?'var(--err)':cr.overall>=3?'var(--acc)':cr.overall>=2?'var(--pri)':'var(--ok)';
+        h+='<div style="padding:12px;border-radius:8px;background:var(--w05);border:1px solid var(--bd)">';
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:14px;font-weight:800">'+cr.country+'</span><span style="font-size:12px;font-weight:800;color:'+col+'">'+cr.overall+'/5</span></div>';
+        h+='<div style="font-size:10px;color:var(--w30)">정치 '+cr.political+' · 경제 '+cr.economic+' · 물류 '+cr.logistics+'</div>';
+        h+='<div style="font-size:10px;color:'+col+';margin-top:2px;font-weight:600">'+esc(cr.label)+'</div></div>';
+      });
+      h+='</div>';
+    }
+    // Route risks
+    if(d.route_risks&&d.route_risks.length){
+      h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px">🚢 해운 루트 리스크</div>';
+      d.route_risks.forEach(function(rr){
+        var col=rr.risk>=4?'var(--err)':rr.risk>=3?'var(--acc)':'var(--pri)';
+        h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;margin-bottom:6px;border-radius:8px;background:var(--w05);border-left:3px solid '+col+'">';
+        h+='<div style="font-size:18px;font-weight:900;color:'+col+';min-width:30px">'+rr.risk+'</div>';
+        h+='<div><div style="font-size:13px;font-weight:700;color:var(--w)">'+esc(rr.label)+'</div>';
+        h+='<div style="font-size:11px;color:var(--w40)">'+esc(rr.impact)+'</div>';
+        h+='<div style="font-size:10px;color:var(--pri);margin-top:2px">대안: '+esc(rr.alt)+'</div></div></div>';
+      });
+      h+='<div style="margin-bottom:16px"></div>';
+    }
+    // FX Volatility
+    if(d.fx_volatility&&d.fx_volatility.length){
+      h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px">💱 환율 변동성 (30일)</div>';
+      h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
+      d.fx_volatility.forEach(function(fx){
+        var col=fx.risk==='high'?'var(--err)':fx.risk==='medium'?'var(--acc)':'var(--ok)';
+        h+='<div style="padding:10px 14px;border-radius:8px;background:var(--w05);border:1px solid var(--bd);min-width:100px;text-align:center">';
+        h+='<div style="font-size:11px;color:var(--w30)">KRW/'+fx.currency+'</div>';
+        h+='<div style="font-size:16px;font-weight:800;color:'+col+'">'+(fx.change_pct>0?'+':'')+fx.change_pct+'%</div></div>';
+      });
+      h+='</div>';
+    }
+    // AI Summary
+    if(d.ai_summary){
+      h+='<div style="padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(245,158,11,.06),rgba(239,68,68,.04));border:1px solid rgba(245,158,11,.15)">';
+      h+='<div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:6px">🤖 AI 리스크 어드바이저</div>';
+      h+='<div style="font-size:12px;color:var(--w70);line-height:1.7;white-space:pre-line">'+esc(d.ai_summary)+'</div></div>';
+    }
+    h+='</div>';
+    el.innerHTML=h;
+  }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">분석 실패: '+esc(e.message)+'</div>';});
+}
+
 // === TRUST SCORE ENGINE ===
 function runTrustScore(anlId){
   var a=S.analyses.find(function(x){return x.id===anlId;});
@@ -9602,7 +9777,7 @@ function nav(p){S.page=p;S.currentAnalysis=null;S.currentProject=null;S.analysis
 try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:p,role:S.user?S.user.role:null,session_id:window._pvSid,portal:'whistle'}).then(function(){});}catch(e){}}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){document.querySelectorAll('[id="'+id+'"]').forEach(function(e){e.remove();});},300);}
 
-var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 수출 분석',products:'📦 제품 관리',projects:'🚀 프로젝트 관리',deals:'🚀 프로젝트 관리',orders:'📋 주문관리',tracking:'📍 물류 추적',services:'💼 서비스',docgen:'📄 서류',chat:'💬 바이어 채팅',emailhub:'✉️ 이메일',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🚀 프로젝트 관리',meetings:'📅 일정관리',alibaba:'🏪 알리바바',marketplace:'🛍️ 바이어 장터',guide:'📚 가이드 센터',trends:'🔥 검색 트렌드',processmap:'🗺️ 제작 이동 맵',invite:'📨 초대/레퍼럴',buyerhub:'🚀 프로젝트 관리',comms:'💬 메시지',ordershipping:'📋 주문 & 물류',bizhub:'💼 구독 & 서비스',partnership:'🤝 제휴 문의','cert-nav':'📋 인증 네비게이터','export-roi':'💰 수출 ROI 시뮬레이터','pkg-optimizer':'📦 패키징 최적화'};
+var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 수출 분석',products:'📦 제품 관리',projects:'🚀 프로젝트 관리',deals:'🚀 프로젝트 관리',orders:'📋 주문관리',tracking:'📍 물류 추적',services:'💼 서비스',docgen:'📄 서류',chat:'💬 바이어 채팅',emailhub:'✉️ 이메일',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🚀 프로젝트 관리',meetings:'📅 일정관리',alibaba:'🏪 알리바바',marketplace:'🛍️ 바이어 장터',guide:'📚 가이드 센터',trends:'🔥 검색 트렌드',processmap:'🗺️ 제작 이동 맵',invite:'📨 초대/레퍼럴',buyerhub:'🚀 프로젝트 관리',comms:'💬 메시지',ordershipping:'📋 주문 & 물류',bizhub:'💼 구독 & 서비스',partnership:'🤝 제휴 문의','cert-nav':'📋 인증 네비게이터','export-roi':'💰 수출 ROI 시뮬레이터','pkg-optimizer':'📦 패키징 최적화','smart-nego':'🤝 AI 협상 전략','sc-risk':'⚠️ 공급망 리스크'};
 
 /* === ONBOARDING WIZARD === */
 function pgOnboarding(){
@@ -10655,7 +10830,7 @@ function pgBizHub(){
 
 function renderPage(){
   if(S.user&&!S.user.onboarding_completed&&S.page==='dashboard')return pgOnboarding();
-  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'deals':S.page='projects';S._pjTab='buyers';return pgProjects();case'buyers':case'buyerhub':S.page='projects';S._pjTab='buyers';return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'chat':return pgChat();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'tracking':return pgTracking();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'meetings':return pgMeetings();case'alibaba':return pgAlibaba();case'marketplace':return pgMarketplace();case'trends':return pgTrends();case'partnership':return pgPartnership();case'guide':return pgGuide();case'processmap':return pgProcessMap();case'invite':return pgInviteReferral();case'comms':return pgComms();case'ordershipping':return pgOrderShipping();case'bizhub':return pgBizHub();case'cert-nav':return pgCertNav();case'export-roi':return pgExportROI();case'pkg-optimizer':return pgPkgOptimizer();default:return pgDash();}
+  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'deals':S.page='projects';S._pjTab='buyers';return pgProjects();case'buyers':case'buyerhub':S.page='projects';S._pjTab='buyers';return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'chat':return pgChat();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'tracking':return pgTracking();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'meetings':return pgMeetings();case'alibaba':return pgAlibaba();case'marketplace':return pgMarketplace();case'trends':return pgTrends();case'partnership':return pgPartnership();case'guide':return pgGuide();case'processmap':return pgProcessMap();case'invite':return pgInviteReferral();case'comms':return pgComms();case'ordershipping':return pgOrderShipping();case'bizhub':return pgBizHub();case'cert-nav':return pgCertNav();case'export-roi':return pgExportROI();case'pkg-optimizer':return pgPkgOptimizer();case'smart-nego':return pgSmartNego();case'sc-risk':return pgSCRisk();default:return pgDash();}
 }
 
 /* === BUYER SEARCH TRENDS === */
@@ -11295,6 +11470,8 @@ function renderSidebar(){
     {id:'cert-nav',icon:'📋',label:'인증 네비게이터'},
     {id:'export-roi',icon:'💰',label:'수출 ROI 시뮬레이터'},
     {id:'pkg-optimizer',icon:'📦',label:'패키징 최적화'},
+    {id:'smart-nego',icon:'🤝',label:'AI 협상 전략'},
+    {id:'sc-risk',icon:'⚠️',label:'공급망 리스크'},
     {id:'sec',label:'커뮤니케이션'},
     {id:'comms',icon:'💬',label:'메시지'},
     {id:'ordershipping',icon:'📋',label:'주문 & 물류'}
@@ -11874,7 +12051,7 @@ function seedTestData(){
   });
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,viewBuyerTimeline:viewBuyerTimeline,searchCompanies:searchCompanies,saveCorpAsBuyer:saveCorpAsBuyer,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,setTrackingView:setTrackingView,initLiveMap:initLiveMap,refreshLiveMap:refreshLiveMap,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,convertDocCurrency:convertDocCurrency,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,genDocPreview:genDocPreview,openDocPreview:openDocPreview,closeDocPreview:closeDocPreview,toggleDocValidation:toggleDocValidation,dpSaveChanges:dpSaveChanges,dpPrintPreview:dpPrintPreview,dpDownloadPDF:dpDownloadPDF,dpSendToChat:dpSendToChat,dpRequestSignature:dpRequestSignature,syncDocFromPI:syncDocFromPI,_execSyncFromPI:_execSyncFromPI,_sendSigRequest:_sendSigRequest,validateDocUCP600:validateDocUCP600,get _dpCurrentDoc(){return _dpCurrentDoc;},runGenome:runGenome,runPriceIntel:runPriceIntel,runTrustScore:runTrustScore,_toggleCN:_toggleCN,runCertNav:runCertNav,runExportROI:runExportROI,runPkgOptimizer:runPkgOptimizer,UI:UI};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,viewBuyerTimeline:viewBuyerTimeline,searchCompanies:searchCompanies,saveCorpAsBuyer:saveCorpAsBuyer,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,setTrackingView:setTrackingView,initLiveMap:initLiveMap,refreshLiveMap:refreshLiveMap,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,convertDocCurrency:convertDocCurrency,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,genDocPreview:genDocPreview,openDocPreview:openDocPreview,closeDocPreview:closeDocPreview,toggleDocValidation:toggleDocValidation,dpSaveChanges:dpSaveChanges,dpPrintPreview:dpPrintPreview,dpDownloadPDF:dpDownloadPDF,dpSendToChat:dpSendToChat,dpRequestSignature:dpRequestSignature,syncDocFromPI:syncDocFromPI,_execSyncFromPI:_execSyncFromPI,_sendSigRequest:_sendSigRequest,validateDocUCP600:validateDocUCP600,get _dpCurrentDoc(){return _dpCurrentDoc;},runGenome:runGenome,runPriceIntel:runPriceIntel,runTrustScore:runTrustScore,_toggleCN:_toggleCN,runCertNav:runCertNav,runExportROI:runExportROI,runPkgOptimizer:runPkgOptimizer,runSmartNego:runSmartNego,_toggleSCR:_toggleSCR,runSCRisk:runSCRisk,UI:UI};
 _handleTossCallback();
 loadUser();
 window.addEventListener('hashchange',function(){handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);}).catch(function(e){console.error(e);});});
