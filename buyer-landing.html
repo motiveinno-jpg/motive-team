@@ -1736,6 +1736,78 @@ function App() {
   );
 
   /* ═══ FREE TOOLS — BUYER KILLER WEAPONS ═══ */
+  /* === KOREA EXPORT INTELLIGENCE — PUBLIC FREE SEARCH === */
+  const [keiQuery, setKeiQuery] = React.useState("");
+  const [keiResult, setKeiResult] = React.useState(null);
+  const [keiLoading, setKeiLoading] = React.useState(false);
+  function runKEI() {
+    if (!keiQuery.trim()) return;
+    setKeiLoading(true); setKeiResult(null);
+    sb.functions.invoke("korea-export-intel", { body: { product: keiQuery.trim() } })
+      .then(function(r) { if (r.error) throw r.error; setKeiResult(r.data); })
+      .catch(function(e) { setKeiResult({ error: e.message }); })
+      .finally(function() { setKeiLoading(false); });
+  }
+
+  const keiSection = (
+    <div id="korea-export-intel" style={{ background: "linear-gradient(180deg, rgba(168,85,247,.04) 0%, rgba(0,212,255,.02) 50%, transparent 100%)", padding: "80px 24px 40px" }}>
+      <div style={{ maxWidth: 800, margin: "0 auto" }}>
+        <Fade><div style={{ textAlign: "center", marginBottom: 12 }}><span style={{ background: "linear-gradient(135deg, #A855F7, #00D4FF)", color: "#fff", fontSize: 11, fontWeight: 800, padding: "4px 14px", borderRadius: 20, letterSpacing: .5 }}>FREE TRADE INTELLIGENCE — NO LOGIN</span></div></Fade>
+        <Fade delay={0.05}><h2 style={{ ...s.heading, marginBottom: 8, fontSize: 32 }} className="section-heading">{lang === "ko" ? "한국 수출 데이터 검색" : lang === "ja" ? "韓国輸出データ検索" : "Korea Export Intelligence"}</h2></Fade>
+        <Fade delay={0.1}><p style={{ ...s.sub, marginBottom: 32 }}>{lang === "ko" ? "제품명 또는 HS코드로 한국의 수출 규모, 주요 수출국, FTA 혜택을 즉시 확인하세요" : lang === "ja" ? "製品名またはHSコードで韓国の輸出規模、主要輸出先、FTA特典を即座に確認" : "Search any product or HS code to see Korea's export volumes, top destinations, and FTA benefits — instantly"}</p></Fade>
+        <Fade delay={0.15}>
+          <div style={{ display: "flex", gap: 10, maxWidth: 600, margin: "0 auto 20px" }}>
+            <input value={keiQuery} onChange={e => setKeiQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && runKEI()}
+              placeholder={lang === "ko" ? "제품명 또는 HS코드 (예: cosmetics, 3304)" : "Product or HS code (e.g. cosmetics, 3304, electronics)"}
+              style={{ flex: 1, padding: "14px 20px", borderRadius: 12, border: "1.5px solid rgba(168,85,247,.3)", background: "rgba(168,85,247,.05)", color: "#fff", fontSize: 15, outline: "none", fontFamily: "inherit" }} />
+            <button onClick={runKEI} disabled={keiLoading}
+              style={{ padding: "14px 28px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #A855F7, #00D4FF)", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {keiLoading ? "..." : "\uD83D\uDD0D " + (lang === "ko" ? "검색" : "Search")}
+            </button>
+          </div>
+        </Fade>
+        <div style={{ fontSize: 11, color: T.w30, textAlign: "center", marginBottom: 20 }}>{lang === "ko" ? "인기 검색: cosmetics · electronics · food · automotive · medical" : "Popular: cosmetics · electronics · food · automotive · medical devices"}</div>
+        {keiResult && !keiResult.error && (
+          <Fade>
+            <div style={{ ...s.card, padding: 24 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: T.w30 }}>Korea Exports — HS {keiResult.hs_code} ({keiResult.product_category?.en})</div>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: T.pri, marginTop: 4 }}>{keiResult.total_export_formatted}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11, color: T.w30 }}>YoY Growth</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: keiResult.yoy_growth_pct >= 0 ? T.ok : T.err }}>{keiResult.yoy_growth_pct >= 0 ? "+" : ""}{keiResult.yoy_growth_pct}%</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.w60, marginBottom: 8 }}>{lang === "ko" ? "🏆 주요 수출 대상국 Top 10" : "🏆 Top 10 Export Destinations"}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
+                {(keiResult.top_destinations || []).slice(0, 10).map((d, i) => (
+                  <div key={i} style={{ padding: "10px 12px", borderRadius: 8, background: i === 0 ? "rgba(0,212,255,.08)" : "rgba(255,255,255,.03)", border: "1px solid " + (i === 0 ? "rgba(0,212,255,.2)" : "rgba(255,255,255,.06)") }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 16 }}>{d.flag}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{d.country_en}</span>
+                      <span style={{ marginLeft: "auto", fontSize: 11, color: T.pri, fontWeight: 700 }}>{d.share_pct}%</span>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.w, marginTop: 4 }}>${d.value >= 1e9 ? (d.value/1e9).toFixed(1) + "B" : (d.value/1e6).toFixed(0) + "M"}</div>
+                    {d.fta && <div style={{ fontSize: 9, color: T.ok, marginTop: 2, fontWeight: 600 }}>✓ {d.fta.name}</div>}
+                  </div>
+                ))}
+              </div>
+              <div style={{ textAlign: "center", marginTop: 16 }}>
+                <a href="buyer.html" style={{ display: "inline-block", padding: "12px 32px", borderRadius: 10, background: "linear-gradient(135deg, #A855F7, #00D4FF)", color: "#fff", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                  {lang === "ko" ? "한국 제조사 찾기 →" : "Find Korean Suppliers →"}
+                </a>
+                <div style={{ fontSize: 10, color: T.w20, marginTop: 8 }}>Source: UN Comtrade {keiResult.year} · {keiResult.destination_count} markets analyzed</div>
+              </div>
+            </div>
+          </Fade>
+        )}
+        {keiResult && keiResult.error && <div style={{ padding: 16, color: T.err, textAlign: "center" }}>{keiResult.error}</div>}
+      </div>
+    </div>
+  );
+
   const freeToolsSection = (
     <div style={{ background: "linear-gradient(180deg, rgba(0,212,255,.03) 0%, transparent 100%)", padding: "80px 24px" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
@@ -2217,6 +2289,7 @@ function App() {
       {header}
       {hero}
       <GlowLine />
+      {keiSection}
       {freeToolsSection}
       {painSection}
       {howSection}
