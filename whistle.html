@@ -544,16 +544,10 @@ function set(u){for(var k in u)S[k]=u[k];render();}
 
 /* === EXCHANGE RATE === */
 function loadExchangeRate(){
-  /* 1차: 릴레이 서버 */
-  _relayReady.then(function(){
-    if(!RELAY_URL)return _loadExRateFallback();
-    fetch(RELAY_URL+'/api/exchange-rate').then(function(r){return r.json();}).then(function(d){
-      if(d&&d.ok&&d.rate){S.exchangeRate=d.rate;window._exRate=d.rate;}else{_loadExRateFallback();}
-    }).catch(function(){_loadExRateFallback();});
-  });
+  /* Frankfurter API 직접 호출 (완전 무료, 인증 불필요) */
+  _loadExRateDirect();
 }
-/* 2차: Frankfurter API (완전 무료, 인증 불필요) */
-function _loadExRateFallback(){
+function _loadExRateDirect(){
   fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;console.log('Exchange rate (Frankfurter):',d.rates.KRW);}
   }).catch(function(){console.log('Exchange rate fallback failed, using default 1400');});
@@ -1155,7 +1149,7 @@ function autoCreateProduct(analysisId,res,productName){
 function genCatalogEN(productId){
   var p=S.products.find(function(x){return x.id===productId;});if(!p){UI.toast('제품을 찾을 수 없습니다','err');return;}
   UI.toast('AI 영문 카탈로그 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){return r.json();}).then(function(data){
+  sb.functions.invoke('whistle-ai',{body:{task:'catalog-en',data:{name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications}}}).then(function(r){if(r.error)throw r.error;return r.data;}).then(function(data){
     if(!data.ok)throw new Error(data.error||'생성 실패');
     var res=data.result;
     sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).then(function(r2){
@@ -2537,11 +2531,11 @@ function naverSearch(productId){
   var keyword=p.name_ko||p.name||'';
   if(!keyword){UI.toast('제품명이 없습니다','warn');return;}
   UI.toast('검색 중...','info');
-  fetch(RELAY_URL+'/api/naver/search?q='+encodeURIComponent(keyword)+'&display=20',{headers:{'ngrok-skip-browser-warning':'1'}})
-    .then(function(r){return r.json();})
+  sb.functions.invoke('naver-search',{body:{query:keyword,display:20}})
+    .then(function(r){if(r.error)throw r.error;return r.data;})
     .then(function(data){
       if(!data||data.error){UI.toast(data&&data.error||'검색 실패','err');return;}
-      var items=data.items||data.results||[];
+      var items=data.items||[];
       if(items.length===0){UI.toast('검색 결과가 없습니다','warn');return;}
       var body='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;max-height:480px;overflow-y:auto;padding:4px">';
       items.forEach(function(item){
@@ -4078,8 +4072,8 @@ function getCertGuide(pjId,idx){
   var prod=S.products.find(function(pr){return pr.id===p.product_id;});
   var cat=prod?prod.category:'K-Beauty 화장품';
   UI.toast('AI 가이드 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
-  .then(function(r){return r.json();}).then(function(data){
+  sb.functions.invoke('whistle-ai',{body:{task:'cert-guide',data:{certName:cert.name,productCategory:cat,targetCountry:tc}}})
+  .then(function(r){if(r.error)throw r.error;return r.data;}).then(function(data){
     if(data.ok&&data.guide){
       cert.ai_guide=data.guide;
       sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
@@ -6497,11 +6491,12 @@ function genForwarderRFQ(){
 function sendRFQEmail(){
   if(!window._lastRFQ){UI.toast('RFQ를 먼저 생성하세요','warn');return;}
   var email=prompt('포워더 이메일 주소:');if(!email)return;
-  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  sb.functions.invoke('send-outbound-email',{body:{
     to:email,subject:'[RFQ] Freight Quotation Request — '+(S.company&&S.company.name_en||'Korean Manufacturer'),
-    bodyText:window._lastRFQ,userId:S.user.id
-  })}).then(function(r){return r.json();}).then(function(data){
-    if(data.ok)UI.toast('포워더에 견적 요청 발송!','ok');
+    template:'custom',custom_body:window._lastRFQ,user_id:S.user.id
+  }}).then(function(r){
+    if(r.error)throw r.error;var d=r.data||{};
+    if(d.ok)UI.toast('포워더에 견적 요청 발송!','ok');
     else{window.open('mailto:'+email+'?subject=[RFQ] Freight Quote&body='+encodeURIComponent(window._lastRFQ));UI.toast('mailto로 전환','info');}
   }).catch(function(){window.open('mailto:'+email+'?subject=[RFQ]&body='+encodeURIComponent(window._lastRFQ));});
 }
@@ -6822,10 +6817,7 @@ function confirmCheckout(planId){
 
   UI.toast('신청이 접수되었습니다. 확인 후 플랜이 활성화됩니다.','ok');
 
-  /* relay-server의 /api/chat 통해 텔레그램 알림 (best effort) */
-  fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'PAYMENT_NOTIFY: '+msg,userId:'system'})}).catch(function(){});
-
-  /* 서비스 요청으로도 기록 */
+  /* 서비스 요청으로 기록 (관리자 대시보드에서 확인) */
   sb.from('service_requests').insert({user_id:S.user.id,service_type:'payment',description:msg,status:'pending'}).then(function(){loadSR();});
   closeModal('ckm');
 }
@@ -7332,11 +7324,11 @@ function findBuyersAI(){
   var prod=S.products[0];var certs=[];
   if(prod&&S.projects.length){var sp=S.projects[0].stage_progress||{};certs=(sp.certs||[]).filter(function(c){return c.status==='approved';}).map(function(c){return c.name;});}
   document.getElementById('ai-buyers-result').innerHTML='<div style="padding:20px;text-align:center"><div class="spinner" style="margin:0 auto 10px"></div><div style="font-size:13px;color:var(--w40)">AI가 '+d.target_market+' 시장 바이어를 분석중...</div></div>';
-  fetch(RELAY_URL+'/api/whistle/find-buyers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  sb.functions.invoke('whistle-ai',{body:{task:'find-buyers',data:{
     targetMarket:d.target_market,productCategory:d.product_cat||'Skincare',fobPrice:d.fob_hint||'',
     productName:prod?prod.name_en||prod.name_ko:'',hsCode:prod?prod.hs_code:'3304.99',
     certifications:certs.join(', ')||'없음'
-  })}).then(function(r){return r.json();}).then(function(data){
+  }}}).then(function(r){if(r.error)throw r.error;return r.data;}).then(function(data){
     if(!data.ok||!data.buyers||!data.buyers.length){
       document.getElementById('ai-buyers-result').innerHTML='<div style="padding:16px;color:var(--err)">바이어 찾기 실패. 다시 시도해주세요.</div>';return;
     }
@@ -7732,9 +7724,9 @@ function getMeetingPrep(mid){
   var buyer=m.buyer_id?S.buyers.find(function(b){return b.id===m.buyer_id;}):null;
   var product=S.products.length?S.products[0]:null;
   UI.toast('AI 브리핑 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  sb.functions.invoke('whistle-ai',{body:{task:'meeting-prep',data:{
     meeting:m,buyer:buyer,product:product,company:S.company
-  })}).then(function(r){return r.json();}).then(function(j){
+  }}}).then(function(r){if(r.error)throw r.error;return r.data;}).then(function(j){
     if(j.error){UI.toast('실패: '+j.error,'err');return;}
     sb.from('meetings').update({ai_briefing:j.briefing}).eq('id',mid).then(function(){
       var mm=S.meetings.find(function(x){return x.id===mid;});if(mm)mm.ai_briefing=j.briefing;
@@ -8410,9 +8402,7 @@ function submitProposal(reqId){
     loadMyProposals();loadMarketplace();
     var req=S.marketplaceRequests.find(function(x){return x.id===reqId;});
     if(req){
-      fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
-        body:JSON.stringify({userId:req.buyer_user_id,type:'marketplace',title:'New proposal: '+req.title,body:(comp.name_ko||S.user.company_name)+' submitted a proposal',linkPage:'marketplace',telegram:true})
-      }).catch(function(){});
+      sb.from('notifications').insert({user_id:req.buyer_user_id,type:'marketplace',title:'New proposal: '+req.title,body:(comp.name_ko||S.user.company_name)+' submitted a proposal',link_page:'marketplace',is_read:false}).then(function(){});
     }
   });
 }
@@ -8645,9 +8635,9 @@ function getAlibabaReply(iqId){
   var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(!iq)return;
   var product=S.products.length?S.products[0]:null;
   UI.toast('AI 응답 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  sb.functions.invoke('whistle-ai',{body:{task:'alibaba-reply',data:{
     inquiry:iq,product:product,company:S.company
-  })}).then(function(r){return r.json();}).then(function(j){
+  }}}).then(function(r){if(r.error)throw r.error;return r.data;}).then(function(j){
     if(j.error){UI.toast('실패: '+j.error,'err');return;}
     sb.from('alibaba_inquiries').update({reply_draft:j.reply,status:iq.status==='new'?'replied':iq.status}).eq('id',iqId).then(function(){
       var i2=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(i2){i2.reply_draft=j.reply;if(i2.status==='new')i2.status='replied';}
@@ -10215,10 +10205,10 @@ function genTrendReport(){
   prompt+='TOP 5 키워드: '+top5.map(function(k){return k.keyword+'('+k.count+'회,CTR:'+k.ctr+'%)';}).join(', ')+'\n';
   prompt+='다음 형식으로 JSON 응답:\n{"summary":"200자 요약","market_insights":"시장분석 300자","recommendations":[{"icon":"이모지","title":"제목","desc":"설명"}]}';
 
-  fetch('http://localhost:3456/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:1024})})
-  .then(function(r){return r.json();})
+  sb.functions.invoke('whistle-ai',{body:{task:'trend-report',data:{prompt:prompt}}})
+  .then(function(r){if(r.error)throw r.error;return r.data;})
   .then(function(data){
-    var aiText=(data.content&&data.content[0]&&data.content[0].text)||'';
+    var aiText=(data.raw)||'';
     var parsed=null;
     try{
       var jsonMatch=aiText.match(/\{[\s\S]*\}/);
@@ -10896,10 +10886,7 @@ function pushNotif(type,title,body,linkPage,linkId,telegram){
   S.notifications.unshift(n);
   if(S.notifications.length>30)S.notifications.pop();
   render();
-  fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:S.user.id,type:type,title:title,body:body||'',linkPage:linkPage||'',linkId:linkId||'',telegram:!!telegram})}).then(function(r){return r.json();}).then(function(d){if(d.ok&&d.id)n.id=d.id;}).catch(function(){
-    // Fallback: persist to Supabase directly if relay is down
-    sb.from('notifications').insert({user_id:S.user.id,type:type,title:title,body:body||null,link_page:linkPage||null,link_id:linkId||null,is_read:false}).select().single().then(function(r){if(r.data)n.id=r.data.id;});
-  });
+  sb.from('notifications').insert({user_id:S.user.id,type:type,title:title,body:body||null,link_page:linkPage||null,link_id:linkId||null,is_read:false}).select().single().then(function(r){if(r.data)n.id=r.data.id;});
 }
 
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
@@ -11006,7 +10993,10 @@ function submitPartnership(){
   if(!name||!name.value.trim()){UI.toast('담당자명을 입력해주세요.','warn');return;}
   if(!email||!email.value.trim()){UI.toast('이메일을 입력해주세요.','warn');return;}
   var data={company:company.value.trim(),name:name.value.trim(),email:email.value.trim(),phone:phone?phone.value.trim():'',type:type?type.value:'',message:message?message.value.trim():'',page:'whistle-partnership',user_id:S.user?S.user.id:''};
-  fetch(RELAY_URL+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(d){UI.toast('제휴 문의가 접수되었습니다. 담당자가 빠르게 연락드리겠습니다.','ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';}).catch(function(){UI.toast('전송 실패. 잠시 후 다시 시도해주세요.','err');});
+  sb.from('service_requests').insert({user_id:S.user?S.user.id:null,service_type:'partnership',title:'제휴 문의: '+data.company,details:data,status:'pending'}).then(function(r){
+    if(r.error){UI.toast('전송 실패. 잠시 후 다시 시도해주세요.','err');return;}
+    UI.toast('제휴 문의가 접수되었습니다. 담당자가 빠르게 연락드리겠습니다.','ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';
+  }).catch(function(){UI.toast('전송 실패. 잠시 후 다시 시도해주세요.','err');});
 }
 
 /* === #60 AI MATCHING SCORE VISUALIZATION === */
@@ -11393,7 +11383,7 @@ sb.auth.onAuthStateChange(function(event, session){
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:'더 자세한 상담을 원하시면 아래 정보를 남겨주세요.'});step=1;}r();},
     submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){alert('이름/회사명을 입력해주세요.');return;}msgs.push({from:'bot',text:info.name+'님, 반갑습니다! 궁금한 점을 자유롭게 입력해주세요.'});step=2;r();},
-    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();fetch(RELAY+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(r){return r.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
+    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();sb.from('service_requests').insert({user_id:S.user?S.user.id:null,service_type:'chat_inquiry',title:'상담: '+msg.substring(0,50),details:{name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE},status:'pending'}).then(function(res){if(res.error){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});}else{msgs.push({from:'bot',text:'접수되었습니다. 담당자가 확인 후 연락드리겠습니다.'});}r();}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
   };r();
 })();
 </script>

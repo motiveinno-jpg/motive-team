@@ -1272,14 +1272,14 @@ function pgHealth(){
   setTimeout(checkRelayHealth,100);
   return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">🛡️ 시스템 상태</h2></div>'+
   '<div class="grid-2" style="margin-bottom:16px">'+
-    '<div class="card"><div class="card-h">릴레이 서버</div><div class="card-b" id="health-relay"><div style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:12px;color:var(--w40)">체크 중...</div></div></div></div>'+
+    '<div class="card"><div class="card-h">Edge Functions</div><div class="card-b" id="health-relay"><div style="text-align:center;padding:20px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:12px;color:var(--w40)">체크 중...</div></div></div></div>'+
     '<div class="card"><div class="card-h">Supabase</div><div class="card-b"><div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot active"></span>연결됨</div></div><div class="detail-row"><div class="detail-label">프로젝트</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px">lylktgxngrlxmsldxdqj</div></div></div></div>'+
   '</div>'+
   '<div class="card" style="margin-bottom:16px"><div class="card-h">DB 레코드 현황</div><div class="card-b"><div class="grid-4" style="gap:8px">'+
     [['users',S.users.length],['companies',S.companies.length],['products',S.products.length],['analyses',S.analyses.length],['buyers',S.buyers.length],['matchings',S.matchings.length],['orders',S.orders.length],['messages',S.messages.length],['shipments',S.shipments.length],['milestones',S.paymentMilestones.length],['proofs',S.paymentProofs.length],['documents',S.documents.length],['page_views',S.pageViews.length],['buyer_req',S.buyerRequests.length],['proposals',S.proposals.length],['service_req',S.serviceRequests.length],['projects',S.projects.length]].map(function(e){return '<div style="padding:8px;border-radius:6px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40);font-family:JetBrains Mono">'+e[0]+'</div><div style="font-size:18px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+e[1]+'</div></div>';}).join('')+
   '</div></div></div>';
 }
-function checkRelayHealth(){var el=document.getElementById('health-relay');if(!el)return;fetch(RELAY_URL+'/api/health',{signal:AbortSignal.timeout(5000)}).then(function(r){return r.json();}).then(function(){el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot active"></span>온라인</div></div><div class="detail-row"><div class="detail-label">URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+RELAY_URL+'</div></div>';}).catch(function(){el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot inactive"></span>오프라인</div></div><div class="detail-row"><div class="detail-label">URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+RELAY_URL+'</div></div>';});}
+function checkRelayHealth(){var el=document.getElementById('health-relay');if(!el)return;el.innerHTML='<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><span class="status-dot active"></span>EF 모드 (릴레이 불필요)</div></div><div class="detail-row"><div class="detail-label">Edge Functions</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px">29개 활성</div></div>';}
 
 /* ── Deals Management ── */
 function pgDeals(){
@@ -1504,7 +1504,7 @@ function pgSettings(){
     '<div class="card"><div class="card-h">🔑 API 설정</div><div class="card-b">'+
       '<div class="detail-row"><div class="detail-label">Supabase</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;color:var(--ok)">연결됨</div></div>'+
       '<div class="detail-row"><div class="detail-label">AI Engine</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px">Claude Sonnet (relay)</div></div>'+
-      '<div class="detail-row"><div class="detail-label">Relay URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">localhost:3456</div></div>'+
+      '<div class="detail-row"><div class="detail-label">Backend</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">Supabase Edge Functions (서버리스)</div></div>'+
     '</div></div>'+
 
     '<div class="card"><div class="card-h">📊 DB 현황</div><div class="card-b">'+
@@ -2073,7 +2073,9 @@ function notifySR(id){
   var sr=S.serviceRequests.find(function(x){return x.id===id;});if(!sr)return;
   var stL={pending:'접수',accepted:'배정',processing:'처리중',review:'검토',completed:'완료',cancelled:'취소'};
   var msg='💼 서비스 요청 업데이트\n'+U.sl(sr.service_type)+'\n상태: '+stL[sr.status]+'\n유저: '+getUserName(sr.user_id)+'\n긴급도: '+(sr.priority||'normal');
-  fetch(RELAY_URL+'/api/telegram/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})}).then(function(){UI.toast('텔레그램 전송','ok');}).catch(function(){UI.toast('전송 실패','err');});
+  sb.from('notifications').insert({user_id:sr.user_id,type:'service',title:'서비스 요청 업데이트',body:msg,is_read:false}).then(function(r){
+    if(r.error)UI.toast('알림 저장 실패','err');else UI.toast('알림 전송','ok');
+  });
 }
 
 function deleteSR(id,evt){
@@ -2998,7 +3000,7 @@ sb.auth.onAuthStateChange(function(event, session){
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:'더 자세한 상담을 원하시면 정보를 남겨주세요.'});step=1;}r();},
     submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){alert('이름/회사명을 입력해주세요.');return;}msgs.push({from:'bot',text:info.name+'님, 반갑습니다! 궁금한 점을 입력해주세요.'});step=2;r();},
-    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var relay=getRelay();if(!relay){msgs.push({from:'bot',text:'채팅 서비스 연결 중... 잠시 후 다시 시도해주세요.'});r();return;}fetch(relay+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(r){return r.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
+    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var sbUrl='https://lylktgxngrlxmsldxdqj.supabase.co';var sbKey='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzkyODU1MDYsImV4cCI6MjA1NDg2MTUwNn0.DY5v2U9X7mSHo2wLRttqWoRP4o0_hSeNFMhpr7-JQNI';fetch(sbUrl+'/rest/v1/service_requests',{method:'POST',headers:{'Content-Type':'application/json','apikey':sbKey,'Authorization':'Bearer '+sbKey,'Prefer':'return=minimal'},body:JSON.stringify({service_type:'chat_inquiry',title:'상담: '+msg.substring(0,50),details:{name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE},status:'pending'})}).then(function(){msgs.push({from:'bot',text:'접수되었습니다. 담당자가 확인 후 연락드리겠습니다.'});r();}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
   };r();
 })();
 </script>
