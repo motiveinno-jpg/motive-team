@@ -563,6 +563,7 @@ function renderPage(){
     case'ddp-calc':return pgDDPCalc();
     case'market-intel':return pgMarketIntel();
     case'supplier-verify':return pgSupplierVerify();
+    case'compliance-check':return pgComplianceCheck();
     case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
     case'sourcing':return pgSourcing();
@@ -954,6 +955,97 @@ function _runSupplierVerify(){
   });
 }
 
+/* === PRODUCT COMPLIANCE CHECK (Buyer Free Tool #5) === */
+function pgComplianceCheck(){
+  var h='<div style="max-width:800px;margin:0 auto">';
+  h+='<div style="text-align:center;margin-bottom:24px"><div style="font-size:40px;margin-bottom:8px">&#x2705;</div>';
+  h+='<div style="font-size:22px;font-weight:900;color:#fff;margin-bottom:6px">'+t('Product Compliance Check')+'</div>';
+  h+='<div style="font-size:13px;color:var(--w40);line-height:1.6">'+t('Check import regulations, labeling requirements, and restricted ingredients for your destination market.')+'</div></div>';
+  h+='<div style="padding:24px;border-radius:16px;background:var(--card);border:1px solid var(--bd);margin-bottom:20px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('Product Name')+'*</label><input id="cc-product" placeholder="e.g. Vitamin C Serum" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('HS Code')+'</label><input id="cc-hs" placeholder="e.g. 3304" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('Your Country (Destination)')+'*</label><select id="cc-dest" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"><option value="US">United States</option><option value="EU">European Union</option><option value="JP">Japan</option></select></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('Key Ingredients (optional)')+'</label><input id="cc-ingredients" placeholder="e.g. niacinamide, retinol, vitamin C" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"></div>';
+  h+='</div>';
+  h+='<div style="text-align:center;margin-top:18px"><button class="btn btn-pri" onclick="B.runComplianceCheck()" style="padding:12px 40px;font-size:14px;font-weight:800">&#x2705; '+t('Check Compliance')+'</button></div>';
+  h+='</div>';
+  h+='<div id="cc-result"></div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px">';
+  h+='<div style="padding:14px;border-radius:10px;background:var(--w05);text-align:center"><div style="font-size:20px;font-weight:900;color:var(--pri)">50+</div><div style="font-size:10px;color:var(--w30)">'+t('Regulations Tracked')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:10px;background:var(--w05);text-align:center"><div style="font-size:20px;font-weight:900;color:var(--ok)">3</div><div style="font-size:10px;color:var(--w30)">'+t('Major Markets')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:10px;background:var(--w05);text-align:center"><div style="font-size:20px;font-weight:900;color:var(--acc)">FDA</div><div style="font-size:10px;color:var(--w30)">'+t('Live Alert Integration')+'</div></div>';
+  h+='</div></div>';
+  return h;
+}
+function _runComplianceCheck(){
+  var product=(document.getElementById('cc-product')||{}).value;
+  if(!product){UI.toast(t('Please enter product name'),'warn');return;}
+  var el=document.getElementById('cc-result');if(!el)return;
+  el.innerHTML='<div style="padding:40px;text-align:center"><div class="spinner"></div><div style="margin-top:12px;font-size:13px;color:var(--w40)">&#x2705; '+t('Checking compliance requirements...')+'</div></div>';
+  sb.functions.invoke('compliance-check',{body:{
+    product:product,
+    hs_code:(document.getElementById('cc-hs')||{}).value||'',
+    destination_country:(document.getElementById('cc-dest')||{}).value||'US',
+    ingredients:(document.getElementById('cc-ingredients')||{}).value||''
+  }}).then(function(r){
+    if(r.error)throw r.error;
+    var d=r.data;
+    var h='<div style="margin-top:20px;padding:24px;border-radius:16px;background:var(--card);border:1px solid var(--bd)">';
+    h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px"><span style="font-size:28px">&#x2705;</span><div><div style="font-size:18px;font-weight:900;color:#fff">'+esc(d.product||'')+' — '+d.destination+' Compliance</div><div style="font-size:11px;color:var(--w30)">Category: '+esc(d.category)+' | '+d.mandatory_count+' mandatory regulations</div></div></div>';
+    // Risk warning
+    if(d.high_risk_count>0){
+      h+='<div style="padding:12px;border-radius:8px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);margin-bottom:14px;display:flex;align-items:center;gap:8px">';
+      h+='<span style="font-size:20px">&#x26A0;&#xFE0F;</span><div style="font-size:12px;color:var(--err);font-weight:700">'+d.high_risk_count+' high-risk regulations require immediate attention</div></div>';
+    }
+    // Regulations
+    (d.regulations||[]).forEach(function(reg){
+      var isMandatory=reg.type==='mandatory';var isHigh=reg.risk==='high';
+      h+='<div style="padding:14px;margin-bottom:8px;border-radius:10px;background:'+(isHigh?'rgba(239,68,68,.04)':'var(--w05)')+';border:1px solid '+(isHigh?'rgba(239,68,68,.12)':'var(--bd)')+'">';
+      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
+      h+='<span style="padding:2px 8px;border-radius:4px;font-size:9px;font-weight:800;background:'+(isMandatory?'var(--err)':'var(--ok)')+';color:#fff">'+(isMandatory?'MANDATORY':'OPTIONAL')+'</span>';
+      h+='<span style="padding:2px 8px;border-radius:4px;font-size:9px;font-weight:800;background:'+(isHigh?'rgba(239,68,68,.2)':'rgba(245,158,11,.2)')+';color:'+(isHigh?'var(--err)':'var(--acc)')+'">'+reg.risk.toUpperCase()+' RISK</span>';
+      h+='<span style="font-size:14px;font-weight:700;color:#fff">'+esc(reg.regulation)+'</span></div>';
+      h+='<div style="font-size:12px;color:var(--w60);margin-bottom:6px">'+esc(reg.requirement)+'</div>';
+      if(reg.labeling&&reg.labeling.length){
+        h+='<div style="font-size:11px;color:var(--w40)">Labeling: '+reg.labeling.map(function(l){return esc(l);}).join(' · ')+'</div>';
+      }
+      h+='</div>';
+    });
+    // Ingredient warnings
+    if(d.ingredient_warnings&&d.ingredient_warnings.length){
+      h+='<div style="padding:14px;border-radius:10px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);margin-bottom:14px">';
+      h+='<div style="font-size:13px;font-weight:700;color:var(--err);margin-bottom:6px">&#x26A0;&#xFE0F; Ingredient Warnings</div>';
+      d.ingredient_warnings.forEach(function(w){h+='<div style="font-size:12px;color:var(--w60);padding:4px 0">'+esc(w)+'</div>';});
+      h+='</div>';
+    }
+    // Labeling checklist
+    if(d.labeling_requirements&&d.labeling_requirements.length){
+      h+='<div style="padding:14px;border-radius:10px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.12);margin-bottom:14px">';
+      h+='<div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:6px">&#x1F3F7;&#xFE0F; Required Labeling Checklist</div>';
+      d.labeling_requirements.forEach(function(l){h+='<div style="font-size:12px;color:var(--w60);padding:3px 0">&#x2610; '+esc(l)+'</div>';});
+      h+='</div>';
+    }
+    // FDA Alerts
+    if(d.fda_alerts&&d.fda_alerts.length){
+      h+='<div style="padding:14px;border-radius:10px;background:rgba(239,68,68,.04);border:1px solid rgba(239,68,68,.12);margin-bottom:14px">';
+      h+='<div style="font-size:13px;font-weight:700;color:var(--err);margin-bottom:6px">&#x1F6A8; FDA Recent Alerts</div>';
+      d.fda_alerts.forEach(function(a){h+='<div style="font-size:11px;color:var(--w50);padding:4px 0">'+esc(a.reason||'')+'</div>';});
+      h+='</div>';
+    }
+    // AI Summary
+    if(d.ai_summary){
+      h+='<div style="padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,.06),rgba(0,212,255,.04));border:1px solid rgba(16,185,129,.15)">';
+      h+='<div style="font-size:13px;font-weight:700;color:#10B981;margin-bottom:8px">&#x1F916; AI Compliance Advisory</div>';
+      h+='<div style="font-size:12px;color:var(--w70);line-height:1.7;white-space:pre-line">'+esc(d.ai_summary)+'</div></div>';
+    }
+    h+='</div>';
+    el.innerHTML=h;
+  }).catch(function(e){
+    el.innerHTML='<div style="padding:20px;color:var(--err)">Compliance check failed: '+esc(e.message)+'</div>';
+  });
+}
+
 /* === BUYER ONBOARDING WIZARD === */
 var _BUYER_CATS=[
   {id:'K-Beauty',icon:'&#x1F484;',label:'K-Beauty'},
@@ -1315,6 +1407,7 @@ function renderSidebar(){
     {id:'ddp-calc',icon:'&#x1F4B0;',label:'DDP Calculator'},
     {id:'market-intel',icon:'&#x1F30D;',label:'Market Intelligence'},
     {id:'supplier-verify',icon:'&#x1F6E1;&#xFE0F;',label:'Supplier Trust Score',hot:true},
+    {id:'compliance-check',icon:'&#x2705;',label:'Compliance Check',hot:true},
     {id:'sec',label:'Discover'},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
     {id:'sourcing',icon:'&#x1F3ED;',label:'Find Manufacturers'},
@@ -1340,7 +1433,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  var titles={dashboard:'Dashboard','ai-sourcing':'AI Sourcing Report','ddp-calc':'DDP Cost Calculator','market-intel':'Market Intelligence','supplier-verify':'Supplier Trust Score',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Marketplace',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents','product-detail':'Product Details',partnership:'Partnership',pipeline:'Sourcing Pipeline',ordership:'Orders & Shipping',profilehub:'Profile & Settings'};
+  var titles={dashboard:'Dashboard','ai-sourcing':'AI Sourcing Report','ddp-calc':'DDP Cost Calculator','market-intel':'Market Intelligence','supplier-verify':'Supplier Trust Score','compliance-check':'Product Compliance Check',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Marketplace',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents','product-detail':'Product Details',partnership:'Partnership',pipeline:'Sourcing Pipeline',ordership:'Orders & Shipping',profilehub:'Profile & Settings'};
   var h='<div class="topbar"><div class="topbar-title">'+t(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Language toggle
   h+='<div style="display:flex;align-items:center;gap:2px;background:var(--w08);border-radius:6px;padding:2px;border:1px solid var(--bd)">';
@@ -1606,7 +1699,7 @@ function pgDash(){
   }
 
   /* Free Tools Banner — always visible */
-  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px">';
   h+='<div onclick="B.nav(\'ai-sourcing\')" style="padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(0,136,255,.04));border:1px solid rgba(0,212,255,.2);cursor:pointer;transition:all .2s" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'">';
   h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:22px">&#x1F916;</span><span style="font-size:8px;padding:2px 6px;border-radius:4px;background:linear-gradient(135deg,#ff6b35,#f7c948);color:#000;font-weight:800">FREE</span></div>';
   h+='<div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:4px">AI Sourcing Report</div>';
@@ -1619,6 +1712,14 @@ function pgDash(){
   h+='<div style="font-size:22px;margin-bottom:8px">&#x1F30D;</div>';
   h+='<div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:4px">Market Intelligence</div>';
   h+='<div style="font-size:11px;color:var(--w40)">Real trade data & trending categories</div></div>';
+  h+='<div onclick="B.nav(\'supplier-verify\')" style="padding:16px;border-radius:12px;background:var(--w05);border:1px solid var(--bd);cursor:pointer;transition:all .2s" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'">';
+  h+='<div style="font-size:22px;margin-bottom:8px">&#x1F6E1;&#xFE0F;</div>';
+  h+='<div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:4px">Supplier Trust Score</div>';
+  h+='<div style="font-size:11px;color:var(--w40)">Cross-verify manufacturers with 5 data sources</div></div>';
+  h+='<div onclick="B.nav(\'compliance-check\')" style="padding:16px;border-radius:12px;background:var(--w05);border:1px solid var(--bd);cursor:pointer;transition:all .2s" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'">';
+  h+='<div style="font-size:22px;margin-bottom:8px">&#x2705;</div>';
+  h+='<div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:4px">Compliance Check</div>';
+  h+='<div style="font-size:11px;color:var(--w40)">Import regulations & labeling requirements</div></div>';
   h+='</div>';
 
   // Stats
@@ -5286,7 +5387,8 @@ window.B={
   // Killer Weapons
   runAISourcing:runAISourcing,calcDDP:calcDDP,
   _miGetStats:_miGetStats,_miLookup:_miLookup,_miOpportunity:_miOpportunity,
-  runSupplierVerify:_runSupplierVerify
+  runSupplierVerify:_runSupplierVerify,
+  runComplianceCheck:_runComplianceCheck
 };
 
 // Close notification dropdown on outside click
