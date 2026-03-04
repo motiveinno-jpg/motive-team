@@ -566,6 +566,9 @@ function renderPage(){
     case'compliance-check':return pgComplianceCheck();
     case'rfq':return pgRFQ();
     case'quality-predict':return pgQualityPredict();
+    case'price-benchmark':return pgPriceBenchmark();
+    case'supplier-compare':return pgSupplierCompare();
+    case'import-duty':return pgImportDuty();
     case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
     case'sourcing':return pgSourcing();
@@ -1411,6 +1414,9 @@ function renderSidebar(){
     {id:'supplier-verify',icon:'&#x1F6E1;&#xFE0F;',label:'Supplier Trust Score',hot:true},
     {id:'compliance-check',icon:'&#x2705;',label:'Compliance Check',hot:true},
     {id:'quality-predict',icon:'&#x1F3AF;',label:'Quality Prediction',hot:true},
+    {id:'price-benchmark',icon:'&#x1F4CA;',label:'Price Benchmark',hot:true},
+    {id:'supplier-compare',icon:'&#x2696;&#xFE0F;',label:'Supplier Compare',hot:true},
+    {id:'import-duty',icon:'&#x1F4B1;',label:'Import Duty Calc',hot:true},
     {id:'sec',label:'Sourcing'},
     {id:'rfq',icon:'&#x1F4E8;',label:'RFQ Center',hot:true},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
@@ -1578,7 +1584,7 @@ function loadUser(){
   }).catch(function(){set({loading:false,user:null});});
 }
 
-var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,pipeline:1,ordership:1,profilehub:1,rfq:1,'quality-predict':1};
+var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,pipeline:1,ordership:1,profilehub:1,rfq:1,'quality-predict':1,'price-benchmark':1,'supplier-compare':1,'import-duty':1};
 function loadAllData(){
   loadBuyerLinks();
   loadInquiries();
@@ -5612,6 +5618,201 @@ function runQualityPredict(){
   }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">'+t('Analysis failed')+': '+esc(e.message)+'</div>';});
 }
 
+// === PRICE BENCHMARK ===
+function pgPriceBenchmark(){
+  var h='<div style="margin-bottom:24px"><h2 style="font-size:22px;font-weight:800;margin-bottom:4px">'+t('Price Benchmark')+'</h2><p style="font-size:13px;color:var(--w40)">'+t('UN Comtrade real data + AI procurement pricing intelligence')+'</p></div>';
+  h+='<div style="background:var(--card);border:1px solid var(--w06);border-radius:16px;padding:24px;margin-bottom:20px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Product Name *')+'</label><input id="pb-product" placeholder="e.g. Sheet Mask" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('HS Code (2-digit)')+'</label><input id="pb-hs" placeholder="e.g. 33" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Quantity')+'</label><input id="pb-qty" type="number" placeholder="e.g. 5000" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Category')+'</label><input id="pb-cat" placeholder="e.g. cosmetics" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='</div>';
+  h+='<button onclick="B.runPriceBenchmark()" style="padding:12px 28px;border-radius:12px;background:var(--pri);color:#000;font-weight:700;font-size:14px;cursor:pointer;border:none">&#x1F4CA; '+t('Benchmark Prices')+'</button>';
+  h+='</div>';
+  h+='<div id="pb-result"></div>';
+  return h;
+}
+function runPriceBenchmark(){
+  var el=document.getElementById('pb-result');
+  var product=(document.getElementById('pb-product')||{}).value;
+  if(!product){alert(t('Please enter product name'));return;}
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--w40)"><div class="spinner" style="width:32px;height:32px;border:3px solid var(--w08);border-top-color:var(--pri);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px"></div>'+t('Fetching Comtrade price data...')+'</div>';
+  sb.functions.invoke('price-benchmark',{body:{product:product,hs_code:(document.getElementById('pb-hs')||{}).value||'33',quantity:parseInt((document.getElementById('pb-qty')||{}).value)||5000,category:(document.getElementById('pb-cat')||{}).value||''}}).then(function(res){
+    if(res.error||!res.data)throw new Error(res.error||'Analysis failed');
+    var d=res.data;var h='';
+    // Price range cards
+    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">';
+    var ranges=[{label:'Budget',range:d.price_ranges.budget,color:'var(--ok)'},{label:'Standard',range:d.price_ranges.standard,color:'var(--pri)'},{label:'Premium',range:d.price_ranges.premium,color:'var(--purple)'}];
+    ranges.forEach(function(r){
+      h+='<div style="background:var(--card);border-radius:14px;padding:20px;border:1px solid var(--w06);text-align:center"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">'+r.label+'</div><div style="font-size:20px;font-weight:800;color:'+r.color+'">$'+r.range.min+' - $'+r.range.max+'</div><div style="font-size:10px;color:var(--w40)">per kg</div></div>';
+    });
+    h+='</div>';
+    // Benchmark stats
+    h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">';
+    h+='<div style="background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--w06);text-align:center"><div style="font-size:10px;color:var(--w40)">Avg Price</div><div style="font-size:18px;font-weight:800;color:var(--w)">$'+d.benchmark.avg_price_per_kg+'</div><div style="font-size:9px;color:var(--w20)">per kg</div></div>';
+    h+='<div style="background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--w06);text-align:center"><div style="font-size:10px;color:var(--w40)">Min</div><div style="font-size:18px;font-weight:800;color:var(--ok)">$'+d.benchmark.min_price+'</div></div>';
+    h+='<div style="background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--w06);text-align:center"><div style="font-size:10px;color:var(--w40)">Max</div><div style="font-size:18px;font-weight:800;color:var(--err)">$'+d.benchmark.max_price+'</div></div>';
+    h+='<div style="background:var(--card);border-radius:12px;padding:16px;border:1px solid var(--w06);text-align:center"><div style="font-size:10px;color:var(--w40)">KR Suppliers</div><div style="font-size:18px;font-weight:800;color:var(--pri)">'+d.korean_suppliers+'</div></div>';
+    h+='</div>';
+    // Top suppliers by country
+    if(d.top_suppliers_by_country&&d.top_suppliers_by_country.length){
+      h+='<div style="background:var(--card);border-radius:14px;border:1px solid var(--w06);overflow:hidden;margin-bottom:20px">';
+      h+='<div style="font-size:14px;font-weight:700;color:var(--w);padding:16px 20px;border-bottom:1px solid var(--w06)">Top Import Sources ('+d.benchmark.data_source+')</div>';
+      h+='<table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:11px;color:var(--w40);text-align:left"><th style="padding:8px 16px">Country</th><th style="padding:8px">Value (USD)</th><th style="padding:8px">Unit Price</th><th style="padding:8px">Weight</th></tr></thead><tbody>';
+      d.top_suppliers_by_country.forEach(function(s){
+        h+='<tr style="border-top:1px solid var(--w06);font-size:12px"><td style="padding:10px 16px;font-weight:600;color:var(--w)">'+esc(s.country)+'</td><td style="padding:10px 8px;color:var(--w60)">$'+s.value_usd.toLocaleString()+'</td><td style="padding:10px 8px;color:var(--pri);font-weight:700">$'+s.unit_price+'/kg</td><td style="padding:10px 8px;color:var(--w40)">'+s.weight_kg.toLocaleString()+'kg</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    if(d.ai_advice){
+      h+='<div style="background:var(--card);border:1px solid rgba(168,85,247,.2);border-radius:14px;padding:20px"><div style="font-size:12px;font-weight:700;color:#A855F7;margin-bottom:8px">&#x1F916; AI Procurement Advice</div><div style="font-size:13px;color:var(--w60);line-height:1.8;white-space:pre-line">'+esc(d.ai_advice)+'</div></div>';
+    }
+    el.innerHTML=h;
+  }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">'+t('Analysis failed')+': '+esc(e.message)+'</div>';});
+}
+
+// === SUPPLIER COMPARE ===
+function pgSupplierCompare(){
+  var h='<div style="margin-bottom:24px"><h2 style="font-size:22px;font-weight:800;margin-bottom:4px">'+t('Supplier Comparison')+'</h2><p style="font-size:13px;color:var(--w40)">'+t('Compare multiple suppliers side-by-side with AI scoring')+'</p></div>';
+  h+='<div id="sc-suppliers">';
+  h+='<div style="background:var(--card);border:1px solid var(--w06);border-radius:16px;padding:20px;margin-bottom:12px" id="sc-s0">';
+  h+='<div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:12px">Supplier 1</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
+  h+='<div><label style="font-size:10px;color:var(--w40)">Company *</label><input class="sc-name" placeholder="Company name" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div>';
+  h+='<div><label style="font-size:10px;color:var(--w40)">Country</label><input class="sc-country" placeholder="KR" value="KR" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div>';
+  h+='<div><label style="font-size:10px;color:var(--w40)">Unit Price ($)</label><input class="sc-price" type="number" placeholder="0.00" step="0.01" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px">';
+  h+='<div><label style="font-size:10px;color:var(--w40)">MOQ</label><input class="sc-moq" type="number" placeholder="500" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div>';
+  h+='<div><label style="font-size:10px;color:var(--w40)">Lead Time (days)</label><input class="sc-lead" type="number" placeholder="14" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div>';
+  h+='<div><label style="font-size:10px;color:var(--w40)">Certs (comma)</label><input class="sc-certs" placeholder="ISO,GMP" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div>';
+  h+='</div></div>';
+  h+='</div>';
+  h+='<button onclick="B.addSupplierRow()" style="padding:8px 16px;border-radius:8px;background:var(--w06);color:var(--w60);font-size:12px;cursor:pointer;border:none;margin-bottom:16px">+ Add Supplier</button> ';
+  h+='<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">Product</label><input id="sc-product" placeholder="e.g. Sheet Mask" style="width:300px;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px"></div>';
+  h+='<button onclick="B.runSupplierCompare()" style="padding:12px 28px;border-radius:12px;background:var(--pri);color:#000;font-weight:700;font-size:14px;cursor:pointer;border:none">&#x2696;&#xFE0F; '+t('Compare Suppliers')+'</button>';
+  h+='<div id="sc-result" style="margin-top:20px"></div>';
+  return h;
+}
+var _scRowCount=1;
+function addSupplierRow(){
+  _scRowCount++;
+  var wrap=document.getElementById('sc-suppliers');
+  var div=document.createElement('div');
+  div.style.cssText='background:var(--card);border:1px solid var(--w06);border-radius:16px;padding:20px;margin-bottom:12px';
+  div.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:12px">Supplier '+_scRowCount+'</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px"><div><label style="font-size:10px;color:var(--w40)">Company *</label><input class="sc-name" placeholder="Company name" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div><div><label style="font-size:10px;color:var(--w40)">Country</label><input class="sc-country" placeholder="KR" value="KR" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div><div><label style="font-size:10px;color:var(--w40)">Unit Price ($)</label><input class="sc-price" type="number" placeholder="0.00" step="0.01" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:8px"><div><label style="font-size:10px;color:var(--w40)">MOQ</label><input class="sc-moq" type="number" placeholder="500" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div><div><label style="font-size:10px;color:var(--w40)">Lead Time (days)</label><input class="sc-lead" type="number" placeholder="14" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div><div><label style="font-size:10px;color:var(--w40)">Certs (comma)</label><input class="sc-certs" placeholder="ISO,GMP" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:12px;margin-top:2px"></div></div>';
+  wrap.appendChild(div);
+}
+function runSupplierCompare(){
+  var el=document.getElementById('sc-result');
+  var names=document.querySelectorAll('.sc-name');
+  var suppliers=[];
+  names.forEach(function(n,i){
+    if(!n.value)return;
+    var countries=document.querySelectorAll('.sc-country');
+    var prices=document.querySelectorAll('.sc-price');
+    var moqs=document.querySelectorAll('.sc-moq');
+    var leads=document.querySelectorAll('.sc-lead');
+    var certs=document.querySelectorAll('.sc-certs');
+    suppliers.push({
+      company_name:n.value,
+      country:countries[i]?countries[i].value:'KR',
+      unit_price:prices[i]?parseFloat(prices[i].value)||null:null,
+      moq:moqs[i]?parseInt(moqs[i].value)||null:null,
+      lead_time_days:leads[i]?parseInt(leads[i].value)||null:null,
+      certifications:certs[i]?certs[i].value.split(',').map(function(c){return c.trim();}).filter(Boolean):[],
+    });
+  });
+  if(suppliers.length<2){alert(t('Please add at least 2 suppliers'));return;}
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--w40)"><div class="spinner" style="width:32px;height:32px;border:3px solid var(--w08);border-top-color:var(--pri);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px"></div>'+t('Comparing suppliers...')+'</div>';
+  sb.functions.invoke('supplier-compare',{body:{suppliers:suppliers,product:(document.getElementById('sc-product')||{}).value||''}}).then(function(res){
+    if(res.error||!res.data)throw new Error(res.error||'Comparison failed');
+    var d=res.data;var h='';
+    // Winner
+    if(d.winner){
+      h+='<div style="background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(0,230,118,.08));border:1px solid rgba(0,212,255,.2);border-radius:16px;padding:24px;margin-bottom:24px;text-align:center">';
+      h+='<div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:8px">&#x1F3C6; '+t('Best Match')+'</div>';
+      h+='<div style="font-size:22px;font-weight:800;color:var(--w)">'+esc(d.winner.company_name)+'</div>';
+      h+='<div style="font-size:14px;color:var(--ok);font-weight:700;margin-top:4px">Trust Score: '+d.winner.trust_score+'/100</div>';
+      h+='</div>';
+    }
+    // Comparison table
+    if(d.comparison&&d.comparison.length){
+      h+='<div style="background:var(--card);border-radius:14px;border:1px solid var(--w06);overflow-x:auto;margin-bottom:20px">';
+      h+='<table style="width:100%;border-collapse:collapse;min-width:600px"><thead><tr style="font-size:11px;color:var(--w40);text-align:left"><th style="padding:12px 16px">Supplier</th><th style="padding:12px 8px">Score</th><th style="padding:12px 8px">Price</th><th style="padding:12px 8px">MOQ</th><th style="padding:12px 8px">Lead</th><th style="padding:12px 8px">Certs</th><th style="padding:12px 8px">Verified</th></tr></thead><tbody>';
+      d.comparison.forEach(function(c,i){
+        var sc=c.trust_score>=75?'var(--ok)':c.trust_score>=50?'var(--acc)':'var(--err)';
+        var bg=i===0?'background:rgba(0,212,255,.03);':'';
+        h+='<tr style="border-top:1px solid var(--w06);font-size:12px;'+bg+'"><td style="padding:12px 16px;font-weight:700;color:var(--w)">'+esc(c.company_name)+(i===0?' &#x1F3C6;':'')+'</td><td style="padding:12px 8px"><span style="padding:3px 8px;border-radius:6px;background:'+sc+'15;color:'+sc+';font-weight:700">'+c.trust_score+'</span></td><td style="padding:12px 8px;color:var(--w60)">'+(c.unit_price?'$'+c.unit_price:'N/A')+'</td><td style="padding:12px 8px;color:var(--w60)">'+(c.moq||'N/A')+'</td><td style="padding:12px 8px;color:var(--w60)">'+(c.lead_time_days?c.lead_time_days+'d':'N/A')+'</td><td style="padding:12px 8px;color:var(--w40)">'+(c.certifications.length?c.certifications.join(', '):'None')+'</td><td style="padding:12px 8px">'+(c.corp_verified?'<span style="color:var(--ok)">&#x2705;</span>':'<span style="color:var(--w20)">&#x2796;</span>')+'</td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    if(d.ai_comparison){
+      h+='<div style="background:var(--card);border:1px solid rgba(168,85,247,.2);border-radius:14px;padding:20px"><div style="font-size:12px;font-weight:700;color:#A855F7;margin-bottom:8px">&#x1F916; AI Comparison</div><div style="font-size:13px;color:var(--w60);line-height:1.8;white-space:pre-line">'+esc(d.ai_comparison)+'</div></div>';
+    }
+    el.innerHTML=h;
+  }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">'+t('Comparison failed')+': '+esc(e.message)+'</div>';});
+}
+
+// === IMPORT DUTY CALCULATOR ===
+function pgImportDuty(){
+  var h='<div style="margin-bottom:24px"><h2 style="font-size:22px;font-weight:800;margin-bottom:4px">'+t('Import Duty Calculator')+'</h2><p style="font-size:13px;color:var(--w40)">'+t('HS code tariff + 21 Korea FTAs + VAT = total landed cost')+'</p></div>';
+  h+='<div style="background:var(--card);border:1px solid var(--w06);border-radius:16px;padding:24px;margin-bottom:20px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('HS Code *')+'</label><input id="id-hs" placeholder="e.g. 330499" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Origin Country')+'</label><input id="id-origin" value="KR" placeholder="KR" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Your Country *')+'</label><select id="id-dest" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"><option value="US">&#x1F1FA;&#x1F1F8; US</option><option value="EU">&#x1F1EA;&#x1F1FA; EU</option><option value="JP">&#x1F1EF;&#x1F1F5; Japan</option><option value="CN">&#x1F1E8;&#x1F1F3; China</option><option value="VN">&#x1F1FB;&#x1F1F3; Vietnam</option></select></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Shipment Value (USD)')+'</label><input id="id-value" type="number" placeholder="10000" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Product Name')+'</label><input id="id-product" placeholder="e.g. Sheet Mask" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+  h+='</div>';
+  h+='<button onclick="B.runImportDuty()" style="padding:12px 28px;border-radius:12px;background:var(--pri);color:#000;font-weight:700;font-size:14px;cursor:pointer;border:none">&#x1F4B1; '+t('Calculate Duty')+'</button>';
+  h+='</div>';
+  h+='<div id="id-result"></div>';
+  return h;
+}
+function runImportDuty(){
+  var el=document.getElementById('id-result');
+  var hs=(document.getElementById('id-hs')||{}).value;
+  if(!hs){alert(t('Please enter HS code'));return;}
+  el.innerHTML='<div style="text-align:center;padding:40px;color:var(--w40)"><div class="spinner" style="width:32px;height:32px;border:3px solid var(--w08);border-top-color:var(--pri);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 12px"></div>'+t('Calculating tariffs + FTA + VAT...')+'</div>';
+  sb.functions.invoke('import-duty',{body:{hs_code:hs,origin_country:(document.getElementById('id-origin')||{}).value||'KR',destination_country:(document.getElementById('id-dest')||{}).value||'US',value_usd:parseFloat((document.getElementById('id-value')||{}).value)||10000,product:(document.getElementById('id-product')||{}).value||''}}).then(function(res){
+    if(res.error||!res.data)throw new Error(res.error||'Calculation failed');
+    var d=res.data;var h='';
+    // Tariff comparison
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px">';
+    h+='<div style="background:var(--card);border-radius:14px;padding:20px;border:1px solid var(--w06);text-align:center"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">MFN Tariff</div><div style="font-size:22px;font-weight:800;color:var(--err)">'+d.tariff.mfn_rate+'%</div><div style="font-size:12px;color:var(--w40)">Duty: $'+d.duty.mfn+'</div></div>';
+    h+='<div style="background:linear-gradient(135deg,rgba(0,230,118,.05),rgba(0,212,255,.05));border-radius:14px;padding:20px;border:1px solid rgba(0,230,118,.2);text-align:center"><div style="font-size:11px;color:var(--ok);margin-bottom:4px">'+(d.tariff.fta_name||'FTA')+'</div><div style="font-size:22px;font-weight:800;color:var(--ok)">'+d.tariff.fta_rate+'%</div><div style="font-size:12px;color:var(--ok)">Duty: $'+d.duty.fta+' (save $'+d.duty.saving+')</div></div>';
+    h+='<div style="background:var(--card);border-radius:14px;padding:20px;border:1px solid var(--w06);text-align:center"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">VAT</div><div style="font-size:22px;font-weight:800;color:var(--w)">'+d.vat.rate+'%</div><div style="font-size:12px;color:var(--w40)">$'+d.vat.amount+'</div></div>';
+    h+='</div>';
+    // Total landed cost
+    h+='<div style="background:var(--card);border-radius:14px;border:1px solid var(--w06);padding:20px;margin-bottom:20px">';
+    h+='<div style="font-size:14px;font-weight:700;color:var(--w);margin-bottom:12px">Total Landed Cost</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+    h+='<div style="padding:16px;background:rgba(239,68,68,.05);border-radius:12px;text-align:center"><div style="font-size:11px;color:var(--err)">Without FTA</div><div style="font-size:24px;font-weight:900;color:var(--err)">$'+d.total_landed.with_mfn.toLocaleString()+'</div></div>';
+    h+='<div style="padding:16px;background:rgba(0,230,118,.05);border-radius:12px;text-align:center"><div style="font-size:11px;color:var(--ok)">With FTA</div><div style="font-size:24px;font-weight:900;color:var(--ok)">$'+d.total_landed.with_fta.toLocaleString()+'</div><div style="font-size:12px;color:var(--ok);margin-top:4px">You save $'+d.total_landed.saving.toLocaleString()+'</div></div>';
+    h+='</div></div>';
+    // Available FTAs
+    if(d.available_ftas&&d.available_ftas.length){
+      h+='<div style="background:var(--card);border-radius:14px;border:1px solid var(--w06);padding:20px;margin-bottom:20px">';
+      h+='<div style="font-size:14px;font-weight:700;color:var(--w);margin-bottom:12px">Korea FTA Network (21 Partners)</div>';
+      h+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      d.available_ftas.forEach(function(f){
+        h+='<div style="padding:6px 12px;background:var(--w03);border-radius:8px;font-size:11px"><span style="font-weight:700;color:var(--w)">'+esc(f.country)+'</span> <span style="color:var(--w40)">'+esc(f.fta)+'</span> <span style="color:var(--ok);font-weight:600">-'+esc(f.reduction)+'</span></div>';
+      });
+      h+='</div></div>';
+    }
+    if(d.ai_advice){
+      h+='<div style="background:var(--card);border:1px solid rgba(168,85,247,.2);border-radius:14px;padding:20px"><div style="font-size:12px;font-weight:700;color:#A855F7;margin-bottom:8px">&#x1F916; AI Import Cost Strategy</div><div style="font-size:13px;color:var(--w60);line-height:1.8;white-space:pre-line">'+esc(d.ai_advice)+'</div></div>';
+    }
+    el.innerHTML=h;
+  }).catch(function(e){el.innerHTML='<div style="padding:20px;color:var(--err)">'+t('Calculation failed')+': '+esc(e.message)+'</div>';});
+}
+
 /* === PUBLIC API === */
 window.B={
   set:set,render:render,nav:nav,
@@ -5679,7 +5880,13 @@ window.B={
   submitRFQ:submitRFQ,showRFQDetail:showRFQDetail,acceptProposalRFQ:acceptProposalRFQ,
   setRFQTab:setRFQTab,closeRFQModal:closeRFQModal,showRFQForm:showRFQForm,
   // Quality Prediction
-  runQualityPredict:runQualityPredict
+  runQualityPredict:runQualityPredict,
+  // Price Benchmark
+  runPriceBenchmark:runPriceBenchmark,
+  // Supplier Compare
+  addSupplierRow:addSupplierRow,runSupplierCompare:runSupplierCompare,
+  // Import Duty
+  runImportDuty:runImportDuty
 };
 
 // Close notification dropdown on outside click
