@@ -3746,12 +3746,18 @@ function runPaymentRisk(){
 // === RFQ INBOX (SELLER SIDE) ===
 var _rfqInboxList = [];
 var _rfqInboxLoaded = false;
+var _rfqInboxLoading = false;
 var _rfqInboxDetail = null;
 var _rfqProposalForm = false;
 
 function pgRFQInbox(){
-  if(!_rfqInboxLoaded){_rfqInboxLoaded=true;_loadRFQInbox();}
+  if(!_rfqInboxLoaded){_rfqInboxLoaded=true;_rfqInboxLoading=true;_loadRFQInbox();}
   var h='<div class="pg-header"><h2>📨 RFQ 인박스</h2><p>바이어들의 소싱 요청을 확인하고 제안서를 제출하세요</p></div>';
+
+  if(_rfqInboxLoading){
+    h+='<div style="text-align:center;padding:60px 20px;color:var(--w40)"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:13px">RFQ 데이터 로딩 중...</div></div>';
+    return h;
+  }
 
   if(!_rfqInboxList.length){
     h+='<div style="text-align:center;padding:60px 20px;color:var(--w40)">';
@@ -3829,9 +3835,9 @@ function pgRFQInbox(){
 
 function _loadRFQInbox(){
   sb.functions.invoke('match-rfq',{body:{action:'list_open'}}).then(function(res){
+    _rfqInboxLoading=false;
     if(res.data&&res.data.rfqs){
       _rfqInboxList=res.data.rfqs;
-      // Check if I already submitted proposals
       if(S.user){
         sb.from('rfq_proposals').select('rfq_id,unit_price,moq,lead_time_days,incoterms,status').eq('seller_id',S.user.id).then(function(pRes){
           var myProps={};
@@ -3840,8 +3846,8 @@ function _loadRFQInbox(){
           render();
         });
       } else render();
-    }
-  });
+    } else render();
+  }).catch(function(e){_rfqInboxLoading=false;UI.toast('RFQ 로딩 실패: '+e.message,'err');render();});
 }
 
 function openRFQDetail(rfqId){
