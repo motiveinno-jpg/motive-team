@@ -564,6 +564,7 @@ function renderPage(){
     case'market-intel':return pgMarketIntel();
     case'supplier-verify':return pgSupplierVerify();
     case'compliance-check':return pgComplianceCheck();
+    case'rfq':return pgRFQ();
     case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
     case'sourcing':return pgSourcing();
@@ -1408,7 +1409,8 @@ function renderSidebar(){
     {id:'market-intel',icon:'&#x1F30D;',label:'Market Intelligence'},
     {id:'supplier-verify',icon:'&#x1F6E1;&#xFE0F;',label:'Supplier Trust Score',hot:true},
     {id:'compliance-check',icon:'&#x2705;',label:'Compliance Check',hot:true},
-    {id:'sec',label:'Discover'},
+    {id:'sec',label:'Sourcing'},
+    {id:'rfq',icon:'&#x1F4E8;',label:'RFQ Center',hot:true},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
     {id:'sourcing',icon:'&#x1F3ED;',label:'Find Manufacturers'},
     {id:'marketplace',icon:'&#x1F3EA;',label:'Marketplace',count:S.myRequests.filter(function(r){return r.status==='open';}).length},
@@ -1574,7 +1576,7 @@ function loadUser(){
   }).catch(function(){set({loading:false,user:null});});
 }
 
-var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,pipeline:1,ordership:1,profilehub:1};
+var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,pipeline:1,ordership:1,profilehub:1,rfq:1};
 function loadAllData(){
   loadBuyerLinks();
   loadInquiries();
@@ -5326,6 +5328,232 @@ function destroyBuyerMap(){
   if(_buyerMap){_buyerMap.remove();_buyerMap=null;_buyerMapLayers={vessels:null,routes:null,risks:null};}
 }
 
+/* === RFQ CENTER === */
+var _rfqTab = 'my'; // my | browse
+var _rfqList = [];
+var _rfqOpen = [];
+var _rfqDetail = null;
+var _rfqProposals = [];
+var _rfqFormOpen = false;
+
+function pgRFQ(){
+  var h='<div style="margin-bottom:24px"><h2 style="font-size:22px;font-weight:800;margin-bottom:4px">'+t('RFQ Center')+'</h2><p style="font-size:13px;color:var(--w40)">'+t('Post sourcing requests and receive proposals from verified Korean manufacturers')+'</p></div>';
+
+  // Tabs
+  h+='<div style="display:flex;gap:8px;margin-bottom:20px">';
+  h+='<button onclick="B.setRFQTab(\'my\')" style="padding:8px 20px;border-radius:10px;border:1.5px solid '+(_rfqTab==='my'?'var(--pri)':'var(--w08)')+';background:'+(_rfqTab==='my'?'rgba(0,212,255,.1)':'transparent')+';color:'+(_rfqTab==='my'?'var(--pri)':'var(--w40)')+';font-weight:700;font-size:13px;cursor:pointer">'+t('My RFQs')+'</button>';
+  h+='<button onclick="B.setRFQTab(\'browse\')" style="padding:8px 20px;border-radius:10px;border:1.5px solid '+(_rfqTab==='browse'?'var(--pri)':'var(--w08)')+';background:'+(_rfqTab==='browse'?'rgba(0,212,255,.1)':'transparent')+';color:'+(_rfqTab==='browse'?'var(--pri)':'var(--w40)')+';font-weight:700;font-size:13px;cursor:pointer">'+t('Browse Open RFQs')+'</button>';
+  h+='<div style="flex:1"></div>';
+  h+='<button onclick="B.showRFQForm()" style="padding:8px 20px;border-radius:10px;background:var(--pri);color:#000;font-weight:700;font-size:13px;cursor:pointer;border:none">+ '+t('New RFQ')+'</button>';
+  h+='</div>';
+
+  if(_rfqTab==='my'){
+    if(!_rfqList.length){
+      h+='<div style="text-align:center;padding:60px 20px;color:var(--w40)">';
+      h+='<div style="font-size:48px;margin-bottom:16px">&#x1F4E8;</div>';
+      h+='<div style="font-size:16px;font-weight:700;margin-bottom:8px">'+t('No RFQs yet')+'</div>';
+      h+='<div style="font-size:13px;margin-bottom:20px">'+t('Post your first sourcing request to receive proposals from Korean manufacturers')+'</div>';
+      h+='<button onclick="B.showRFQForm()" style="padding:10px 24px;border-radius:10px;background:var(--pri);color:#000;font-weight:700;font-size:14px;cursor:pointer;border:none">'+t('Create RFQ')+'</button>';
+      h+='</div>';
+    } else {
+      h+='<div style="display:grid;gap:12px">';
+      _rfqList.forEach(function(r){
+        var statusColor = r.status==='open'?'var(--ok)':r.status==='matched'?'var(--pri)':'var(--w40)';
+        h+='<div onclick="B.showRFQDetail(\''+r.id+'\')" style="background:var(--card);border:1px solid var(--w06);border-radius:14px;padding:20px;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor=\'var(--pri)\'" onmouseleave="this.style.borderColor=\'var(--w06)\'">';
+        h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">';
+        h+='<div style="font-size:18px;font-weight:800;color:var(--w)">'+esc(r.title)+'</div>';
+        h+='<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:'+statusColor+'20;color:'+statusColor+';font-weight:700;text-transform:uppercase">'+r.status+'</span>';
+        h+='<div style="flex:1"></div>';
+        h+='<span style="font-size:12px;color:var(--w40)">'+new Date(r.created_at).toLocaleDateString()+'</span>';
+        h+='</div>';
+        h+='<div style="display:flex;gap:20px;font-size:12px;color:var(--w60)">';
+        if(r.product_category) h+='<span>&#x1F3F7; '+esc(r.product_category)+'</span>';
+        if(r.quantity) h+='<span>&#x1F4E6; '+r.quantity+' '+(r.quantity_unit||'units')+'</span>';
+        if(r.target_price) h+='<span>&#x1F4B0; $'+r.target_price+' target</span>';
+        if(r.destination_country) h+='<span>&#x1F30D; '+esc(r.destination_country)+'</span>';
+        h+='<span style="color:var(--pri);font-weight:700">&#x1F4DD; '+(r.proposals_count||0)+' proposals</span>';
+        h+='</div></div>';
+      });
+      h+='</div>';
+    }
+  } else {
+    // Browse open RFQs (for reference)
+    if(!_rfqOpen.length){
+      h+='<div style="text-align:center;padding:40px;color:var(--w40)">'+t('Loading open RFQs...')+'</div>';
+      _loadOpenRFQs();
+    } else {
+      h+='<div style="display:grid;gap:12px">';
+      _rfqOpen.forEach(function(r){
+        h+='<div style="background:var(--card);border:1px solid var(--w06);border-radius:14px;padding:20px">';
+        h+='<div style="font-size:16px;font-weight:700;color:var(--w);margin-bottom:8px">'+esc(r.title)+'</div>';
+        h+='<div style="display:flex;gap:16px;font-size:12px;color:var(--w60)">';
+        if(r.product_category) h+='<span>&#x1F3F7; '+esc(r.product_category)+'</span>';
+        if(r.quantity) h+='<span>&#x1F4E6; '+r.quantity+' '+(r.quantity_unit||'units')+'</span>';
+        if(r.destination_country) h+='<span>&#x1F30D; '+esc(r.destination_country)+'</span>';
+        h+='<span>&#x1F4DD; '+(r.proposals_count||0)+' proposals</span>';
+        h+='</div></div>';
+      });
+      h+='</div>';
+    }
+  }
+
+  // RFQ Form Modal
+  if(_rfqFormOpen){
+    h+='<div style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(8px)" onclick="if(event.target===this)B.closeRFQModal()">';
+    h+='<div style="background:var(--card);border:1px solid var(--w08);border-radius:18px;padding:32px;max-width:600px;width:90%;max-height:85vh;overflow-y:auto">';
+    h+='<h3 style="font-size:18px;font-weight:800;margin-bottom:20px;color:var(--w)">'+t('New RFQ — Sourcing Request')+'</h3>';
+    h+='<div style="display:grid;gap:14px">';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Title *')+'</label><input id="rfq-title" placeholder="e.g. Korean Skincare Products for US Market" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Product Category')+'</label><input id="rfq-cat" placeholder="e.g. Beauty, Food, Electronics" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('HS Code (optional)')+'</label><input id="rfq-hs" placeholder="e.g. 3304" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='</div>';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Detailed Requirements *')+'</label><textarea id="rfq-desc" rows="4" placeholder="Describe your requirements: product specs, quality standards, packaging preferences..." style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px;resize:vertical"></textarea></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Quantity')+'</label><input id="rfq-qty" type="number" placeholder="1000" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Unit')+'</label><select id="rfq-unit" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"><option>units</option><option>kg</option><option>tons</option><option>boxes</option><option>pallets</option><option>containers</option></select></div>';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Target Price (USD)')+'</label><input id="rfq-price" type="number" step="0.01" placeholder="5.00" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Destination Country')+'</label><input id="rfq-dest" placeholder="e.g. United States, Japan" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Delivery Deadline')+'</label><input id="rfq-deadline" type="date" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='</div>';
+    h+='<div><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">'+t('Required Certifications')+'</label><input id="rfq-certs" placeholder="e.g. FDA, CE, ISO, HACCP (comma-separated)" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--w08);background:var(--w03);color:var(--w);font-size:13px"></div>';
+    h+='</div>';
+    h+='<div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">';
+    h+='<button onclick="B.closeRFQModal()" style="padding:10px 20px;border-radius:10px;border:1px solid var(--w08);background:transparent;color:var(--w40);font-weight:600;cursor:pointer">'+t('Cancel')+'</button>';
+    h+='<button onclick="B.submitRFQ()" style="padding:10px 24px;border-radius:10px;background:var(--pri);color:#000;font-weight:700;font-size:14px;cursor:pointer;border:none">'+t('Submit RFQ')+'</button>';
+    h+='</div></div></div>';
+  }
+
+  // Detail Modal
+  if(_rfqDetail){
+    var r=_rfqDetail;
+    h+='<div style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(8px)" onclick="if(event.target===this)B.closeRFQModal()">';
+    h+='<div style="background:var(--card);border:1px solid var(--w08);border-radius:18px;padding:32px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto">';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px"><h3 style="font-size:18px;font-weight:800;color:var(--w);margin:0">'+esc(r.title)+'</h3>';
+    var sc=r.status==='open'?'var(--ok)':r.status==='matched'?'var(--pri)':'var(--w40)';
+    h+='<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:'+sc+'20;color:'+sc+';font-weight:700;text-transform:uppercase">'+r.status+'</span></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">';
+    var fields=[['Category',r.product_category],['HS Code',r.hs_code],['Quantity',(r.quantity||'-')+' '+(r.quantity_unit||'')],['Target Price','$'+(r.target_price||'-')],['Destination',r.destination_country],['Deadline',r.delivery_deadline?new Date(r.delivery_deadline).toLocaleDateString():'-']];
+    fields.forEach(function(f){h+='<div style="padding:10px;background:var(--w03);border-radius:10px"><div style="font-size:10px;color:var(--w40);font-weight:700;margin-bottom:2px">'+f[0]+'</div><div style="font-size:13px;color:var(--w);font-weight:600">'+esc(String(f[1]||'-'))+'</div></div>';});
+    h+='</div>';
+    if(r.description) h+='<div style="padding:14px;background:var(--w03);border-radius:10px;margin-bottom:20px;font-size:13px;color:var(--w60);line-height:1.7">'+esc(r.description)+'</div>';
+    if(r.certifications&&r.certifications.length) h+='<div style="margin-bottom:20px;display:flex;gap:6px;flex-wrap:wrap">'+r.certifications.map(function(c){return'<span style="padding:4px 10px;border-radius:6px;background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);font-size:11px;color:#00E676;font-weight:600">'+esc(c)+'</span>';}).join('')+'</div>';
+
+    // Proposals
+    h+='<div style="margin-top:20px"><h4 style="font-size:15px;font-weight:800;color:var(--w);margin-bottom:12px">&#x1F4DD; '+t('Proposals')+' ('+(_rfqProposals.length)+')</h4>';
+    if(!_rfqProposals.length){
+      h+='<div style="text-align:center;padding:30px;color:var(--w40);font-size:13px">'+t('No proposals yet. Manufacturers will be notified and respond soon.')+'</div>';
+    } else {
+      h+='<div style="display:grid;gap:10px">';
+      _rfqProposals.forEach(function(p){
+        var psc=p.status==='accepted'?'var(--ok)':p.status==='rejected'?'var(--err)':'var(--pri)';
+        h+='<div style="background:var(--w03);border:1px solid var(--w06);border-radius:12px;padding:16px">';
+        h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+        h+='<div style="font-size:15px;font-weight:700;color:var(--w)">'+esc(p.company_name||'Manufacturer')+'</div>';
+        h+='<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:'+psc+'20;color:'+psc+';font-weight:700;text-transform:uppercase">'+p.status+'</span>';
+        h+='</div>';
+        h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">';
+        h+='<div><div style="font-size:9px;color:var(--w40)">Unit Price</div><div style="font-size:14px;font-weight:800;color:var(--ok)">$'+p.unit_price+'</div></div>';
+        h+='<div><div style="font-size:9px;color:var(--w40)">MOQ</div><div style="font-size:14px;font-weight:700;color:var(--w)">'+esc(String(p.moq||'-'))+'</div></div>';
+        h+='<div><div style="font-size:9px;color:var(--w40)">Lead Time</div><div style="font-size:14px;font-weight:700;color:var(--w)">'+(p.lead_time_days||'-')+' days</div></div>';
+        h+='<div><div style="font-size:9px;color:var(--w40)">Incoterms</div><div style="font-size:14px;font-weight:700;color:var(--w)">'+esc(p.incoterms||'FOB')+'</div></div>';
+        h+='</div>';
+        if(p.message) h+='<div style="font-size:12px;color:var(--w60);margin-bottom:10px;line-height:1.6">'+esc(p.message)+'</div>';
+        if(p.status==='submitted'&&r.status==='open') h+='<button onclick="B.acceptProposalRFQ(\''+p.id+'\')" style="padding:8px 18px;border-radius:8px;background:var(--ok);color:#000;font-weight:700;font-size:12px;cursor:pointer;border:none">'+t('Accept Proposal')+'</button>';
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+    h+='<div style="text-align:right;margin-top:16px"><button onclick="B.closeRFQModal()" style="padding:8px 20px;border-radius:10px;border:1px solid var(--w08);background:transparent;color:var(--w40);font-weight:600;cursor:pointer">'+t('Close')+'</button></div>';
+    h+='</div></div>';
+  }
+
+  return h;
+}
+
+function setRFQTab(tab){_rfqTab=tab;if(tab==='browse')_loadOpenRFQs();render();}
+
+function showRFQForm(){_rfqFormOpen=true;_rfqDetail=null;render();}
+
+function closeRFQModal(){_rfqFormOpen=false;_rfqDetail=null;_rfqProposals=[];render();}
+
+function submitRFQ(){
+  var title=document.getElementById('rfq-title');
+  if(!title||!title.value.trim()){alert(t('Please enter a title'));return;}
+  var data={
+    buyer_id:S.user.id,
+    title:title.value.trim(),
+    product_category:(document.getElementById('rfq-cat')||{}).value||null,
+    hs_code:(document.getElementById('rfq-hs')||{}).value||null,
+    description:(document.getElementById('rfq-desc')||{}).value||null,
+    quantity:parseInt((document.getElementById('rfq-qty')||{}).value)||null,
+    quantity_unit:(document.getElementById('rfq-unit')||{}).value||'units',
+    target_price:parseFloat((document.getElementById('rfq-price')||{}).value)||null,
+    destination_country:(document.getElementById('rfq-dest')||{}).value||null,
+    delivery_deadline:(document.getElementById('rfq-deadline')||{}).value||null,
+    certifications:((document.getElementById('rfq-certs')||{}).value||'').split(',').map(function(c){return c.trim();}).filter(Boolean)
+  };
+  sb.from('rfq_requests').insert(data).select().single().then(function(res){
+    if(res.error){alert('Error: '+res.error.message);return;}
+    _rfqFormOpen=false;
+    _rfqList.unshift(res.data);
+    render();
+    // AI 매칭 트리거 (백그라운드)
+    sb.functions.invoke('match-rfq',{body:{action:'match',rfq_id:res.data.id}}).then(function(mr){
+      if(mr.data&&mr.data.matched)pushNotif(t('AI matched')+' '+mr.data.matched+' '+t('manufacturers to your RFQ'));
+    });
+  });
+}
+
+function showRFQDetail(id){
+  var r=_rfqList.find(function(x){return x.id===id;});
+  if(!r)return;
+  _rfqDetail=r;
+  // Load proposals
+  sb.from('rfq_proposals').select('*').eq('rfq_id',id).order('created_at',{ascending:false}).then(function(res){
+    _rfqProposals=res.data||[];
+    render();
+  });
+  render();
+}
+
+function acceptProposalRFQ(proposalId){
+  if(!confirm(t('Accept this proposal? Other proposals will be rejected.')))return;
+  sb.functions.invoke('match-rfq',{body:{action:'accept_proposal',proposal_id:proposalId}}).then(function(res){
+    if(res.data&&res.data.success){
+      pushNotif(t('Proposal accepted! Manufacturer will be notified.'));
+      _rfqDetail.status='matched';
+      _rfqProposals.forEach(function(p){p.status=p.id===proposalId?'accepted':'rejected';});
+      render();
+    }
+  });
+}
+
+function _loadMyRFQs(){
+  if(!S.user)return;
+  sb.from('rfq_requests').select('*').eq('buyer_id',S.user.id).order('created_at',{ascending:false}).then(function(res){
+    _rfqList=res.data||[];
+    render();
+  });
+}
+
+function _loadOpenRFQs(){
+  sb.functions.invoke('match-rfq',{body:{action:'list_open'}}).then(function(res){
+    if(res.data&&res.data.rfqs){_rfqOpen=res.data.rfqs;render();}
+  });
+}
+
+// Hook into initial load
+var _origLoadUser=loadUser;
+var _rfqLoaded=false;
+var _origRender=null;
+setTimeout(function(){
+  if(S.user&&!_rfqLoaded){_rfqLoaded=true;_loadMyRFQs();}
+},2000);
+
 /* === PUBLIC API === */
 window.B={
   set:set,render:render,nav:nav,
@@ -5388,7 +5616,10 @@ window.B={
   runAISourcing:runAISourcing,calcDDP:calcDDP,
   _miGetStats:_miGetStats,_miLookup:_miLookup,_miOpportunity:_miOpportunity,
   runSupplierVerify:_runSupplierVerify,
-  runComplianceCheck:_runComplianceCheck
+  runComplianceCheck:_runComplianceCheck,
+  // RFQ
+  submitRFQ:submitRFQ,showRFQDetail:showRFQDetail,acceptProposalRFQ:acceptProposalRFQ,
+  setRFQTab:setRFQTab,closeRFQModal:closeRFQModal,showRFQForm:showRFQForm
 };
 
 // Close notification dropdown on outside click
