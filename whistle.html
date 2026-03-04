@@ -5343,15 +5343,42 @@ function dpRequestSignature(){
   UI.showModal('sig-req');
 }
 
-function _sendSigRequest(){
+async function _sendSigRequest(){
   var msg=document.getElementById('sig-msg');
   var deadline=document.getElementById('sig-deadline');
   var d=_dpCurrentDoc;
   if(!d){closeModal('sig-req');return;}
-  /* Log signature request */
-  var sigData={doc_id:d.id||null,doc_type:d.type,doc_no:d.ref&&d.ref.doc_no||'',buyer:d.buyer&&d.buyer.buyer_company||'',message:msg?msg.value:'',deadline:deadline?deadline.value:'',status:'pending'};
-  /* Store in notifications */
-  pushNotif('system','서명 요청 전송: '+(d.ref&&d.ref.doc_no||''),sigData.buyer+'에게 서명 요청','docgen');
+  var docNo=d.ref&&d.ref.doc_no||'';
+  var buyerCompany=d.buyer&&(d.buyer.buyer_company||d.buyer.company_name)||'';
+  var sigMsg=msg?msg.value:'';
+  var sigDeadline=deadline?deadline.value:'';
+  /* 1. Find buyer ID */
+  var buyerId=d.buyer_id||null;
+  if(!buyerId){
+    var bc=buyerCompany.toLowerCase();
+    var match=(S.buyers||[]).find(function(b){return (b.company_name||'').toLowerCase()===bc;});
+    if(match)buyerId=match.id;
+  }
+  /* 2. Update document in DB: set status to 'sent' + signature request info */
+  if(d.id){
+    var upd={
+      status:'sent',
+      revision_fields:JSON.stringify({signature_request:{message:sigMsg,deadline:sigDeadline,status:'pending',requested_at:new Date().toISOString()}}),
+      revision_requested_at:new Date().toISOString(),
+      revision_requested_by:S.user.id
+    };
+    var r=await sb.from('documents').update(upd).eq('id',d.id);
+    if(r.error){console.warn('[SigReq] DB update failed:',r.error);}
+    else{/* Update local state too */if(d.ref)d.ref.status='sent';}
+  }
+  /* 3. Send signature request as chat message to buyer */
+  if(buyerId){
+    var tN={pi:'PI',ci:'CI',pl:'PL',co:'CO',sc:'SC',bl:'BL'};
+    var chatMsg='[✍️ 서명 요청] '+(tN[d.type]||d.type.toUpperCase())+' '+docNo+'\n'+sigMsg+'\n기한: '+sigDeadline;
+    await sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:chatMsg,sender_type:'seller',message_type:'signature_request',channel:'platform',direction:'outbound',metadata:JSON.stringify({doc_id:d.id,doc_type:d.type,doc_no:docNo,deadline:sigDeadline})});
+  }
+  /* 4. Local notification */
+  pushNotif('system','서명 요청 전송: '+docNo,buyerCompany+'에게 서명 요청 (기한: '+sigDeadline+')','docgen');
   UI.toast('서명 요청이 전송되었습니다','ok');
   closeModal('sig-req');
 }
@@ -7793,11 +7820,13 @@ function initLiveMap(){
   _mapLayers.vessels=L.layerGroup().addTo(_liveMap);
   _mapLayers.aircraft=L.layerGroup().addTo(_liveMap);
   _mapLayers.risks=L.layerGroup().addTo(_liveMap);
-  /* Draw risk zones */
+  /* Draw default risk zones first */
   RISK_ZONES.forEach(function(z){
     var color=z.level==='critical'?'#FF5252':z.level==='high'?'#FF9800':'#FFB800';
     L.rectangle(z.bounds,{color:color,weight:1,fillColor:color,fillOpacity:0.08,dashArray:'4 4'}).addTo(_mapLayers.risks).bindPopup('<div style="font-size:13px"><b>'+z.name+'</b><br><span style="color:'+color+'">'+z.level.toUpperCase()+'</span><br>'+z.desc+'</div>');
   });
+  /* Fetch real conflict data from EF and overlay */
+  fetchConflictData();
   /* Plot my shipments */
   drawMyShipments();
   /* Fetch live data */
@@ -7903,18 +7932,67 @@ function fetchLiveAircraft(){
   });
 }
 
-/* Fetch live vessel positions (free AIS proxy via public endpoints) */
+/* Fetch live vessel positions via track-vessels EF */
 function fetchLiveVessels(){
   if(!_mapLayers.vessels)return;
-  /* Use our major ports to show nearby vessel density as clusters */
-  var majorPorts=['Busan','Shanghai','Singapore','Rotterdam','Los Angeles'];
-  majorPorts.forEach(function(pName){
-    var coords=PORT_COORDS[pName];if(!coords)return;
-    /* Create a "vessel density" circle to indicate busy shipping areas */
-    L.circle(coords,{radius:80000,color:'rgba(0,136,255,.3)',fillColor:'rgba(0,136,255,.06)',fillOpacity:1,weight:1}).addTo(_mapLayers.vessels);
-    /* Add animated port activity indicator */
-    var portIcon=L.divIcon({className:'',html:'<div style="position:relative"><div style="width:8px;height:8px;border-radius:50%;background:#0088FF"></div><div style="position:absolute;top:-4px;left:-4px;width:16px;height:16px;border-radius:50%;border:1px solid #0088FF;opacity:0.5;animation:pulse 2s infinite"></div></div>',iconSize:[16,16],iconAnchor:[4,4]});
-    L.marker(coords,{icon:portIcon}).addTo(_mapLayers.vessels).bindPopup('<b>'+pName+' Port</b><br>주요 무역항');
+  sb.functions.invoke('track-vessels',{body:{bounds:null}})
+  .then(function(r){if(r.error)throw r.error;return r.data;})
+  .then(function(data){
+    if(!_mapLayers.vessels)return;
+    var vessels=data.vessels||[];
+    var shipTypes={70:'화물선',71:'화물선',72:'화물선',80:'유조선',81:'유조선',60:'여객선',36:'범선',40:'고속선'};
+    vessels.forEach(function(v){
+      if(!v.lat||!v.lng)return;
+      var typeStr=shipTypes[v.shipType]||'선박';
+      var headingDeg=(v.course||0)-45;
+      var icon=L.divIcon({className:'',html:'<div style="font-size:11px;transform:rotate('+headingDeg+'deg);opacity:0.65">🚢</div>',iconSize:[14,14],iconAnchor:[7,7]});
+      L.marker([v.lat,v.lng],{icon:icon}).addTo(_mapLayers.vessels).bindPopup('<b>'+UI.esc(v.name||'Unknown')+'</b><br>유형: '+typeStr+'<br>속도: '+v.speed.toFixed(1)+' knots<br>방향: '+Math.round(v.course)+'°');
+    });
+    /* Source indicator */
+    if(data.source==='simulated'){
+      /* Also show port density as fallback */
+      ['Busan','Shanghai','Singapore','Rotterdam','Los Angeles'].forEach(function(pName){
+        var coords=PORT_COORDS[pName];if(!coords)return;
+        L.circle(coords,{radius:80000,color:'rgba(0,136,255,.3)',fillColor:'rgba(0,136,255,.06)',fillOpacity:1,weight:1}).addTo(_mapLayers.vessels);
+      });
+    }
+    console.log('[LiveMap] Vessels loaded:',vessels.length,'('+data.source+')');
+  }).catch(function(e){
+    console.warn('[LiveMap] Vessel fetch failed:',e);
+    /* Fallback: show port density circles */
+    ['Busan','Shanghai','Singapore','Rotterdam','Los Angeles'].forEach(function(pName){
+      var coords=PORT_COORDS[pName];if(!coords)return;
+      L.circle(coords,{radius:80000,color:'rgba(0,136,255,.3)',fillColor:'rgba(0,136,255,.06)',fillOpacity:1,weight:1}).addTo(_mapLayers.vessels);
+      var portIcon=L.divIcon({className:'',html:'<div style="position:relative"><div style="width:8px;height:8px;border-radius:50%;background:#0088FF"></div><div style="position:absolute;top:-4px;left:-4px;width:16px;height:16px;border-radius:50%;border:1px solid #0088FF;opacity:0.5;animation:pulse 2s infinite"></div></div>',iconSize:[16,16],iconAnchor:[4,4]});
+      L.marker(coords,{icon:portIcon}).addTo(_mapLayers.vessels).bindPopup('<b>'+pName+' Port</b><br>주요 무역항');
+    });
+  });
+}
+
+/* Fetch conflict/geopolitical data from EF */
+function fetchConflictData(){
+  if(!_mapLayers.risks)return;
+  sb.functions.invoke('conflict-data',{body:{days:30}})
+  .then(function(r){if(r.error)throw r.error;return r.data;})
+  .then(function(data){
+    if(!_mapLayers.risks||!data.riskZones)return;
+    var zones=data.riskZones||[];
+    zones.forEach(function(z){
+      if(!z.center||!z.center[0])return;
+      var color=z.severity==='critical'?'#FF5252':z.severity==='high'?'#FF9800':z.severity==='medium'?'#FFB800':'#4CAF50';
+      var radius=z.fatalities>100?200000:z.fatalities>20?120000:z.events>50?80000:50000;
+      L.circle(z.center,{radius:radius,color:color,weight:1,fillColor:color,fillOpacity:0.12,dashArray:'6 4'}).addTo(_mapLayers.risks).bindPopup('<div style="font-size:13px"><b>'+UI.esc(z.country)+'</b><br><span style="color:'+color+'">'+z.severity.toUpperCase()+'</span><br>이벤트: '+z.events+'건 | 사상: '+z.fatalities+'명<br>유형: '+z.types.join(', ')+'</div>');
+    });
+    /* Show real event dots for latest events */
+    var events=data.events||[];
+    events.slice(0,50).forEach(function(e){
+      if(!e.lat||!e.lng)return;
+      var dotColor=e.fatalities>0?'#FF5252':'#FFB800';
+      L.circleMarker([e.lat,e.lng],{radius:3,color:dotColor,fillColor:dotColor,fillOpacity:0.6,weight:0}).addTo(_mapLayers.risks).bindPopup('<div style="font-size:12px"><b>'+UI.esc(e.event_type)+'</b><br>'+UI.esc(e.country)+' · '+e.event_date+(e.fatalities>0?'<br>사상: '+e.fatalities+'명':'')+'</div>');
+    });
+    if(data.source==='acled')console.log('[LiveMap] Real conflict data loaded:',zones.length,'zones,',events.length,'events');
+  }).catch(function(e){
+    console.warn('[LiveMap] Conflict data fetch failed:',e);
   });
 }
 
@@ -7922,6 +8000,14 @@ function refreshLiveMap(){
   if(!_liveMap)return;
   if(_mapLayers.aircraft)_mapLayers.aircraft.clearLayers();
   if(_mapLayers.vessels)_mapLayers.vessels.clearLayers();
+  if(_mapLayers.risks){_mapLayers.risks.clearLayers();
+    /* Re-draw default risk zones */
+    RISK_ZONES.forEach(function(z){
+      var color=z.level==='critical'?'#FF5252':z.level==='high'?'#FF9800':'#FFB800';
+      L.rectangle(z.bounds,{color:color,weight:1,fillColor:color,fillOpacity:0.08,dashArray:'4 4'}).addTo(_mapLayers.risks).bindPopup('<div style="font-size:13px"><b>'+z.name+'</b><br><span style="color:'+color+'">'+z.level.toUpperCase()+'</span><br>'+z.desc+'</div>');
+    });
+    fetchConflictData();
+  }
   fetchLiveAircraft();fetchLiveVessels();drawMyShipments();
   UI.toast('지도 새로고침 완료','ok');
 }
