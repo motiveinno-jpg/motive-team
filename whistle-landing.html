@@ -45,6 +45,7 @@
   #root [style*="fontSize: 52"]{font-size:32px!important}
   #root [style*="fontSize: 40"]{font-size:28px!important}
   #root [style*="gap: 48"]{gap:24px!important}
+  .rv-stats{grid-template-columns:repeat(2,1fr)!important}
 }
 @media(max-width:480px){
   .hero-heading{font-size:24px!important}
@@ -107,6 +108,10 @@ function App() {
   const [countdown, setCountdown] = useState(30); const [countdownActive, setCountdownActive] = useState(false); const [analysisExpired, setAnalysisExpired] = useState(false);
   const [dragOver, setDragOver] = useState(false); const [uploadProgress, setUploadProgress] = useState(0);
   const [guideStep, setGuideStep] = useState(0);
+  const [reviewCat, setReviewCat] = useState("all");
+  const [reviewIdx, setReviewIdx] = useState(0);
+  const [reviewPaused, setReviewPaused] = useState(false);
+  const [rvCols, setRvCols] = useState(typeof window !== "undefined" && window.innerWidth < 768 ? 1 : 3);
   const fileInputRef = useRef(null);
   const countdownRef = useRef(null);
   const [RELAY, setRelay] = useState((location.hostname === "localhost" || location.hostname === "127.0.0.1") ? "http://localhost:3456" : "");
@@ -145,7 +150,14 @@ function App() {
   };
 
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
+  useEffect(() => { const h = () => setRvCols(window.innerWidth < 768 ? 1 : 3); window.addEventListener("resize", h); return () => window.removeEventListener("resize", h); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
+  /* 리뷰 자동 롤링 (마우스 호버시 일시정지) */
+  useEffect(() => {
+    if (reviewPaused) return;
+    const id = setInterval(() => setReviewIdx(p => p + 1), 3500);
+    return () => clearInterval(id);
+  }, [reviewCat, reviewPaused]);
 
   const nav = (p, hash) => { setPage(p); setMobileMenu(false); if (hash) setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" }), 100); };
   const openSignup = () => { setShowSignup(true); setSignupStep(0); };
@@ -658,46 +670,123 @@ function App() {
     </div>
   );
 
-  /* ═══ 1.5 SOCIAL PROOF — 로고 + 후기 ═══ */
+  /* ═══ 1.5 SOCIAL PROOF — 카테고리별 한국 제조사 후기 롤링 ═══ */
+  const _reviewCats = [
+    { id: "all", label: "전체", icon: "🏆" },
+    { id: "beauty", label: "K-Beauty", icon: "💄" },
+    { id: "food", label: "K-Food", icon: "🍜" },
+    { id: "electronics", label: "K-Electronics", icon: "📱" },
+    { id: "fashion", label: "K-Fashion", icon: "👗" },
+    { id: "living", label: "K-Living", icon: "🏠" },
+    { id: "industrial", label: "K-Industrial", icon: "🏭" },
+  ];
+  const _reviews = [
+    { cat: "beauty", name: "김수연 대표", co: "스킨랩 코스메틱", text: "알리바바 입점을 3개월 준비했는데, Whistle AI로 2주 만에 끝냈습니다. AI 분석 리포트가 바이어 미팅에서 큰 설득력이 됐어요.", result: "첫 달 인콰이어리 47건", photo: "https://plus.unsplash.com/premium_photo-1682094317318-2d758496d54d?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "beauty", name: "이미영 이사", co: "뷰티원 코리아", text: "FDA 등록 절차가 막막했는데, 단계별 인증 가이드와 서류 자동생성이 정말 편했습니다. 수출바우처로 비용도 85% 절감했어요.", result: "미국 수출 $35K 달성", photo: "https://plus.unsplash.com/premium_photo-1661590863910-69abf33b8f3f?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "food", name: "박성호 대표", co: "대한식품", text: "HACCP부터 FDA까지 식품 수출에 필요한 인증을 한눈에 볼 수 있어서 좋았습니다. 견적서 자동 생성이 큰 도움이 됐어요.", result: "미국 수출 첫 계약 $28K", photo: "https://images.unsplash.com/photo-1603252112050-5ee77b4b4fde?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "food", name: "최재우 부장", co: "그린팜", text: "HALAL 인증 가이드가 정확했습니다. 동남아 바이어 3곳과 동시에 협상을 진행할 수 있어서 시간을 크게 절약했어요.", result: "동남아 수출 월 $22K", photo: "https://plus.unsplash.com/premium_photo-1661777167352-e8182fa5786a?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "electronics", name: "정우진 팀장", co: "코리아텍", text: "일본 대형 바이어와 AI 매칭으로 연결됐습니다. 기술 스펙 번역도 정확해서 소통에 전혀 문제 없었어요.", result: "일본 수출 월 $15K", photo: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "electronics", name: "한지수 대표", co: "스마트일렉", text: "HS코드 자동 분류와 FTA 관세 시뮬레이터가 정말 유용했어요. 관세 절감만으로 마진이 12% 늘었습니다.", result: "EU 수출 계약 $52K", photo: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "fashion", name: "김태현 대표", co: "서울패션그룹", text: "수출바우처로 초기 비용 85%를 절감하고, AI 분석으로 동남아 최적 타겟 시장을 찾았습니다. 3개국 동시 진출에 성공했어요.", result: "동남아 3개국 진출", photo: "https://images.unsplash.com/photo-1731335118155-1adc0bb14ac4?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "fashion", name: "오세라 이사", co: "K-스타일", text: "일본 편집숍 바이어에게 AI가 만든 분석 리포트를 보여줬더니 바로 미팅이 잡혔어요. 전문적인 데이터가 신뢰를 만들었습니다.", result: "일본 편집숍 5곳 입점", photo: "https://plus.unsplash.com/premium_photo-1664478302675-acb8d2a4eebd?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "living", name: "이동근 대표", co: "한울생활", text: "물류비 시뮬레이터로 FOB, CIF 비교 견적을 바로 만들 수 있어서 바이어의 신뢰가 확 올라갔습니다.", result: "유럽 수출 마진 22%", photo: "https://images.unsplash.com/photo-1736939615657-590b2dce72cc?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "living", name: "신민지 과장", co: "코리아리빙", text: "PI부터 CO까지 서류 자동생성이 진짜 편합니다. 예전에 3일 걸리던 서류 작업이 30분이면 끝나요.", result: "미국 아마존 입점 성공", photo: "https://plus.unsplash.com/premium_photo-1661740345683-00516219d50d?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "industrial", name: "장현우 부사장", co: "대한기계", text: "FTA 관세 시뮬레이터로 중동 바이어에게 관세 혜택을 바로 보여줄 수 있었습니다. 설득력이 완전히 달랐어요.", result: "중동 수출 $180K 달성", photo: "https://plus.unsplash.com/premium_photo-1661502983829-39a6f522e9e4?w=120&h=120&fit=crop&crop=faces" },
+    { cat: "industrial", name: "윤서영 과장", co: "프리텍", text: "HS코드 자동 분류부터 수출 서류까지 원스톱이라 업무 효율이 3배는 높아진 것 같아요. 진작 알았으면 좋았을 텐데.", result: "동남아 수출 월 $45K", photo: "https://images.unsplash.com/photo-1770364020204-102331b625ea?w=120&h=120&fit=crop&crop=faces" },
+  ];
+  const _catLabels = { beauty: "K-Beauty", food: "K-Food", electronics: "K-Electronics", fashion: "K-Fashion", living: "K-Living", industrial: "K-Industrial" };
+  const _catColors = { beauty: "#FF6B9D", food: "#FFB347", electronics: T.pri, fashion: T.purple, living: T.ok, industrial: "#78909C" };
+  const _filtered = reviewCat === "all" ? _reviews : _reviews.filter(r => r.cat === reviewCat);
+  const _totalSlides = _filtered.length;
+  const _visibleCount = rvCols;
+  const _slideStep = 100 / _visibleCount;
+  const _maxPos = _totalSlides > _visibleCount ? _totalSlides - _visibleCount : 0;
+  const _slidePos = _maxPos > 0 ? (reviewIdx % (_maxPos + 1)) : 0;
+
   const socialProof = (
-    <div style={{ background: T.deep, padding: "60px 24px", borderTop: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
+    <div style={{ padding: "100px 24px" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
-        <Fade>
-          <div style={{ textAlign: "center", marginBottom: 32 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: T.w20, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>Trusted by Korean Manufacturers</div>
-            <div style={{ display: "flex", gap: 36, justifyContent: "center", alignItems: "center", flexWrap: "wrap", opacity: 0.5 }}>
-              {["💄 뷰티 제조사", "🍜 식품 수출사", "📱 전자제품 OEM", "👗 패션 브랜드", "🏠 생활용품", "🏭 산업재 수출"].map((name, i) => (
-                <span key={i} style={{ fontSize: 13, color: T.w40, fontWeight: 600 }}>{name}</span>
-              ))}
-            </div>
+        <Fade><h2 style={s.heading}>한국 제조사가 인정한 성과</h2></Fade>
+        <Fade delay={0.1}><p style={s.sub}>6개 산업 카테고리에서 검증된 수출 성공 사례</p></Fade>
+
+        {/* 카테고리 탭 */}
+        <Fade delay={0.15}>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", margin: "36px 0 32px" }}>
+            {_reviewCats.map(c => (
+              <button key={c.id} onClick={() => { setReviewCat(c.id); setReviewIdx(0); }}
+                style={{ padding: "8px 18px", borderRadius: 20, border: `1.5px solid ${reviewCat === c.id ? T.pri : T.border}`, background: reviewCat === c.id ? `${T.pri}15` : "transparent", color: reviewCat === c.id ? T.pri : T.w40, cursor: "pointer", fontSize: 13, fontWeight: 600, transition: "all .25s", fontFamily: "inherit" }}>
+                {c.icon} {c.label}
+              </button>
+            ))}
           </div>
         </Fade>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-          {[
-            { name: "김종환 대표", co: "코스메틱 제조사", cat: "K-Beauty", text: "알리바바 입점을 3개월 준비했는데, Whistle AI로 2주 만에 끝냈습니다. AI 분석 리포트가 바이어 미팅에서 큰 설득력이 됐어요.", result: "첫 달 인콰이어리 47건", photo: "https://images.unsplash.com/photo-1556157382-97eda2d62296?w=120&h=120&fit=crop&crop=face" },
-            { name: "박성호 이사", co: "건강식품 수출사", cat: "K-Food", text: "FDA 등록이 막막했는데, 단계별 인증 가이드와 서류 자동생성이 정말 편했습니다. 수출바우처로 비용도 85% 절감했어요.", result: "미국 수출 첫 계약 $28K", photo: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=120&h=120&fit=crop&crop=face" },
-            { name: "이지영 팀장", co: "전자부품 OEM", cat: "K-Electronics", text: "바이어 발굴 기능으로 일본 대형 바이어와 연결됐습니다. AI 번역으로 영어/일어 소통도 문제없었어요. 진작 쓸 걸.", result: "일본 수출 월 $15K 달성", photo: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&h=120&fit=crop&crop=face" },
-          ].map((r, i) => (
-            <Fade key={i} delay={i * 0.1}>
-              <div style={{ ...s.card, padding: 24, height: "100%", display: "flex", flexDirection: "column" }}>
-                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                  {[1,2,3,4,5].map(s => <span key={s} style={{ fontSize: 14, color: "#FFB800" }}>★</span>)}
-                </div>
-                <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.7, flex: 1, marginBottom: 16 }}>"{r.text}"</div>
-                <div style={{ padding: "10px 12px", background: `${T.ok}08`, borderRadius: 8, border: `1px solid ${T.ok}20`, marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, color: T.ok, fontWeight: 700 }}>📈 {r.result}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <img src={r.photo} alt={r.name} style={{ width: 40, height: 40, borderRadius: 10, objectFit: "cover", border: `2px solid ${T.pri}40` }} />
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.w }}>{r.name}</div>
-                    <div style={{ fontSize: 11, color: T.w40 }}>{r.co} · {r.cat}</div>
+
+        {/* 카드 슬라이드 */}
+        <div style={{ overflow: "hidden", borderRadius: 16, margin: "0 -8px" }}
+          onMouseEnter={() => setReviewPaused(true)}
+          onMouseLeave={() => setReviewPaused(false)}>
+          <div className="rv-slide-inner" style={{ display: "flex", transition: "transform .7s cubic-bezier(.16,1,.3,1)", transform: `translateX(-${_slidePos * _slideStep}%)` }}>
+            {_filtered.map((r, i) => {
+              const catColor = _catColors[r.cat] || T.pri;
+              return (
+                <div key={r.name + i} style={{ flex: `0 0 ${_slideStep}%`, padding: "0 8px", minWidth: 0 }}>
+                  <div style={{ ...s.card, padding: 24, height: "100%", display: "flex", flexDirection: "column", transition: "border-color .3s, box-shadow .3s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = `${catColor}40`; e.currentTarget.style.boxShadow = `0 4px 30px ${catColor}15`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.boxShadow = "none"; }}>
+                    {/* 카테고리 태그 + 별점 */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                      <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: `${catColor}12`, color: catColor, border: `1px solid ${catColor}25` }}>{_catLabels[r.cat]}</span>
+                      <div style={{ display: "flex", gap: 2 }}>
+                        {[1,2,3,4,5].map(n => <span key={n} style={{ fontSize: 12, color: "#FFB800" }}>★</span>)}
+                      </div>
+                    </div>
+                    {/* 후기 텍스트 */}
+                    <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.8, flex: 1, marginBottom: 16 }}>"{r.text}"</div>
+                    {/* 성과 */}
+                    <div style={{ padding: "10px 14px", background: `${T.ok}08`, borderRadius: 10, border: `1px solid ${T.ok}20`, marginBottom: 16 }}>
+                      <div style={{ fontSize: 12, color: T.ok, fontWeight: 700 }}>📈 {r.result}</div>
+                    </div>
+                    {/* 프로필 */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <img src={r.photo} alt={r.name} loading="lazy" style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover", border: `2px solid ${catColor}40` }} />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: T.w }}>{r.name}</div>
+                        <div style={{ fontSize: 11, color: T.w40 }}>{r.co}</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Fade>
-          ))}
+              );
+            })}
+          </div>
         </div>
+
+        {/* 슬라이드 인디케이터 */}
+        {_totalSlides > _visibleCount && (
+          <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 24 }}>
+            {Array.from({ length: _totalSlides - _visibleCount + 1 }, (_, i) => (
+              <button key={i} onClick={() => setReviewIdx(i)}
+                style={{ width: _slidePos === i ? 24 : 8, height: 8, borderRadius: 4, background: _slidePos === i ? T.pri : T.w12, border: "none", cursor: "pointer", transition: "all .3s", padding: 0 }} />
+            ))}
+          </div>
+        )}
+
+        {/* 통계 바 */}
+        <Fade delay={0.2}>
+          <div className="rv-stats" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 48, padding: "28px 0", borderTop: `1px solid ${T.border}` }}>
+            {[
+              ["200+", "수출 프로젝트", T.pri],
+              ["59개국", "글로벌 진출", T.acc],
+              ["85%", "바우처 비용 절감", T.ok],
+              ["$2.1M+", "수출 거래액", T.purple],
+            ].map(([num, label, color], i) => (
+              <div key={i} style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 28, fontWeight: 800, background: `linear-gradient(135deg, ${color}, ${T.w})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{num}</div>
+                <div style={{ fontSize: 12, color: T.w40, marginTop: 4, fontWeight: 600 }}>{label}</div>
+              </div>
+            ))}
+          </div>
+        </Fade>
       </div>
     </div>
   );
