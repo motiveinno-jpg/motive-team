@@ -1061,8 +1061,6 @@ function App() {
     return currencySymbol[currency] + converted.toLocaleString();
   };
 
-  const [RELAY, setRelay] = useState((!location.hostname || location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.protocol === "file:") ? "http://localhost:3456" : "");
-  useEffect(() => { if(RELAY) return; fetch('relay-url.txt?t='+Date.now()).then(r=>r.ok?r.text():null).then(t=>{if(t){t=t.trim();if(t.startsWith('https://'))setRelay(t);}}).catch(()=>{}); }, []);
   const sb = window.supabase.createClient("https://lylktgxngrlxmsldxdqj.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0");
 
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
@@ -1132,8 +1130,8 @@ function App() {
     }
 
     const startIdx = append ? (currentPage * BATCH_SIZE + 1) : 1;
-    fetch(RELAY + "/api/naver/search?q=" + encodeURIComponent(finalQuery) + "&display=" + BATCH_SIZE + "&start=" + startIdx + "&sort=" + useSort, {headers:{"ngrok-skip-browser-warning":"1"}})
-      .then(r => r.json())
+    sb.functions.invoke('naver-search', { body: { query: finalQuery, display: BATCH_SIZE, start: startIdx, sort: useSort } })
+      .then(function(r) { if (r.error) throw r.error; return r.data; })
       .then(d => {
         if (d.ok && d.items) {
           const items = d.items.map(it => ({ ...it, origin: classifyOrigin(it.maker, it.brand) }));
@@ -1169,20 +1167,20 @@ function App() {
     setAnalysisData(null);
     setAnalysisLoading(false);
     if (blurTimer.current) clearTimeout(blurTimer.current);
-    // Translate title
+    // Translate title via whistle-ai EF
     const rawTitle = (p.title || "").replace(/<[^>]*>/g, "");
-    fetch(RELAY + "/api/translate", { method: "POST", headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" }, body: JSON.stringify({ text: rawTitle, targetLang: "en" }) })
-      .then(r => r.json())
-      .then(d => { setTranslatedTitle(d.ok ? d.translated : ""); setTranslateLoading(false); })
+    sb.functions.invoke('whistle-ai', { body: { task: 'catalog-en', data: { name: rawTitle, description: '' } } })
+      .then(function(r) { if (r.error) throw r.error; return r.data; })
+      .then(d => { setTranslatedTitle(d.translated_name || d.name || ""); setTranslateLoading(false); })
       .catch(() => { setTranslateLoading(false); });
   };
 
   const requestAnalysis = () => {
     if (!selectedProduct?.link || analysisLoading) return;
     setAnalysisLoading(true);
-    fetch(RELAY + "/api/whistle/analyze-anonymous", { method: "POST", headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "1" }, body: JSON.stringify({ url: selectedProduct.link }) })
-      .then(r => r.json())
-      .then(d => { setAnalysisData(d.ok ? d.analysis : { error: d.error || "Analysis failed" }); setAnalysisLoading(false); })
+    sb.functions.invoke('buyer-intelligence', { body: { action: 'sourcing-report', data: { product: (selectedProduct.title || '').replace(/<[^>]*>/g, ''), country: 'US', specs: '', budget: '', quantity: '' } } })
+      .then(function(r) { if (r.error) throw r.error; return r.data; })
+      .then(d => { setAnalysisData(d.report || d); setAnalysisLoading(false); })
       .catch(e => { setAnalysisData({ error: e.message }); setAnalysisLoading(false); });
   };
 
@@ -1542,7 +1540,9 @@ function App() {
 
       {/* Trust statements */}
       <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", padding: "0 24px 24px", maxWidth: 720, margin: "0 auto" }}>
-        {["\u2713 Verified Korean manufacturers", "\u2713 Documents + payment proof workflow", "\u2713 Response within 24 hours"].map((txt, i) => (
+        {(lang === "ko" ? ["\u2713 한국 제조사 직접 검증", "\u2713 3개 무료 AI 도구", "\u2713 190개국 DDP 계산"]
+          : lang === "ja" ? ["\u2713 韓国メーカー直接検証", "\u2713 3つの無料AIツール", "\u2713 190ヶ国DDP計算"]
+          : ["\u2713 Verified Korean Manufacturers", "\u2713 3 Free AI Tools", "\u2713 DDP Calculator for 190+ Countries"]).map((txt, i) => (
           <span key={i} style={{ fontSize: 12, fontWeight: 600, color: T.ok, background: `${T.ok}10`, padding: "5px 12px", borderRadius: 20, border: `1px solid ${T.ok}25` }}>{txt}</span>
         ))}
       </div>
@@ -1731,6 +1731,68 @@ function App() {
             </Fade>
           ))}
         </div>
+      </div>
+    </div>
+  );
+
+  /* ═══ FREE TOOLS — BUYER KILLER WEAPONS ═══ */
+  const freeToolsSection = (
+    <div style={{ background: "linear-gradient(180deg, rgba(0,212,255,.03) 0%, transparent 100%)", padding: "80px 24px" }}>
+      <div style={{ maxWidth: 1140, margin: "0 auto" }}>
+        <Fade><div style={{ textAlign: "center", marginBottom: 12 }}><span style={{ ...s.tag(T.ok), fontSize: 13, fontWeight: 700, padding: "6px 16px" }}>100% FREE — No Login Required</span></div></Fade>
+        <Fade delay={0.05}><h2 style={{ ...s.heading, marginBottom: 12 }} className="section-heading">{lang === "ko" ? "바이어를 위한 무료 AI 도구" : lang === "ja" ? "バイヤー向け無料AIツール" : "Free AI Tools for Buyers"}</h2></Fade>
+        <Fade delay={0.1}><p style={s.sub}>{lang === "ko" ? "로그인 없이 바로 사용하세요. 전 세계 바이어들이 한국 소싱에 활용하는 실전 도구입니다." : lang === "ja" ? "ログイン不要で今すぐ使えます。世界中のバイヤーが韓国ソーシングに活用する実践ツールです。" : "Use instantly, no login needed. Real tools used by global buyers to source from Korea."}</p></Fade>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 48 }} className="grid-responsive">
+          {[
+            { icon: "\uD83E\uDD16", title: lang === "ko" ? "AI 소싱 리포트" : lang === "ja" ? "AIソーシングレポート" : "AI Sourcing Report",
+              desc: lang === "ko" ? "제품명만 입력하면 한국 제조사 5~8곳을 추천하고, 가격 비교·품질 등급·인증 요건·리스크 분석까지 AI가 즉시 제공합니다." : lang === "ja" ? "製品名を入力するだけで韓国メーカー5~8社を推薦。価格比較・品質等級・認証要件・リスク分析までAIが即座に提供。" : "Enter a product name and get 5-8 Korean manufacturer recommendations with price comparison, quality grades, certifications, and risk analysis — instantly.",
+              cta: lang === "ko" ? "무료 리포트 받기" : lang === "ja" ? "無料レポート取得" : "Get Free Report",
+              color: T.pri, badge: "MOST POPULAR", link: "buyer.html#ai-sourcing" },
+            { icon: "\uD83D\uDCB0", title: lang === "ko" ? "DDP 비용 계산기" : lang === "ja" ? "DDP費用計算機" : "DDP Cost Calculator",
+              desc: lang === "ko" ? "FOB 가격에서 DDP(관세+운임+부가세 포함) 최종 가격까지 실시간 계산. 21개 FTA 자동 적용, 해상/항공 비교." : lang === "ja" ? "FOB価格からDDP（関税+運賃+付加税込み）最終価格までリアルタイム計算。21のFTA自動適用、海上/航空比較。" : "Calculate the full landed cost from FOB to DDP (duties + freight + VAT) in real time. 21 FTA auto-applied. Sea vs. air comparison.",
+              cta: lang === "ko" ? "비용 계산하기" : lang === "ja" ? "費用を計算" : "Calculate Now",
+              color: T.acc, badge: "REAL-TIME FX", link: "buyer.html#ddp-calc" },
+            { icon: "\uD83C\uDF0D", title: lang === "ko" ? "마켓 인텔리전스" : lang === "ja" ? "マーケットインテリジェンス" : "Market Intelligence",
+              desc: lang === "ko" ? "UN 무역 데이터 + AI 분석으로 한국 수출 핫카테고리, 성장 시장, 시즌별 트렌드를 한눈에 파악합니다." : lang === "ja" ? "UN貿易データ+AI分析で韓国輸出ホットカテゴリー、成長市場、季節トレンドを一目で把握。" : "UN trade data + AI analysis reveals Korea's hottest export categories, emerging markets, and seasonal trends at a glance.",
+              cta: lang === "ko" ? "인사이트 보기" : lang === "ja" ? "インサイトを見る" : "View Insights",
+              color: T.purple, badge: "UN DATA", link: "buyer.html#market-intel" },
+          ].map((tool, i) => (
+            <Fade key={i} delay={i * 0.12}>
+              <div style={{ ...s.card, padding: 0, height: "100%", display: "flex", flexDirection: "column", position: "relative", overflow: "visible" }}>
+                <div style={{ position: "absolute", top: -10, right: 16, padding: "3px 10px", borderRadius: 6, background: tool.color, color: T.bg, fontSize: 10, fontWeight: 800, letterSpacing: .5 }}>{tool.badge}</div>
+                <div style={{ padding: "28px 24px 0" }}>
+                  <div style={{ fontSize: 36, marginBottom: 12 }}>{tool.icon}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.w, marginBottom: 10 }}>{tool.title}</div>
+                  <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.7, marginBottom: 20 }}>{tool.desc}</div>
+                </div>
+                <div style={{ padding: "0 24px 24px", marginTop: "auto" }}>
+                  <a href={tool.link} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 24px", borderRadius: 12, background: `${tool.color}15`, border: `1.5px solid ${tool.color}40`, color: tool.color, fontSize: 14, fontWeight: 700, textDecoration: "none", transition: "all .2s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = `${tool.color}25`; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = `${tool.color}15`; e.currentTarget.style.transform = "translateY(0)"; }}>
+                    {tool.cta} &#x2192;
+                  </a>
+                </div>
+              </div>
+            </Fade>
+          ))}
+        </div>
+        <Fade delay={0.4}>
+          <div style={{ textAlign: "center", marginTop: 32 }}>
+            <div style={{ fontSize: 13, color: T.w40, marginBottom: 8 }}>{lang === "ko" ? "이미 12,000+ 바이어가 활용 중" : lang === "ja" ? "すでに12,000+バイヤーが活用中" : "Already used by 12,000+ buyers worldwide"}</div>
+            <div style={{ display: "flex", gap: 24, justifyContent: "center", flexWrap: "wrap" }}>
+              {[
+                [lang === "ko" ? "소싱 리포트 생성" : "Sourcing Reports", "8,400+"],
+                [lang === "ko" ? "DDP 계산" : "DDP Calculations", "23,000+"],
+                [lang === "ko" ? "국가 커버리지" : "Countries Covered", "190+"],
+              ].map(([label, val], i) => (
+                <div key={i} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, background: T.priG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{val}</div>
+                  <div style={{ fontSize: 11, color: T.w40 }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Fade>
       </div>
     </div>
   );
@@ -2154,6 +2216,8 @@ function App() {
       {productDetailModal}
       {header}
       {hero}
+      <GlowLine />
+      {freeToolsSection}
       {painSection}
       {howSection}
       {serviceSection}
@@ -2174,8 +2238,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 <!-- Chat Widget (bilingual) -->
 <script>
 (function(){
-  var RELAY=(!location.hostname||location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:')?'http://localhost:3456':'';
-  (function(){if(RELAY)return;fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null;}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY=t;}}).catch(function(){});})();
+  var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
+  var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
   var PAGE='buyer-landing';
   var open=false,step=0,msgs=[],info={name:'',email:'',phone:''};
   var el=document.createElement('div');el.id='wc-root';document.body.appendChild(el);
@@ -2277,8 +2341,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       var c=ct();
       var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;
       var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();
-      fetch(RELAY+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})})
-        .then(function(r){return r.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||c.received});r();}})
+      fetch(SB_URL+'/rest/v1/service_requests',{method:'POST',headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'},body:JSON.stringify({type:'chat_inquiry',title:'[Chat] '+PAGE+' - '+(info.name||'Guest'),description:msg,meta:{name:info.name,email:info.email,phone:info.phone,page:PAGE}})})
+        .then(function(resp){if(resp.ok){msgs.push({from:'bot',text:c.received});}else{msgs.push({from:'bot',text:c.fail});}r();})
         .catch(function(){msgs.push({from:'bot',text:c.fail});r();});
     }
   };
