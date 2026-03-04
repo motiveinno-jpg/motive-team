@@ -562,6 +562,7 @@ function renderPage(){
     case'ai-sourcing':return pgAISourcing();
     case'ddp-calc':return pgDDPCalc();
     case'market-intel':return pgMarketIntel();
+    case'supplier-verify':return pgSupplierVerify();
     case'marketplace':return pgMarketplace();
     case'search':return pgSearch();
     case'sourcing':return pgSourcing();
@@ -867,6 +868,90 @@ function _miOpportunity(){
     h+='<div style="text-align:center;margin-top:12px"><button class="btn btn-pri" onclick="B.nav(\'ai-sourcing\')" style="padding:12px 32px;font-size:13px">&#x1F916; '+t('Get Sourcing Report for')+' '+esc(cat)+'</button></div>';
     el.innerHTML=h;
   }).catch(function(e){el.innerHTML='<div style="color:var(--err)">'+esc(e.message)+'</div>';});
+}
+
+/* === SUPPLIER TRUST SCORE (Buyer Free Tool #4) === */
+function pgSupplierVerify(){
+  var h='<div style="max-width:800px;margin:0 auto">';
+  h+='<div style="text-align:center;margin-bottom:24px">';
+  h+='<div style="font-size:40px;margin-bottom:8px">&#x1F6E1;&#xFE0F;</div>';
+  h+='<div style="font-size:22px;font-weight:900;color:#fff;margin-bottom:6px">'+t('Supplier Trust Score')+'</div>';
+  h+='<div style="font-size:13px;color:var(--w40);line-height:1.6">'+t('Cross-verify any Korean manufacturer using 5 independent data sources.')+'<br>'+t('OpenCorporates + UN Comtrade + Business Registry + Website + Platform Activity')+'</div>';
+  h+='</div>';
+  // Input form
+  h+='<div style="padding:24px;border-radius:16px;background:var(--card);border:1px solid var(--bd);margin-bottom:20px">';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('Company Name')+'*</label><input id="sv-company" placeholder="e.g. Samsung Electronics" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('Country')+'</label><select id="sv-country" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"><option value="KR">Korea (KR)</option><option value="CN">China (CN)</option><option value="JP">Japan (JP)</option><option value="US">United States (US)</option><option value="DE">Germany (DE)</option><option value="VN">Vietnam (VN)</option><option value="TW">Taiwan (TW)</option><option value="IN">India (IN)</option></select></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('HS Code (optional)')+'</label><input id="sv-hs" placeholder="e.g. 3304" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);font-weight:700;display:block;margin-bottom:4px">'+t('Website (optional)')+'</label><input id="sv-web" placeholder="e.g. www.example.com" style="width:100%;padding:10px 14px;border-radius:8px;border:1px solid var(--bd);background:var(--w05);color:#fff;font-size:13px;outline:none;box-sizing:border-box"></div>';
+  h+='</div>';
+  h+='<div style="text-align:center;margin-top:18px"><button class="btn btn-pri" onclick="B.runSupplierVerify()" style="padding:12px 40px;font-size:14px;font-weight:800">&#x1F6E1;&#xFE0F; '+t('Verify Supplier')+'</button></div>';
+  h+='</div>';
+  h+='<div id="sv-result"></div>';
+  // Social proof
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px">';
+  h+='<div style="padding:14px;border-radius:10px;background:var(--w05);text-align:center"><div style="font-size:20px;font-weight:900;color:var(--pri)">2M+</div><div style="font-size:10px;color:var(--w30)">'+t('Companies in Database')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:10px;background:var(--w05);text-align:center"><div style="font-size:20px;font-weight:900;color:var(--ok)">5</div><div style="font-size:10px;color:var(--w30)">'+t('Independent Data Sources')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:10px;background:var(--w05);text-align:center"><div style="font-size:20px;font-weight:900;color:var(--acc)">30s</div><div style="font-size:10px;color:var(--w30)">'+t('Average Verification Time')+'</div></div>';
+  h+='</div></div>';
+  return h;
+}
+
+function _runSupplierVerify(){
+  var company=document.getElementById('sv-company');
+  if(!company||!company.value.trim()){UI.toast(t('Please enter company name'),'warn');return;}
+  var el=document.getElementById('sv-result');
+  if(!el)return;
+  el.innerHTML='<div style="padding:40px;text-align:center"><div class="spinner"></div><div style="margin-top:12px;font-size:13px;color:var(--w40)">&#x1F6E1;&#xFE0F; '+t('Cross-verifying supplier...')+'</div><div style="margin-top:6px;font-size:11px;color:var(--w20)">OpenCorporates + UN Comtrade + Platform Data (10-20s)</div></div>';
+  var ctry=(document.getElementById('sv-country')||{}).value||'KR';
+  var hs=(document.getElementById('sv-hs')||{}).value||'';
+  var web=(document.getElementById('sv-web')||{}).value||'';
+  sb.functions.invoke('trust-score',{body:{
+    company_name:company.value.trim(),
+    country:ctry,
+    hs_code:hs,
+    website:web
+  }}).then(function(r){
+    if(r.error)throw r.error;
+    var d=r.data;
+    var h='<div style="margin-top:20px;padding:24px;border-radius:16px;background:var(--card);border:1px solid var(--bd)">';
+    h+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px"><span style="font-size:28px">&#x1F6E1;&#xFE0F;</span><div><div style="font-size:18px;font-weight:900;color:#fff">'+esc(d.company_name||'')+' — Trust Score</div><div style="font-size:11px;color:var(--w30)">Verified '+new Date(d.verified_at).toLocaleString()+'</div></div></div>';
+    // Grade circle
+    h+='<div style="display:flex;align-items:center;gap:24px;margin-bottom:20px">';
+    h+='<div style="position:relative;width:120px;height:120px">';
+    var pct=d.total_score||0;var circ=2*Math.PI*50;var off=circ-(pct/100)*circ;
+    h+='<svg width="120" height="120" viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--w08)" stroke-width="10"/>';
+    h+='<circle cx="60" cy="60" r="50" fill="none" stroke="'+(d.grade_color||'#10B981')+'" stroke-width="10" stroke-dasharray="'+circ+'" stroke-dashoffset="'+off+'" stroke-linecap="round" transform="rotate(-90 60 60)"/>';
+    h+='<text x="60" y="52" text-anchor="middle" font-size="32" font-weight="900" fill="'+(d.grade_color||'#10B981')+'">'+(d.grade||'?')+'</text>';
+    h+='<text x="60" y="72" text-anchor="middle" font-size="12" fill="var(--w40)">'+pct+'/100</text></svg></div>';
+    h+='<div style="flex:1"><div style="font-size:24px;font-weight:900;color:'+(d.grade_color||'#10B981')+'">'+esc(d.grade_label||'')+'</div>';
+    h+='<div style="margin-top:8px;font-size:12px;color:var(--w60);line-height:1.6">'+t('Cross-verified trust score from 5 independent data sources.')+'</div></div></div>';
+    // Breakdown
+    if(d.breakdown){
+      var items=[{key:'corporate_registry',label:'Corporate Registry (OpenCorporates)',color:'#A855F7'},{key:'trade_history',label:'Export History (UN Comtrade)',color:'#3B82F6'},{key:'business_registration',label:'Business Registration',color:'#10B981'},{key:'website',label:'Website Verification',color:'#00D4FF'},{key:'platform_activity',label:'Platform Activity',color:'#F59E0B'}];
+      items.forEach(function(it){
+        var bd=d.breakdown[it.key];if(!bd)return;
+        var pctB=bd.max>0?Math.round(bd.score/bd.max*100):0;
+        h+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--w60)">'+it.label+'</span><span style="font-size:12px;font-weight:800;color:'+it.color+'">'+bd.score+'/'+bd.max+'</span></div>';
+        h+='<div style="height:8px;border-radius:4px;background:var(--w08);overflow:hidden"><div style="height:100%;width:'+pctB+'%;border-radius:4px;background:'+it.color+'"></div></div>';
+        if(it.key==='corporate_registry'&&bd.data)h+='<div style="font-size:10px;color:var(--w30);margin-top:2px">'+esc(bd.data.name||'')+' · '+esc(bd.data.status||'')+(bd.data.founded?' · Founded '+bd.data.founded:'')+'</div>';
+        if(it.key==='trade_history'&&bd.data)h+='<div style="font-size:10px;color:var(--w30);margin-top:2px">HS'+esc(bd.data.hs_prefix||'')+' exports $'+(bd.data.total_export_value?(bd.data.total_export_value/1e6).toFixed(0)+'M':'N/A')+' · '+bd.data.partner_count+' partners</div>';
+        h+='</div>';
+      });
+    }
+    // AI Summary
+    if(d.ai_summary){
+      h+='<div style="padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(16,185,129,.06),rgba(0,212,255,.04));border:1px solid rgba(16,185,129,.15);margin-top:16px">';
+      h+='<div style="font-size:13px;font-weight:700;color:#10B981;margin-bottom:8px">&#x1F916; AI Analysis</div>';
+      h+='<div style="font-size:12px;color:var(--w70);line-height:1.7;white-space:pre-line">'+esc(d.ai_summary)+'</div></div>';
+    }
+    h+='<div style="text-align:center;margin-top:16px"><button class="btn btn-pri" onclick="B.nav(\'ai-sourcing\')" style="padding:10px 24px;font-size:13px">&#x1F916; '+t('Get Full Sourcing Report')+'</button></div>';
+    h+='</div>';
+    el.innerHTML=h;
+  }).catch(function(e){
+    el.innerHTML='<div style="padding:20px;color:var(--err)">Verification failed: '+esc(e.message)+'</div>';
+  });
 }
 
 /* === BUYER ONBOARDING WIZARD === */
@@ -1229,6 +1314,7 @@ function renderSidebar(){
     {id:'ai-sourcing',icon:'&#x1F916;',label:'AI Sourcing Report',hot:true},
     {id:'ddp-calc',icon:'&#x1F4B0;',label:'DDP Calculator'},
     {id:'market-intel',icon:'&#x1F30D;',label:'Market Intelligence'},
+    {id:'supplier-verify',icon:'&#x1F6E1;&#xFE0F;',label:'Supplier Trust Score',hot:true},
     {id:'sec',label:'Discover'},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
     {id:'sourcing',icon:'&#x1F3ED;',label:'Find Manufacturers'},
@@ -1254,7 +1340,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  var titles={dashboard:'Dashboard','ai-sourcing':'AI Sourcing Report','ddp-calc':'DDP Cost Calculator','market-intel':'Market Intelligence',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Marketplace',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents','product-detail':'Product Details',partnership:'Partnership',pipeline:'Sourcing Pipeline',ordership:'Orders & Shipping',profilehub:'Profile & Settings'};
+  var titles={dashboard:'Dashboard','ai-sourcing':'AI Sourcing Report','ddp-calc':'DDP Cost Calculator','market-intel':'Market Intelligence','supplier-verify':'Supplier Trust Score',search:'Product Search',sourcing:'Find Manufacturers',deals:'Sourcing Pipeline',inquiries:'My Inquiries',marketplace:'Marketplace',saved:'Saved Products',profile:'Profile & Settings',messages:'Messages',orders:'Orders',shipments:'Shipments',documents:'Documents','product-detail':'Product Details',partnership:'Partnership',pipeline:'Sourcing Pipeline',ordership:'Orders & Shipping',profilehub:'Profile & Settings'};
   var h='<div class="topbar"><div class="topbar-title">'+t(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Language toggle
   h+='<div style="display:flex;align-items:center;gap:2px;background:var(--w08);border-radius:6px;padding:2px;border:1px solid var(--bd)">';
@@ -5199,7 +5285,8 @@ window.B={
   initBuyerMap:initBuyerMap,refreshBuyerMap:refreshBuyerMap,destroyBuyerMap:destroyBuyerMap,
   // Killer Weapons
   runAISourcing:runAISourcing,calcDDP:calcDDP,
-  _miGetStats:_miGetStats,_miLookup:_miLookup,_miOpportunity:_miOpportunity
+  _miGetStats:_miGetStats,_miLookup:_miLookup,_miOpportunity:_miOpportunity,
+  runSupplierVerify:_runSupplierVerify
 };
 
 // Close notification dropdown on outside click
