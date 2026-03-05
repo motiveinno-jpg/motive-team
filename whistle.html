@@ -579,7 +579,8 @@ function _loadExRateDirect(){
 /* 국가 정보 로딩 (REST Countries API — 완전 무료) */
 function _loadCountryData(){
   if(window._countryData)return;
-  fetch('https://restcountries.com/v3.1/all?fields=name,cca2,cca3,currencies,languages,capital,population,region,subregion,flags,timezones').then(function(r){return r.json();}).then(function(data){
+  fetch('https://restcountries.com/v3.1/all?fields=name,cca2,cca3,currencies,languages,capital,population,region,subregion,flags,timezones').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
+    if(!Array.isArray(data))throw new Error('Invalid response');
     window._countryData={};
     data.forEach(function(c){
       var code=c.cca2;if(!code)return;
@@ -651,7 +652,9 @@ function loadUser(){
       if(r.data.role==='buyer'&&!r.data.preferred_currency)S.currency='USD';
       loadExchangeRate();_loadCountryData();
       sb.from('companies').select('*').eq('user_id',r.data.id).maybeSingle().then(function(cr){
-        S.company=cr.data||null;S.loading=false;
+        S.company=cr.data||null;
+      }).catch(function(e){console.error('[loadCompany]',e);S.company=null;}).finally(function(){
+        S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
         _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){loadChatSummaries();initChatRealtime();initDocRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
@@ -13057,9 +13060,9 @@ function loadTrendReports(){
     S._trendReports=r.data||[];
   });
   // Load auto-freq setting
-  sb.from('user_settings').select('setting_value').eq('user_id',S.user.id).eq('setting_key','trend_auto_freq').single().then(function(r){
+  sb.from('user_settings').select('setting_value').eq('user_id',S.user.id).eq('setting_key','trend_auto_freq').maybeSingle().then(function(r){
     if(r.data)S._trendAutoFreq=r.data.setting_value;
-  });
+  }).catch(function(){});
 }
 
 /* ── Trend Report: Share via notification ── */
