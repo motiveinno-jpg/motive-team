@@ -10084,6 +10084,8 @@ function runAliSEO(){
   }}).then(function(res){if(res.error)throw res.error;return res.data;})
   .then(function(d){
     if(!d||d.error){box.innerHTML='<div style="margin-top:12px;padding:14px;border-radius:10px;border:1px solid rgba(255,82,82,.3);color:var(--err)">❌ '+(d&&d.error||'분석 실패')+'</div>';return;}
+    /* Unwrap nested optimization object from EF response */
+    if(d.optimization)d=Object.assign({},d,d.optimization);
     var h='<div style="margin-top:14px">';
     if(d.optimized_title){h+='<div class="card" style="margin-bottom:10px;border-color:rgba(255,152,0,.2)"><div class="card-h"><span>🏷️ 최적화 제목</span></div><div class="card-b"><div style="font-size:14px;font-weight:700;color:var(--acc);line-height:1.6;word-break:break-word">'+d.optimized_title+'</div></div></div>';}
     if(d.top_20_keywords&&d.top_20_keywords.length){h+='<div class="card" style="margin-bottom:10px;border-color:rgba(255,152,0,.2)"><div class="card-h"><span>🔑 TOP 20 키워드</span></div><div class="card-b"><div style="display:flex;flex-wrap:wrap;gap:6px">';d.top_20_keywords.forEach(function(kw){var k=typeof kw==='string'?kw:(kw.keyword||kw);h+='<span style="padding:4px 10px;border-radius:6px;background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.2);font-size:11px;color:var(--acc)">'+k+'</span>';});h+='</div></div></div>';}
@@ -10111,24 +10113,29 @@ function runExportReadiness(){
   }}).then(function(res){if(res.error)throw res.error;return res.data;})
   .then(function(d){
     if(!d||d.error){box.innerHTML='<div style="margin-top:12px;padding:14px;border-radius:10px;border:1px solid rgba(255,82,82,.3);color:var(--err)">❌ '+(d&&d.error||'진단 실패')+'</div>';return;}
+    /* Unwrap nested assessment object from EF response */
+    if(d.assessment)d=Object.assign({},d,d.assessment);
     var h='<div style="margin-top:14px">';
     /* Overall Score */
-    var sc=d.overall_score||0;var gr=d.grade||'';
+    var sc=d.overall_score||0;var gr=d.grade||d.letter_grade||'';
     var scCol=sc>=80?'var(--ok)':sc>=60?'var(--acc)':sc>=40?'var(--pri)':'var(--err)';
     h+='<div style="text-align:center;padding:20px;border-radius:14px;background:linear-gradient(135deg,rgba(0,230,118,.06),rgba(0,188,212,.06));border:1px solid rgba(0,230,118,.2);margin-bottom:14px">';
     h+='<div style="font-size:11px;color:var(--w40)">수출 준비도 종합 점수</div>';
     h+='<div style="font-size:42px;font-weight:900;color:'+scCol+'">'+sc+'<span style="font-size:16px">/100</span></div>';
     if(gr)h+='<div style="display:inline-block;padding:4px 14px;border-radius:8px;background:'+scCol+';color:#000;font-size:14px;font-weight:800;margin-top:4px">'+gr+'</div>';
     h+='</div>';
-    /* 5 Dimensions */
-    if(d.dimensions&&d.dimensions.length){
+    /* 5 Dimensions — handle both array and object format */
+    var _dims=d.dimensions;
+    if(_dims&&!Array.isArray(_dims)){_dims=Object.keys(_dims).map(function(k){var v=_dims[k];return typeof v==='object'?Object.assign({name:k},v):{name:k,score:v};});}
+    if(_dims&&_dims.length){
       h+='<div class="card" style="margin-bottom:10px;border-color:rgba(0,230,118,.2)"><div class="card-h"><span>📊 5대 차원 진단</span></div><div class="card-b">';
-      d.dimensions.forEach(function(dim){
+      _dims.forEach(function(dim){
         var ds=dim.score||0;var dc=ds>=80?'var(--ok)':ds>=60?'var(--acc)':ds>=40?'var(--pri)':'var(--err)';
-        h+='<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12px;font-weight:700;color:var(--w80)">'+(dim.name||dim.dimension||'')+'</span><span style="font-size:13px;font-weight:800;color:'+dc+'">'+ds+'</span></div>';
+        h+='<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12px;font-weight:700;color:var(--w80)">'+(dim.label||dim.name||dim.dimension||'')+'</span><span style="font-size:13px;font-weight:800;color:'+dc+'">'+ds+'</span></div>';
         h+='<div style="height:8px;border-radius:4px;background:var(--w08)"><div style="width:'+Math.max(ds,3)+'%;height:100%;border-radius:4px;background:'+dc+';transition:width .5s"></div></div>';
         if(dim.analysis)h+='<div style="font-size:11px;color:var(--w50);margin-top:3px;line-height:1.4">'+dim.analysis+'</div>';
-        if(dim.gaps&&dim.gaps.length)h+='<div style="font-size:11px;color:var(--err);margin-top:2px">Gap: '+dim.gaps.join(', ')+'</div>';
+        var _dg=dim.gaps||(dim.gap?[dim.gap]:[]);
+        if(_dg.length)h+='<div style="font-size:11px;color:var(--err);margin-top:2px">Gap: '+(typeof _dg==='string'?_dg:_dg.join(', '))+'</div>';
         h+='</div>';
       });
       h+='</div></div>';
@@ -10140,14 +10147,21 @@ function runExportReadiness(){
       h+='</div></div>';
     }
     /* Recommended First Market */
-    if(d.recommended_first_market){h+='<div style="padding:14px;border-radius:10px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);margin-bottom:10px"><div style="font-size:11px;color:var(--w40)">🏆 추천 첫 수출 시장</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+d.recommended_first_market+'</div>'+(d.first_market_reasoning?'<div style="font-size:11px;color:var(--w60);margin-top:2px">'+d.first_market_reasoning+'</div>':'')+'</div>';}
+    if(d.recommended_first_market){var _rfm=d.recommended_first_market;var _rfmName=typeof _rfm==='string'?_rfm:(_rfm.country||_rfm.name||JSON.stringify(_rfm));var _rfmReason=d.first_market_reasoning||(typeof _rfm==='object'?_rfm.reasoning||_rfm.rationale:'');h+='<div style="padding:14px;border-radius:10px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.2);margin-bottom:10px"><div style="font-size:11px;color:var(--w40)">🏆 추천 첫 수출 시장</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+_rfmName+'</div>'+(_rfmReason?'<div style="font-size:11px;color:var(--w60);margin-top:2px">'+_rfmReason+'</div>':'')+'</div>';}
     /* Government Programs */
     if(d.government_programs&&d.government_programs.length){
       h+='<div class="card" style="margin-bottom:10px;border-color:rgba(0,136,255,.2)"><div class="card-h"><span>🏛️ 정부 지원 프로그램</span></div><div class="card-b"><div style="display:flex;flex-wrap:wrap;gap:6px">';
-      d.government_programs.forEach(function(pg){h+='<span style="padding:4px 10px;border-radius:6px;background:rgba(0,136,255,.1);border:1px solid rgba(0,136,255,.2);font-size:11px;color:var(--pri)">'+pg+'</span>';});
+      d.government_programs.forEach(function(pg){var pgN=typeof pg==='string'?pg:(pg.name||pg.program||JSON.stringify(pg));h+='<span style="padding:4px 10px;border-radius:6px;background:rgba(0,136,255,.1);border:1px solid rgba(0,136,255,.2);font-size:11px;color:var(--pri)">'+pgN+'</span>';});
       h+='</div></div></div>';
     }
-    if(d.estimated_weeks){h+='<div style="text-align:center;padding:10px;font-size:12px;color:var(--w40)">⏱️ 첫 수출까지 예상 기간: <strong style="color:var(--ok)">약 '+d.estimated_weeks+'주</strong></div>';}
+    /* Risk Assessment */
+    if(d.risk_assessment&&d.risk_assessment.length){
+      h+='<div class="card" style="margin-bottom:10px;border-color:rgba(255,82,82,.2)"><div class="card-h"><span>⚠️ 리스크 평가</span></div><div class="card-b">';
+      d.risk_assessment.forEach(function(r){var sev=r.severity||r.level||'medium';var sevC=sev==='high'||sev==='높음'?'var(--err)':sev==='medium'||sev==='중간'?'var(--acc)':'var(--ok)';h+='<div style="padding:8px;border-radius:8px;background:var(--w03);margin-bottom:6px"><div style="display:flex;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:var(--w80)">'+(r.risk||r.name||'')+'</span><span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;color:'+sevC+'">'+sev+'</span></div>'+(r.mitigation||r.solution?'<div style="font-size:11px;color:var(--w50);margin-top:3px">💡 '+(r.mitigation||r.solution)+'</div>':'')+'</div>';});
+      h+='</div></div>';
+    }
+    var _ew=d.estimated_weeks||d.estimated_weeks_to_first_export||0;
+    if(_ew){h+='<div style="text-align:center;padding:10px;font-size:12px;color:var(--w40)">⏱️ 첫 수출까지 예상 기간: <strong style="color:var(--ok)">약 '+_ew+'주</strong></div>';}
     h+='</div>';box.innerHTML=h;
   }).catch(function(e){box.innerHTML='<div style="margin-top:12px;padding:14px;border-radius:10px;border:1px solid rgba(255,82,82,.3);color:var(--err)">❌ 오류: '+e.message+'</div>';});
 }
@@ -10168,7 +10182,15 @@ function runMarketEntry(){
   }}).then(function(res){if(res.error)throw res.error;return res.data;})
   .then(function(d){
     if(!d||d.error){box.innerHTML='<div style="margin-top:12px;padding:14px;border-radius:10px;border:1px solid rgba(255,82,82,.3);color:var(--err)">❌ '+(d&&d.error||'전략 생성 실패')+'</div>';return;}
-    var s=d.strategy||d;var h='<div style="margin-top:14px">';
+    var s=d.analysis||d.strategy||d;
+    /* Normalize EF field names to client field names */
+    if(s.pestel_analysis&&!s.pestel)s.pestel=s.pestel_analysis;
+    if(s.entry_mode_recommendation&&!s.entry_mode)s.entry_mode=s.entry_mode_recommendation;
+    if(s.go_to_market_timeline&&!s.roadmap){var _tml=s.go_to_market_timeline;s.roadmap=_tml.phases||_tml.milestones||_tml.steps||(Array.isArray(_tml)?_tml:[]);}
+    if(s.risk_matrix&&!s.risks)s.risks=s.risk_matrix;
+    if(s.budget_allocation&&!s.budget)s.budget=s.budget_allocation;
+    if(s.competitor_landscape&&!s.competitors)s.competitors=s.competitor_landscape;
+    var h='<div style="margin-top:14px">';
     /* Executive Summary */
     if(s.executive_summary){h+='<div style="padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(168,85,247,.06),rgba(99,102,241,.06));border:1px solid rgba(168,85,247,.2);margin-bottom:14px"><div style="font-size:13px;font-weight:800;color:var(--purple);margin-bottom:6px">📋 Executive Summary</div><div style="font-size:13px;color:var(--w70);line-height:1.7">'+s.executive_summary+'</div></div>';}
     /* PESTEL */
@@ -10210,6 +10232,35 @@ function runMarketEntry(){
         var sev=r.severity||r.impact||'medium';var sevC=sev==='high'?'var(--err)':sev==='medium'?'var(--acc)':'var(--ok)';
         h+='<div style="padding:10px;border-radius:8px;background:var(--w03);border:1px solid var(--bd);margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;font-weight:700;color:var(--w80)">'+(r.risk||r.name||'')+'</span><span style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;background:'+sevC+'20;color:'+sevC+'">'+sev+'</span></div>'+(r.mitigation?'<div style="font-size:11px;color:var(--w50);margin-top:4px">💡 '+r.mitigation+'</div>':'')+'</div>';
       });
+      h+='</div></div>';
+    }
+    /* Market Attractiveness Score */
+    if(s.market_attractiveness_score){
+      var mas=s.market_attractiveness_score;var masV=typeof mas==='number'?mas:(mas.overall||mas.score||0);
+      var masC=masV>=80?'var(--ok)':masV>=60?'var(--acc)':'var(--err)';
+      h+='<div style="text-align:center;padding:16px;border-radius:12px;background:linear-gradient(135deg,rgba(168,85,247,.06),rgba(0,212,255,.06));border:1px solid rgba(168,85,247,.2);margin-bottom:10px">';
+      h+='<div style="font-size:11px;color:var(--w40)">🎯 시장 매력도 점수</div>';
+      h+='<div style="font-size:38px;font-weight:900;color:'+masC+'">'+masV+'<span style="font-size:14px">/100</span></div>';
+      if(mas.factors){var _fk=Object.keys(mas.factors);_fk.forEach(function(fk){h+='<span style="display:inline-block;padding:2px 8px;margin:2px;border-radius:4px;background:var(--w06);font-size:10px;color:var(--w60)">'+fk+': '+(mas.factors[fk]||'')+'</span>';});}
+      h+='</div>';
+    }
+    /* Budget Allocation */
+    if(s.budget){
+      var ba=s.budget;
+      h+='<div class="card" style="margin-bottom:10px;border-color:rgba(0,188,212,.2)"><div class="card-h"><span>💰 예산 배분 전략</span></div><div class="card-b">';
+      if(ba.total_budget)h+='<div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:8px">총 예산: $'+(typeof ba.total_budget==='number'?ba.total_budget.toLocaleString():ba.total_budget)+'</div>';
+      var _baItems=ba.categories||ba.items||ba.breakdown||[];
+      if(Array.isArray(_baItems)){_baItems.forEach(function(bi){var pct=bi.percentage||bi.pct||0;h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--w06)"><span style="font-size:12px;color:var(--w70)">'+(bi.category||bi.name||bi.item||'')+'</span><span style="font-size:12px;font-weight:700;color:var(--pri)">'+pct+'%'+(bi.amount?' ($'+bi.amount.toLocaleString()+')':'')+'</span></div>';});}
+      else if(typeof ba==='object'){Object.keys(ba).filter(function(k){return k!=='total_budget';}).forEach(function(k){var v=ba[k];h+='<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--w06)"><span style="font-size:12px;color:var(--w70)">'+k+'</span><span style="font-size:12px;font-weight:700;color:var(--pri)">'+(typeof v==='object'?JSON.stringify(v):v)+'</span></div>';});}
+      h+='</div></div>';
+    }
+    /* Competitor Landscape */
+    if(s.competitors){
+      var cl=s.competitors;
+      h+='<div class="card" style="margin-bottom:10px;border-color:rgba(255,152,0,.2)"><div class="card-h"><span>🏢 경쟁 환경</span></div><div class="card-b">';
+      if(cl.summary||cl.overview)h+='<div style="font-size:12px;color:var(--w60);margin-bottom:8px;line-height:1.5">'+(cl.summary||cl.overview)+'</div>';
+      var _clItems=cl.competitors||cl.players||cl.companies||(Array.isArray(cl)?cl:[]);
+      _clItems.forEach(function(c){h+='<div style="padding:8px;border-radius:8px;background:var(--w03);margin-bottom:6px"><div style="font-size:12px;font-weight:700;color:var(--acc)">'+(c.name||c.company||'')+'</div>'+(c.market_share?'<span style="font-size:10px;color:var(--w40)">점유율: '+c.market_share+'</span>':'')+(c.strengths?'<div style="font-size:11px;color:var(--w50);margin-top:2px">강점: '+(Array.isArray(c.strengths)?c.strengths.join(', '):c.strengths)+'</div>':'')+'</div>';});
       h+='</div></div>';
     }
     /* Korean summary */
