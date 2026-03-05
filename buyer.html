@@ -4262,13 +4262,14 @@ function _insertDocApprovalChatMsg(doc,action,reason){
     body='[Revision Requested] '+docLabel+(doc.doc_number?' ('+doc.doc_number+')':'')+' — Reason: '+(reason||'');
   }
   sb.from('messages').insert({
-    buyer_seller_link_id:link.id,
-    sender_type:'buyer',sender_id:S.user.id,
+    user_id:sellerId,
+    buyer_id:link.id,
+    sender_type:'buyer',
     body:body,message_type:'system',
+    channel:'platform',direction:'inbound',
     created_at:new Date().toISOString()
   }).then(function(r){
     if(!r.error){
-      // Also notify the seller
       sb.from('notifications').insert({
         user_id:sellerId,type:'document',
         title:action==='approved'?'Document Approved':'Revision Requested',
@@ -4754,9 +4755,11 @@ function _insertDocSignedChatMsg(doc){
   var docLabel=typeNames[doc.doc_type]||(doc.doc_type||'').toUpperCase();
   var body='[Document Signed] Buyer signed '+docLabel+(doc.doc_number?' ('+doc.doc_number+')':'');
   sb.from('messages').insert({
-    buyer_seller_link_id:link.id,
-    sender_type:'buyer',sender_id:S.user.id,
+    user_id:sellerId,
+    buyer_id:link.id,
+    sender_type:'buyer',
     body:body,message_type:'system',
+    channel:'platform',direction:'inbound',
     created_at:new Date().toISOString()
   }).then(function(r){
     if(!r.error){
@@ -4827,20 +4830,22 @@ function advanceStage(nextStage){
   var deal=S.currentDeal;
   // Update matching stage in Supabase
   if(deal.matching&&deal.matching.id){
-    sb.from('buyer_seller_matchings').update({stage:nextStage,updated_at:new Date().toISOString()}).eq('id',deal.matching.id).then(function(r){
+    sb.from('matchings').update({status:nextStage,updated_at:new Date().toISOString()}).eq('id',deal.matching.id).then(function(r){
       if(r.error){toast(r.error.message||'Failed to advance stage','err');return;}
       deal.stage=nextStage;
-      if(deal.matching)deal.matching.stage=nextStage;
+      if(deal.matching)deal.matching.status=nextStage;
       toast(t('Stage advanced successfully'),'ok');
       // Insert chat message
       var link=S.buyerLinks.find(function(bl){return bl.seller_id===deal.sellerId;});
       if(link){
         var stageLabels={matched:'Matched',quotation:'Quote',sample:'Sample',negotiation:'Negotiate',production:'Production',shipping:'Shipping',completed:'Completed'};
         sb.from('messages').insert({
-          buyer_seller_link_id:link.id,
-          sender_type:'buyer',sender_id:S.user.id,
+          user_id:deal.sellerId,
+          buyer_id:link.id,
+          sender_type:'buyer',
           body:'[Stage advanced] Stage: '+esc(stageLabels[nextStage]||nextStage),
           message_type:'system',
+          channel:'platform',direction:'inbound',
           created_at:new Date().toISOString()
         }).then(function(){});
       }
