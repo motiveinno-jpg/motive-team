@@ -2719,8 +2719,27 @@ function pgAlibabaMgmt(){
   var aliProjects=S.projects.filter(function(p){return p.alibaba_customer;});
   var statusL={new:'신규',replied:'응답완료',qualified:'유망',sample_sent:'샘플발송',negotiating:'협상중',converted:'전환',lost:'실패',spam:'스팸'};
   var statusC={new:'err',replied:'acc',qualified:'ok',converted:'ok',lost:'ghost',spam:'ghost'};
+  /* 퍼널 계산 */
+  var _fc={new:0,replied:0,qualified:0,sample_sent:0,negotiating:0,converted:0,lost:0,spam:0};
+  inquiries.forEach(function(i){if(_fc[i.status]!==undefined)_fc[i.status]++;});
+  var _funnelActive=_fc.new+_fc.replied+_fc.qualified+_fc.sample_sent+_fc.negotiating+_fc.converted;
+  var _rateReply=inquiries.length?Math.round((_funnelActive-_fc.new)/inquiries.length*100):0;
+  var _rateQual=inquiries.length?Math.round((_fc.qualified+_fc.sample_sent+_fc.negotiating+_fc.converted)/inquiries.length*100):0;
+  var _rateConv=inquiries.length?Math.round(_fc.converted/inquiries.length*100):0;
+  /* 국가별 분포 */
+  var _countryMap={};inquiries.forEach(function(i){var c=i.buyer_country||'기타';_countryMap[c]=(_countryMap[c]||0)+1;});
+  var _topCountries=Object.keys(_countryMap).sort(function(a,b){return _countryMap[b]-_countryMap[a];}).slice(0,5);
+
   return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="font-size:18px;font-weight:800">🏪 알리바바 관리</h2></div>'+
-  '<div class="grid-4" style="margin-bottom:16px">'+UI.stat('스토어',stores.length,'','var(--acc)')+UI.stat('문의',inquiries.length,'','var(--pri)')+UI.stat('전환',inquiries.filter(function(i){return i.status==='converted';}).length,'','var(--ok)')+UI.stat('알리바바 프로젝트',aliProjects.length,'','var(--purple)')+'</div>'+
+  '<div class="grid-4" style="margin-bottom:16px">'+UI.stat('스토어',stores.length,'','var(--acc)')+UI.stat('총 문의',inquiries.length,'건','var(--pri)')+UI.stat('전환',_fc.converted,'건 ('+_rateConv+'%)','var(--ok)')+UI.stat('프로젝트',aliProjects.length,'알리바바','var(--purple)')+'</div>'+
+  /* 전환 퍼널 시각화 */
+  '<div class="card" style="margin-bottom:16px"><div class="card-h"><span>📊 문의 전환 퍼널</span></div><div class="card-b">'+
+  '<div style="display:flex;align-items:end;gap:2px;margin-bottom:14px;height:100px">'+
+  [{id:'new',l:'신규',c:'var(--err)'},{id:'replied',l:'응답',c:'var(--acc)'},{id:'qualified',l:'유망',c:'var(--ok)'},{id:'sample_sent',l:'샘플',c:'var(--pri)'},{id:'negotiating',l:'협상',c:'var(--purple)'},{id:'converted',l:'전환',c:'var(--ok)'}].map(function(s){var cnt=_fc[s.id];var pct=inquiries.length?Math.max(cnt/inquiries.length*100,4):4;return '<div style="flex:1;text-align:center"><div style="font-size:16px;font-weight:900;color:'+s.c+'">'+cnt+'</div><div style="height:'+pct+'px;background:'+s.c+';border-radius:4px 4px 0 0;margin:4px 2px;min-height:4px;transition:height .3s"></div><div style="font-size:9px;color:var(--w40)">'+s.l+'</div></div>';}).join('')+
+  '</div>'+
+  '<div class="grid-3">'+UI.stat('문의→응답',_rateReply+'%','전환율',_rateReply>50?'var(--ok)':'var(--acc)')+UI.stat('응답→유망',_rateQual+'%','전환율',_rateQual>30?'var(--ok)':'var(--acc)')+UI.stat('전체→주문',_rateConv+'%','전환율',_rateConv>10?'var(--ok)':'var(--err)')+'</div>'+
+  (_topCountries.length?'<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--bd)"><div style="font-size:11px;font-weight:700;color:var(--w40);margin-bottom:6px">🌍 국가별 문의</div><div style="display:flex;gap:8px;flex-wrap:wrap">'+_topCountries.map(function(c){return '<span style="padding:3px 10px;border-radius:6px;background:var(--w08);font-size:11px;color:var(--w70)">'+U.esc(c)+' <b style="color:var(--pri)">'+_countryMap[c]+'</b></span>';}).join('')+'</div></div>':'')+
+  '</div></div>'+
   /* Stores */
   '<div class="card" style="margin-bottom:16px"><div class="card-h">알리바바 스토어</div><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>제조사</th><th>스토어</th><th>상품수</th><th>월조회</th><th>상태</th></tr></thead><tbody>'+
   (stores.length?stores.map(function(s){return '<tr><td style="font-size:12px">'+getUserName(s.user_id)+'</td><td style="font-weight:600">'+U.esc(s.store_name||'—')+'</td><td style="font-family:JetBrains Mono;text-align:center">'+(s.products_listed||0)+'</td><td style="font-family:JetBrains Mono;text-align:center">'+(s.monthly_views||0)+'</td><td>'+UI.badge(s.status==='active'?'활성':'비활성',s.status==='active'?'ok':'ghost')+'</td></tr>';}).join(''):'<tr><td colspan="5">'+UI.empty('🏪','스토어 없음','')+'</td></tr>')+'</tbody></table></div></div>'+
