@@ -647,28 +647,38 @@ function toggleCurrency(){
 
 /* === DATA === */
 function loadUser(){
+  console.log('[loadUser] START');
   /* 5초 타임아웃: 로딩이 끝나지 않으면 로그인 화면 표시 */
-  var _loadTimeout=setTimeout(function(){if(S.loading){set({loading:false});}},5000);
+  var _loadTimeout=setTimeout(function(){if(S.loading){console.log('[loadUser] TIMEOUT 5s');set({loading:false});}},5000);
   sb.auth.getSession().then(function(res){
     clearTimeout(_loadTimeout);
     var session=res.data.session;
+    console.log('[loadUser] session:', session?'YES':'NO');
     if(!session)return set({loading:false});
     sb.from('users').select('*').eq('id',session.user.id).single().then(function(r){
+      console.log('[loadUser] users query:', r.error?'ERR:'+r.error.message:'OK', r.data?'role='+r.data.role:'no data');
       if(r.error||!r.data||(r.data.role!=='client'&&r.data.role!=='buyer'&&r.data.role!=='admin')){sb.auth.signOut();return set({loading:false});}
       S.user=r.data;
       if(r.data.preferred_currency)S.currency=r.data.preferred_currency;
       if(r.data.role==='buyer'&&!r.data.preferred_currency)S.currency='USD';
       loadExchangeRate();_loadCountryData();
+      console.log('[loadUser] querying companies...');
       sb.from('companies').select('*').eq('user_id',r.data.id).maybeSingle().then(function(cr){
+        console.log('[loadUser] companies:', cr.error?'ERR:'+cr.error.message:'OK', cr.data?'name='+cr.data.name_ko:'null');
         S.company=cr.data||null;
       }).catch(function(e){console.error('[loadCompany]',e);S.company=null;}).finally(function(){
         S.loading=false;
+        console.log('[loadUser] loading data (23 queries)...');
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){loadChatSummaries();initChatRealtime();initDocRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){
+          console.log('[loadUser] ALL DATA LOADED, calling render()');
+          loadChatSummaries();initChatRealtime();initDocRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();
+          console.log('[loadUser] render() DONE');
+        }).catch(function(e){console.error('[loadUser] allSettled FAILED',e);S.loading=false;render();});
       });
-    });
-  });
+    }).catch(function(e){console.error('[loadUser] users query FAILED',e);set({loading:false});});
+  }).catch(function(e){console.error('[loadUser] getSession FAILED',e);set({loading:false});});
 }
 function loadA(){return sb.from('analyses').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(50).then(function(r){S.analyses=r.data||[];}).catch(function(e){console.error('[loadA]',e);S.analyses=[];});}
 function loadP(){return sb.from('products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){S.products=r.data||[];}).catch(function(e){console.error('[loadP]',e);S.products=[];});}
