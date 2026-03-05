@@ -647,38 +647,28 @@ function toggleCurrency(){
 
 /* === DATA === */
 function loadUser(){
-  console.log('[loadUser] START');
-  /* 5초 타임아웃: 로딩이 끝나지 않으면 로그인 화면 표시 */
-  var _loadTimeout=setTimeout(function(){if(S.loading){console.log('[loadUser] TIMEOUT 5s');set({loading:false});}},5000);
+  var _loadTimeout=setTimeout(function(){if(S.loading){set({loading:false});}},5000);
   sb.auth.getSession().then(function(res){
     clearTimeout(_loadTimeout);
     var session=res.data.session;
-    console.log('[loadUser] session:', session?'YES':'NO');
     if(!session)return set({loading:false});
     sb.from('users').select('*').eq('id',session.user.id).single().then(function(r){
-      console.log('[loadUser] users query:', r.error?'ERR:'+r.error.message:'OK', r.data?'role='+r.data.role:'no data');
       if(r.error||!r.data||(r.data.role!=='client'&&r.data.role!=='buyer'&&r.data.role!=='admin')){sb.auth.signOut();return set({loading:false});}
       S.user=r.data;
       if(r.data.preferred_currency)S.currency=r.data.preferred_currency;
       if(r.data.role==='buyer'&&!r.data.preferred_currency)S.currency='USD';
       loadExchangeRate();_loadCountryData();
-      console.log('[loadUser] querying companies...');
       sb.from('companies').select('*').eq('user_id',r.data.id).maybeSingle().then(function(cr){
-        console.log('[loadUser] companies:', cr.error?'ERR:'+cr.error.message:'OK', cr.data?'name='+cr.data.name_ko:'null');
         S.company=cr.data||null;
       }).catch(function(e){console.error('[loadCompany]',e);S.company=null;}).finally(function(){
         S.loading=false;
-        console.log('[loadUser] loading data (23 queries)...');
-        /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
         _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){
-          console.log('[loadUser] ALL DATA LOADED, calling render()');
           loadChatSummaries();initChatRealtime();initDocRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();
-          console.log('[loadUser] render() DONE');
-        }).catch(function(e){console.error('[loadUser] allSettled FAILED',e);S.loading=false;render();});
+        }).catch(function(e){console.error('[loadUser]',e);S.loading=false;render();});
       });
-    }).catch(function(e){console.error('[loadUser] users query FAILED',e);set({loading:false});});
-  }).catch(function(e){console.error('[loadUser] getSession FAILED',e);set({loading:false});});
+    }).catch(function(e){console.error('[loadUser]',e);set({loading:false});});
+  }).catch(function(e){console.error('[loadUser]',e);set({loading:false});});
 }
 function loadA(){return sb.from('analyses').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(50).then(function(r){S.analyses=r.data||[];}).catch(function(e){console.error('[loadA]',e);S.analyses=[];});}
 function loadP(){return sb.from('products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){S.products=r.data||[];}).catch(function(e){console.error('[loadP]',e);S.products=[];});}
@@ -1170,7 +1160,7 @@ function submitA(){
     var _imgFiles=(d.files||[]).filter(function(f){return f._file&&f.type&&f.type.startsWith('image/');});
     var _uploadP=_imgFiles.length?Promise.all(_imgFiles.map(function(f){var path='analyses/'+S.user.id+'/'+r.data.id+'/'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');return sb.storage.from('whistle-uploads').upload(path,f._file).then(function(ur){if(ur.error)throw ur.error;return sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;});})):Promise.resolve([]);
     _uploadP.then(function(fileUrls){
-    sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:fileUrls,selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'Edge Function 오류');var data=resp.data;
+    sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:fileUrls,selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'AI 분석 서버 연결 오류');var data=resp.data;
       if(!data||!data.ok)throw new Error((data&&data.error)||'분석 실패');
       var res=data.result;
       /* EF v5 already updated DB — just reload and display */
@@ -1196,7 +1186,7 @@ function submitA(){
         });
       });
     });
-    }).catch(function(upErr){console.error('[analyze-export] Image upload error:',upErr);UI.toast('이미지 업로드 실패 — 텍스트 기반으로 분석합니다','warn');sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:[],selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'EF error');var data=resp.data;if(!data||!data.ok)throw new Error((data&&data.error)||'분석 실패');S._submitting=false;GP.done();if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;}autoCreateProduct(r.data.id,data.result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:data.result})});UI.toast('AI 분석 완료!','ok');});}).catch(function(efErr){console.error('[analyze-export] Fallback EF error:',efErr);S._submitting=false;GP.done();S._fallbackAnalysis=true;var res=genReport(d);sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){autoCreateProduct(r.data.id,res,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('기본 분석 완료','ok');});});});});
+    }).catch(function(upErr){console.error('[analyze-export] Image upload error:',upErr);UI.toast('이미지 업로드 실패 — 텍스트 기반으로 분석합니다','warn');sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:[],selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'AI 분석 서버 오류');var data=resp.data;if(!data||!data.ok)throw new Error((data&&data.error)||'분석 실패');S._submitting=false;GP.done();if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;}autoCreateProduct(r.data.id,data.result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:data.result})});UI.toast('AI 분석 완료!','ok');});}).catch(function(efErr){console.error('[analyze-export] Fallback EF error:',efErr);S._submitting=false;GP.done();S._fallbackAnalysis=true;var res=genReport(d);sb.from('analyses').update({status:'completed',ai_result:res}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){autoCreateProduct(r.data.id,res,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('기본 분석 완료','ok');});});});});
   });
 }
 
@@ -13647,9 +13637,6 @@ function render(){
   if(S.page==='tracking'&&S._trackingView==='map'&&document.getElementById('logistics-map'))setTimeout(initLiveMap,150);
   _checkTourAfterRender();
   /* 디버그: 렌더 결과 확인 */
-  var _dbgPC=document.querySelector('.page-content');
-  var _dbgMA=document.querySelector('.main-area');
-  console.log('[render] page='+S.page+' sidebar='+!!document.querySelector('.sidebar')+' mainArea='+!!_dbgMA+' mainH='+(_dbgMA?_dbgMA.offsetHeight:-1)+' pageContent='+!!_dbgPC+' pageH='+(_dbgPC?_dbgPC.offsetHeight:-1)+' contentLen='+(_dbgPC?_dbgPC.innerHTML.length:-1));
   }catch(renderErr){console.error('[render error]',renderErr);var _errPage=S.page;app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="main-area" style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">페이지 렌더링 오류 ('+UI.esc(_errPage)+')</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+UI.esc(renderErr.message)+'</div><pre style="text-align:left;font-size:10px;color:#666;background:#111;padding:12px;border-radius:8px;max-height:200px;overflow:auto;margin-bottom:16px">'+UI.esc(renderErr.stack||'')+'</pre><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">새로고침</button><button onclick="App.nav(\'dashboard\')" style="padding:8px 20px;border-radius:8px;background:#666;color:#fff;border:none;cursor:pointer;margin-left:8px">대시보드</button></div></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:renderErr.stack,url:location.href,page:_errPage,portal:'whistle'}).then(function(){});}catch(e){}}
 }
 /* === FOOTER BUSINESS INFO === */
