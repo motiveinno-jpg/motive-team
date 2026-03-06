@@ -244,7 +244,8 @@ function loadAll(){
     sb.from('deal_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.dealEvents=r.data||[];}),
     sb.from('quotes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.quotes=r.data||[];}),
     sb.from('client_errors').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.clientErrors=r.data||[];}),
-    sb.from('email_logs').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.emailLogs=r.data||[];})
+    sb.from('email_logs').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.emailLogs=r.data||[];}),
+    sb.from('trust_scores').select('*').then(function(r){S.trustScores={};(r.data||[]).forEach(function(ts){S.trustScores[ts.entity_id+'_'+ts.role]=ts;});})
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();
     // Show onboarding on first login (check both DB and localStorage)
     if(!localStorage.getItem('admin_onboarding_done')&&!(S.user&&S.user.onboarding_completed)){setTimeout(showOnboarding,600);}
@@ -291,6 +292,8 @@ function getUserName(uid){var u=S.users.find(function(x){return x.id===uid;});re
 function getCompany(uid){return S.companies.find(function(x){return x.user_id===uid;})||null;}
 function getBuyerName(bid){var b=S.buyers.find(function(x){return x.id===bid;});return b?U.esc(b.company_name):'—';}
 function getBuyerCountry(bid){var b=S.buyers.find(function(x){return x.id===bid;});return b?b.country:'';}
+function _getTrust(eid,role){return (S.trustScores||{})[eid+'_'+role]||null;}
+function _trustFlag(ts){if(!ts)return '';var c=ts.grade==='A'?'var(--ok)':ts.grade==='B'?'var(--pri)':ts.grade==='C'?'var(--acc)':'var(--err)';return '<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:6px;background:'+c+'22;border:1px solid '+c+'33;font-size:9px;font-weight:800;color:'+c+';margin-left:4px">'+ts.grade+ts.score+'</span>';}
 var FLAGS={KR:'\uD83C\uDDF0\uD83C\uDDF7',CN:'\uD83C\uDDE8\uD83C\uDDF3',JP:'\uD83C\uDDEF\uD83C\uDDF5',US:'\uD83C\uDDFA\uD83C\uDDF8',VN:'\uD83C\uDDFB\uD83C\uDDF3',AE:'\uD83C\uDDE6\uD83C\uDDEA',SG:'\uD83C\uDDF8\uD83C\uDDEC',TH:'\uD83C\uDDF9\uD83C\uDDED',RU:'\uD83C\uDDF7\uD83C\uDDFA',HK:'\uD83C\uDDED\uD83C\uDDF0',TW:'\uD83C\uDDF9\uD83C\uDDFC',DE:'\uD83C\uDDE9\uD83C\uDDEA',FR:'\uD83C\uDDEB\uD83C\uDDF7',GB:'\uD83C\uDDEC\uD83C\uDDE7',AU:'\uD83C\uDDE6\uD83C\uDDFA'};
 function flag(c){return FLAGS[c]||'\uD83C\uDF0D';}
 function groupBy(arr,key){var m={};arr.forEach(function(x){var k=x[key]||'unknown';if(!m[k])m[k]=[];m[k].push(x);});return m;}
@@ -396,8 +399,10 @@ function pgDash(){
     }
     return false;
   });
+  /* D-grade trust detection */
+  var _dGradeUsers=Object.values(S.trustScores||{}).filter(function(ts){return ts.grade==='D';});
   var urgentHtml = '';
-  if(pendingSR > 0 || overdueSR > 0 || unreadChat > 0 || _staleDeals.length > 0 || _staleOrders.length > 0) {
+  if(pendingSR > 0 || overdueSR > 0 || unreadChat > 0 || _staleDeals.length > 0 || _staleOrders.length > 0 || _dGradeUsers.length > 0) {
     urgentHtml += '<div class="card" style="border-left:3px solid var(--err);margin-bottom:16px">';
     urgentHtml += '<div class="card-b" style="padding:14px 18px">';
     urgentHtml += '<div style="font-weight:800;font-size:14px;margin-bottom:10px;color:var(--err)">&#x26A0;&#xFE0F; 긴급 처리 필요</div>';
@@ -407,6 +412,7 @@ function pgDash(){
     if(unreadChat > 0) urgentHtml += '<div onclick="Adm.set({page:\'chat\'})" style="cursor:pointer;padding:10px 16px;background:rgba(0,212,255,.1);border-radius:var(--r-s);border:1px solid rgba(0,212,255,.2)"><div style="font-size:20px;font-weight:800;color:var(--pri)">'+unreadChat+'</div><div style="font-size:11px;color:var(--w40)">미읽은 메시지</div></div>';
     if(_staleDeals.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'matchings\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,184,0,.1);border-radius:var(--r-s);border:1px solid rgba(255,184,0,.2)"><div style="font-size:20px;font-weight:800;color:var(--acc)">'+_staleDeals.length+'</div><div style="font-size:11px;color:var(--w40)">7일+ 정체 거래</div></div>';
     if(_staleOrders.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'orders\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,82,82,.1);border-radius:var(--r-s);border:1px solid rgba(255,82,82,.2)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+_staleOrders.length+'</div><div style="font-size:11px;color:var(--w40)">3일+ 미결제</div></div>';
+    if(_dGradeUsers.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'matchings\'})" style="cursor:pointer;padding:10px 16px;background:rgba(239,68,68,.08);border-radius:var(--r-s);border:1px solid rgba(239,68,68,.15)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+_dGradeUsers.length+'</div><div style="font-size:11px;color:var(--w40)">D등급 신뢰도</div></div>';
     urgentHtml += '</div>';
     /* Stale detail cards */
     if(_staleDeals.length>0||_staleOrders.length>0){
@@ -1104,7 +1110,7 @@ function pgMatchings(){
   '<div class="card" style="margin-bottom:16px"><div class="card-h">파이프라인</div><div class="card-b">'+[{k:'proposed',c:'var(--w40)'},{k:'interested',c:'var(--pri)'},{k:'sample',c:'var(--acc)'},{k:'negotiation',c:'var(--warn)'},{k:'contract',c:'var(--purple)'},{k:'completed',c:'var(--ok)'},{k:'rejected',c:'var(--err)'}].map(function(st){return hBar(matchStatusLabel(st.k),pipeline[st.k],maxPipe,st.c);}).join('')+'</div></div>'+
   '<div class="tab-bar">'+tabs.map(function(t){var label=t==='all'?'전체':matchStatusLabel(t);var c=t==='all'?totalDeals:(pipeline[t]||0);return '<div class="tab-item '+(S.tab===t?'active':'')+'" onclick="Adm.setTab(\''+t+'\')">'+label+' <span style="font-size:10px;color:var(--w20)">'+c+'</span></div>';}).join('')+'</div>'+
   (function(){var pg=paginate(filtered,'matchings');return '<div class="card"><div class="card-b" style="padding:0"><table class="tbl"><thead><tr><th>제조사</th><th>바이어</th><th>상태</th><th>금액</th><th>날짜</th></tr></thead><tbody>'+
-  (pg.items.length?pg.items.map(function(m){var order=S.orders.find(function(o){return (m.project_id&&o.project_id===m.project_id)||(o.buyer_id===m.buyer_id&&o.user_id===m.user_id);});return '<tr onclick="Adm.viewMatching(\''+m.id+'\')"><td>'+getUserName(m.user_id)+'</td><td>'+flag(getBuyerCountry(m.buyer_id))+' '+getBuyerName(m.buyer_id)+'</td><td>'+UI.badge(matchStatusLabel(m.status),m.status==='completed'?'ok':m.status==='rejected'?'err':'acc')+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+(order?U.usd(order.total_amount):'—')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(m.created_at)+'</td></tr>';}).join(''):'<tr><td colspan="5">'+UI.empty('🤝','매칭 없음','')+'</td></tr>')+'</tbody></table></div></div>'+paginationBar('matchings',pg);})()
+  (pg.items.length?pg.items.map(function(m){var order=S.orders.find(function(o){return (m.project_id&&o.project_id===m.project_id)||(o.buyer_id===m.buyer_id&&o.user_id===m.user_id);});var _stS=_getTrust(m.user_id,'seller');var _stB=_getTrust(m.buyer_id,'buyer');return '<tr onclick="Adm.viewMatching(\''+m.id+'\')"><td>'+getUserName(m.user_id)+_trustFlag(_stS)+'</td><td>'+flag(getBuyerCountry(m.buyer_id))+' '+getBuyerName(m.buyer_id)+_trustFlag(_stB)+'</td><td>'+UI.badge(matchStatusLabel(m.status),m.status==='completed'?'ok':m.status==='rejected'?'err':'acc')+((_stS&&_stS.grade==='D')||(_stB&&_stB.grade==='D')?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(239,68,68,.1);color:var(--err);font-weight:700;margin-left:4px">LOW TRUST</span>':'')+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+(order?U.usd(order.total_amount):'—')+'</td><td style="font-size:12px;color:var(--w40)">'+U.fd(m.created_at)+'</td></tr>';}).join(''):'<tr><td colspan="5">'+UI.empty('🤝','매칭 없음','')+'</td></tr>')+'</tbody></table></div></div>'+paginationBar('matchings',pg);})()
 }
 function pgMatchingDetail(){
   var m=S.selectedMatching;if(!m)return'';
