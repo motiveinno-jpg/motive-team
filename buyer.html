@@ -487,6 +487,69 @@ function toast(msg,type){
   document.body.appendChild(t);setTimeout(function(){t.remove();},3000);
 }
 
+/* === BUYER AUTOPILOT ENGINE === */
+function _buyerComputeNudges(){
+  var nudges=[];
+  /* Rule 1: Orders waiting for buyer payment */
+  (S.orders||[]).forEach(function(o){
+    if(o.status==='cancelled'||o.status==='completed')return;
+    if(o.payment_status==='paid')return;
+    var age=Math.floor((Date.now()-new Date(o.updated_at||o.created_at).getTime())/86400000);
+    if(o.payment_status==='unpaid'&&age>=2){
+      nudges.push({id:'pay_'+o.id,type:'payment',ref:'order',ref_id:o.id,pri:1,
+        msg:t('Order')+ ' '+(o.order_number||'#')+ ' — '+ t('Payment pending')+' '+age+t('days'),
+        act:t('View Order'),pg:'orders'});
+    }
+  });
+  /* Rule 2: Documents pending buyer review/signature */
+  (S.sharedDocs||[]).forEach(function(d){
+    if(d.buyer_signed||d.status==='signed')return;
+    if(d.seller_signed&&!d.buyer_signed){
+      nudges.push({id:'sign_'+d.id,type:'doc_sign',ref:'document',ref_id:d.id,pri:1,
+        msg:(d.doc_type||'Document').toUpperCase()+' — '+t('Signature requested by seller'),
+        act:t('Review & Sign'),pg:'documents'});
+    }
+  });
+  /* Rule 3: Stale deals — no progress 7+ days */
+  (S.deals||[]).forEach(function(d){
+    if(!d.matching)return;
+    var m=d.matching;
+    if(m.status==='completed'||m.status==='rejected'||m.status==='cancelled')return;
+    var age=Math.floor((Date.now()-new Date(m.updated_at||m.created_at).getTime())/86400000);
+    if(age>=7){
+      nudges.push({id:'stale_'+m.id,type:'stale',ref:'deal',ref_id:d.id,pri:age>=14?1:2,
+        msg:t('Deal with')+' '+esc(getSellerName(m.user_id))+' — '+age+t('days no update'),
+        act:t('Continue'),pg:'deals'});
+    }
+  });
+  /* Rule 4: Unread messages */
+  if(S.chatUnread&&S.chatUnread>=3){
+    nudges.push({id:'chat_unread',type:'chat',ref:'chat',ref_id:'',pri:2,
+      msg:S.chatUnread+' '+t('unread messages from sellers'),
+      act:t('View Messages'),pg:'messages'});
+  }
+  nudges.sort(function(a,b){return a.pri-b.pri;});
+  S._buyerNudges=nudges;
+  return nudges;
+}
+function _renderBuyerNudges(){
+  var nudges=S._buyerNudges||[];
+  if(!nudges.length)return '';
+  var h='<div class="card" style="margin-bottom:16px;border-color:var(--acc)"><div class="card-h" style="color:var(--acc)">&#x26A1; '+t('Action Required')+'</div><div class="card-b" style="padding:8px 12px">';
+  nudges.slice(0,5).forEach(function(n){
+    var icon=n.type==='payment'?'&#x1F4B0;':n.type==='doc_sign'?'&#x270D;&#xFE0F;':n.type==='stale'?'&#x23F3;':'&#x1F4AC;';
+    var bg=n.pri===1?'rgba(239,68,68,.06)':'var(--w08)';
+    var border=n.pri===1?'var(--err)':'var(--acc)';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;background:'+bg+';margin-bottom:6px;border-left:3px solid '+border+';cursor:pointer" onclick="B.nav(\''+n.pg+'\')">';
+    h+='<span style="font-size:16px">'+icon+'</span>';
+    h+='<span style="flex:1;font-size:13px;color:var(--w90)">'+n.msg+'</span>';
+    h+='<button class="btn '+(n.pri===1?'btn-err':'btn-pri')+' btn-sm" onclick="event.stopPropagation();B.nav(\''+n.pg+'\')">'+n.act+'</button>';
+    h+='</div>';
+  });
+  h+='</div></div>';
+  return h;
+}
+
 /* === RENDER === */
 var _renderTimer=null;
 function render(){
@@ -1756,6 +1819,10 @@ function pgDash(){
   h+='<div class="stat-card"><div class="stat-val" style="color:var(--acc)">'+completedOrders+'</div><div class="stat-label">'+t('Completed Orders')+'</div></div>';
   h+='</div>';
   if(totalOrderAmt>0){h+='<div class="card" style="margin-bottom:16px;border-color:var(--pri)"><div class="card-b" style="display:flex;align-items:center;gap:16px;padding:14px 18px"><div style="font-size:24px">&#x1F4B0;</div><div><div style="font-size:11px;color:var(--w40)">Total Order Value</div><div style="font-size:20px;font-weight:800;color:var(--pri)">$'+totalOrderAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</div></div></div></div>';}
+
+  /* Buyer Autopilot Nudges */
+  _buyerComputeNudges();
+  h+=_renderBuyerNudges();
 
   // Quick actions
   h+='<div class="card"><div class="card-h">'+t('Quick Actions')+'</div><div class="card-b"><div class="grid-4">';
