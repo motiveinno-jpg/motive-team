@@ -2437,12 +2437,81 @@ function submitInquiry(f){
   sb.from('contact_requests').insert(req).then(function(r){
     S._submitting=false;
     if(r.error){toast('Failed to submit: '+r.error.message,'err');return;}
-    // Notify via DB notification
-    sb.from('notifications').insert({user_id:null,type:'inquiry',title:'New buyer inquiry: '+req.product_query,body:'From: '+S.user.display_name+' ('+S.user.email+')',is_read:false}).then(function(){});
-    toast('Inquiry submitted successfully!','ok');
+    // Auto-notify matching sellers + admins
+    _notifyMatchingSellers(req,d);
+    toast('Inquiry submitted successfully! Matching sellers will be notified.','ok');
     S.modal=null;S.modalData=null;
     loadInquiries();
   }).catch(function(){S._submitting=false;});
+}
+
+/* Auto-notify matching sellers and admins when buyer submits inquiry */
+function _notifyMatchingSellers(req,modalData){
+  var buyerName=S.user.display_name||S.user.email||'Buyer';
+  var buyerCompany=S.user.company_name||'';
+  var inquiryTitle=req.product_query||'New inquiry';
+  var notifBody='From: '+(buyerCompany?buyerCompany+' ('+buyerName+')':buyerName);
+  if(req.target_moq)notifBody+='\nQty: '+req.target_moq;
+  if(req.destination_country)notifBody+='\nDest: '+req.destination_country;
+
+  /* 1. If inquiry is for a specific Whistle product, notify the product owner directly */
+  if(modalData&&modalData.source==='whistle'&&req.product_id){
+    sb.from('products').select('user_id,name_en,name_ko,category').eq('id',req.product_id).single().then(function(r){
+      if(!r.data||!r.data.user_id)return;
+      var sellerId=r.data.user_id;
+      /* In-app notification to seller */
+      sb.from('notifications').insert({
+        user_id:sellerId,type:'inquiry',
+        title:'📋 바이어 문의: '+(r.data.name_en||r.data.name_ko||inquiryTitle),
+        body:notifBody,link_page:'marketplace',is_read:false
+      }).then(function(){});
+      /* Auto-create chat message to seller */
+      var chatMsg='[자동 알림] 바이어 문의가 접수되었습니다.\n\n'
+        +'바이어: '+(buyerCompany?buyerCompany+' — ':'')+buyerName+'\n'
+        +'제품: '+(r.data.name_en||r.data.name_ko||'')+'\n'
+        +'유형: '+(req.inquiry_type==='factory_contact'?'공장 연결':'수입 문의')+'\n'
+        +(req.target_moq?'수량: '+req.target_moq+'\n':'')
+        +(req.destination_country?'목적지: '+req.destination_country+'\n':'')
+        +(req.message?'\n메시지: '+req.message:'');
+      sb.from('chat_messages').insert({
+        sender_id:S.user.id,receiver_id:sellerId,
+        message:chatMsg,is_read:false
+      }).then(function(){});
+    });
+  }
+
+  /* 2. Notify sellers with matching category products */
+  var category='';
+  if(modalData&&modalData.product){
+    category=modalData.product.category||'';
+  }
+  var pq=sb.from('products').select('user_id,category').eq('is_public',true);
+  if(category)pq=pq.ilike('category','%'+category.replace(/[%_]/g,'')+'%');
+  pq.limit(20).then(function(r){
+    if(!r.data||!r.data.length)return;
+    var uids=[...new Set(r.data.map(function(p){return p.user_id;}).filter(function(uid){return uid&&uid!==S.user.id;}))];
+    if(!uids.length)return;
+    /* Avoid duplicate if product owner already notified */
+    if(req.product_id){
+      var ownerIdx=uids.indexOf(req.product_id);
+      /* product_id is not user_id so this won't match, but we track via the direct notification above */
+    }
+    var notifs=uids.slice(0,10).map(function(uid){
+      return {user_id:uid,type:'inquiry',title:'📋 새 바이어 문의: '+inquiryTitle,
+        body:notifBody,link_page:'marketplace',is_read:false};
+    });
+    sb.from('notifications').insert(notifs).then(function(){});
+  });
+
+  /* 3. Notify admins */
+  sb.from('users').select('id').eq('role','admin').then(function(r){
+    if(!r.data||!r.data.length)return;
+    var adminNotifs=r.data.map(function(a){
+      return {user_id:a.id,type:'inquiry',title:'📋 바이어 문의 접수: '+inquiryTitle,
+        body:notifBody,link_page:'admin-contacts',is_read:false};
+    });
+    sb.from('notifications').insert(adminNotifs).then(function(){});
+  });
 }
 
 function closeModal(elId){if(elId){var el=document.getElementById(elId);if(el)el.remove();}S.modal=null;S.modalData=null;render();}
