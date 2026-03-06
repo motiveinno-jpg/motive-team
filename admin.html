@@ -250,7 +250,7 @@ function loadAll(){
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();
     // Show onboarding on first login (check both DB and localStorage)
     if(!localStorage.getItem('admin_onboarding_done')&&!(S.user&&S.user.onboarding_completed)){setTimeout(showOnboarding,600);}
-  });
+  }).catch(function(e){console.error('[Admin] loadAll error:',e);UI.toast('데이터 로딩 중 오류 발생','err');render();});
 }
 
 /* === AUTH === */
@@ -273,10 +273,10 @@ function setupRealtimeSubscription(){
     .on('postgres_changes',{event:'*',schema:'public',table:'alibaba_inquiries'},function(){UI.toast('\uB370\uC774\uD130\uAC00 \uC5C5\uB370\uC774\uD2B8\uB418\uC5C8\uC2B5\uB2C8\uB2E4 (alibaba)','info',3000);sb.from('alibaba_inquiries').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.alibabaInquiries=r.data||[];render();});})
     .on('postgres_changes',{event:'*',schema:'public',table:'payment_proofs'},function(){UI.toast('\uB370\uC774\uD130\uAC00 \uC5C5\uB370\uC774\uD2B8\uB418\uC5C8\uC2B5\uB2C8\uB2E4 (payment proofs)','info',3000);sb.from('payment_proofs').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.paymentProofs=r.data||[];render();});})
     .on('postgres_changes',{event:'*',schema:'public',table:'service_requests'},function(){UI.toast('\uB370\uC774\uD130\uAC00 \uC5C5\uB370\uC774\uD2B8\uB418\uC5C8\uC2B5\uB2C8\uB2E4 (services)','info',3000);sb.from('service_requests').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.serviceRequests=r.data||[];render();});})
-    .subscribe(function(status){if(status==='SUBSCRIBED'){console.log('[Admin] Realtime subscribed');}});
+    .subscribe(function(status){if(status==='SUBSCRIBED'){console.log('[Admin] Realtime subscribed');}else if(status==='CHANNEL_ERROR'){console.error('[Admin] Realtime channel error');}});
 }
 
-function doLogout(){if(confirm('로그아웃하시겠습니까?')){if(_realtimeChannel){sb.removeChannel(_realtimeChannel);_realtimeChannel=null;}sb.auth.signOut().then(function(){S.user=null;render();});}}
+function doLogout(){if(confirm('로그아웃하시겠습니까?')){if(_realtimeChannel){sb.removeChannel(_realtimeChannel);_realtimeChannel=null;}sb.auth.signOut().then(function(){S.user=null;render();}).catch(function(){S.user=null;render();});}}
 function doReset(e){
   e.preventDefault();var f=e.target;S.authError='';
   var email=f.email.value;
@@ -1301,7 +1301,7 @@ function saveDisputeForm(e){
     btnLoading(_saveDisputeBtn,false);
     if(r.error)return UI.toast('등록 실패: '+r.error.message,'err');
     S.disputes.unshift(r.data[0]);closeModal('modal-dispute');UI.toast('분쟁이 등록되었습니다','ok');render();
-  });
+  }).catch(function(){btnLoading(_saveDisputeBtn,false);UI.toast('분쟁 등록 실패 — 네트워크를 확인하세요','err');});
 }
 function changeDisputeStatus(id,val){
   if((val==='resolved'||val==='closed')&&!confirm('분쟁을 "'+DST[val]+'" 처리하시겠습니까?'))return;
@@ -1312,7 +1312,7 @@ function changeDisputeStatus(id,val){
     var d=r.data[0];var idx=S.disputes.findIndex(function(x){return x.id===id;});if(idx>=0)S.disputes[idx]=d;
     if(S.selectedDispute&&S.selectedDispute.id===id)S.selectedDispute=d;
     UI.toast('상태 변경: '+DST[val],'ok');render();
-  });
+  }).catch(function(){UI.toast('상태 변경 실패','err');});
 }
 function changeDisputePriority(id,val){
   sb.from('disputes').update({priority:val,updated_at:new Date().toISOString()}).eq('id',id).select().then(function(r){
@@ -1320,7 +1320,7 @@ function changeDisputePriority(id,val){
     var d=r.data[0];var idx=S.disputes.findIndex(function(x){return x.id===id;});if(idx>=0)S.disputes[idx]=d;
     if(S.selectedDispute&&S.selectedDispute.id===id)S.selectedDispute=d;
     UI.toast('우선순위 변경: '+DPR[val],'ok');render();
-  });
+  }).catch(function(){UI.toast('우선순위 변경 실패','err');});
 }
 function saveDisputeResolution(id,evt){
   var el=document.getElementById('dispute-resolution');if(!el)return;
