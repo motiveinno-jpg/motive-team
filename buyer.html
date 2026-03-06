@@ -1663,6 +1663,7 @@ function loadAllData(){
   loadRecentActivity();
   importLandingSavedProducts();
   loadSellerTrustScores();
+  loadCategoryPriceStats();
   var hp=location.hash.replace('#','');if(hp&&_BPL[hp])S.page=hp;
   render();
 }
@@ -1683,6 +1684,33 @@ function _trustBadge(ts,compact){
   if(ts.tags&&ts.tags.length){ts.tags.slice(0,2).forEach(function(t){h+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--w08);color:var(--w50)">'+esc(t)+'</span>';});}
   h+='</div>';
   return h;
+}
+
+/* === PRICE MEMORY (Buyer Side) === */
+S._catPriceStats={};
+function loadCategoryPriceStats(){
+  sb.from('price_history').select('category,unit_price').then(function(r){
+    var byCat={};
+    (r.data||[]).forEach(function(p){
+      var cat=p.category||'general';
+      if(!byCat[cat])byCat[cat]=[];
+      byCat[cat].push(Number(p.unit_price));
+    });
+    var stats={};
+    for(var cat in byCat){
+      var ps=byCat[cat];
+      if(ps.length<3)continue;
+      var sum=ps.reduce(function(a,b){return a+b;},0);
+      var avg=sum/ps.length;
+      stats[cat]={count:ps.length,avg:Math.round(avg*100)/100,min:Math.min.apply(null,ps),max:Math.max.apply(null,ps)};
+    }
+    S._catPriceStats=stats;
+  });
+}
+function _catPriceHint(category){
+  var s=S._catPriceStats[category];
+  if(!s)return '<span style="font-size:9px;color:var(--w30)">Price data insufficient</span>';
+  return '<span style="font-size:9px;color:var(--pri)">'+s.count+' trades avg $'+s.avg+' (range $'+s.min+'~$'+s.max+')</span>';
 }
 
 /* Import saved products from landing page → auto-register to buyer_saved_products */
@@ -1991,7 +2019,10 @@ function pgSearch(){
     return h;
   }
 
-  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+products.length+' products found'+(S.searchQuery?' for "'+esc(S.searchQuery)+'"':'')+'</div>';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:4px">'+products.length+' products found'+(S.searchQuery?' for "'+esc(S.searchQuery)+'"':'')+'</div>';
+  /* Category price range hint */
+  var _sf=S._searchFilters||{};var _fc=(_sf.category||'').toLowerCase().replace('k-','');
+  if(_fc){var _mapCat={'beauty':'skincare','food':'food','health':'health','electronics':'electronics','fashion':'fashion'};var _mc=_mapCat[_fc]||_fc;if(S._catPriceStats[_mc]){var _cs=S._catPriceStats[_mc];h+='<div style="font-size:11px;color:var(--pri);margin-bottom:8px;padding:4px 10px;border-radius:6px;background:rgba(0,212,255,.06);display:inline-block">Market avg: $'+_cs.avg+' (range $'+_cs.min+'~$'+_cs.max+', '+_cs.count+' trades)</div>';}}
   h+='<div class="product-grid">';
   products.forEach(function(item,idx){
     h+=renderProductCard(item.source,item.data,idx);
@@ -3441,6 +3472,8 @@ function renderDealSidebar(deal,stageIdx){
   h+='<div style="font-size:11px;color:var(--w40);margin-bottom:2px">Product</div>';
   h+='<div style="font-size:12px;font-weight:600;margin-bottom:6px">'+esc(deal.title)+'</div>';
   if(deal.sellerId){var _sts=_getSellerTrust(deal.sellerId);h+='<div style="font-size:11px;color:var(--w40);margin-bottom:2px">Seller</div><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:12px;font-weight:600">'+esc(getSellerName(deal.sellerId))+'</span>'+_trustBadge(_sts,true)+'</div>';}
+  /* Category price range */
+  if(deal.category&&S._catPriceStats[deal.category]){var _cps=S._catPriceStats[deal.category];h+='<div style="font-size:11px;color:var(--w40);margin-bottom:2px">Category Price Range</div><div style="font-size:11px;margin-bottom:8px;padding:4px 8px;border-radius:6px;background:var(--w05)">'+_catPriceHint(deal.category)+'</div>';}
   h+='<div style="font-size:11px;color:var(--w40);margin-bottom:2px">Stage</div>';
   h+='<div style="font-size:12px;font-weight:600">'+DEAL_STAGES[stageIdx].icon+' '+DEAL_STAGES[stageIdx].label+'</div>';
   h+='</div>';

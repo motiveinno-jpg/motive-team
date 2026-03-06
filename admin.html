@@ -245,7 +245,8 @@ function loadAll(){
     sb.from('quotes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.quotes=r.data||[];}),
     sb.from('client_errors').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.clientErrors=r.data||[];}),
     sb.from('email_logs').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.emailLogs=r.data||[];}),
-    sb.from('trust_scores').select('*').then(function(r){S.trustScores={};(r.data||[]).forEach(function(ts){S.trustScores[ts.entity_id+'_'+ts.role]=ts;});})
+    sb.from('trust_scores').select('*').then(function(r){S.trustScores={};(r.data||[]).forEach(function(ts){S.trustScores[ts.entity_id+'_'+ts.role]=ts;});}),
+    sb.from('price_history').select('*').order('created_at',{ascending:false}).then(function(r){S.priceHistory=r.data||[];_buildPriceOutliers();})
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();
     // Show onboarding on first login (check both DB and localStorage)
     if(!localStorage.getItem('admin_onboarding_done')&&!(S.user&&S.user.onboarding_completed)){setTimeout(showOnboarding,600);}
@@ -294,6 +295,34 @@ function getBuyerName(bid){var b=S.buyers.find(function(x){return x.id===bid;});
 function getBuyerCountry(bid){var b=S.buyers.find(function(x){return x.id===bid;});return b?b.country:'';}
 function _getTrust(eid,role){return (S.trustScores||{})[eid+'_'+role]||null;}
 function _trustFlag(ts){if(!ts)return '';var c=ts.grade==='A'?'var(--ok)':ts.grade==='B'?'var(--pri)':ts.grade==='C'?'var(--acc)':'var(--err)';return '<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:6px;background:'+c+'22;border:1px solid '+c+'33;font-size:9px;font-weight:800;color:'+c+';margin-left:4px">'+ts.grade+ts.score+'</span>';}
+
+/* === PRICE MEMORY — Outlier Detection === */
+S.priceHistory=[];S._priceOutliers=[];
+function _buildPriceOutliers(){
+  var byCat={};
+  (S.priceHistory||[]).forEach(function(p){
+    var cat=p.category||'general';
+    if(!byCat[cat])byCat[cat]={prices:[],items:[]};
+    byCat[cat].prices.push(Number(p.unit_price));
+    byCat[cat].items.push(p);
+  });
+  var outliers=[];
+  for(var cat in byCat){
+    var ps=byCat[cat].prices;
+    if(ps.length<3)continue;
+    var sum=ps.reduce(function(a,b){return a+b;},0);
+    var avg=sum/ps.length;
+    byCat[cat].items.forEach(function(p){
+      var dev=Math.abs(Number(p.unit_price)-avg)/avg;
+      if(dev>0.3){
+        outliers.push({item:p.item_key,price:Number(p.unit_price),avg:Math.round(avg*100)/100,deviation:Math.round(dev*100),direction:Number(p.unit_price)>avg?'high':'low',category:cat,seller_id:p.seller_id,doc_type:p.doc_type,created_at:p.created_at});
+      }
+    });
+  }
+  outliers.sort(function(a,b){return b.deviation-a.deviation;});
+  S._priceOutliers=outliers;
+}
+
 var FLAGS={KR:'\uD83C\uDDF0\uD83C\uDDF7',CN:'\uD83C\uDDE8\uD83C\uDDF3',JP:'\uD83C\uDDEF\uD83C\uDDF5',US:'\uD83C\uDDFA\uD83C\uDDF8',VN:'\uD83C\uDDFB\uD83C\uDDF3',AE:'\uD83C\uDDE6\uD83C\uDDEA',SG:'\uD83C\uDDF8\uD83C\uDDEC',TH:'\uD83C\uDDF9\uD83C\uDDED',RU:'\uD83C\uDDF7\uD83C\uDDFA',HK:'\uD83C\uDDED\uD83C\uDDF0',TW:'\uD83C\uDDF9\uD83C\uDDFC',DE:'\uD83C\uDDE9\uD83C\uDDEA',FR:'\uD83C\uDDEB\uD83C\uDDF7',GB:'\uD83C\uDDEC\uD83C\uDDE7',AU:'\uD83C\uDDE6\uD83C\uDDFA'};
 function flag(c){return FLAGS[c]||'\uD83C\uDF0D';}
 function groupBy(arr,key){var m={};arr.forEach(function(x){var k=x[key]||'unknown';if(!m[k])m[k]=[];m[k].push(x);});return m;}
@@ -401,8 +430,10 @@ function pgDash(){
   });
   /* D-grade trust detection */
   var _dGradeUsers=Object.values(S.trustScores||{}).filter(function(ts){return ts.grade==='D';});
+  /* Price outlier detection */
+  var _priceOutliers=S._priceOutliers||[];
   var urgentHtml = '';
-  if(pendingSR > 0 || overdueSR > 0 || unreadChat > 0 || _staleDeals.length > 0 || _staleOrders.length > 0 || _dGradeUsers.length > 0) {
+  if(pendingSR > 0 || overdueSR > 0 || unreadChat > 0 || _staleDeals.length > 0 || _staleOrders.length > 0 || _dGradeUsers.length > 0 || _priceOutliers.length > 0) {
     urgentHtml += '<div class="card" style="border-left:3px solid var(--err);margin-bottom:16px">';
     urgentHtml += '<div class="card-b" style="padding:14px 18px">';
     urgentHtml += '<div style="font-weight:800;font-size:14px;margin-bottom:10px;color:var(--err)">&#x26A0;&#xFE0F; 긴급 처리 필요</div>';
@@ -413,6 +444,7 @@ function pgDash(){
     if(_staleDeals.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'matchings\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,184,0,.1);border-radius:var(--r-s);border:1px solid rgba(255,184,0,.2)"><div style="font-size:20px;font-weight:800;color:var(--acc)">'+_staleDeals.length+'</div><div style="font-size:11px;color:var(--w40)">7일+ 정체 거래</div></div>';
     if(_staleOrders.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'orders\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,82,82,.1);border-radius:var(--r-s);border:1px solid rgba(255,82,82,.2)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+_staleOrders.length+'</div><div style="font-size:11px;color:var(--w40)">3일+ 미결제</div></div>';
     if(_dGradeUsers.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'matchings\'})" style="cursor:pointer;padding:10px 16px;background:rgba(239,68,68,.08);border-radius:var(--r-s);border:1px solid rgba(239,68,68,.15)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+_dGradeUsers.length+'</div><div style="font-size:11px;color:var(--w40)">D등급 신뢰도</div></div>';
+    if(_priceOutliers.length > 0) urgentHtml += '<div style="cursor:pointer;padding:10px 16px;background:rgba(255,184,0,.08);border-radius:var(--r-s);border:1px solid rgba(255,184,0,.15)"><div style="font-size:20px;font-weight:800;color:var(--acc)">'+_priceOutliers.length+'</div><div style="font-size:11px;color:var(--w40)">가격 이상치 (±30%)</div></div>';
     urgentHtml += '</div>';
     /* Stale detail cards */
     if(_staleDeals.length>0||_staleOrders.length>0){
@@ -434,6 +466,18 @@ function pgDash(){
         urgentHtml+='<span style="font-size:14px">&#x1F4B0;</span>';
         urgentHtml+='<span style="flex:1;font-size:12px;color:var(--w70)">'+(o.order_number||'주문')+' &middot; <b>미결제</b></span>';
         urgentHtml+='<span style="font-size:11px;font-weight:700;color:var(--err)">'+age+'일</span>';
+        urgentHtml+='</div>';
+      });
+      urgentHtml+='</div>';
+    }
+    /* Price outlier detail cards */
+    if(_priceOutliers.length>0){
+      urgentHtml+='<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:10px"><div style="font-size:11px;font-weight:700;color:var(--acc);margin-bottom:6px">가격 이상치 (카테고리 평균 ±30% 이상)</div>';
+      _priceOutliers.slice(0,5).forEach(function(o){
+        urgentHtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;margin-bottom:4px;background:var(--w05)">';
+        urgentHtml+='<span style="font-size:14px">'+(o.direction==='high'?'&#x1F4C8;':'&#x1F4C9;')+'</span>';
+        urgentHtml+='<span style="flex:1;font-size:12px;color:var(--w70)">'+U.esc(o.item)+' <span style="color:var(--w40)">['+o.category+']</span> $'+o.price+' (avg $'+o.avg+')</span>';
+        urgentHtml+='<span style="font-size:11px;font-weight:700;color:'+(o.deviation>=50?'var(--err)':'var(--acc)')+'">'+o.direction.toUpperCase()+' '+o.deviation+'%</span>';
         urgentHtml+='</div>';
       });
       urgentHtml+='</div>';
