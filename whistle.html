@@ -13976,7 +13976,10 @@ var NUDGE_RULES=[
   {id:'stale_deal',ref:'matching',check:function(m){
     if(m.status==='completed'||m.status==='rejected'||m.status==='cancelled')return null;
     var age=_daysSince(m.updated_at||m.created_at);
-    if(age>=7)return {pri:age>=14?1:2,msg:'거래 매칭 '+_bname(m.buyer_id)+' '+age+'일 정체',act:'확인',pg:'deals',age:age};
+    /* D-grade buyer: threshold 5 days (vs 7 normal) */
+    var _bt=_getBuyerTrust(m.buyer_id);
+    var threshold=(_bt&&_bt.grade==='D')?5:7;
+    if(age>=threshold)return {pri:age>=14?1:2,msg:'거래 매칭 '+_bname(m.buyer_id)+' '+age+'일 정체',act:'확인',pg:'deals',age:age};
     return null;
   }}
 ];
@@ -13991,8 +13994,19 @@ function _computeNudges(){
     items.forEach(function(item){
       var result=rule.check(item);
       if(result){
+        /* D-grade trust → shorter thresholds: escalate priority */
+        var pri=result.pri;
+        if(rule.ref==='order'&&item.buyer_id){
+          var _bt=_getBuyerTrust(item.buyer_id);
+          if(_bt&&_bt.grade==='D'){pri=1;result.msg='⚠️ '+result.msg+' (저신뢰 바이어)';}
+        }
+        if(rule.ref==='matching'){
+          var _mt=_getBuyerTrust(item.buyer_id);
+          if(_mt&&_mt.grade==='D'){pri=1;result.msg='⚠️ '+result.msg+' (저신뢰 바이어)';}
+        }
         nudges.push({id:rule.id+'_'+item.id,type:rule.id,ref_type:rule.ref,ref_id:item.id,
-          priority:result.pri,message:result.msg,action_label:result.act,action_page:result.pg,age:result.age||0});
+          priority:pri,message:result.msg,action_label:result.act,action_page:result.pg,age:result.age||0,
+          lowTrust:pri!==result.pri});
       }
     });
   });
@@ -14017,6 +14031,7 @@ function _renderNudgeCards(){
     h+='<div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;background:'+(n.priority===1?'rgba(239,68,68,.06)':'var(--w08)')+';margin-bottom:6px;border-left:3px solid '+color+';cursor:pointer" onclick="'+_nudgeAction(n)+'">';
     h+='<span style="font-size:18px">'+icon+'</span>';
     h+='<span style="flex:1;font-size:13px;color:var(--w90)">'+UI.esc(n.message)+'</span>';
+    if(n.lowTrust){h+='<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--err);color:#fff;font-weight:700">LOW TRUST</span>';}
     h+='<button class="btn '+(n.priority===1?'btn-err':'btn-pri')+' btn-sm" onclick="event.stopPropagation();'+_nudgeAction(n)+'">'+n.action_label+'</button>';
     h+='<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.dismissNudge(\''+n.id+'\')" title="무시" style="padding:4px 6px;font-size:10px;color:var(--w30)">✕</button>';
     h+='</div>';
@@ -14067,33 +14082,40 @@ function _calcTrustScore(entityId,role){
   var scores={response:50,payment:50,completion:50,documents:50,profile:50};
   var tags=[];
 
+  var reasons={};/* per-axis explanation */
+
   if(role==='seller'){
-    /* 1. Response speed — based on message reply patterns */
+    /* 1. Response speed */
     var myMsgs=(S._chatLastMsgs||{});
     var buyerCount=(S.buyers||[]).length;
     if(buyerCount>0){
       var replied=Object.keys(myMsgs).length;
       scores.response=Math.min(100,Math.round(replied/Math.max(buyerCount,1)*100));
+      reasons.response=replied+'/'+buyerCount+' buyers with replies';
       if(scores.response>=80)tags.push('Fast Responder');
-    }
+    } else {reasons.response='No buyers yet';}
 
-    /* 2. Payment fulfillment — orders with paid status */
+    /* 2. Payment — partial credit for deposit/partial */
     var myOrders=(S.orders||[]).filter(function(o){return o.status!=='cancelled';});
     if(myOrders.length>0){
       var paid=myOrders.filter(function(o){return o.payment_status==='paid';}).length;
       var partial=myOrders.filter(function(o){return o.payment_status==='deposit_received'||o.payment_status==='partial';}).length;
+      var unpaid=myOrders.filter(function(o){return o.payment_status==='unpaid';}).length;
       scores.payment=Math.round((paid*100+partial*50)/myOrders.length);
+      reasons.payment=paid+' paid, '+partial+' partial, '+unpaid+' unpaid / '+myOrders.length+' orders';
       if(scores.payment>=80)tags.push('Reliable Payment');
-    }
+    } else {reasons.payment='No orders';}
 
-    /* 3. Deal completion rate */
+    /* 3. Deal completion — exclude active deals from penalty */
     var myDeals=(S.matchings||[]).filter(function(m){return m.status!=='cancelled';});
     if(myDeals.length>0){
       var completed=myDeals.filter(function(m){return m.status==='completed';}).length;
       var rejected=myDeals.filter(function(m){return m.status==='rejected'||m.status==='expired';}).length;
-      scores.completion=Math.round(completed/(myDeals.length-rejected||1)*100);
+      var settled=completed+rejected;
+      scores.completion=settled>0?Math.round(completed/settled*100):50;/* active only → neutral */
+      reasons.completion=completed+' completed, '+rejected+' rejected, '+(myDeals.length-settled)+' active / '+myDeals.length;
       if(completed>=3)tags.push('Proven Track Record');
-    }
+    } else {reasons.completion='No deals';}
 
     /* 4. Document completeness */
     var docs=(S.savedDocs||[]);
@@ -14101,55 +14123,73 @@ function _calcTrustScore(entityId,role){
       var docTypes={};docs.forEach(function(d){docTypes[d.doc_type]=true;});
       var typeCount=Object.keys(docTypes).length;
       scores.documents=Math.min(100,typeCount*20);
+      reasons.documents=typeCount+' doc types ('+Object.keys(docTypes).join(',')+')';
       if(typeCount>=4)tags.push('Full Documentation');
-    } else if(myOrders.length>0){scores.documents=20;}
+    } else if(myOrders.length>0){scores.documents=20;reasons.documents='Orders exist but no docs yet';}
+    else {reasons.documents='No documents';}
 
     /* 5. Profile completeness */
-    var pScore=0;
+    var pScore=0;var pMissing=[];
     if(S.user){
-      if(S.user.display_name)pScore+=15;
-      if(S.user.company_name)pScore+=15;
-      if(S.user.phone)pScore+=10;
+      if(S.user.display_name)pScore+=15;else pMissing.push('name');
+      if(S.user.company_name)pScore+=15;else pMissing.push('company');
+      if(S.user.phone)pScore+=10;else pMissing.push('phone');
       if(S.user.email)pScore+=10;
     }
     var comp=(S.company||{});
-    if(comp.name_en||comp.name_ko)pScore+=10;
-    if(comp.address_en||comp.address_ko)pScore+=10;
-    if(comp.logo_url)pScore+=10;
-    if(comp.website)pScore+=10;
-    if(comp.bank_name)pScore+=10;
+    if(comp.name_en||comp.name_ko)pScore+=10;else pMissing.push('eng name');
+    if(comp.address_en||comp.address_ko)pScore+=10;else pMissing.push('address');
+    if(comp.logo_url)pScore+=10;else pMissing.push('logo');
+    if(comp.website)pScore+=10;else pMissing.push('website');
+    if(comp.bank_name)pScore+=10;else pMissing.push('bank');
     scores.profile=Math.min(100,pScore);
+    reasons.profile=pScore+'% complete'+(pMissing.length?' (missing: '+pMissing.slice(0,3).join(', ')+')':'');
     if(pScore>=80)tags.push('Verified Profile');
 
   } else if(role==='buyer'){
-    /* Buyer scoring — simpler view */
-    var buyerOrders=(S.orders||[]).filter(function(o){return o.buyer_id===entityId;});
-    /* Payment */
+    /* Buyer scoring — partial credit for deposit/partial */
+    var buyerOrders=(S.orders||[]).filter(function(o){return o.buyer_id===entityId&&o.status!=='cancelled';});
     if(buyerOrders.length>0){
       var paidB=buyerOrders.filter(function(o){return o.payment_status==='paid';}).length;
-      scores.payment=Math.round(paidB/buyerOrders.length*100);
+      var partialB=buyerOrders.filter(function(o){return o.payment_status==='deposit_received'||o.payment_status==='partial';}).length;
+      scores.payment=Math.round((paidB*100+partialB*50)/buyerOrders.length);
+      reasons.payment=paidB+' paid, '+partialB+' partial / '+buyerOrders.length;
       if(scores.payment>=80)tags.push('Prompt Payer');
-    }
-    /* Completion */
+    } else {reasons.payment='No orders';}
+
+    /* Completion — only count settled deals */
     var buyerDeals=(S.matchings||[]).filter(function(m){return m.buyer_id===entityId&&m.status!=='cancelled';});
     if(buyerDeals.length>0){
       var compB=buyerDeals.filter(function(m){return m.status==='completed';}).length;
-      scores.completion=Math.round(compB/buyerDeals.length*100);
+      var rejB=buyerDeals.filter(function(m){return m.status==='rejected'||m.status==='expired';}).length;
+      var settledB=compB+rejB;
+      scores.completion=settledB>0?Math.round(compB/settledB*100):50;
+      reasons.completion=compB+' completed, '+rejB+' rejected, '+(buyerDeals.length-settledB)+' active';
       if(compB>=2)tags.push('Repeat Buyer');
-    }
-    /* Response */
+    } else {reasons.completion='No deals';}
+
+    /* Response — min 50 if any messages */
     var hasMsgs=Object.keys(S._chatLastMsgs||{}).some(function(k){return k===entityId;});
     scores.response=hasMsgs?70:40;
-    /* Profile — check buyer record */
+    reasons.response=hasMsgs?'Active in chat':'No recent messages';
+
+    /* Profile */
     var bRec=(S.buyers||[]).find(function(b){return b.id===entityId;});
     if(bRec){
-      var bp=0;
-      if(bRec.company_name)bp+=25;if(bRec.contact_name)bp+=25;if(bRec.email)bp+=25;if(bRec.phone||bRec.country)bp+=25;
+      var bp=0;var bMissing=[];
+      if(bRec.company_name)bp+=25;else bMissing.push('company');
+      if(bRec.contact_name)bp+=25;else bMissing.push('contact');
+      if(bRec.email)bp+=25;else bMissing.push('email');
+      if(bRec.phone||bRec.country)bp+=25;else bMissing.push('phone/country');
       scores.profile=bp;
+      reasons.profile=bp+'%'+(bMissing.length?' (missing: '+bMissing.join(', ')+')':'');
       if(bp>=75)tags.push('Complete Profile');
-    }
-    /* Docs */
-    scores.documents=50;
+    } else {reasons.profile='No buyer record';}
+
+    /* Docs — check if shared docs exist for this buyer */
+    var buyerDocs=(S.savedDocs||[]).filter(function(d){return d.buyer_id===entityId;});
+    scores.documents=buyerDocs.length>0?Math.min(100,buyerDocs.length*25):50;
+    reasons.documents=buyerDocs.length>0?buyerDocs.length+' shared docs':'No docs yet';
   }
 
   /* Weighted total */
@@ -14165,7 +14205,7 @@ function _calcTrustScore(entityId,role){
   var grade=total>=80?'A':total>=60?'B':total>=40?'C':'D';
   tags=tags.slice(0,3);
 
-  return {score:total,grade:grade,tags:tags,breakdown:scores};
+  return {score:total,grade:grade,tags:tags,breakdown:scores,reasons:reasons};
 }
 
 function _gradeColor(g){return g==='A'?'var(--ok)':g==='B'?'var(--pri)':g==='C'?'var(--acc)':'var(--err)';}
@@ -14178,6 +14218,8 @@ function _renderTrustBadge(ts,compact){
   h+='<div style="width:32px;height:32px;border-radius:50%;background:'+c+'22;border:2px solid '+c+';display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:'+c+'">'+ts.grade+'</div>';
   h+='<div><div style="font-size:11px;font-weight:700;color:var(--w70)">Trust '+ts.score+'</div>';
   if(ts.tags&&ts.tags.length){h+='<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:2px">';ts.tags.forEach(function(t){h+='<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--w08);color:var(--w50)">'+UI.esc(t)+'</span>';});h+='</div>';}
+  /* Show per-axis reasons if available */
+  if(ts.reasons){var axes=['response','payment','completion','documents','profile'];var labels={response:'응답',payment:'결제',completion:'거래완료',documents:'서류',profile:'프로필'};h+='<div style="margin-top:4px;font-size:9px;color:var(--w40);line-height:1.5">';axes.forEach(function(ax){if(ts.reasons[ax]){var sc=ts.breakdown?ts.breakdown[ax]:0;var sc_c=sc>=80?'var(--ok)':sc>=60?'var(--pri)':sc>=40?'var(--acc)':'var(--err)';h+='<div><span style="color:'+sc_c+';font-weight:600">'+labels[ax]+' '+sc+'</span> — '+UI.esc(ts.reasons[ax])+'</div>';}});h+='</div>';}
   h+='</div></div>';
   return h;
 }
@@ -14187,7 +14229,7 @@ function _saveTrustScore(entityId,role,ts){
   if(!entityId||!ts)return;
   sb.from('trust_scores').upsert({
     entity_id:entityId,role:role,score:ts.score,grade:ts.grade,
-    tags:ts.tags,breakdown:ts.breakdown,updated_at:new Date().toISOString()
+    tags:ts.tags,breakdown:{scores:ts.breakdown,reasons:ts.reasons||{}},updated_at:new Date().toISOString()
   },{onConflict:'entity_id,role'}).then(function(){});
 }
 
