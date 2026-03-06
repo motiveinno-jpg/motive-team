@@ -382,8 +382,22 @@ function pgDash(){
     return hours > limit;
   }).length;
   var unreadChat = S.messages ? S.messages.filter(function(m){return !m.is_read;}).length : 0;
+  /* Stale deal detection */
+  var _staleDeals=S.matchings.filter(function(m){
+    if(m.status==='completed'||m.status==='rejected'||m.status==='expired'||m.status==='cancelled')return false;
+    var age=Math.floor((Date.now()-new Date(m.updated_at||m.created_at).getTime())/86400000);
+    return age>=7;
+  });
+  var _staleOrders=S.orders.filter(function(o){
+    if(o.status==='completed'||o.status==='cancelled')return false;
+    if(o.payment_status==='unpaid'){
+      var age=Math.floor((Date.now()-new Date(o.updated_at||o.created_at).getTime())/86400000);
+      return age>=3;
+    }
+    return false;
+  });
   var urgentHtml = '';
-  if(pendingSR > 0 || overdueSR > 0 || unreadChat > 0) {
+  if(pendingSR > 0 || overdueSR > 0 || unreadChat > 0 || _staleDeals.length > 0 || _staleOrders.length > 0) {
     urgentHtml += '<div class="card" style="border-left:3px solid var(--err);margin-bottom:16px">';
     urgentHtml += '<div class="card-b" style="padding:14px 18px">';
     urgentHtml += '<div style="font-weight:800;font-size:14px;margin-bottom:10px;color:var(--err)">&#x26A0;&#xFE0F; 긴급 처리 필요</div>';
@@ -391,6 +405,8 @@ function pgDash(){
     if(pendingSR > 0) urgentHtml += '<div onclick="Adm.set({page:\'services\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,82,82,.1);border-radius:var(--r-s);border:1px solid rgba(255,82,82,.2)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+pendingSR+'</div><div style="font-size:11px;color:var(--w40)">미배정 요청</div></div>';
     if(overdueSR > 0) urgentHtml += '<div onclick="Adm.set({page:\'services\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,82,82,.1);border-radius:var(--r-s);border:1px solid rgba(255,82,82,.2)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+overdueSR+'</div><div style="font-size:11px;color:var(--w40)">SLA 초과</div></div>';
     if(unreadChat > 0) urgentHtml += '<div onclick="Adm.set({page:\'chat\'})" style="cursor:pointer;padding:10px 16px;background:rgba(0,212,255,.1);border-radius:var(--r-s);border:1px solid rgba(0,212,255,.2)"><div style="font-size:20px;font-weight:800;color:var(--pri)">'+unreadChat+'</div><div style="font-size:11px;color:var(--w40)">미읽은 메시지</div></div>';
+    if(_staleDeals.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'matchings\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,184,0,.1);border-radius:var(--r-s);border:1px solid rgba(255,184,0,.2)"><div style="font-size:20px;font-weight:800;color:var(--acc)">'+_staleDeals.length+'</div><div style="font-size:11px;color:var(--w40)">7일+ 정체 거래</div></div>';
+    if(_staleOrders.length > 0) urgentHtml += '<div onclick="Adm.set({page:\'orders\'})" style="cursor:pointer;padding:10px 16px;background:rgba(255,82,82,.1);border-radius:var(--r-s);border:1px solid rgba(255,82,82,.2)"><div style="font-size:20px;font-weight:800;color:var(--err)">'+_staleOrders.length+'</div><div style="font-size:11px;color:var(--w40)">3일+ 미결제</div></div>';
     urgentHtml += '</div></div></div>';
   }
 
