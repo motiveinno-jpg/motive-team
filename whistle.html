@@ -638,6 +638,14 @@ function toggleCurrency(){
   if(S.user){sb.from('users').update({preferred_currency:S.currency}).eq('id',S.user.id);}
   render();
 }
+/* Auto-format price string from AI result based on current currency. Parses "$12.50" or "₩15000" and reformats. */
+function _fmtAP(str){
+  if(!str||typeof str!=='string')return str||'—';
+  var m=str.match(/\$\s*([\d,.]+)/);if(m){var n=parseFloat(m[1].replace(/,/g,''));if(n>0)return U.fmtUSD(n);}
+  var m2=str.match(/₩\s*([\d,.]+)/);if(m2){var n2=parseFloat(m2[1].replace(/,/g,''));if(n2>0)return U.fmtPrice(n2);}
+  var m3=str.match(/([\d,.]+)\s*(USD|usd)/);if(m3){var n3=parseFloat(m3[1].replace(/,/g,''));if(n3>0)return U.fmtUSD(n3);}
+  return str;
+}
 
 /* === ERROR TRACKER === */
 (function(){
@@ -1420,14 +1428,49 @@ function pgAReport(){
   if(r.score_details){var sd=r.score_details;h+='<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)">';h+='<div style="font-size:11px;color:var(--w40);font-weight:700;margin-bottom:10px">전문가 판단 근거</div>';var sdItems=[{k:'overall_reason',l:'종합'},{k:'market_fit_reason',l:'시장 적합도'},{k:'price_reason',l:'가격 경쟁력'},{k:'brand_reason',l:'브랜드'},{k:'competition_reason',l:'경쟁 환경'},{k:'regulatory_reason',l:'규제'},{k:'logistics_reason',l:'물류'}];sdItems.forEach(function(si){if(sd[si.k])h+='<div style="margin-bottom:8px"><span style="font-size:10px;color:var(--pri);font-weight:700">'+si.l+':</span> <span style="font-size:11px;color:var(--w60);line-height:1.6">'+UI.esc(sd[si.k])+'</span></div>';});h+='</div>';}
   // Quick stats
   h+='<div style="display:flex;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--bd)">';
-  h+='<div style="flex:1;text-align:center;padding:8px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">예상 FOB</div><div style="font-size:14px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+(r.estimated_fob||'—')+'</div></div>';
+  var _fobN=r.estimated_fob_price||0;if(!_fobN&&r.estimated_fob){var _fm=String(r.estimated_fob).match(/[\d,.]+/);if(_fm)_fobN=parseFloat(_fm[0].replace(/,/g,''));}
+  h+='<div style="flex:1;text-align:center;padding:8px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">예상 FOB</div><div style="font-size:14px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+(_fobN?U.fmtUSD(_fobN):(r.estimated_fob||'—'))+'</div></div>';
   h+='<div style="flex:1;text-align:center;padding:8px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">HS Code</div><div style="font-size:14px;font-weight:800;font-family:JetBrains Mono">'+(r.hs_code||'—')+'</div></div>';
   h+='<div style="flex:1;text-align:center;padding:8px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">필요 인증</div><div style="font-size:14px;font-weight:800;color:var(--err)">'+(r.required_certs||[]).length+'건</div></div>';
   h+='<div style="flex:1;text-align:center;padding:8px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">수출 준비도</div><div style="font-size:14px;font-weight:800;color:'+sc(r.overall_score||0)+'">'+scLabel(r.overall_score||0)+'</div></div>';
   h+='</div>';
   // HS code description + alternatives + estimated retail (v5)
-  if(r.hs_description||r.hs_alternatives||r.estimated_retail){h+='<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">';if(r.hs_description)h+='<div style="flex:1;min-width:200px;padding:10px;background:var(--w04);border-radius:8px;font-size:11px;color:var(--w60);line-height:1.6"><strong style="color:var(--w80)">HS 분류근거:</strong> '+UI.esc(r.hs_description)+'</div>';if(r.estimated_retail){var ert=r.estimated_retail;var ertStr=typeof ert==='string'?ert:Object.keys(ert).map(function(k){return k+': '+ert[k];}).join(' | ');h+='<div style="flex:1;min-width:200px;padding:10px;background:var(--w04);border-radius:8px;font-size:11px;color:var(--w60);line-height:1.6"><strong style="color:var(--acc)">예상 소매가:</strong> <span style="font-family:JetBrains Mono;color:var(--acc);font-weight:700">'+UI.esc(ertStr)+'</span></div>';}if(r.hs_alternatives&&r.hs_alternatives.length){h+='<div style="flex:1;min-width:200px;padding:10px;background:var(--w04);border-radius:8px;font-size:11px;color:var(--w60);line-height:1.6"><strong style="color:var(--w80)">대안 HS코드:</strong> ';r.hs_alternatives.forEach(function(a){h+=UI.esc((a.code||a)+' '+(a.reason||''))+' ';});h+='</div>';}h+='</div>';}
+  if(r.hs_description||r.hs_alternatives||r.estimated_retail){h+='<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">';if(r.hs_description)h+='<div style="flex:1;min-width:200px;padding:10px;background:var(--w04);border-radius:8px;font-size:11px;color:var(--w60);line-height:1.6"><strong style="color:var(--w80)">HS 분류근거:</strong> '+UI.esc(r.hs_description)+'</div>';if(r.estimated_retail){var ert=r.estimated_retail;var ertStr=typeof ert==='string'?_fmtAP(ert):Object.keys(ert).map(function(k){return k+': '+_fmtAP(ert[k]);}).join(' | ');h+='<div style="flex:1;min-width:200px;padding:10px;background:var(--w04);border-radius:8px;font-size:11px;color:var(--w60);line-height:1.6"><strong style="color:var(--acc)">예상 소매가:</strong> <span style="font-family:JetBrains Mono;color:var(--acc);font-weight:700">'+ertStr+'</span></div>';}if(r.hs_alternatives&&r.hs_alternatives.length){h+='<div style="flex:1;min-width:200px;padding:10px;background:var(--w04);border-radius:8px;font-size:11px;color:var(--w60);line-height:1.6"><strong style="color:var(--w80)">대안 HS코드:</strong> ';r.hs_alternatives.forEach(function(a){h+=UI.esc((a.code||a)+' '+(a.reason||''))+' ';});h+='</div>';}h+='</div>';}
   h+='</div></div>';
+
+  // === PRICE & COST SNAPSHOT (가격·비용 즉시 확인) ===
+  if(_fobN>0){
+    var _tm1=(r.recommended_markets||r.target_markets||[])[0]||'';if(typeof _tm1==='object')_tm1=_tm1.country||_tm1.name||'';
+    var _tarPct=0,_ftaN='',_logC=0,_logM='';
+    if(r.fta_tariff_table&&r.fta_tariff_table[0]){var _ft0=r.fta_tariff_table[0];_tarPct=parseFloat(String(_ft0.pref||'').replace(/[^0-9.]/g,''))||0;_ftaN=_ft0.fta||'';}
+    if(r.logistics){_logC=parseFloat(String(r.logistics.cost_per_unit||'').replace(/[^0-9.]/g,''))||0;_logM=r.logistics.method||'';}
+    var _enrR=S._enrichment&&S._enrichment[a.id]&&S._enrichment[a.id].results;
+    if(_enrR&&_enrR.logisticsOpt&&_enrR.logisticsOpt.recommended){_logC=_enrR.logisticsOpt.recommended.cost||_logC;_logM=_enrR.logisticsOpt.recommended.mode||_logM;}
+    var _landC=0;if(r.margin_analysis&&typeof r.margin_analysis==='object'){_landC=parseFloat(String(r.margin_analysis.landed_cost||'').replace(/[^0-9.]/g,''))||0;}
+    if(!_landC)_landC=_fobN+(_fobN*_tarPct/100)+_logC;
+    h+='<div class="card" style="margin-bottom:14px;border-color:rgba(255,184,0,.2);background:linear-gradient(135deg,rgba(255,184,0,.04),rgba(0,230,118,.02))">';
+    h+='<div class="card-h"><span>💰 가격·비용 요약</span><span style="font-size:10px;color:var(--w30)">'+(_tm1?UI.esc(_tm1)+' 기준':'')+'</span></div>';
+    h+='<div class="card-b">';
+    // Price flow
+    h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+    h+='<div style="text-align:center;padding:12px 18px;background:var(--w04);border-radius:10px;border:1px solid rgba(255,184,0,.15)"><div style="font-size:9px;color:var(--w40);font-weight:600">FOB</div><div style="font-size:20px;font-weight:900;color:var(--acc);font-family:JetBrains Mono">'+U.fmtUSD(_fobN)+'</div></div>';
+    if(_tarPct||_logC){
+      h+='<span style="font-size:18px;color:var(--w20)">+</span>';
+      if(_tarPct){h+='<div style="text-align:center;padding:10px 14px;background:var(--w04);border-radius:10px"><div style="font-size:9px;color:var(--w40);font-weight:600">관세'+(_ftaN?' ('+UI.esc(_ftaN)+')':'')+'</div><div style="font-size:15px;font-weight:800;color:var(--err);font-family:JetBrains Mono">'+_tarPct+'%</div><div style="font-size:10px;color:var(--w30)">'+U.fmtUSD(_fobN*_tarPct/100)+'</div></div>';h+='<span style="font-size:18px;color:var(--w20)">+</span>';}
+      if(_logC){h+='<div style="text-align:center;padding:10px 14px;background:var(--w04);border-radius:10px"><div style="font-size:9px;color:var(--w40);font-weight:600">물류'+(_logM?' ('+UI.esc(_logM)+')':'')+'</div><div style="font-size:15px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+U.fmtUSD(_logC)+'</div></div>';}
+      h+='<span style="font-size:22px;color:var(--w30);font-weight:900">=</span>';
+    }
+    h+='<div style="text-align:center;padding:14px 20px;background:rgba(0,230,118,.06);border-radius:12px;border:2px solid rgba(0,230,118,.2);flex:1;min-width:140px"><div style="font-size:10px;color:var(--ok);font-weight:700">예상 도착단가</div><div style="font-size:24px;font-weight:900;color:var(--ok);font-family:JetBrains Mono">'+U.fmtUSD(_landC)+'</div></div>';
+    h+='</div>';
+    // Margin & Retail
+    var _mrgE='';
+    if(_enrR&&_enrR.profitMargin&&_enrR.profitMargin.scenarios&&_enrR.profitMargin.scenarios[0]){var _ms=_enrR.profitMargin.scenarios[0];_mrgE='<div style="flex:1;min-width:100px;text-align:center;padding:8px 12px;background:'+(_ms.margin_pct>=15?'rgba(0,230,118,.04)':'rgba(255,184,0,.04)')+';border-radius:8px;border:1px solid '+(_ms.margin_pct>=15?'rgba(0,230,118,.1)':'rgba(255,184,0,.1)')+'"><div style="font-size:9px;color:var(--w40)">예상 마진 ('+UI.esc(_ms.incoterms)+')</div><div style="font-size:16px;font-weight:800;color:'+(_ms.margin_pct>=15?'var(--ok)':'var(--acc)')+';font-family:JetBrains Mono">'+_ms.margin_pct.toFixed(1)+'%</div></div>';}
+    var _retP='';if(r.margin_analysis&&typeof r.margin_analysis==='object'&&r.margin_analysis.retail_price){var _rpStr=r.margin_analysis.retail_price;var _rpN=parseFloat(String(_rpStr).replace(/[^0-9.]/g,''))||0;_retP='<div style="flex:1;min-width:100px;text-align:center;padding:8px 12px;background:var(--w04);border-radius:8px"><div style="font-size:9px;color:var(--w40)">현지 소매가</div><div style="font-size:16px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+(_rpN?U.fmtUSD(_rpN):UI.esc(_rpStr))+'</div></div>';}
+    var _gm='';if(r.margin_analysis&&typeof r.margin_analysis==='object'&&r.margin_analysis.gross_margin&&!_mrgE){_gm='<div style="flex:1;min-width:100px;text-align:center;padding:8px 12px;background:rgba(0,230,118,.04);border-radius:8px"><div style="font-size:9px;color:var(--w40)">총마진</div><div style="font-size:16px;font-weight:800;color:var(--ok);font-family:JetBrains Mono">'+UI.esc(r.margin_analysis.gross_margin)+'</div></div>';}
+    if(_mrgE||_retP||_gm){h+='<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+_gm+_mrgE+_retP+'</div>';}
+    h+='<div style="font-size:10px;color:var(--w20);margin-top:10px;text-align:right">* 추정치이며, 실제 비용은 거래 조건·물량·환율에 따라 달라집니다.</div>';
+    h+='</div></div>';
+  }
 
   // === HS CODE DEEP ANALYSIS ===
   if(r.hs_code_detail||r.hs_code){
@@ -1712,7 +1755,7 @@ function pgAReport(){
         else{_caInner+='<div style="display:flex;flex-wrap:wrap;gap:6px">';ca.local_competitors.forEach(function(c){_caInner+='<span class="badge badge-pri">'+UI.esc(c)+'</span>';});_caInner+='</div>';}
         _caInner+='</div>';
       }
-      if(ca.price_range)_caInner+='<div style="font-size:12px;color:var(--w60);margin-bottom:6px">경쟁사 가격대: <strong style="color:var(--acc);font-family:JetBrains Mono">'+UI.esc(ca.price_range)+'</strong></div>';
+      if(ca.price_range)_caInner+='<div style="font-size:12px;color:var(--w60);margin-bottom:6px">경쟁사 가격대: <strong style="color:var(--acc);font-family:JetBrains Mono">'+_fmtAP(ca.price_range)+'</strong></div>';
       if(ca.our_positioning)_caInner+='<div style="margin-top:10px;padding:12px;border-radius:8px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.1)"><div style="font-size:11px;color:var(--pri);font-weight:700;margin-bottom:4px">우리의 포지셔닝</div><div style="font-size:13px;color:var(--w70);line-height:1.7">'+UI.esc(ca.our_positioning)+'</div></div>';
     }
     h+=UI.clp('comp-anal',_caInner,160);
@@ -1764,8 +1807,8 @@ function pgAReport(){
     h+='<div class="card" style="margin-bottom:14px"><div class="card-h">💡 가격 전략</div><div class="card-b">';
     if(isPS){
       h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px">';
-      if(ps.recommended_fob)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">추천 FOB</div><div style="font-size:15px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+UI.esc(ps.recommended_fob)+'</div></div>';
-      if(ps.recommended_retail)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">추천 소매가</div><div style="font-size:15px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+UI.esc(ps.recommended_retail)+'</div></div>';
+      if(ps.recommended_fob)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">추천 FOB</div><div style="font-size:15px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+_fmtAP(ps.recommended_fob)+'</div></div>';
+      if(ps.recommended_retail)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">추천 소매가</div><div style="font-size:15px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+_fmtAP(ps.recommended_retail)+'</div></div>';
       h+='</div>';
       if(ps.price_vs_competition)h+='<p style="font-size:13px;color:var(--w70);line-height:1.8;margin-bottom:8px"><strong>경쟁가격 비교:</strong> '+UI.esc(ps.price_vs_competition)+'</p>';
       if(ps.discount_strategy)h+='<p style="font-size:12px;color:var(--w60);line-height:1.6">할인전략: '+UI.esc(ps.discount_strategy)+'</p>';
@@ -1820,12 +1863,12 @@ function pgAReport(){
       h+='<div style="padding:14px;border-top:2px solid var(--bd);background:rgba(0,230,118,.03)">';
       h+='<div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:8px">💰 예상 관세 절감 효과</div>';
       h+='<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">';
-      if(ds.fob_per_unit)h+='<div style="padding:6px 12px;background:var(--w04);border-radius:6px;font-size:11px"><span style="color:var(--w40)">FOB 단가</span> <span style="font-family:JetBrains Mono;font-weight:700;color:var(--acc)">'+UI.esc(ds.fob_per_unit)+'</span></div>';
+      if(ds.fob_per_unit)h+='<div style="padding:6px 12px;background:var(--w04);border-radius:6px;font-size:11px"><span style="color:var(--w40)">FOB 단가</span> <span style="font-family:JetBrains Mono;font-weight:700;color:var(--acc)">'+_fmtAP(ds.fob_per_unit)+'</span></div>';
       if(ds.annual_volume)h+='<div style="padding:6px 12px;background:var(--w04);border-radius:6px;font-size:11px"><span style="color:var(--w40)">연간 물량</span> <span style="font-family:JetBrains Mono;font-weight:700">'+UI.esc(ds.annual_volume)+'</span></div>';
       if(ds.avg_mfn)h+='<div style="padding:6px 12px;background:var(--w04);border-radius:6px;font-size:11px"><span style="color:var(--w40)">MFN</span> <span style="font-family:JetBrains Mono;font-weight:700;color:var(--err);text-decoration:line-through">'+UI.esc(ds.avg_mfn)+'</span></div>';
       if(ds.avg_fta)h+='<div style="padding:6px 12px;background:var(--w04);border-radius:6px;font-size:11px"><span style="color:var(--w40)">FTA</span> <span style="font-family:JetBrains Mono;font-weight:700;color:var(--ok)">'+UI.esc(ds.avg_fta)+'</span></div>';
       h+='<div style="font-size:14px;color:var(--w30)">→</div>';
-      if(ds.estimated_annual_saving)h+='<div style="padding:8px 16px;background:rgba(0,230,118,.1);border-radius:8px;border:1px solid rgba(0,230,118,.2)"><span style="font-size:11px;color:var(--ok);font-weight:600">연간 절감</span> <span style="font-size:18px;font-weight:900;color:var(--ok);font-family:JetBrains Mono">'+UI.esc(ds.estimated_annual_saving)+'</span></div>';
+      if(ds.estimated_annual_saving)h+='<div style="padding:8px 16px;background:rgba(0,230,118,.1);border-radius:8px;border:1px solid rgba(0,230,118,.2)"><span style="font-size:11px;color:var(--ok);font-weight:600">연간 절감</span> <span style="font-size:18px;font-weight:900;color:var(--ok);font-family:JetBrains Mono">'+_fmtAP(ds.estimated_annual_saving)+'</span></div>';
       h+='</div>';
       h+='</div>';
     }
@@ -1846,7 +1889,7 @@ function pgAReport(){
     if(isMA){
       h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">';
       var maSteps=[{k:'fob_cost',l:'FOB'},{k:'landed_cost',l:'수입원가'},{k:'wholesale_price',l:'도매가'},{k:'retail_price',l:'소매가'}];
-      maSteps.forEach(function(s,i){if(ma[s.k]){if(i>0)h+='<span style="color:var(--w30);font-size:16px">→</span>';h+='<div style="text-align:center;padding:8px 14px;background:var(--w04);border-radius:8px"><div style="font-size:9px;color:var(--w40)">'+s.l+'</div><div style="font-size:14px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+UI.esc(ma[s.k])+'</div></div>';}});
+      maSteps.forEach(function(s,i){if(ma[s.k]){if(i>0)h+='<span style="color:var(--w30);font-size:16px">→</span>';h+='<div style="text-align:center;padding:8px 14px;background:var(--w04);border-radius:8px"><div style="font-size:9px;color:var(--w40)">'+s.l+'</div><div style="font-size:14px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+_fmtAP(ma[s.k])+'</div></div>';}});
       h+='</div>';
       if(ma.notes)h+='<p style="font-size:12px;color:var(--w60);line-height:1.6">'+UI.esc(ma.notes)+'</p>';
     }else{h+='<p style="font-size:13px;color:var(--w70);line-height:1.8">'+UI.esc(ma)+'</p>';}
@@ -2000,7 +2043,7 @@ function pgAReport(){
     h+='<div class="card" style="margin-bottom:14px"><div class="card-h">🚢 물류 분석</div><div class="card-b">';
     h+='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">';
     if(lg.method)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">운송방법</div><div style="font-size:13px;font-weight:700">'+UI.esc(lg.method)+'</div></div>';
-    if(lg.cost_per_unit)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">단위비용</div><div style="font-size:13px;font-weight:700;color:var(--acc);font-family:JetBrains Mono">'+UI.esc(lg.cost_per_unit)+'</div></div>';
+    if(lg.cost_per_unit)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">단위비용</div><div style="font-size:13px;font-weight:700;color:var(--acc);font-family:JetBrains Mono">'+_fmtAP(lg.cost_per_unit)+'</div></div>';
     if(lg.lead_time)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">리드타임</div><div style="font-size:13px;font-weight:700">'+UI.esc(lg.lead_time)+'</div></div>';
     if(lg.packaging)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">포장</div><div style="font-size:13px;font-weight:700">'+UI.esc(lg.packaging)+'</div></div>';
     if(lg.incoterms)h+='<div style="text-align:center;padding:10px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40);margin-bottom:2px">인코텀즈</div><div style="font-size:13px;font-weight:700">'+UI.esc(lg.incoterms)+'</div></div>';
@@ -2181,7 +2224,7 @@ function pgAReport(){
     h+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">';
     if(rtd.korea_export_total)h+='<div style="text-align:center;padding:12px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">한국 수출액</div><div style="font-size:14px;font-weight:800;color:var(--pri);font-family:JetBrains Mono">'+UI.esc(rtd.korea_export_total)+'</div></div>';
     if(rtd.year_over_year_growth)h+='<div style="text-align:center;padding:12px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">전년 대비</div><div style="font-size:14px;font-weight:800;color:var(--ok);font-family:JetBrains Mono">'+UI.esc(rtd.year_over_year_growth)+'</div></div>';
-    if(rtd.avg_unit_price)h+='<div style="text-align:center;padding:12px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">평균 단가</div><div style="font-size:14px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+UI.esc(rtd.avg_unit_price)+'</div></div>';
+    if(rtd.avg_unit_price)h+='<div style="text-align:center;padding:12px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">평균 단가</div><div style="font-size:14px;font-weight:800;color:var(--acc);font-family:JetBrains Mono">'+_fmtAP(rtd.avg_unit_price)+'</div></div>';
     if(rtd.top_export_destinations&&rtd.top_export_destinations.length)h+='<div style="text-align:center;padding:12px;background:var(--w04);border-radius:8px"><div style="font-size:10px;color:var(--w40)">주요 수출국</div><div style="font-size:11px;color:var(--w70);line-height:1.5">'+rtd.top_export_destinations.slice(0,3).map(function(d){return UI.esc(d);}).join('<br>')+'</div></div>';
     h+='</div></div></div>';
   }
@@ -2205,39 +2248,16 @@ function pgAReport(){
     h+='</div></div></div>';
   }
 
-  // === ACTION BUTTONS (3대 CTA + 추가 액션) ===
+  // === ACTION: 프로젝트 생성 CTA ===
   var nc=(r.required_certs||[]);
-  h+='<div style="margin-top:20px;padding:20px;border-radius:12px;background:linear-gradient(135deg,rgba(0,212,255,.04),rgba(168,85,247,.04));border:1px solid rgba(0,212,255,.15)">';
-  h+='<div style="font-size:16px;font-weight:900;margin-bottom:6px">⚡ 다음 단계 — 바로 실행</div>';
-  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:16px">분석 결과를 바탕으로 수출을 시작하세요</div>';
-  // 3대 핵심 CTA
-  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">';
-  // CTA 1: 서류 생성 (PI)
-  h+='<div style="padding:16px;border-radius:10px;background:var(--card);border:1px solid var(--bd);text-align:center;cursor:pointer" onclick="App.nav(\'docgen\')">';
-  h+='<div style="font-size:28px;margin-bottom:6px">📄</div>';
-  h+='<div style="font-size:13px;font-weight:700;color:var(--pri)">PI/CI 서류 생성</div>';
-  h+='<div style="font-size:11px;color:var(--w40);margin-top:4px">견적서 즉시 발행</div>';
-  h+='</div>';
-  // CTA 2: 도착단가 계산
-  h+='<div style="padding:16px;border-radius:10px;background:var(--card);border:1px solid var(--bd);text-align:center;cursor:pointer" onclick="App.nav(\'costsim\')">';
-  h+='<div style="font-size:28px;margin-bottom:6px">🧮</div>';
-  h+='<div style="font-size:13px;font-weight:700;color:var(--acc)">도착단가 계산</div>';
-  h+='<div style="font-size:11px;color:var(--w40);margin-top:4px">FOB+관세+물류 포함</div>';
-  h+='</div>';
-  // CTA 3: 포워더 견적 요청
-  h+='<div style="padding:16px;border-radius:10px;background:var(--card);border:1px solid var(--bd);text-align:center;cursor:pointer" onclick="App.setCostTab(\'logistics\');App.nav(\'costsim\')">';
-  h+='<div style="font-size:28px;margin-bottom:6px">🚢</div>';
-  h+='<div style="font-size:13px;font-weight:700;color:var(--ok)">포워더 견적 요청</div>';
-  h+='<div style="font-size:11px;color:var(--w40);margin-top:4px">물류비 자동 산출</div>';
-  h+='</div>';
-  h+='</div>';
-  // 추가 액션
-  h+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
-  h+='<button class="btn btn-pri" onclick="App.createPj(\''+a.id+'\')" style="padding:10px 20px">🚀 프로젝트 생성</button>';
-  if(nc.length)h+='<button class="btn btn-acc" onclick="App.reqSvc(\'certification\',\''+a.id+'\')" style="padding:10px 20px">🏅 인증 컨설팅 ('+nc.length+'건)</button>';
-  h+='<button class="btn btn-ghost" onclick="App.reqSvc(\'matching\',\''+a.id+'\')" style="padding:10px 20px">🤝 바이어 매칭</button>';
-  h+='<button class="btn btn-ghost" onclick="App.rerunA(\''+a.id+'\')" style="padding:10px 20px">🔄 재분석</button>';
-  h+='</div>';
+  h+='<div style="margin-top:20px;text-align:center;padding:28px 20px;border-radius:14px;background:linear-gradient(135deg,rgba(0,212,255,.06),rgba(168,85,247,.04));border:1px solid rgba(0,212,255,.15)">';
+  h+='<div style="font-size:13px;color:var(--w40);margin-bottom:12px">분석이 완료되었습니다. 수출 프로젝트를 시작하세요.</div>';
+  h+='<button class="btn btn-pri" onclick="App.createPj(\''+a.id+'\')" style="padding:16px 56px;font-size:17px;font-weight:900;border-radius:12px;letter-spacing:.5px">프로젝트 생성</button>';
+  h+='<div style="margin-top:14px;display:flex;justify-content:center;gap:20px;font-size:12px">';
+  if(nc.length)h+='<a href="javascript:void(0)" onclick="App.reqSvc(\'certification\',\''+a.id+'\')" style="color:var(--acc);text-decoration:none;font-weight:600">인증 컨설팅 ('+nc.length+'건)</a>';
+  h+='<a href="javascript:void(0)" onclick="App.reqSvc(\'matching\',\''+a.id+'\')" style="color:var(--w40);text-decoration:none">바이어 매칭</a>';
+  h+='<a href="javascript:void(0)" onclick="App.rerunA(\''+a.id+'\')" style="color:var(--w30);text-decoration:none">재분석</a>';
+  h+='</div></div>';
   // === AI 심층 분석 통합 보고서 (17대 AI 도구 → McKinsey-grade Report) ===
   var _enr=S._enrichment&&S._enrichment[a.id];
   if(_enr){h+=_renderEnrichReport(a,_enr);}
