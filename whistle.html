@@ -2339,7 +2339,7 @@ function _enrichBody(key,a){
   var fob=parseFloat(inp.fob_price||r.estimated_fob_price||'10');
   var cat=r.product_category||inp.category||'general';
   var _esS=function(es){if(!es)return '';if(typeof es==='string')return es;if(typeof es==='object'){var pp=[];if(es.situation)pp.push(es.situation);if(es.complication)pp.push(es.complication);if(es.resolution)pp.push(es.resolution);return pp.join(' ')||JSON.stringify(es);}return String(es);};
-  var cn=(S.company?S.company.name:'')||(S.user&&S.user.user_metadata?S.user.user_metadata.company_name:'');
+  var cn=(S.company?(S.company.name_ko||S.company.name_en||S.company.name||''):'')||(S.user&&S.user.user_metadata?S.user.user_metadata.company_name:'');
   switch(key){
     case 'genome':return{product:product,hs_code:hs,description:inp.description||_esS(r.executive_summary)||'',fob_price:inp.fob_price||'',moq:inp.moq||'',certifications:r.required_certs||[]};
     case 'demandRadar':return hs?{hs_code:hs,product:product}:null;
@@ -2376,16 +2376,16 @@ function _autoEnrich(analysisId){
         var body=_enrichBody(t.key,a);
         if(!body){enr.skipped[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);return;}
         sb.functions.invoke(t.ef,{body:body}).then(function(res){
-          if(!res.error&&res.data&&!res.data.error){enr.results[t.key]=res.data;}else{enr.failed[t.key]=true;}
+          if(!res.error&&res.data&&!res.data.error){enr.results[t.key]=res.data;}else{enr.failed[t.key]=true;if(!enr._dbg)enr._dbg={};enr._dbg[t.key]={err:res.error?String(res.error).slice(0,100):null,hasData:!!res.data,dataErr:res.data&&res.data.error?String(res.data.error).slice(0,100):null};}
           enr.doneCount++;_checkEnrichDone(analysisId);
-        }).catch(function(){enr.failed[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);});
+        }).catch(function(e){enr.failed[t.key]=true;if(!enr._dbg)enr._dbg={};enr._dbg[t.key]={catch:String(e).slice(0,100)};enr.doneCount++;_checkEnrichDone(analysisId);});
       });
     },(wave-1)*3000);
   });
 }
 function _checkEnrichDone(analysisId){
   var enr=S._enrichment&&S._enrichment[analysisId];if(!enr)return;
-  if(enr.doneCount>=enr.totalCount)enr.status='done';
+  if(enr.doneCount>=enr.totalCount){enr.status='done';window._enrichDbg=enr._dbg||{};window._enrichResult={ok:Object.keys(enr.results),fail:Object.keys(enr.failed),skip:Object.keys(enr.skipped)};}
   render();
 }
 function toggleEnrich(aid,key){
