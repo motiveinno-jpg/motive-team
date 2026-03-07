@@ -2226,37 +2226,54 @@ function pgAReport(){
   h+='<button class="btn btn-ghost" onclick="App.reqSvc(\'matching\',\''+a.id+'\')" style="padding:10px 20px">🤝 바이어 매칭</button>';
   h+='<button class="btn btn-ghost" onclick="App.rerunA(\''+a.id+'\')" style="padding:10px 20px">🔄 재분석</button>';
   h+='</div>';
-  // === AI ENRICHMENT (자동 심층 분석) ===
+  // === AI 심층 분석 대시보드 (17대 AI 도구 자동 실행) ===
   var _enr=S._enrichment&&S._enrichment[a.id];
   if(_enr){
+    var _E=UI.esc;
+    var _dc=_enr.doneCount,_tc=_enr.totalCount;
+    var _dof=function(k){return _enr.results[k]||_enr.failed[k]||_enr.skipped[k];};
     h+='<div class="card" style="margin-top:16px;border-color:rgba(168,85,247,.2);background:linear-gradient(135deg,rgba(168,85,247,.03),transparent)">';
-    h+='<div class="card-h"><span>🧠 AI 심층 분석</span>';
-    if(_enr.status==='loading')h+='<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-left:8px"></span><span style="font-size:11px;color:var(--w40);margin-left:4px">분석 진행 중...</span>';
-    else h+='<span style="font-size:11px;color:var(--ok);margin-left:8px">✓ 완료</span>';
-    h+='</div><div class="card-b" style="padding:0">';
-    if(_enr.genome){h+=_renderGenome(_enr.genome,a);}
-    else if(_enr.status==='loading'&&!_enr._genomeFailed){h+='<div style="padding:24px;text-align:center;border-bottom:1px solid var(--bd)"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto 8px"></div><div style="font-size:13px;color:var(--purple);font-weight:700">🧬 Export Genome — 25개국 시장 적합도 분석 중...</div><div style="font-size:11px;color:var(--w30);margin-top:4px">UN Comtrade + FTA + 환율 + GDP 데이터 수집</div></div>';}
-    if(_enr.priceIntel){h+=_renderPriceIntel(_enr.priceIntel,a);}
-    else if(_enr.status==='loading'&&!_enr._priceFailed){h+='<div style="padding:24px;text-align:center;border-bottom:1px solid var(--bd)"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto 8px"></div><div style="font-size:13px;color:var(--acc);font-weight:700">💹 Price Intelligence — 글로벌 가격 경쟁력 분석 중...</div><div style="font-size:11px;color:var(--w30);margin-top:4px">UN 단가 + FTA 할인 + 환율 시나리오</div></div>';}
-    if(_enr.trust){h+=_renderTrustScore(_enr.trust,a);}
-    else if(_enr.status==='loading'&&!_enr._trustSkipped&&!_enr._trustFailed){h+='<div style="padding:24px;text-align:center"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto 8px"></div><div style="font-size:13px;color:#10B981;font-weight:700">🛡️ Trust Score — 기업 신뢰도 교차 검증 중...</div><div style="font-size:11px;color:var(--w30);margin-top:4px">OpenCorporates + Comtrade + 활동이력</div></div>';}
+    h+='<div class="card-h"><span>🧠 AI 심층 분석 — '+_tc+'대 도구</span>';
+    if(_enr.status==='loading'){h+='<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-left:8px"></span><span style="font-size:11px;color:var(--w40);margin-left:4px">'+_dc+'/'+_tc+' 완료</span>';}
+    else{h+='<span style="font-size:11px;color:var(--ok);margin-left:8px">✓ 전체 완료</span>';}
+    h+='</div><div class="card-b" style="padding:12px">';
+    ENRICH_GROUPS.forEach(function(grp){
+      var tools=ENRICH_TOOLS.filter(function(t){return t.grp===grp.key;});
+      var grpDone=tools.filter(function(t){return _dof(t.key);}).length;
+      var grpOk=tools.filter(function(t){return !!_enr.results[t.key];}).length;
+      h+='<div style="margin-bottom:14px">';
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">'+grp.icon+'</span><span style="font-size:12px;font-weight:700;color:'+grp.color+'">'+grp.key+'</span>';
+      if(grpDone<tools.length){h+='<span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span><span style="font-size:10px;color:var(--w30)">'+grpDone+'/'+tools.length+'</span>';}
+      else{h+='<span style="font-size:10px;color:var(--ok)">✓ '+grpOk+'/'+tools.length+'</span>';}
+      h+='</div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:6px">';
+      tools.forEach(function(t){
+        var hasR=!!_enr.results[t.key],isFail=!!_enr.failed[t.key],isSkip=!!_enr.skipped[t.key];
+        var isLoad=!hasR&&!isFail&&!isSkip;
+        var sm=hasR?_enrichSummary(t.key,_enr.results[t.key]):{metric:'',sub:''};
+        var isExp=S._enrichExpanded&&S._enrichExpanded[a.id+'_'+t.key];
+        h+='<div style="padding:10px;border-radius:10px;background:'+(hasR?'var(--w05)':'var(--w03)')+';border:1px solid '+(isExp?grp.color:hasR?'var(--bd)':isLoad?'rgba(168,85,247,.12)':'rgba(239,68,68,.12)')+';cursor:'+(hasR?'pointer':'default')+';transition:all .15s" '+(hasR?'onclick="App.toggleEnrich(\''+a.id+'\',\''+t.key+'\')"':'')+'>';
+        h+='<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px"><span style="font-size:14px">'+t.icon+'</span><span style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+t.name+'</span>';
+        if(isLoad){h+='<span class="spinner" style="width:10px;height:10px;border-width:1.5px;flex-shrink:0"></span>';}
+        else if(isFail){h+='<span style="font-size:10px;color:var(--err);flex-shrink:0">✗</span>';}
+        else if(isSkip){h+='<span style="font-size:9px;color:var(--w20);flex-shrink:0">—</span>';}
+        else{h+='<span style="font-size:10px;color:var(--ok);flex-shrink:0">✓</span>';}
+        h+='</div>';
+        if(hasR){h+='<div style="font-size:15px;font-weight:900;color:var(--w);line-height:1.2">'+_E(sm.metric)+'</div><div style="font-size:9px;color:var(--w30);margin-top:1px">'+_E(sm.sub)+'</div>';}
+        else if(isLoad){h+='<div style="font-size:10px;color:var(--w20);margin-top:2px">분석 중...</div>';}
+        else if(isFail){h+='<div style="font-size:10px;color:var(--w20);margin-top:2px">실패</div>';}
+        h+='</div>';
+      });
+      h+='</div>';
+      tools.forEach(function(t){
+        if(_enr.results[t.key]&&S._enrichExpanded&&S._enrichExpanded[a.id+'_'+t.key]){
+          h+=_renderToolDetail(t.key,_enr.results[t.key],a);
+        }
+      });
+      h+='</div>';
+    });
     h+='</div></div>';
   }
-
-  // === CONTEXTUAL AI TOOLS RECOMMENDATION ===
-  var _aTools=[];
-  if(r.hs_code)_aTools.push({id:'costsim',icon:'🧮',name:'비용 시뮬레이터',desc:'HS '+r.hs_code+' 기준 관세/물류 비용 계산'});
-  if(r.target_markets&&r.target_markets.length)_aTools.push({id:'regulatory-map',icon:'🗺️',name:'규제 요건 맵',desc:r.target_markets.slice(0,3).join('/')+' 규제 비교'});
-  _aTools.push({id:'competitor-radar',icon:'🎯',name:'경쟁국 레이더',desc:'한국 대비 경쟁국 포지션 분석'});
-  _aTools.push({id:'demand-radar',icon:'📡',name:'바이어 수요 레이더',desc:'글로벌 수요 히트맵'});
-  if(r.certifications&&r.certifications.length)_aTools.push({id:'cert-nav',icon:'📋',name:'인증 네비게이터',desc:'필수 인증 요건 상세 조회'});
-  _aTools.push({id:'profit-margin',icon:'💹',name:'수익 마진 최적화',desc:'FOB/CIF/DDP별 수익 시나리오'});
-  h+='<div class="card" style="margin-top:20px;border-color:rgba(0,212,255,.15);background:linear-gradient(135deg,rgba(0,212,255,.03),transparent)"><div class="card-h"><span>🧠 이 분석과 관련된 AI 도구</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'ai-tools\')" style="font-size:11px">전체 보기 →</button></div><div class="card-b"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">';
-  _aTools.slice(0,6).forEach(function(t){
-    h+='<div onclick="App.nav(\''+t.id+'\')" style="display:flex;gap:10px;padding:10px 12px;border-radius:10px;background:var(--w08);cursor:pointer;transition:all .15s" onmouseenter="this.style.background=\'rgba(0,212,255,.08)\'" onmouseleave="this.style.background=\'var(--w08)\'">';
-    h+='<span style="font-size:20px">'+t.icon+'</span><div><div style="font-size:12px;font-weight:700">'+t.name+'</div><div style="font-size:10px;color:var(--w40)">'+t.desc+'</div></div></div>';
-  });
-  h+='</div></div></div>';
 
   return h;
 }
@@ -2287,60 +2304,93 @@ function downloadReportPDF(){
 
 function viewA(id){var a=S.analyses.find(function(x){return x.id===id;});if(a){set({currentAnalysis:a,page:'analysis'});if(a.status==='analyzing'||a.status==='phase1'||a.status==='phase2'){sb.from('analyses').select('*').eq('id',id).single().then(function(r){if(r.data&&r.data.status!==a.status){var idx=S.analyses.findIndex(function(x){return x.id===id;});if(idx>=0)S.analyses[idx]=r.data;set({currentAnalysis:r.data});}});}}}
 
-/* ── AI 도구 자동 심층 분석 (분석 완료 후 자동 실행) ── */
+/* ── 17대 AI 도구 자동 심층 분석 (분석 완료 후 4단계 웨이브 실행) ── */
+var ENRICH_TOOLS=[
+  {key:'genome',ef:'export-genome',icon:'🧬',name:'Export Genome',grp:'시장 정보',wave:1},
+  {key:'demandRadar',ef:'demand-radar',icon:'📡',name:'수요 레이더',grp:'시장 정보',wave:1},
+  {key:'competitorRadar',ef:'competitor-radar',icon:'🎯',name:'경쟁국 분석',grp:'시장 정보',wave:1},
+  {key:'marketTiming',ef:'market-timing',icon:'⏰',name:'시장 타이밍',grp:'시장 정보',wave:1},
+  {key:'priceIntel',ef:'price-intelligence',icon:'💹',name:'가격 경쟁력',grp:'비용·가격',wave:2},
+  {key:'exportROI',ef:'export-roi',icon:'💰',name:'수출 ROI',grp:'비용·가격',wave:2},
+  {key:'profitMargin',ef:'profit-margin',icon:'📊',name:'마진 분석',grp:'비용·가격',wave:2},
+  {key:'tradeFinance',ef:'trade-finance',icon:'🏦',name:'결제 방식',grp:'비용·가격',wave:2},
+  {key:'trust',ef:'trust-score',icon:'🛡️',name:'기업 신뢰도',grp:'리스크·인증',wave:3},
+  {key:'certNav',ef:'cert-navigator',icon:'📋',name:'인증 가이드',grp:'리스크·인증',wave:3},
+  {key:'regulatoryMap',ef:'regulatory-map',icon:'🗺️',name:'규제 지도',grp:'리스크·인증',wave:3},
+  {key:'labelCompliance',ef:'label-compliance',icon:'🏷️',name:'라벨 규정',grp:'리스크·인증',wave:3},
+  {key:'scRisk',ef:'supply-chain-risk',icon:'⚠️',name:'공급망 리스크',grp:'리스크·인증',wave:3},
+  {key:'logisticsOpt',ef:'logistics-optimizer',icon:'🚢',name:'물류 최적화',grp:'운영·전략',wave:4},
+  {key:'smartNego',ef:'smart-negotiator',icon:'🤝',name:'협상 전략',grp:'운영·전략',wave:4},
+  {key:'cultureGuide',ef:'culture-guide',icon:'🌏',name:'비즈니스 문화',grp:'운영·전략',wave:4},
+  {key:'exportCalendar',ef:'export-calendar',icon:'📅',name:'수출 캘린더',grp:'운영·전략',wave:4}
+];
+var ENRICH_GROUPS=[
+  {key:'시장 정보',icon:'📊',color:'var(--pri)'},
+  {key:'비용·가격',icon:'💰',color:'var(--acc)'},
+  {key:'리스크·인증',icon:'🛡️',color:'#EF4444'},
+  {key:'운영·전략',icon:'🚀',color:'var(--ok)'}
+];
+function _enrichBody(key,a){
+  var r=a.ai_result,inp=r.input_data||{};
+  var product=a.product_name||inp.product_name_en||'';
+  var hs=r.hs_code||'';
+  var tm=(r.target_markets||r.recommended_markets||['US'])[0];
+  var tms=(r.target_markets||r.recommended_markets||['US','EU','JP']);
+  var fob=parseFloat(inp.fob_price||r.estimated_fob_price||'10');
+  var cat=r.product_category||inp.category||'general';
+  var _esS=function(es){if(!es)return '';if(typeof es==='string')return es;if(typeof es==='object'){var pp=[];if(es.situation)pp.push(es.situation);if(es.complication)pp.push(es.complication);if(es.resolution)pp.push(es.resolution);return pp.join(' ')||JSON.stringify(es);}return String(es);};
+  var cn=(S.company?S.company.name:'')||(S.user&&S.user.user_metadata?S.user.user_metadata.company_name:'');
+  switch(key){
+    case 'genome':return{product:product,hs_code:hs,description:inp.description||_esS(r.executive_summary)||'',fob_price:inp.fob_price||'',moq:inp.moq||'',certifications:r.required_certs||[]};
+    case 'demandRadar':return hs?{hs_code:hs,product:product}:null;
+    case 'competitorRadar':return hs?{hs_code:hs,target_market:tm,product:product}:null;
+    case 'marketTiming':return{product:product,country:tm,category:cat};
+    case 'priceIntel':return{product:product,hs_code:hs,target_market:tm,fob_price:fob};
+    case 'exportROI':return{product:product,hs_code:hs,fob_price:fob,annual_volume:5000,cert_cost:10000,target_countries:tms.slice(0,7)};
+    case 'profitMargin':return{product:product,manufacturing_cost_krw:Math.round(fob*1300*0.5),quantity:1000,destination_country:tm,hs_code:hs,target_price_usd:fob};
+    case 'tradeFinance':return{amount_usd:Math.round(fob*1000),buyer_country:tm,relationship:'new',product_category:cat};
+    case 'trust':return cn?{company_name:cn,country:'KR',website:(S.company&&S.company.website)||'',hs_code:hs,business_number:(S.company&&S.company.business_number)||''}:null;
+    case 'certNav':return{product:product,hs_code:hs,target_countries:tms.slice(0,5)};
+    case 'regulatoryMap':return{product:product,category:cat};
+    case 'labelCompliance':return{product:product,country:tm,category:cat,ingredients:''};
+    case 'scRisk':return{target_countries:tms.slice(0,5)};
+    case 'logisticsOpt':return{destination_country:tm,weight_kg:500,volume_cbm:2,product:product,incoterms:'FOB'};
+    case 'smartNego':return{product:product,fob_price:String(fob),quantity:'3000',buyer_country:tm,relationship_stage:'first_order'};
+    case 'cultureGuide':return{country:tm,context:'첫 수출 거래 협상'};
+    case 'exportCalendar':return{category:cat,country:tm,quarter:'all'};
+    default:return null;
+  }
+}
 function _autoEnrich(analysisId){
   var a=S.analyses.find(function(x){return x.id===analysisId;});
   if(!a||!a.ai_result)return;
   if(S._enrichment&&S._enrichment[analysisId])return;
-  var r=a.ai_result,inp=r.input_data||{};
   if(!S._enrichment)S._enrichment={};
-  var _esSumStr=function(es){if(!es)return '';if(typeof es==='string')return es;if(typeof es==='object'&&es!==null){var parts=[];if(es.situation)parts.push(es.situation);if(es.complication)parts.push(es.complication);if(es.resolution)parts.push(es.resolution);if(parts.length)return parts.join(' ');return JSON.stringify(es);}return String(es);};
-  S._enrichment[analysisId]={status:'loading',genome:null,priceIntel:null,trust:null,_genomeFailed:false,_priceFailed:false,_trustFailed:false,_trustSkipped:false};
+  if(!S._enrichExpanded)S._enrichExpanded={};
+  var enr={status:'loading',results:{},failed:{},skipped:{},doneCount:0,totalCount:ENRICH_TOOLS.length};
+  S._enrichment[analysisId]=enr;
   render();
-  sb.functions.invoke('export-genome',{body:{
-    product:a.product_name||inp.product_name_en||'',
-    hs_code:r.hs_code||'',
-    description:inp.description||_esSumStr(r.executive_summary)||'',
-    fob_price:inp.fob_price||'',moq:inp.moq||'',
-    certifications:r.required_certs||[]
-  }}).then(function(res){
-    if(res.data&&res.data.ok)S._enrichment[analysisId].genome=res.data;
-    else S._enrichment[analysisId]._genomeFailed=true;
-    _checkEnrichDone(analysisId);
-  }).catch(function(){S._enrichment[analysisId]._genomeFailed=true;_checkEnrichDone(analysisId);});
-  var targetMkt=(r.target_markets||r.recommended_markets||['US'])[0];
-  var fobPrice=parseFloat(inp.fob_price||'10');
-  sb.functions.invoke('price-intelligence',{body:{
-    product:a.product_name||inp.product_name_en||'',
-    hs_code:r.hs_code||'',target_market:targetMkt,
-    fob_price:fobPrice
-  }}).then(function(res){
-    if(res.data&&res.data.ok)S._enrichment[analysisId].priceIntel=res.data;
-    else S._enrichment[analysisId]._priceFailed=true;
-    _checkEnrichDone(analysisId);
-  }).catch(function(){S._enrichment[analysisId]._priceFailed=true;_checkEnrichDone(analysisId);});
-  var companyName=(S.company?S.company.name:'')||(S.user&&S.user.user_metadata?S.user.user_metadata.company_name:'');
-  if(companyName){
-    sb.functions.invoke('trust-score',{body:{
-      company_name:companyName,country:'KR',
-      website:(S.company&&S.company.website)||'',
-      hs_code:r.hs_code||'',
-      business_number:(S.company&&S.company.business_number)||''
-    }}).then(function(res){
-      if(res.data)S._enrichment[analysisId].trust=res.data;
-      else S._enrichment[analysisId]._trustFailed=true;
-      _checkEnrichDone(analysisId);
-    }).catch(function(){S._enrichment[analysisId]._trustFailed=true;_checkEnrichDone(analysisId);});
-  }else{
-    S._enrichment[analysisId]._trustSkipped=true;
-    _checkEnrichDone(analysisId);
-  }
+  [1,2,3,4].forEach(function(wave){
+    setTimeout(function(){
+      ENRICH_TOOLS.filter(function(t){return t.wave===wave;}).forEach(function(t){
+        var body=_enrichBody(t.key,a);
+        if(!body){enr.skipped[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);return;}
+        sb.functions.invoke(t.ef,{body:body}).then(function(res){
+          if(!res.error&&res.data){enr.results[t.key]=res.data;}else{enr.failed[t.key]=true;}
+          enr.doneCount++;_checkEnrichDone(analysisId);
+        }).catch(function(){enr.failed[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);});
+      });
+    },(wave-1)*3000);
+  });
 }
 function _checkEnrichDone(analysisId){
-  var e=S._enrichment&&S._enrichment[analysisId];if(!e)return;
-  var done=((e.genome!==null||e._genomeFailed)?1:0)+((e.priceIntel!==null||e._priceFailed)?1:0)+((e.trust!==null||e._trustSkipped||e._trustFailed)?1:0);
-  if(done>=3)e.status='done';
+  var enr=S._enrichment&&S._enrichment[analysisId];if(!enr)return;
+  if(enr.doneCount>=enr.totalCount)enr.status='done';
   render();
+}
+function toggleEnrich(aid,key){
+  if(!S._enrichExpanded)S._enrichExpanded={};
+  var k=aid+'_'+key;S._enrichExpanded[k]=!S._enrichExpanded[k];render();
 }
 
 var STAGE_DEFAULTS={
@@ -4330,6 +4380,124 @@ function _renderTrustScore(d,a){
   h+='<div style="text-align:center;font-size:10px;color:var(--w20);margin-top:8px">Powered by OpenCorporates + UN Comtrade + Whistle AI Platform Data</div>';
   h+='</div>';
   return h;
+}
+
+/* ── Enrichment Summary / Detail Renderers ── */
+function _enrichSummary(key,d){
+  try{switch(key){
+    case 'genome':var gm=d.genome;return{metric:(gm&&gm.top_markets&&gm.top_markets[0])?gm.top_markets[0].country:'완료',sub:'25개국 적합도'};
+    case 'demandRadar':return{metric:d.total_demand?d.total_demand.formatted:'—',sub:(d.market_count||0)+'개국 수요'};
+    case 'competitorRadar':return{metric:d.korea_position?('#'+d.korea_position.rank):'—',sub:'한국 순위'};
+    case 'marketTiming':return{metric:d.current_timing?(d.current_timing.score+'점'):'—',sub:d.current_timing?(d.current_timing.verdict||''):''};
+    case 'priceIntel':var pa=d.analysis||d;return{metric:pa.competitive_position||pa.position||'완료',sub:'가격 포지션'};
+    case 'exportROI':var bm=d.markets&&d.markets[0];return{metric:bm?(bm.roi_pct+'%'):'—',sub:bm?(bm.country+' 최고ROI'):''};
+    case 'profitMargin':var sc0=d.scenarios&&d.scenarios[0];return{metric:sc0?(sc0.margin_pct.toFixed(1)+'%'):'—',sub:sc0?(sc0.incoterms+' 마진'):''};
+    case 'tradeFinance':return{metric:d.recommended?(d.recommended.method||'—'):'—',sub:'추천 결제'};
+    case 'trust':return{metric:(d.trust_score||d.total_score||d.score||0)+'점',sub:d.grade||d.risk_level||'신뢰도'};
+    case 'certNav':return{metric:(d.total_mandatory||0)+'건',sub:'필수 인증'};
+    case 'regulatoryMap':return{metric:(d.countries_analyzed||0)+'개국',sub:(d.summary&&d.summary.easiest)?d.summary.easiest.name+' 최적':'규제 분석'};
+    case 'labelCompliance':return{metric:(d.required_fields?d.required_fields.length:0)+'항목',sub:'필수 라벨'};
+    case 'scRisk':return{metric:(d.overall_risk||0)+'/5',sub:d.overall_label||'리스크'};
+    case 'logisticsOpt':return{metric:d.recommended?('$'+(d.recommended.cost||0).toLocaleString()):'—',sub:d.recommended?(d.recommended.transit||''):''};
+    case 'smartNego':var ri=d.recommended_incoterms;return{metric:(ri&&ri[0])?ri[0].code:'—',sub:'추천 인코텀즈'};
+    case 'cultureGuide':return{metric:(d.flag||'🌐')+(d.name?' '+d.name:''),sub:'문화 가이드'};
+    case 'exportCalendar':return{metric:(d.trade_shows?d.trade_shows.length:0)+'건',sub:'전시회 일정'};
+    default:return{metric:'—',sub:''};
+  }}catch(e){return{metric:'완료',sub:''};}
+}
+function _eStatBox(label,value,color){
+  return '<div style="padding:10px;border-radius:8px;background:var(--w05);text-align:center"><div style="font-size:10px;color:var(--w40)">'+label+'</div><div style="font-size:16px;font-weight:800;color:'+(color||'var(--w)')+'">'+value+'</div></div>';
+}
+function _eMiniTable(headers,rows){
+  var h='<table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:6px"><tr style="border-bottom:1px solid var(--bd)">';
+  headers.forEach(function(hd,i){h+='<th style="padding:4px 6px;text-align:'+(i===0?'left':'right')+';color:var(--w40);font-weight:600;font-size:10px">'+hd+'</th>';});
+  h+='</tr>';rows.forEach(function(row){h+='<tr style="border-bottom:1px solid var(--w06)">';row.forEach(function(cell,i){h+='<td style="padding:4px 6px;text-align:'+(i===0?'left':'right')+'">'+cell+'</td>';});h+='</tr>';});
+  h+='</table>';return h;
+}
+function _renderToolDetail(key,d,a){
+  var E=UI.esc;
+  if(key==='genome')return _renderGenome(d,a);
+  if(key==='priceIntel')return _renderPriceIntel(d,a);
+  if(key==='trust')return _renderTrustScore(d,a);
+  var h='<div style="margin:8px 0;padding:16px;border-radius:12px;background:var(--card);border:1px solid var(--bd);font-size:12px">';
+  switch(key){
+    case 'demandRadar':
+      h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';
+      h+=_eStatBox('글로벌 총수요',d.total_demand?E(d.total_demand.formatted):'—','var(--pri)');
+      h+=_eStatBox('YoY 성장률',d.total_demand?((d.total_demand.yoy>=0?'+':'')+d.total_demand.yoy+'%'):'—',d.total_demand&&d.total_demand.yoy>=0?'var(--ok)':'var(--err)');
+      h+=_eStatBox('수입국 수',(d.market_count||0)+'개국','var(--w)');
+      h+='</div>';
+      if(d.hot_markets&&d.hot_markets.length){h+='<div style="margin-bottom:8px"><span style="font-size:11px;font-weight:700;color:var(--ok)">🔥 급성장: </span>';d.hot_markets.slice(0,4).forEach(function(m){h+='<span style="margin-right:8px;font-size:11px">'+E(m.name)+' <b style="color:var(--ok)">+'+m.yoy+'%</b></span>';});h+='</div>';}
+      if(d.top_markets&&d.top_markets.length){h+=_eMiniTable(['국가','수입액','점유율','YoY'],d.top_markets.slice(0,5).map(function(m){return[(m.flag||'')+' '+E(m.name),'$'+((m.value_2023||0)/1e6).toFixed(0)+'M',(m.share||0).toFixed(1)+'%','<span style="color:'+((m.yoy||0)>=0?'var(--ok)':'var(--err)')+'">'+((m.yoy||0)>=0?'+':'')+(m.yoy||0)+'%</span>'];}));}
+      break;
+    case 'competitorRadar':
+      if(d.korea_position){var kp=d.korea_position;h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';h+=_eStatBox('한국 순위','#'+kp.rank,'var(--pri)');h+=_eStatBox('수출액','$'+((kp.value||0)/1e6).toFixed(0)+'M','var(--acc)');h+=_eStatBox('시장점유율',(kp.share||0).toFixed(1)+'%',(kp.share||0)>=5?'var(--ok)':'var(--acc)');h+='</div>';}
+      if(d.competitors&&d.competitors.length){h+=_eMiniTable(['#','국가','수출액','점유율'],d.competitors.slice(0,8).map(function(c,i){var isKR=c.country==='Korea'||c.country==='KR'||c.country==='South Korea';return['<b>'+(i+1)+'</b>',(isKR?'<b style="color:var(--pri)">':'')+E((c.flag||'')+' '+(c.country||''))+(isKR?'</b>':''),'$'+((c.value||0)/1e6).toFixed(0)+'M',(c.share||0).toFixed(1)+'%'];}));}
+      break;
+    case 'marketTiming':
+      if(d.current_timing){var ct=d.current_timing;var tsc=ct.score>=70?'var(--ok)':ct.score>=40?'var(--acc)':'var(--err)';h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';h+=_eStatBox('타이밍 점수',ct.score+'/100',tsc);h+=_eStatBox('판정',E(ct.verdict||''),tsc);h+=_eStatBox('환율 동향',d.fx_analysis?E(d.fx_analysis.trend||''):'—','var(--pri)');h+='</div>';}
+      if(d.season_analysis){h+='<div style="padding:10px;border-radius:8px;background:var(--w05);font-size:11px;margin-bottom:8px"><b>📅 시즌:</b> 피크 월 '+((d.season_analysis.peak_months||[]).join(', '))+' | 비수기 월 '+((d.season_analysis.low_months||[]).join(', '));if(d.season_analysis.reason)h+='<div style="color:var(--w40);margin-top:4px">'+E(d.season_analysis.reason)+'</div>';h+='</div>';}
+      if(d.monthly_forecast){h+='<div style="display:flex;gap:3px;align-items:flex-end;height:60px">';var mfKeys=Object.keys(d.monthly_forecast).slice(0,12);mfKeys.forEach(function(m){var v=d.monthly_forecast[m]||50;var col=v>=70?'var(--ok)':v>=40?'var(--acc)':'var(--err)';h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center"><div style="width:100%;height:'+Math.round(v*0.5)+'px;background:'+col+';border-radius:2px"></div><div style="font-size:8px;color:var(--w30);margin-top:2px">'+m+'</div></div>';});h+='</div>';}
+      break;
+    case 'exportROI':
+      if(d.markets&&d.markets[0]){var best=d.markets[0];h+='<div style="padding:12px;border-radius:10px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.15);margin-bottom:10px;text-align:center"><div style="font-size:10px;color:var(--ok);font-weight:700">🏆 최고 ROI 시장</div><div style="font-size:22px;font-weight:900;color:var(--ok)">'+E(best.country)+' '+best.roi_pct+'%</div><div style="font-size:11px;color:var(--w40)">순이익 $'+((best.revenue&&best.revenue.gross_profit)||0).toLocaleString()+' · 손익분기 '+(best.break_even_months||'?')+'개월</div></div>';}
+      if(d.markets&&d.markets.length>1){h+=_eMiniTable(['시장','ROI','순이익','관세','등급'],d.markets.slice(0,7).map(function(m){var rc={excellent:'var(--ok)',good:'var(--pri)',moderate:'var(--acc)',risky:'var(--err)'}[m.rating]||'var(--w40)';return[E(m.country),'<b>'+m.roi_pct+'%</b>','$'+((m.revenue&&m.revenue.gross_profit)||0).toLocaleString(),(m.tariff_pct||0)+'%','<span style="color:'+rc+'">'+E(m.rating||'')+'</span>'];}));}
+      break;
+    case 'profitMargin':
+      h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:10px">';
+      if(d.fx_rate)h+=_eStatBox('환율','₩'+(d.fx_rate||1300).toLocaleString(),'var(--pri)');
+      (d.scenarios||[]).forEach(function(s){var mc=s.margin_pct>=20?'var(--ok)':s.margin_pct>=10?'var(--acc)':'var(--err)';h+=_eStatBox(s.incoterms+' 마진',s.margin_pct.toFixed(1)+'%',mc);});
+      h+='</div>';
+      if(d.scenarios&&d.scenarios.length){h+=_eMiniTable(['인코텀즈','단가(USD)','총비용','마진율','순이익'],d.scenarios.map(function(s){return[E(s.incoterms),'$'+(s.unit_price_usd||0).toFixed(2),'$'+(s.total_cost||0).toLocaleString(),(s.margin_pct||0).toFixed(1)+'%','$'+(s.net_profit||0).toLocaleString()];}));}
+      break;
+    case 'tradeFinance':
+      if(d.recommended){h+='<div style="padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:10px"><div style="font-size:10px;color:var(--pri);font-weight:700">⭐ AI 추천 결제방식</div><div style="font-size:18px;font-weight:800;margin-top:4px">'+E(d.recommended.method)+'</div><div style="font-size:11px;color:var(--w60);margin-top:4px">'+E(d.recommended.reason||'')+'</div></div>';}
+      if(d.methods&&d.methods.length){h+=_eMiniTable(['결제방식','리스크','수수료','추천도'],d.methods.slice(0,6).map(function(m){return[E(m.method||m.name||''),E(m.risk_level||''),'<span style="color:var(--acc)">'+E(m.fee_range||m.cost||'')+'</span>',E(m.suitability||m.score||'')];}));}
+      break;
+    case 'certNav':
+      h+='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">';
+      h+=_eStatBox('필수 인증',(d.total_mandatory||0)+'건','var(--err)');h+=_eStatBox('선택 인증',(d.total_optional||0)+'건','var(--ok)');h+='</div>';
+      (d.countries_analysis||[]).forEach(function(ca){h+='<div style="padding:10px;border-radius:8px;background:var(--w05);margin-bottom:6px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">'+E(ca.country)+' <span style="color:var(--pri);font-size:11px">필수 '+ca.mandatory_count+'건</span></div>';(ca.certifications||[]).slice(0,4).forEach(function(cert){var isM=cert.type==='mandatory';h+='<div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:11px"><span style="padding:1px 6px;border-radius:3px;font-size:8px;font-weight:700;color:#fff;background:'+(isM?'var(--err)':'var(--ok)')+'">'+(isM?'필수':'선택')+'</span><span style="font-weight:600">'+E(cert.name||'')+'</span><span style="color:var(--w40)">'+E(cert.duration||'')+'</span><span style="color:var(--acc)">'+E(cert.cost_range||'')+'</span></div>';});h+='</div>';});
+      break;
+    case 'regulatoryMap':
+      if(d.summary){h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';h+=_eStatBox('분석 국가',(d.countries_analyzed||0)+'개국','var(--pri)');h+=_eStatBox('가장 쉬운',(d.summary.easiest?(d.summary.easiest.flag||'')+' '+E(d.summary.easiest.name):'—'),'var(--ok)');h+=_eStatBox('가장 어려운',(d.summary.hardest?(d.summary.hardest.flag||'')+' '+E(d.summary.hardest.name):'—'),'var(--err)');h+='</div>';}
+      (d.regulations||[]).forEach(function(rg){h+='<div style="padding:10px;border-radius:8px;background:var(--w05);margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12px;font-weight:700">'+(rg.flag||'')+' '+E(rg.country||'')+'</span><span style="font-size:10px;font-weight:700;color:'+((rg.difficulty||'')==='hard'?'var(--err)':(rg.difficulty||'')==='medium'?'var(--acc)':'var(--ok)')+'">'+E(rg.difficulty||'')+'</span></div><div style="font-size:11px;color:var(--w60)">'+E(rg.key_requirements||rg.overview||'')+'</div></div>';});
+      break;
+    case 'labelCompliance':
+      h+='<div style="padding:10px;border-radius:10px;background:rgba(255,107,107,.06);border:1px solid rgba(255,107,107,.12);margin-bottom:10px">';
+      h+='<div style="font-size:16px;margin-bottom:4px">'+(({US:'🇺🇸',EU:'🇪🇺',JP:'🇯🇵',CN:'🇨🇳',VN:'🇻🇳'}[d.country])||'🌐')+'</div>';
+      h+='<div style="font-size:14px;font-weight:800">'+E(d.country_name||d.country||'')+' 라벨링 요건</div>';
+      h+='<div style="font-size:11px;color:var(--w60)">'+E(d.regulatory_body||'')+'</div></div>';
+      if(d.required_fields&&d.required_fields.length){h+='<div style="font-size:11px;font-weight:700;margin-bottom:6px">📋 필수 항목 ('+d.required_fields.length+')</div>';d.required_fields.slice(0,8).forEach(function(f){h+='<div style="display:flex;gap:6px;padding:3px 0;font-size:11px;border-bottom:1px solid var(--w06)"><span style="color:var(--err)">●</span><b>'+E(f.name||f.field||'')+'</b><span style="color:var(--w40)">'+E(f.description||f.note||'')+'</span></div>';});}
+      break;
+    case 'scRisk':
+      var orc=d.overall_risk>=4?'var(--err)':d.overall_risk>=3?'var(--acc)':d.overall_risk>=2?'var(--pri)':'var(--ok)';
+      h+='<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px"><div style="width:60px;height:60px;border-radius:50%;background:'+orc+'15;border:3px solid '+orc+';display:flex;align-items:center;justify-content:center;flex-direction:column"><div style="font-size:18px;font-weight:900;color:'+orc+'">'+d.overall_risk+'</div><div style="font-size:7px;color:var(--w40)">/5.0</div></div><div><div style="font-size:16px;font-weight:900;color:'+orc+'">'+E(d.overall_label||'')+' Risk</div><div style="font-size:11px;color:var(--w40)">국가·해운·환율 종합 리스크</div></div></div>';
+      if(d.country_risks&&d.country_risks.length){h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px">';d.country_risks.forEach(function(cr){var col=cr.overall>=4?'var(--err)':cr.overall>=3?'var(--acc)':'var(--ok)';h+='<div style="padding:8px;border-radius:8px;background:var(--w05);text-align:center"><div style="font-size:13px;font-weight:800">'+E(cr.country)+'</div><div style="font-size:14px;font-weight:800;color:'+col+'">'+cr.overall+'/5</div><div style="font-size:9px;color:var(--w30)">'+E(cr.label||'')+'</div></div>';});h+='</div>';}
+      break;
+    case 'logisticsOpt':
+      if(d.recommended){h+='<div style="padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:10px;text-align:center"><div style="font-size:10px;color:var(--pri);font-weight:700">⭐ AI 추천</div><div style="font-size:18px;font-weight:800">'+E(d.recommended.mode||'')+'</div><div style="font-size:14px;color:var(--ok);font-weight:700">$'+(d.recommended.cost||0).toLocaleString()+' | '+E(d.recommended.transit||'')+'</div></div>';}
+      if(d.options&&d.options.length){h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">';d.options.forEach(function(o){var isRec=d.recommended&&o.mode===d.recommended.mode;h+='<div style="padding:10px;border-radius:8px;background:var(--w05);text-align:center;border:1px solid '+(isRec?'var(--pri)':'var(--w06)')+'"><div style="font-size:12px;font-weight:700">'+E(o.mode||'')+'</div><div style="font-size:16px;font-weight:800;color:'+(isRec?'var(--pri)':'var(--w60)')+'">$'+(o.cost||0).toLocaleString()+'</div><div style="font-size:10px;color:var(--w40)">'+E(o.transit||'')+'</div></div>';});h+='</div>';}
+      break;
+    case 'smartNego':
+      if(d.recommended_incoterms&&d.recommended_incoterms.length){h+='<div style="display:grid;grid-template-columns:repeat('+Math.min(d.recommended_incoterms.length,3)+',1fr);gap:8px;margin-bottom:10px">';d.recommended_incoterms.forEach(function(ic,i){h+='<div style="padding:12px;border-radius:8px;background:'+(i===0?'rgba(0,212,255,.06)':'var(--w05)')+';border:1px solid '+(i===0?'var(--pri)':'var(--w06)')+';text-align:center">';if(i===0)h+='<div style="font-size:8px;font-weight:700;color:var(--pri);margin-bottom:2px">✓ 최우선</div>';h+='<div style="font-size:18px;font-weight:900">'+E(ic.code||'')+'</div><div style="font-size:10px;color:var(--w40);margin-top:4px">'+E(ic.desc||'')+'</div></div>';});h+='</div>';}
+      if(d.negotiation_tips&&d.negotiation_tips.length){h+='<div style="font-size:11px"><b>💡 협상 팁:</b><ul style="margin:4px 0;padding-left:16px">';d.negotiation_tips.slice(0,4).forEach(function(tip){h+='<li style="margin-bottom:2px;color:var(--w60)">'+E(typeof tip==='string'?tip:(tip.tip||tip.text||''))+'</li>';});h+='</ul></div>';}
+      break;
+    case 'cultureGuide':
+      h+='<div style="text-align:center;margin-bottom:12px"><div style="font-size:32px">'+(d.flag||'🌐')+'</div><div style="font-size:16px;font-weight:800">'+E(d.name||d.country||'')+'</div>';
+      if(d.language||d.timezone)h+='<div style="font-size:11px;color:var(--w40)">'+E(d.language||'')+' | '+E(d.timezone||'')+'</div>';
+      h+='</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      [{l:'인사법',v:d.greeting},{l:'비즈니스 스타일',v:d.business_style},{l:'협상 특성',v:d.negotiation},{l:'결제 문화',v:d.payment_culture},{l:'미팅 팁',v:d.meeting_tips},{l:'선물 문화',v:d.gift_culture}].forEach(function(item){if(!item.v)return;h+='<div style="padding:10px;border-radius:8px;background:var(--w05)"><div style="font-size:10px;font-weight:700;color:var(--pri);margin-bottom:4px">'+item.l+'</div><div style="font-size:11px;color:var(--w60);line-height:1.5">'+E(item.v)+'</div></div>';});
+      h+='</div>';
+      if(d.dos||d.donts){h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';if(d.dos){h+='<div style="padding:10px;border-radius:8px;background:rgba(16,185,129,.05)"><div style="font-size:10px;font-weight:700;color:var(--ok);margin-bottom:4px">✅ Do\'s</div>';(Array.isArray(d.dos)?d.dos:[d.dos]).slice(0,4).forEach(function(x){h+='<div style="font-size:11px;color:var(--w60);margin-bottom:2px">• '+E(x)+'</div>';});h+='</div>';}if(d.donts){h+='<div style="padding:10px;border-radius:8px;background:rgba(239,68,68,.05)"><div style="font-size:10px;font-weight:700;color:var(--err);margin-bottom:4px">❌ Don\'ts</div>';(Array.isArray(d.donts)?d.donts:[d.donts]).slice(0,4).forEach(function(x){h+='<div style="font-size:11px;color:var(--w60);margin-bottom:2px">• '+E(x)+'</div>';});h+='</div>';}h+='</div>';}
+      break;
+    case 'exportCalendar':
+      if(d.trade_shows&&d.trade_shows.length){h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">🎪 주요 전시회 ('+d.trade_shows.length+'건)</div>';d.trade_shows.slice(0,6).forEach(function(s){h+='<div style="padding:8px;border-radius:8px;background:var(--w05);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:12px;font-weight:700;color:var(--pri)">'+E(s.name||'')+'</div><div style="font-size:10px;color:var(--w40)">📍 '+E(s.location||'')+' · 📆 '+E(s.date||'')+'</div></div>'+(s.country?'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--w06);color:var(--w60)">'+E(s.country)+'</span>':'')+'</div>';});}
+      if(d.deadlines&&d.deadlines.length){h+='<div style="font-size:12px;font-weight:700;margin:10px 0 8px">📌 주요 데드라인</div>';d.deadlines.slice(0,5).forEach(function(dl){h+='<div style="display:flex;gap:8px;padding:3px 0;font-size:11px;border-bottom:1px solid var(--w06)"><span style="color:var(--err);font-weight:700">'+E(dl.date||'')+'</span><span style="color:var(--w60)">'+E(dl.description||dl.event||'')+'</span></div>';});}
+      if(d.holidays&&d.holidays.length){h+='<div style="font-size:12px;font-weight:700;margin:10px 0 8px">🏖️ 공휴일</div><div style="display:flex;flex-wrap:wrap;gap:4px">';d.holidays.slice(0,8).forEach(function(hl){h+='<span style="padding:3px 8px;border-radius:6px;background:var(--w05);font-size:10px">'+E(hl.date||'')+' '+E(hl.name||'')+'</span>';});h+='</div>';}
+      break;
+  }
+  h+='</div>';return h;
 }
 
 function naverSearch(productId){
@@ -14855,7 +15023,7 @@ function seedTestData(){
   });
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,tossOrderPayment:tossOrderPayment,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,saveAlibabaReplyEdit:saveAlibabaReplyEdit,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,viewBuyerTimeline:viewBuyerTimeline,searchCompanies:searchCompanies,saveCorpAsBuyer:saveCorpAsBuyer,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatCreateOrder:chatCreateOrder,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,setTrackingView:setTrackingView,initLiveMap:initLiveMap,refreshLiveMap:refreshLiveMap,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,convertDocCurrency:convertDocCurrency,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,dismissNudge:dismissNudge,_refreshSellerTrust:_refreshSellerTrust,_getBuyerTrust:_getBuyerTrust,_renderTrustBadge:_renderTrustBadge,_getPriceRef:_getPriceRef,_getCatPriceRange:_getCatPriceRange,_checkPriceOutlier:_checkPriceOutlier,_priceHintHTML:_priceHintHTML,_loadPriceHistory:_loadPriceHistory,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,checkDocConsistency:checkDocConsistency,startTour:startTour,nextTourStep:nextTourStep,skipTour:skipTour,resetTours:resetTours,genDocPreview:genDocPreview,openDocPreview:openDocPreview,closeDocPreview:closeDocPreview,toggleDocValidation:toggleDocValidation,dpSaveChanges:dpSaveChanges,dpPrintPreview:dpPrintPreview,dpDownloadPDF:dpDownloadPDF,dpSendToChat:dpSendToChat,dpRequestSignature:dpRequestSignature,syncDocFromPI:syncDocFromPI,_execSyncFromPI:_execSyncFromPI,_dcApplyFix:_dcApplyFix,_dcApplyAllFixes:_dcApplyAllFixes,_execPIPropagate:_execPIPropagate,_sendSigRequest:_sendSigRequest,dpSellerSign:dpSellerSign,clearSellerSig:clearSellerSig,closeSigPad:closeSigPad,useSellerSavedSig:useSellerSavedSig,submitSellerSig:submitSellerSig,validateDocUCP600:validateDocUCP600,get _dpCurrentDoc(){return _dpCurrentDoc;},runGenome:runGenome,runPriceIntel:runPriceIntel,runTrustScore:runTrustScore,_toggleCN:_toggleCN,runCertNav:runCertNav,runExportROI:runExportROI,runPkgOptimizer:runPkgOptimizer,runSmartNego:runSmartNego,_toggleSCR:_toggleSCR,runSCRisk:runSCRisk,openRFQDetail:openRFQDetail,closeRFQInbox:closeRFQInbox,submitRFQProposal:submitRFQProposal,runMarketTiming:runMarketTiming,runDemandRadar:runDemandRadar,runProfitMargin:runProfitMargin,runTradeFinance:runTradeFinance,runLabelCompliance:runLabelCompliance,runExportCalendar:runExportCalendar,runCompetitorRadar:runCompetitorRadar,runRegulatoryMap:runRegulatoryMap,runLogisticsOpt:runLogisticsOpt,runCultureGuide:runCultureGuide,runPaymentRisk:runPaymentRisk,runAliSEO:runAliSEO,runExportReadiness:runExportReadiness,runMarketEntry:runMarketEntry,demoFillSEO:demoFillSEO,demoFillER:demoFillER,demoFillME:demoFillME,launchTour:launchTour,UI:UI};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,tossOrderPayment:tossOrderPayment,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,saveAlibabaReplyEdit:saveAlibabaReplyEdit,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,viewBuyerTimeline:viewBuyerTimeline,searchCompanies:searchCompanies,saveCorpAsBuyer:saveCorpAsBuyer,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatCreateOrder:chatCreateOrder,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,setTrackingView:setTrackingView,initLiveMap:initLiveMap,refreshLiveMap:refreshLiveMap,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,convertDocCurrency:convertDocCurrency,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,dismissNudge:dismissNudge,_refreshSellerTrust:_refreshSellerTrust,_getBuyerTrust:_getBuyerTrust,_renderTrustBadge:_renderTrustBadge,_getPriceRef:_getPriceRef,_getCatPriceRange:_getCatPriceRange,_checkPriceOutlier:_checkPriceOutlier,_priceHintHTML:_priceHintHTML,_loadPriceHistory:_loadPriceHistory,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,checkDocConsistency:checkDocConsistency,startTour:startTour,nextTourStep:nextTourStep,skipTour:skipTour,resetTours:resetTours,genDocPreview:genDocPreview,openDocPreview:openDocPreview,closeDocPreview:closeDocPreview,toggleDocValidation:toggleDocValidation,dpSaveChanges:dpSaveChanges,dpPrintPreview:dpPrintPreview,dpDownloadPDF:dpDownloadPDF,dpSendToChat:dpSendToChat,dpRequestSignature:dpRequestSignature,syncDocFromPI:syncDocFromPI,_execSyncFromPI:_execSyncFromPI,_dcApplyFix:_dcApplyFix,_dcApplyAllFixes:_dcApplyAllFixes,_execPIPropagate:_execPIPropagate,_sendSigRequest:_sendSigRequest,dpSellerSign:dpSellerSign,clearSellerSig:clearSellerSig,closeSigPad:closeSigPad,useSellerSavedSig:useSellerSavedSig,submitSellerSig:submitSellerSig,validateDocUCP600:validateDocUCP600,get _dpCurrentDoc(){return _dpCurrentDoc;},toggleEnrich:toggleEnrich,runGenome:runGenome,runPriceIntel:runPriceIntel,runTrustScore:runTrustScore,_toggleCN:_toggleCN,runCertNav:runCertNav,runExportROI:runExportROI,runPkgOptimizer:runPkgOptimizer,runSmartNego:runSmartNego,_toggleSCR:_toggleSCR,runSCRisk:runSCRisk,openRFQDetail:openRFQDetail,closeRFQInbox:closeRFQInbox,submitRFQProposal:submitRFQProposal,runMarketTiming:runMarketTiming,runDemandRadar:runDemandRadar,runProfitMargin:runProfitMargin,runTradeFinance:runTradeFinance,runLabelCompliance:runLabelCompliance,runExportCalendar:runExportCalendar,runCompetitorRadar:runCompetitorRadar,runRegulatoryMap:runRegulatoryMap,runLogisticsOpt:runLogisticsOpt,runCultureGuide:runCultureGuide,runPaymentRisk:runPaymentRisk,runAliSEO:runAliSEO,runExportReadiness:runExportReadiness,runMarketEntry:runMarketEntry,demoFillSEO:demoFillSEO,demoFillER:demoFillER,demoFillME:demoFillME,launchTour:launchTour,UI:UI};
 _handleTossCallback();
 _handleTossOrderCallback();
 loadUser();
