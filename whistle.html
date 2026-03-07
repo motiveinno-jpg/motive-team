@@ -12127,7 +12127,8 @@ function _checkTourAfterRender(){
 /* === AI CONVERSATIONAL BAR (deal.next_step) === */
 /* ================================================== */
 var INTENT_KEYWORDS={
-  'deal.next_step':['다음 단계','다음에 뭐','어디까지','진행 상황','next step','what\'s next','다음단계']
+  'deal.next_step':['다음 단계','다음에 뭐','어디까지','진행 상황','next step','what\'s next','다음단계'],
+  'deal.stale_list':['막혀','정체','긴급','조치 필요','stale','뭐가 막','급한 거래','긴급한 거래','조치필요','멈춘','stuck','urgent']
 };
 
 function _matchIntent(text){
@@ -12219,12 +12220,14 @@ function _handleDealNextStep(){
 function _aiResponseCard(opts){
   if(!opts)return'';
   var c='';
-  var border=opts.type==='alert'?'border-left:4px solid var(--err)':opts.type==='empty'?'border-left:4px solid var(--w20)':'border-left:4px solid var(--pri)';
+  var border=opts.type==='alert'?'border-left:4px solid var(--err)':opts.type==='list'?'border-left:4px solid var(--acc)':opts.type==='empty'?'border-left:4px solid var(--w20)':'border-left:4px solid var(--pri)';
   c+='<div style="'+border+';background:var(--bg2);border-radius:12px;padding:16px;margin-bottom:12px;position:relative">';
 
   // Header
   c+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
-  c+='<div style="display:flex;align-items:center;gap:6px"><span style="font-size:16px">'+(opts.type==='alert'?'⚠️':'🤖')+'</span><span style="font-size:13px;font-weight:700;color:var(--w90)">'+(opts.type==='alert'?'AI 경고':'AI 거래 분석')+'</span></div>';
+  var _cardIcon=opts.type==='alert'?'⚠️':opts.type==='list'?'📋':'🤖';
+  var _cardTitle=opts.type==='alert'?'AI 경고':opts.type==='list'?'AI 정체 거래 리포트':opts.type==='empty'?'AI 안내':'AI 거래 분석';
+  c+='<div style="display:flex;align-items:center;gap:6px"><span style="font-size:16px">'+_cardIcon+'</span><span style="font-size:13px;font-weight:700;color:var(--w90)">'+_cardTitle+'</span></div>';
   c+='<button onclick="App.closeAiCard()" style="background:none;border:none;cursor:pointer;color:var(--w40);font-size:16px;padding:2px 6px">✕</button>';
   c+='</div>';
 
@@ -12267,6 +12270,31 @@ function _aiResponseCard(opts){
     c+='</div>';
   }
 
+  // Items list (for list type)
+  if(opts.items&&opts.items.length){
+    c+='<div style="margin-bottom:12px;max-height:320px;overflow-y:auto">';
+    opts.items.forEach(function(item,idx){
+      var bg=idx%2===0?'var(--w04)':'transparent';
+      c+='<div style="padding:10px 12px;border-radius:8px;background:'+bg+';margin-bottom:4px;display:flex;align-items:center;gap:10px">';
+      // Left: icon + priority
+      c+='<div style="text-align:center;min-width:32px"><div style="font-size:16px">'+item.icon+'</div><div style="font-size:9px;margin-top:2px">'+item.pri+'</div></div>';
+      // Center: message + age
+      c+='<div style="flex:1;min-width:0">';
+      c+='<div style="font-size:12px;color:var(--w90);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(item.message)+'</div>';
+      c+='<div style="display:flex;gap:6px;margin-top:3px;font-size:10px;color:var(--w40)">';
+      if(item.age)c+='<span>'+item.age+'일 경과</span>';
+      if(item.lowTrust)c+='<span style="color:var(--err);font-weight:700">LOW TRUST</span>';
+      c+='</div></div>';
+      // Right: action buttons
+      c+='<div style="display:flex;gap:4px;flex-shrink:0">';
+      if(item.nextAction)c+='<button class="btn btn-pri btn-sm" onclick="App.closeAiCard();'+item.nextAction.f+'" style="padding:4px 10px;font-size:10px;border-radius:6px">'+item.nextAction.l+'</button>';
+      c+='<button class="btn btn-ghost btn-sm" onclick="'+item.action+'" style="padding:4px 10px;font-size:10px;border-radius:6px">'+item.actionLabel+'</button>';
+      if(item.buyerId)c+='<button class="btn btn-ghost btn-sm" onclick="App.closeAiCard();App.openChatRoom(\''+item.buyerId+'\')" style="padding:4px 8px;font-size:10px;border-radius:6px">💬</button>';
+      c+='</div></div>';
+    });
+    c+='</div>';
+  }
+
   // Suggestion
   if(opts.suggestion){
     c+='<div style="padding:8px 12px;border-radius:8px;background:rgba(0,212,255,.06);font-size:13px;color:var(--pri);margin-bottom:12px">💡 '+UI.esc(opts.suggestion)+'</div>';
@@ -12284,6 +12312,81 @@ function _aiResponseCard(opts){
 
   c+='</div>';
   return c;
+}
+
+function _handleDealStaleList(){
+  // Ensure nudges are fresh
+  if(!S._autopilotNudges||!S._autopilotNudges.length)_computeNudges();
+  var nudges=S._autopilotNudges||[];
+  if(!nudges.length){
+    return{type:'empty',summary:'현재 정체되거나 긴급한 거래가 없습니다. 모든 거래가 정상 진행 중입니다!',
+      actions:[{label:'프로젝트 보기',icon:'🚀',fn:"App.nav('projects')"},{label:'대시보드',icon:'📊',fn:"App.nav('dashboard')"}]};
+  }
+
+  // Categorize
+  var p1=nudges.filter(function(n){return n.priority===1;});
+  var p2=nudges.filter(function(n){return n.priority===2;});
+  var lowTrust=nudges.filter(function(n){return n.lowTrust;});
+
+  // Build summary
+  var summary='총 '+nudges.length+'건의 조치 필요 거래가 있습니다.';
+  if(p1.length)summary+=' 긴급 '+p1.length+'건,';
+  if(p2.length)summary+=' 주의 '+p2.length+'건.';
+  if(lowTrust.length)summary+=' (저신뢰 바이어 '+lowTrust.length+'건 포함)';
+
+  // Evidence
+  var evidence=[];
+  evidence.push({label:'총 건수',value:nudges.length+'건',color:nudges.length>=3?'var(--err)':'var(--acc)'});
+  if(p1.length)evidence.push({label:'긴급',value:p1.length+'건',color:'var(--err)'});
+  if(p2.length)evidence.push({label:'주의',value:p2.length+'건',color:'var(--acc)'});
+  if(lowTrust.length)evidence.push({label:'저신뢰',value:lowTrust.length+'건',color:'var(--err)'});
+
+  // Build items (list card)
+  var items=nudges.slice(0,8).map(function(n){
+    var typeIcon=n.type==='payment_remind'?'💰':n.type==='ship_register'?'🚢':n.type==='confirm_order'?'🏭':n.type==='doc_missing'?'📄':'⏳';
+    var priBadge=n.priority===1?'🔴 긴급':'🟡 주의';
+    var action;
+    if(n.ref_type==='order')action="App.closeAiCard();App.viewOrder('"+n.ref_id+"')";
+    else if(n.ref_type==='matching')action="App.closeAiCard();App.openDeal('"+n.ref_id+"')";
+    else action="App.closeAiCard();App.nav('"+n.action_page+"')";
+
+    // Find buyer for this nudge
+    var buyerId=null;
+    if(n.ref_type==='matching'){var m=(S.matchings||[]).find(function(x){return x.id===n.ref_id;});if(m)buyerId=m.buyer_id;}
+    else if(n.ref_type==='order'){var o=(S.orders||[]).find(function(x){return x.id===n.ref_id;});if(o)buyerId=o.buyer_id;}
+
+    // Next step action for this nudge
+    var nextAction=null;
+    if(n.type==='stale_deal'&&n.ref_type==='matching'){
+      var deal=(S._deals||[]).find(function(d){return d.id===n.ref_id;});
+      if(deal){
+        var stIdx=DEAL_STAGES.findIndex(function(s){return s.id===deal.stage;});
+        var nextSt=stIdx<DEAL_STAGES.length-1?DEAL_STAGES[stIdx+1]:null;
+        if(nextSt){
+          var sa={inquiry:{l:'매칭 수락',f:"App.openDeal('"+n.ref_id+"')"},matched:{l:'PI 작성',f:"App.openDeal('"+n.ref_id+"')"},quotation:{l:'샘플 진행',f:"App.openDeal('"+n.ref_id+"')"},sample:{l:'협상 진행',f:"App.openDeal('"+n.ref_id+"')"},negotiation:{l:'주문서 작성',f:"App.openDeal('"+n.ref_id+"')"},order:{l:'생산 시작',f:"App.openDeal('"+n.ref_id+"')"},production:{l:'출하 등록',f:"App.openDeal('"+n.ref_id+"')"},shipping:{l:'완료 처리',f:"App.openDeal('"+n.ref_id+"')"}};
+          nextAction=sa[deal.stage]||null;
+        }
+      }
+    }
+
+    return{icon:typeIcon,pri:priBadge,message:n.message,age:n.age,lowTrust:n.lowTrust,action:action,
+      actionLabel:n.action_label,buyerId:buyerId,nextAction:nextAction};
+  });
+
+  // Risks
+  var risks=[];
+  if(p1.length>=2)risks.push({level:'high',message:'긴급 건이 '+p1.length+'개 — 즉시 조치가 필요합니다'});
+  if(lowTrust.length)risks.push({level:'high',message:'저신뢰 바이어 관련 '+lowTrust.length+'건 — 관리자 확인 권장'});
+
+  return{
+    type:'list',
+    summary:summary,
+    evidence:evidence,
+    risks:risks,
+    items:items,
+    suggestion:p1.length?'긴급 건부터 먼저 처리하세요.':'주의 건들을 순서대로 확인하세요.',
+    actions:[{label:'전체 프로젝트',icon:'🚀',fn:"App.nav('projects')"},{label:'대시보드',icon:'📊',fn:"App.nav('dashboard')"}]
+  };
 }
 
 function _aiInputBar(){
@@ -12307,8 +12410,10 @@ function _aiSubmit(){
   var response;
   if(intent.id==='deal.next_step'){
     response=_handleDealNextStep();
+  }else if(intent.id==='deal.stale_list'){
+    response=_handleDealStaleList();
   }else{
-    response={type:'empty',summary:'아직 지원하지 않는 질문입니다. "다음 단계 뭐야?" 또는 "진행 상황"을 입력해 보세요.',actions:[{label:'도움말',icon:'❓',fn:""}]};
+    response={type:'empty',summary:'아직 지원하지 않는 질문입니다. "다음 단계 뭐야?" 또는 "뭐가 막혀있어?"를 입력해 보세요.',actions:[{label:'도움말',icon:'❓',fn:""}]};
   }
   S._aiResponse=response;
   render();
