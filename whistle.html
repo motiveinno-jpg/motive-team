@@ -1116,13 +1116,24 @@ function aStep(n){
   S.analysisStep=n;render();
 }
 function cancelA(){S.analysisStep=0;S.analysisData=null;render();}
-function addUrl(){S.analysisData.urls.push('');render();}
-function rmUrl(i){S.analysisData.urls.splice(i,1);render();}
-function addSP(){S.analysisData.selling_points.push('');render();}
-function rmSP(i){S.analysisData.selling_points.splice(i,1);render();}
+function addUrl(){_preserveFormState();S.analysisData.urls.push('');render();}
+function rmUrl(i){_preserveFormState();S.analysisData.urls.splice(i,1);render();}
+function addSP(){_preserveFormState();S.analysisData.selling_points.push('');render();}
+function rmSP(i){_preserveFormState();S.analysisData.selling_points.splice(i,1);render();}
+/* 폼 입력값을 S.analysisData에 보존 (render 전 호출) */
+function _preserveFormState(){
+  var d=S.analysisData;if(!d)return;
+  var f1=document.querySelector('#af1');
+  if(f1){var fd=UI.fd(f1);Object.keys(fd).forEach(function(k){if(fd[k]!==undefined&&fd[k]!=='')d[k]=fd[k];else if(!d[k])d[k]=fd[k];});}
+  var f2=document.querySelector('#af2');
+  if(f2){var fd2=UI.fd(f2);Object.keys(fd2).forEach(function(k){if(fd2[k]!==undefined&&fd2[k]!=='')d[k]=fd2[k];else if(!d[k])d[k]=fd2[k];});}
+  var urls=document.querySelectorAll('.aurl');if(urls.length)d.urls=Array.from(urls).map(function(e){return e.value;});
+  var sps=document.querySelectorAll('.asp');if(sps.length)d.selling_points=Array.from(sps).map(function(e){return e.value;});
+}
 function addFiles(fl){
   var _allowTypes=['image/jpeg','image/png','image/gif','image/webp','image/bmp','application/pdf','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
   var _allowExts=['.jpg','.jpeg','.png','.gif','.webp','.bmp','.pdf','.xls','.xlsx','.csv','.doc','.docx'];
+  _preserveFormState();
   for(var i=0;i<fl.length;i++){
     var f=fl[i];var ext='.'+f.name.split('.').pop().toLowerCase();
     if(_allowTypes.indexOf(f.type)===-1&&_allowExts.indexOf(ext)===-1){UI.toast('지원하지 않는 파일 형식: '+f.name+' (이미지/PDF/엑셀/문서만 가능)','err');continue;}
@@ -1130,6 +1141,7 @@ function addFiles(fl){
     (function(file){
       var reader=new FileReader();
       reader.onload=function(e){
+        _preserveFormState();
         S.analysisData.files.push({name:file.name,size:file.size,type:file.type,data:e.target.result,_file:file});
         render();
       };
@@ -1137,9 +1149,9 @@ function addFiles(fl){
     })(f);
   }
 }
-function rmFile(i){S.analysisData.files.splice(i,1);render();}
-function toggleMkt(m){var d=S.analysisData;if(!d.target_markets)d.target_markets=[];var i=d.target_markets.indexOf(m);if(i>=0)d.target_markets.splice(i,1);else d.target_markets.push(m);render();}
-function toggleCert(c){var d=S.analysisData;if(!d.existing_certs)d.existing_certs=[];var i=d.existing_certs.indexOf(c);if(i>=0)d.existing_certs.splice(i,1);else d.existing_certs.push(c);render();}
+function rmFile(i){_preserveFormState();S.analysisData.files.splice(i,1);render();}
+function toggleMkt(m){_preserveFormState();var d=S.analysisData;if(!d.target_markets)d.target_markets=[];var i=d.target_markets.indexOf(m);if(i>=0)d.target_markets.splice(i,1);else d.target_markets.push(m);render();}
+function toggleCert(c){_preserveFormState();var d=S.analysisData;if(!d.existing_certs)d.existing_certs=[];var i=d.existing_certs.indexOf(c);if(i>=0)d.existing_certs.splice(i,1);else d.existing_certs.push(c);render();}
 
 /* ── URL 정규화: 트래킹 파라미터 제거 ── */
 function cleanUrl(url){
@@ -2226,54 +2238,9 @@ function pgAReport(){
   h+='<button class="btn btn-ghost" onclick="App.reqSvc(\'matching\',\''+a.id+'\')" style="padding:10px 20px">🤝 바이어 매칭</button>';
   h+='<button class="btn btn-ghost" onclick="App.rerunA(\''+a.id+'\')" style="padding:10px 20px">🔄 재분석</button>';
   h+='</div>';
-  // === AI 심층 분석 대시보드 (17대 AI 도구 자동 실행) ===
+  // === AI 심층 분석 통합 보고서 (17대 AI 도구 → McKinsey-grade Report) ===
   var _enr=S._enrichment&&S._enrichment[a.id];
-  if(_enr){
-    var _E=UI.esc;
-    var _dc=_enr.doneCount,_tc=_enr.totalCount;
-    var _dof=function(k){return _enr.results[k]||_enr.failed[k]||_enr.skipped[k];};
-    h+='<div class="card" style="margin-top:16px;border-color:rgba(168,85,247,.2);background:linear-gradient(135deg,rgba(168,85,247,.03),transparent)">';
-    h+='<div class="card-h"><span>🧠 AI 심층 분석 — '+_tc+'대 도구</span>';
-    if(_enr.status==='loading'){h+='<span class="spinner" style="width:14px;height:14px;border-width:2px;margin-left:8px"></span><span style="font-size:11px;color:var(--w40);margin-left:4px">'+_dc+'/'+_tc+' 완료</span>';}
-    else{h+='<span style="font-size:11px;color:var(--ok);margin-left:8px">✓ 전체 완료</span>';}
-    h+='</div><div class="card-b" style="padding:12px">';
-    ENRICH_GROUPS.forEach(function(grp){
-      var tools=ENRICH_TOOLS.filter(function(t){return t.grp===grp.key;});
-      var grpDone=tools.filter(function(t){return _dof(t.key);}).length;
-      var grpOk=tools.filter(function(t){return !!_enr.results[t.key];}).length;
-      h+='<div style="margin-bottom:14px">';
-      h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><span style="font-size:14px">'+grp.icon+'</span><span style="font-size:12px;font-weight:700;color:'+grp.color+'">'+grp.key+'</span>';
-      if(grpDone<tools.length){h+='<span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span><span style="font-size:10px;color:var(--w30)">'+grpDone+'/'+tools.length+'</span>';}
-      else{h+='<span style="font-size:10px;color:var(--ok)">✓ '+grpOk+'/'+tools.length+'</span>';}
-      h+='</div>';
-      h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:6px">';
-      tools.forEach(function(t){
-        var hasR=!!_enr.results[t.key],isFail=!!_enr.failed[t.key],isSkip=!!_enr.skipped[t.key];
-        var isLoad=!hasR&&!isFail&&!isSkip;
-        var sm=hasR?_enrichSummary(t.key,_enr.results[t.key]):{metric:'',sub:''};
-        var isExp=S._enrichExpanded&&S._enrichExpanded[a.id+'_'+t.key];
-        h+='<div style="padding:10px;border-radius:10px;background:'+(hasR?'var(--w05)':'var(--w03)')+';border:1px solid '+(isExp?grp.color:hasR?'var(--bd)':isLoad?'rgba(168,85,247,.12)':'rgba(239,68,68,.12)')+';cursor:'+(hasR?'pointer':'default')+';transition:all .15s" '+(hasR?'onclick="App.toggleEnrich(\''+a.id+'\',\''+t.key+'\')"':'')+'>';
-        h+='<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px"><span style="font-size:14px">'+t.icon+'</span><span style="font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">'+t.name+'</span>';
-        if(isLoad){h+='<span class="spinner" style="width:10px;height:10px;border-width:1.5px;flex-shrink:0"></span>';}
-        else if(isFail){h+='<span style="font-size:10px;color:var(--err);flex-shrink:0">✗</span>';}
-        else if(isSkip){h+='<span style="font-size:9px;color:var(--w20);flex-shrink:0">—</span>';}
-        else{h+='<span style="font-size:10px;color:var(--ok);flex-shrink:0">✓</span>';}
-        h+='</div>';
-        if(hasR){h+='<div style="font-size:15px;font-weight:900;color:var(--w);line-height:1.2">'+_E(sm.metric)+'</div><div style="font-size:9px;color:var(--w30);margin-top:1px">'+_E(sm.sub)+'</div>';}
-        else if(isLoad){h+='<div style="font-size:10px;color:var(--w20);margin-top:2px">분석 중...</div>';}
-        else if(isFail){h+='<div style="font-size:10px;color:var(--w20);margin-top:2px">실패</div>';}
-        h+='</div>';
-      });
-      h+='</div>';
-      tools.forEach(function(t){
-        if(_enr.results[t.key]&&S._enrichExpanded&&S._enrichExpanded[a.id+'_'+t.key]){
-          h+=_renderToolDetail(t.key,_enr.results[t.key],a);
-        }
-      });
-      h+='</div>';
-    });
-    h+='</div></div>';
-  }
+  if(_enr){h+=_renderEnrichReport(a,_enr);}
 
   return h;
 }
@@ -2399,6 +2366,267 @@ function _checkEnrichDone(analysisId){
 function toggleEnrich(aid,key){
   if(!S._enrichExpanded)S._enrichExpanded={};
   var k=aid+'_'+key;S._enrichExpanded[k]=!S._enrichExpanded[k];render();
+}
+
+/* ── McKinsey-grade 통합 보고서 렌더러 ── */
+function _renderEnrichReport(a,enr){
+  var E=UI.esc;var h='';
+  var dc=enr.doneCount,tc=enr.totalCount;
+  var pct=tc?Math.round(dc/tc*100):0;
+  var R=enr.results;
+  var okCount=Object.keys(R).length;
+  var failCount=Object.keys(enr.failed).length;
+
+  // Report container
+  h+='<div style="margin-top:24px;border:1.5px solid rgba(168,85,247,.2);border-radius:16px;overflow:hidden;background:var(--card)">';
+
+  // Report header
+  h+='<div style="padding:24px 28px 20px;background:linear-gradient(135deg,rgba(168,85,247,.08),rgba(0,212,255,.04));border-bottom:1px solid rgba(168,85,247,.1)">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">';
+  h+='<div><div style="font-size:10px;letter-spacing:2px;color:var(--purple,#a855f7);font-weight:700;text-transform:uppercase;margin-bottom:4px">WHISTLE AI EXPORT INTELLIGENCE</div>';
+  h+='<div style="font-size:20px;font-weight:900;color:var(--w)">심층 분석 보고서</div>';
+  h+='<div style="font-size:12px;color:var(--w40);margin-top:4px">'+E(a.product_name)+' · '+new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'})+'</div></div>';
+  if(enr.status==='loading'){
+    h+='<div style="text-align:right"><div style="font-size:28px;font-weight:900;color:var(--purple,#a855f7)">'+pct+'<span style="font-size:14px">%</span></div>';
+    h+='<div style="font-size:10px;color:var(--w40)">'+dc+'/'+tc+' 도구 완료</div>';
+    h+='<div style="width:120px;height:4px;background:var(--w06);border-radius:2px;margin-top:6px"><div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,var(--purple,#a855f7),var(--pri));border-radius:2px;transition:width .3s"></div></div></div>';
+  }else{
+    h+='<div style="text-align:right"><div style="padding:6px 16px;border-radius:20px;background:rgba(16,185,129,.1);color:var(--ok);font-weight:700;font-size:12px">✓ 전체 완료</div>';
+    h+='<div style="font-size:10px;color:var(--w30);margin-top:4px">'+okCount+' 성공'+(failCount?' · '+failCount+' 실패':'')+'</div></div>';
+  }
+  h+='</div></div>';
+
+  // Report body
+  h+='<div style="padding:24px 28px">';
+
+  // Key Metrics Dashboard (compact summary strip)
+  if(okCount>=2){h+=_renderKeyMetrics(a,R);}
+
+  // Executive Summary
+  if(okCount>=3){h+=_synthesizeExecSummary(a,R);}
+
+  // Section 1: 시장 분석
+  h+=_renderReportSection('📊','시장 분석','Market Analysis','var(--pri)',['genome','demandRadar','competitorRadar','marketTiming'],enr,a);
+
+  // Section 2: 비용·수익 분석
+  h+=_renderReportSection('💰','비용·수익 분석','Cost & Revenue','var(--acc)',['priceIntel','exportROI','profitMargin','tradeFinance'],enr,a);
+
+  // Section 3: 리스크·인증
+  h+=_renderReportSection('🛡️','리스크·인증','Risk & Compliance','#EF4444',['trust','certNav','regulatoryMap','labelCompliance','scRisk'],enr,a);
+
+  // Section 4: 운영·전략
+  h+=_renderReportSection('🚀','운영·전략','Operations & Strategy','var(--ok)',['logisticsOpt','smartNego','cultureGuide','exportCalendar'],enr,a);
+
+  // Glossary
+  if(okCount>=4){h+=_renderGlossary(a,R);}
+
+  // Report footer
+  h+='<div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--bd);text-align:center;font-size:10px;color:var(--w20)">';
+  h+='Whistle AI Export Intelligence Report · Powered by 17 AI Engines · '+new Date().toISOString().slice(0,10);
+  h+='</div>';
+
+  h+='</div></div>';
+  return h;
+}
+
+/* Key Metrics: 핵심 지표 스트립 */
+function _renderKeyMetrics(a,R){
+  var E=UI.esc;var items=[];
+  if(R.genome){var g=R.genome.genome||R.genome;if(g.top_markets&&g.top_markets[0])items.push({icon:'🏆',label:'최적 시장',value:E(g.top_markets[0].country),sub:g.top_markets[0].score?g.top_markets[0].score+'/100':'',color:'var(--pri)'});else if(g.top_market)items.push({icon:'🏆',label:'최적 시장',value:E(g.top_market.country),sub:g.top_market.score?g.top_market.score+'/100':'',color:'var(--pri)'});}
+  if(R.demandRadar&&R.demandRadar.total_demand)items.push({icon:'📡',label:'글로벌 수요',value:E(R.demandRadar.total_demand.formatted||''),sub:R.demandRadar.total_demand.yoy!==undefined?(R.demandRadar.total_demand.yoy>=0?'+':'')+R.demandRadar.total_demand.yoy+'% YoY':'',color:R.demandRadar.total_demand.yoy>=0?'var(--ok)':'var(--err)'});
+  if(R.competitorRadar){var cr=R.competitorRadar.korea_position||R.competitorRadar.korea;if(cr)items.push({icon:'🇰🇷',label:'한국 순위',value:'#'+(cr.rank||'—'),sub:'점유율 '+(cr.share||0).toFixed(1)+'%',color:'var(--pri)'});}
+  if(R.exportROI&&R.exportROI.markets&&R.exportROI.markets[0])items.push({icon:'💰',label:'최고 ROI',value:R.exportROI.markets[0].roi_pct+'%',sub:E(R.exportROI.markets[0].country),color:'var(--ok)'});
+  if(R.profitMargin&&R.profitMargin.scenarios&&R.profitMargin.scenarios[0])items.push({icon:'📊',label:'예상 마진',value:R.profitMargin.scenarios[0].margin_pct.toFixed(1)+'%',sub:E(R.profitMargin.scenarios[0].incoterms),color:R.profitMargin.scenarios[0].margin_pct>=15?'var(--ok)':'var(--acc)'});
+  if(R.scRisk)items.push({icon:'⚠️',label:'리스크',value:R.scRisk.overall_risk+'/5',sub:E(R.scRisk.overall_label||''),color:R.scRisk.overall_risk>=4?'var(--err)':R.scRisk.overall_risk>=3?'var(--acc)':'var(--ok)'});
+  if(R.certNav)items.push({icon:'📋',label:'필수 인증',value:(R.certNav.total_mandatory||0)+'건',sub:'인증 필요',color:'var(--err)'});
+
+  if(!items.length)return '';
+  var h='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:20px">';
+  items.slice(0,7).forEach(function(it){
+    h+='<div style="padding:12px;border-radius:10px;background:var(--w03);border:1px solid var(--w06);text-align:center">';
+    h+='<div style="font-size:16px;margin-bottom:2px">'+it.icon+'</div>';
+    h+='<div style="font-size:9px;color:var(--w30);text-transform:uppercase;letter-spacing:.5px;font-weight:600">'+it.label+'</div>';
+    h+='<div style="font-size:18px;font-weight:900;color:'+it.color+';margin:2px 0">'+it.value+'</div>';
+    if(it.sub)h+='<div style="font-size:10px;color:var(--w40)">'+it.sub+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
+
+/* Executive Summary: 17대 도구 결과 종합 */
+function _synthesizeExecSummary(a,R){
+  var E=UI.esc;var h='';
+  var topMarket='',topScore='',globalDemand='',demandYoy='',koreaRank='',koreaShare='';
+  var timingScore='',timingVerdict='',pricePos='',bestROI='',bestROICountry='';
+  var bestMargin='',bestInco='',recPayment='',trustScore='',certCount='';
+  var riskLevel='',riskLabel='',recLogistics='',logCost='',logTransit='',recIncoterms='';
+  var easiestMkt='',hardestMkt='',labelCount='';
+
+  if(R.genome){var g=R.genome.genome||R.genome;if(g.top_markets&&g.top_markets[0]){topMarket=g.top_markets[0].country;topScore=g.top_markets[0].score;}else if(g.top_market){topMarket=g.top_market.country;topScore=g.top_market.score;}}
+  if(R.demandRadar&&R.demandRadar.total_demand){globalDemand=R.demandRadar.total_demand.formatted||'';demandYoy=R.demandRadar.total_demand.yoy;}
+  if(R.competitorRadar){var _cr=R.competitorRadar.korea_position||R.competitorRadar.korea;if(_cr){koreaRank=_cr.rank;koreaShare=(_cr.share||0).toFixed(1);}}
+  if(R.marketTiming&&R.marketTiming.current_timing){timingScore=R.marketTiming.current_timing.score;timingVerdict=R.marketTiming.current_timing.verdict||'';}
+  if(R.priceIntel){var _pi=R.priceIntel.analysis||R.priceIntel;pricePos=_pi.competitive_position||_pi.position||_pi.market_position||'';}
+  if(R.exportROI&&R.exportROI.markets&&R.exportROI.markets[0]){bestROI=R.exportROI.markets[0].roi_pct;bestROICountry=R.exportROI.markets[0].country;}
+  if(R.profitMargin&&R.profitMargin.scenarios&&R.profitMargin.scenarios[0]){bestMargin=R.profitMargin.scenarios[0].margin_pct;bestInco=R.profitMargin.scenarios[0].incoterms;}
+  if(R.tradeFinance){var _tf=R.tradeFinance.recommended||(R.tradeFinance.methods&&R.tradeFinance.methods.find(function(m){return m.recommended;}))||{};recPayment=_tf.method||_tf.name||'';}
+  if(R.trust){trustScore=R.trust.trust_score||R.trust.total_score||R.trust.score||0;}
+  if(R.certNav){certCount=R.certNav.total_mandatory||0;}
+  if(R.regulatoryMap&&R.regulatoryMap.summary){if(R.regulatoryMap.summary.easiest)easiestMkt=R.regulatoryMap.summary.easiest.name||'';if(R.regulatoryMap.summary.hardest)hardestMkt=R.regulatoryMap.summary.hardest.name||'';}
+  if(R.labelCompliance){var _lc=0;if(R.labelCompliance.required_fields)_lc=R.labelCompliance.required_fields.length;else if(R.labelCompliance.countries)(R.labelCompliance.countries||[]).forEach(function(c){_lc+=(c.required||[]).length;});labelCount=_lc;}
+  if(R.scRisk){riskLevel=R.scRisk.overall_risk||0;riskLabel=R.scRisk.overall_label||'';}
+  if(R.logisticsOpt&&R.logisticsOpt.recommended){recLogistics=R.logisticsOpt.recommended.mode||'';logCost=R.logisticsOpt.recommended.cost||0;logTransit=R.logisticsOpt.recommended.transit||'';}
+  if(R.smartNego&&R.smartNego.recommended_incoterms&&R.smartNego.recommended_incoterms[0]){recIncoterms=R.smartNego.recommended_incoterms[0].code;}
+
+  h+='<div style="padding:20px 24px;border-radius:12px;background:linear-gradient(135deg,rgba(168,85,247,.06),rgba(0,212,255,.03));border:1px solid rgba(168,85,247,.15);margin-bottom:28px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="font-size:18px">📋</span><span style="font-size:14px;font-weight:900;color:var(--purple,#a855f7);letter-spacing:.5px">EXECUTIVE SUMMARY</span></div>';
+
+  var paras=[];
+
+  // Market opportunity
+  var p1='';
+  if(topMarket){p1+='<b>'+E(a.product_name)+'</b>의 수출 최적 시장은 <b style="color:var(--pri)">'+E(topMarket)+'</b>'+(topScore?' (적합도 <b>'+topScore+'/100</b>점)':'')+'으로 분석되었습니다. ';}
+  if(globalDemand){p1+='글로벌 수요 규모는 <b>'+E(globalDemand)+'</b>'+(demandYoy!==''&&demandYoy!==undefined?' (전년 대비 <span style="color:'+(demandYoy>=0?'var(--ok)':'var(--err)')+'"><b>'+(demandYoy>=0?'+':'')+demandYoy+'%</b></span>)':'')+'이며, ';}
+  if(koreaRank){p1+='한국은 수출국 중 <b>'+koreaRank+'위</b> (점유율 '+koreaShare+'%)를 기록하고 있습니다. ';}
+  if(timingScore){p1+='현재 시장 진입 타이밍은 <b style="color:'+(timingScore>=70?'var(--ok)':timingScore>=40?'var(--acc)':'var(--err)')+'">'+timingScore+'점</b>'+(timingVerdict?' (<b>'+E(timingVerdict)+'</b>)':'')+'입니다.';}
+  if(p1)paras.push(p1);
+
+  // Financial
+  var p2='';
+  if(pricePos){p2+='가격 경쟁력은 <b style="color:var(--acc)">'+E(pricePos)+'</b> 포지션이며, ';}
+  if(bestROI&&bestROICountry){p2+='최고 ROI 시장은 <b>'+E(bestROICountry)+'</b> (<b style="color:var(--ok)">'+bestROI+'%</b>)입니다. ';}
+  if(bestMargin&&bestInco){p2+=E(bestInco)+' 기준 예상 마진율은 <b style="color:'+(bestMargin>=15?'var(--ok)':'var(--acc)')+'">'+Number(bestMargin).toFixed(1)+'%</b>'+(recPayment?'이며, ':'입니다. ');}
+  if(recPayment){p2+='<b>'+E(recPayment)+'</b> 결제방식이 권장됩니다.';}
+  if(p2){p2=p2.replace(/이며, $/,'입니다.');paras.push(p2);}
+
+  // Risk & compliance
+  var p3='';
+  if(certCount){p3+='타겟 시장 진출에 <b style="color:var(--err)">필수 인증 '+certCount+'건</b>이 요구됩니다. ';}
+  if(easiestMkt||hardestMkt){p3+='규제 측면에서'+(easiestMkt?' <b style="color:var(--ok)">'+E(easiestMkt)+'</b>이 가장 용이':'')+(easiestMkt&&hardestMkt?'하고, ':hardestMkt?'':'합니다. ')+(hardestMkt?'<b style="color:var(--err)">'+E(hardestMkt)+'</b>이 가장 까다롭습니다. ':'');}
+  if(riskLevel){var rl=riskLevel<=2?'낮은':riskLevel<=3?'중간':'높은';p3+='공급망 리스크는 <b style="color:'+(riskLevel>=4?'var(--err)':riskLevel>=3?'var(--acc)':'var(--ok)')+'">'+rl+' 수준</b> ('+riskLevel+'/5)입니다. ';}
+  if(trustScore){p3+='기업 신뢰도는 <b>'+trustScore+'/100점</b>입니다.';}
+  if(p3){p3=p3.replace(/입니다\. $/,'입니다.');paras.push(p3);}
+
+  // Operations
+  var p4='';
+  if(recLogistics){p4+='최적 운송방식은 <b>'+E(recLogistics)+'</b>'+(logCost?' ($'+logCost.toLocaleString()+(logTransit?', '+E(logTransit):'')+')':'')+(recIncoterms?'이며, ':'입니다. ');}
+  if(recIncoterms){p4+='추천 인코텀즈는 <b>'+E(recIncoterms)+'</b>입니다.';}
+  if(p4){p4=p4.replace(/이며, $/,'입니다.');paras.push(p4);}
+
+  if(paras.length){
+    h+='<div style="font-size:13px;color:var(--w70);line-height:1.9">';
+    paras.forEach(function(p,i){h+='<p style="margin:0 0 '+(i<paras.length-1?'10':'0')+'px">'+p+'</p>';});
+    h+='</div>';
+  }else{
+    h+='<div style="font-size:12px;color:var(--w40);font-style:italic">분석 진행 중... 결과가 도착하는 대로 보고서가 자동 업데이트됩니다.</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
+/* Report Section: 그룹별 인라인 렌더 */
+function _renderReportSection(icon,title,subtitle,color,toolKeys,enr,a){
+  var R=enr.results;
+  var okKeys=toolKeys.filter(function(k){return !!R[k];});
+  var loadKeys=toolKeys.filter(function(k){return !R[k]&&!enr.failed[k]&&!enr.skipped[k];});
+  var failKeys=toolKeys.filter(function(k){return !!enr.failed[k];});
+  if(!okKeys.length&&!loadKeys.length)return '';
+
+  var h='<div style="margin-top:32px">';
+  // Section header with colored left border
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:linear-gradient(90deg,'+color+'12,transparent);border-left:4px solid '+color+';margin-bottom:4px">';
+  h+='<span style="font-size:20px">'+icon+'</span>';
+  h+='<div style="flex:1"><div style="font-size:15px;font-weight:900;color:var(--w)">'+title+'</div>';
+  h+='<div style="font-size:10px;color:var(--w30);letter-spacing:.5px">'+subtitle+'</div></div>';
+  if(loadKeys.length){
+    h+='<div style="display:flex;align-items:center;gap:4px"><span class="spinner" style="width:12px;height:12px;border-width:2px"></span><span style="font-size:11px;color:var(--w30)">'+okKeys.length+'/'+toolKeys.length+'</span></div>';
+  }else{
+    h+='<span style="font-size:11px;color:var(--ok);font-weight:600">'+okKeys.length+'/'+toolKeys.length+' 완료</span>';
+  }
+  h+='</div>';
+
+  // All tool details inline
+  toolKeys.forEach(function(key){
+    var toolDef=ENRICH_TOOLS.find(function(t){return t.key===key;});
+    if(!toolDef)return;
+    if(R[key]){
+      // Tool sub-header
+      h+='<div style="margin-top:16px;padding-top:12px;border-top:1px dashed var(--w06)">';
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">';
+      h+='<span style="font-size:15px">'+toolDef.icon+'</span>';
+      h+='<span style="font-size:13px;font-weight:800;color:var(--w)">'+toolDef.name+'</span>';
+      h+='<span style="font-size:9px;padding:2px 8px;border-radius:10px;background:rgba(16,185,129,.1);color:var(--ok);font-weight:600">완료</span>';
+      h+='</div>';
+      h+=_renderToolDetail(key,R[key],a);
+      h+='</div>';
+    }else if(enr.failed[key]){
+      h+='<div style="margin-top:12px;padding:12px 16px;border-radius:8px;background:rgba(239,68,68,.03);border:1px dashed rgba(239,68,68,.12);display:flex;align-items:center;gap:8px">';
+      h+='<span style="font-size:14px">'+toolDef.icon+'</span>';
+      h+='<span style="font-size:12px;font-weight:600;color:var(--w40)">'+toolDef.name+'</span>';
+      h+='<span style="font-size:11px;color:var(--err)">분석 실패</span>';
+      h+='</div>';
+    }else if(!enr.skipped[key]){
+      h+='<div style="margin-top:12px;padding:14px 16px;border-radius:8px;background:var(--w03);border:1px dashed rgba(168,85,247,.1);display:flex;align-items:center;gap:8px">';
+      h+='<span style="font-size:14px">'+toolDef.icon+'</span>';
+      h+='<span style="font-size:12px;font-weight:600;color:var(--w40)">'+toolDef.name+'</span>';
+      h+='<span class="spinner" style="width:10px;height:10px;border-width:1.5px"></span>';
+      h+='<span style="font-size:11px;color:var(--w20)">분석 중...</span>';
+      h+='</div>';
+    }
+  });
+  h+='</div>';
+  return h;
+}
+
+/* Glossary: 수출 용어 해설 */
+function _renderGlossary(a,R){
+  var terms=[
+    {t:'HS Code',d:'국제통일상품분류체계(Harmonized System). 6자리 국제공통 + 4자리 국가별 세분류로 구성된 상품 분류 코드. 관세율 결정의 기준'},
+    {t:'FOB',d:'Free On Board. 수출자가 선적항에서 본선 적재까지 비용 부담. 가장 일반적인 수출 가격 조건'},
+    {t:'CIF',d:'Cost, Insurance & Freight. FOB 가격 + 보험료 + 운임. 수입자가 선호하는 가격 조건'},
+    {t:'인코텀즈',d:'Incoterms. 국제상업회의소(ICC)가 정한 무역 거래 조건 11가지. 비용·위험 분담 기준 (FOB, CIF, EXW, DDP 등)'},
+    {t:'MFN 관세',d:'Most Favored Nation. WTO 회원국 간 비차별 적용하는 기본 관세율. FTA 미체결 시 적용'},
+    {t:'FTA',d:'Free Trade Agreement. 자유무역협정. 체결국 간 관세 인하·철폐 혜택. 한국은 59개국과 21개 FTA 발효 중'},
+    {t:'ROI',d:'Return on Investment. 투자수익률. (순이익 ÷ 투자비용) × 100. 수출 채산성 평가의 핵심 지표'},
+    {t:'MOQ',d:'Minimum Order Quantity. 최소주문수량. 바이어에게 요구하는 최저 발주 단위'}
+  ];
+  if(R.tradeFinance){
+    terms.push({t:'L/C',d:'Letter of Credit. 신용장. 수입자 거래은행이 대금 지급을 보증하는 결제방식. 안전하지만 수수료 높음'});
+    terms.push({t:'T/T',d:'Telegraphic Transfer. 전신환 송금. 가장 일반적인 무역 결제. 선지급/후지급 조건에 따라 리스크 상이'});
+    terms.push({t:'D/P·D/A',d:'Documents against Payment/Acceptance. 서류 상환 결제. 추심 결제의 두 유형'});
+  }
+  if(R.logisticsOpt||R.smartNego){
+    terms.push({t:'B/L',d:'Bill of Lading. 선하증권. 해상 운송 시 화물 인수증 겸 유가증권. 수입자가 화물 인도받을 때 필요'});
+    terms.push({t:'CBM',d:'Cubic Meter. 입방미터. 해상 운임 산정의 부피 기준 단위'});
+    terms.push({t:'EXW',d:'Ex Works. 공장인도조건. 수출자 부담 최소, 바이어가 모든 운송 비용·리스크 부담'});
+    terms.push({t:'DDP',d:'Delivered Duty Paid. 관세지급인도조건. 수출자가 목적지까지 모든 비용 부담. 바이어 리스크 최소'});
+  }
+  if(R.certNav){
+    terms.push({t:'FDA',d:'미국 식품의약국. 식품·화장품·의약품·의료기기 수입 규제 기관. 사전등록(Prior Notice) 필수'});
+    terms.push({t:'CE 마크',d:'Conformité Européenne. EU 필수 적합성 인증. 안전·건강·환경 기준 충족 증명'});
+    terms.push({t:'CPNP',d:'EU 화장품 등록 포털. EU 내 화장품 판매 전 필수 온라인 등록 시스템'});
+  }
+  if(R.scRisk){
+    terms.push({t:'공급망 리스크',d:'Supply Chain Risk. 원자재 조달→생산→운송→배송 전 과정의 차질 위험도. 지정학·자연재해·환율 등 복합 요인'});
+  }
+  terms.push({t:'PI',d:'Proforma Invoice. 견적송장. 거래 조건(품목·수량·가격·인코텀즈) 명시. 바이어 주문 확인 전 발행'});
+  terms.push({t:'CI/PL',d:'Commercial Invoice / Packing List. 상업송장과 포장명세서. 통관 필수 서류'});
+  terms.push({t:'CO',d:'Certificate of Origin. 원산지증명서. FTA 관세 혜택 적용 시 필수 제출 서류'});
+
+  var h='<div style="margin-top:36px;padding-top:24px;border-top:2px solid var(--bd)">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">';
+  h+='<span style="font-size:18px">📖</span>';
+  h+='<div><span style="font-size:14px;font-weight:900;color:var(--w)">수출 용어 해설</span> <span style="font-size:11px;color:var(--w30)">Glossary</span></div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px">';
+  terms.forEach(function(t){
+    h+='<div style="padding:8px 12px;border-radius:8px;background:var(--w03);border:1px solid var(--w06);font-size:11px;line-height:1.5">';
+    h+='<b style="color:var(--pri)">'+t.t+'</b> <span style="color:var(--w50)">'+t.d+'</span>';
+    h+='</div>';
+  });
+  h+='</div></div>';
+  return h;
 }
 
 var STAGE_DEFAULTS={
@@ -6468,7 +6696,11 @@ function _genDocInner(items,bd,rd,c){
   if(!isPL&&!isCO&&c.bank_name){h+='<div style="margin-top:30px;padding:12px;border:1px solid #ccc;font-size:12px;line-height:1.8"><b>BANK:</b> '+c.bank_name+' / A/C: '+(c.bank_account||'')+' / SWIFT: '+(c.swift_code||'')+'</div>';}
   } /* end else (non-new-doc types) */
   if(isNewDoc){h+='<div style="margin-top:40px;text-align:center"><div class="sig" style="display:inline-block">'+U.esc(c.name_en||'SELLER')+'<br>'+U.esc(c.ceo_name_en||'')+'</div></div>';}
-  h+='</div></body></html>';
+  h+='</div><div style="text-align:center;padding:16px 0;font-size:11px;color:#888;border-top:1px solid rgba(255,255,255,.06);margin-top:auto">
+  (주)모티브이노베이션 | 대표 채희웅 | 사업자등록번호 155-88-02209<br>
+  통신판매업 제2023-서울강남-04603호 | creative@mo-tive.com
+</div>
+</body></html>';
   var w=window.open('','_blank','width=850,height=700');
   if(!w||w.closed||typeof w.closed==='undefined'){UI.toast('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.','warn');return;}
   w.document.write(h);w.document.close();
@@ -7725,7 +7957,11 @@ function dpPrintPreview(){
   if(!w){UI.toast('팝업 차단됨','warn');return;}
   w.document.write('<html><head><meta charset="UTF-8"><title>Print Preview</title><style>body{margin:0;padding:20px;font-family:"Noto Sans KR",Arial,sans-serif;color:#1a1a1a;font-size:12px;line-height:1.5;background:#fff}table{border-collapse:collapse;width:100%}th,td{padding:8px 10px;border:1px solid #ccc;text-align:left;font-size:11px}th{background:#003366;color:#fff;font-size:10px;text-transform:uppercase}[contenteditable]{outline:none;border:none!important;background:none!important}.dp-header{background:#003366!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.dp-total-row{background:#f0f4f8!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.dp-sig-line{border-bottom:1px solid #333;height:40px}.dp-stamp-area{width:80px;height:80px;border:2px dashed #ccc;display:inline-flex;align-items:center;justify-content:center;font-size:8px;color:#aaa}@media print{body{padding:0}}</style></head><body>');
   w.document.write(paper.innerHTML);
-  w.document.write('</body></html>');
+  w.document.write('<div style="text-align:center;padding:16px 0;font-size:11px;color:#888;border-top:1px solid rgba(255,255,255,.06);margin-top:auto">
+  (주)모티브이노베이션 | 대표 채희웅 | 사업자등록번호 155-88-02209<br>
+  통신판매업 제2023-서울강남-04603호 | creative@mo-tive.com
+</div>
+</body></html>');
   w.document.close();
   setTimeout(function(){w.print();},500);
 }
@@ -12031,7 +12267,11 @@ function genVoucherReport(){
   /* 서명 */
   h+='<div style="margin-top:60px;display:flex;justify-content:space-between"><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수행기관</div><div style="font-size:12px;margin-top:4px">(주)모티브이노베이션</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 채희웅</div></div><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수혜기업</div><div style="font-size:12px;margin-top:4px">'+(c.name_ko||'-')+'</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 '+(c.ceo_name_ko||c.ceo_name||'_______')+'</div></div></div>';
   h+='<div style="margin-top:20px;text-align:center;font-size:10px;color:#999">본 보고서는 Whistle AI (휘슬 AI) 플랫폼에서 자동 생성되었습니다. | '+now.toISOString().split('T')[0]+'</div>';
-  h+='</body></html>';
+  h+='<div style="text-align:center;padding:16px 0;font-size:11px;color:#888;border-top:1px solid rgba(255,255,255,.06);margin-top:auto">
+  (주)모티브이노베이션 | 대표 채희웅 | 사업자등록번호 155-88-02209<br>
+  통신판매업 제2023-서울강남-04603호 | creative@mo-tive.com
+</div>
+</body></html>';
   var w=window.open('','_blank','width=850,height=700');
   if(!w||w.closed||typeof w.closed==='undefined'){UI.toast('팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해주세요.','warn');return;}
   w.document.write(h);w.document.close();
@@ -15130,5 +15370,9 @@ sb.auth.onAuthStateChange(function(event, session){
   };r();
 })();
 </script>
+<div style="text-align:center;padding:16px 0;font-size:11px;color:#888;border-top:1px solid rgba(255,255,255,.06);margin-top:auto">
+  (주)모티브이노베이션 | 대표 채희웅 | 사업자등록번호 155-88-02209<br>
+  통신판매업 제2023-서울강남-04603호 | creative@mo-tive.com
+</div>
 </body>
 </html>
