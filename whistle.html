@@ -2370,8 +2370,12 @@ function _autoEnrich(analysisId){
   var enr={status:'loading',results:{},failed:{},skipped:{},doneCount:0,totalCount:ENRICH_TOOLS.length};
   S._enrichment[analysisId]=enr;
   render();
-  /* JWT 세션 리프레시 후 실행 (만료 401 방지) */
-  sb.auth.refreshSession().finally(function(){_runEnrichWaves(analysisId,a,enr);});
+  _runEnrichWaves(analysisId,a,enr);
+}
+var _EF_BASE='https://lylktgxngrlxmsldxdqj.supabase.co/functions/v1/';
+function _callEF(name,body){
+  var token=null;try{var sess=JSON.parse(localStorage.getItem('sb-lylktgxngrlxmsldxdqj-auth-token'));if(sess&&sess.access_token)token=sess.access_token;}catch(e){}
+  return fetch(_EF_BASE+name,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(token||'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0'),'apikey':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0'},body:JSON.stringify(body)}).then(function(r){if(!r.ok)throw new Error('EF '+r.status);return r.json();});
 }
 function _runEnrichWaves(analysisId,a,enr){
   [1,2,3,4].forEach(function(wave){
@@ -2379,8 +2383,8 @@ function _runEnrichWaves(analysisId,a,enr){
       ENRICH_TOOLS.filter(function(t){return t.wave===wave;}).forEach(function(t){
         var body=_enrichBody(t.key,a);
         if(!body){enr.skipped[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);return;}
-        sb.functions.invoke(t.ef,{body:body}).then(function(res){
-          if(!res.error&&res.data&&!res.data.error){enr.results[t.key]=res.data;}else{enr.failed[t.key]=true;if(!enr._dbg)enr._dbg={};enr._dbg[t.key]={err:res.error?String(res.error).slice(0,100):null,hasData:!!res.data,dataErr:res.data&&res.data.error?String(res.data.error).slice(0,100):null};}
+        _callEF(t.ef,body).then(function(data){
+          if(data&&!data.error){enr.results[t.key]=data;}else{enr.failed[t.key]=true;if(!enr._dbg)enr._dbg={};enr._dbg[t.key]={dataErr:data&&data.error?String(data.error).slice(0,100):null};}
           enr.doneCount++;_checkEnrichDone(analysisId);
         }).catch(function(e){enr.failed[t.key]=true;if(!enr._dbg)enr._dbg={};enr._dbg[t.key]={catch:String(e).slice(0,100)};enr.doneCount++;_checkEnrichDone(analysisId);});
       });
