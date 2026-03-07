@@ -2376,7 +2376,7 @@ function _autoEnrich(analysisId){
         var body=_enrichBody(t.key,a);
         if(!body){enr.skipped[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);return;}
         sb.functions.invoke(t.ef,{body:body}).then(function(res){
-          if(!res.error&&res.data){enr.results[t.key]=res.data;}else{enr.failed[t.key]=true;}
+          if(!res.error&&res.data&&!res.data.error){enr.results[t.key]=res.data;}else{enr.failed[t.key]=true;}
           enr.doneCount++;_checkEnrichDone(analysisId);
         }).catch(function(){enr.failed[t.key]=true;enr.doneCount++;_checkEnrichDone(analysisId);});
       });
@@ -4387,21 +4387,21 @@ function _enrichSummary(key,d){
   try{switch(key){
     case 'genome':var gm=d.genome;return{metric:(gm&&gm.top_markets&&gm.top_markets[0])?gm.top_markets[0].country:'완료',sub:'25개국 적합도'};
     case 'demandRadar':return{metric:d.total_demand?d.total_demand.formatted:'—',sub:(d.market_count||0)+'개국 수요'};
-    case 'competitorRadar':return{metric:d.korea_position?('#'+d.korea_position.rank):'—',sub:'한국 순위'};
+    case 'competitorRadar':var kr=d.korea_position||d.korea;return{metric:kr?('#'+kr.rank):'—',sub:kr?'점유율 '+((kr.share||0).toFixed(1))+'%':'한국 순위'};
     case 'marketTiming':return{metric:d.current_timing?(d.current_timing.score+'점'):'—',sub:d.current_timing?(d.current_timing.verdict||''):''};
     case 'priceIntel':var pa=d.analysis||d;return{metric:pa.competitive_position||pa.position||'완료',sub:'가격 포지션'};
     case 'exportROI':var bm=d.markets&&d.markets[0];return{metric:bm?(bm.roi_pct+'%'):'—',sub:bm?(bm.country+' 최고ROI'):''};
     case 'profitMargin':var sc0=d.scenarios&&d.scenarios[0];return{metric:sc0?(sc0.margin_pct.toFixed(1)+'%'):'—',sub:sc0?(sc0.incoterms+' 마진'):''};
-    case 'tradeFinance':return{metric:d.recommended?(d.recommended.method||'—'):'—',sub:'추천 결제'};
+    case 'tradeFinance':var _tfRec=d.recommended||d.top_recommendation||(d.methods&&d.methods.find(function(m){return m.recommended;}))||{};return{metric:_tfRec.method||_tfRec.name||'—',sub:'추천 결제'};
     case 'trust':return{metric:(d.trust_score||d.total_score||d.score||0)+'점',sub:d.grade||d.risk_level||'신뢰도'};
     case 'certNav':return{metric:(d.total_mandatory||0)+'건',sub:'필수 인증'};
-    case 'regulatoryMap':return{metric:(d.countries_analyzed||0)+'개국',sub:(d.summary&&d.summary.easiest)?d.summary.easiest.name+' 최적':'규제 분석'};
-    case 'labelCompliance':return{metric:(d.required_fields?d.required_fields.length:0)+'항목',sub:'필수 라벨'};
+    case 'regulatoryMap':return{metric:(d.countries_analyzed||d.total_countries||0)+'개국',sub:(d.summary&&d.summary.easiest)?d.summary.easiest.name+' 최적':'규제 분석'};
+    case 'labelCompliance':var _lcCnt=0;if(d.required_fields)_lcCnt=d.required_fields.length;else if(d.countries)(d.countries||[]).forEach(function(c){_lcCnt+=(c.required||[]).length;});return{metric:_lcCnt+'항목',sub:'필수 라벨'};
     case 'scRisk':return{metric:(d.overall_risk||0)+'/5',sub:d.overall_label||'리스크'};
     case 'logisticsOpt':return{metric:d.recommended?('$'+(d.recommended.cost||0).toLocaleString()):'—',sub:d.recommended?(d.recommended.transit||''):''};
     case 'smartNego':var ri=d.recommended_incoterms;return{metric:(ri&&ri[0])?ri[0].code:'—',sub:'추천 인코텀즈'};
     case 'cultureGuide':return{metric:(d.flag||'🌐')+(d.name?' '+d.name:''),sub:'문화 가이드'};
-    case 'exportCalendar':return{metric:(d.trade_shows?d.trade_shows.length:0)+'건',sub:'전시회 일정'};
+    case 'exportCalendar':var _ecShows=d.trade_shows||d.upcoming_shows||[];return{metric:_ecShows.length+'건',sub:'전시회 일정'};
     default:return{metric:'—',sub:''};
   }}catch(e){return{metric:'완료',sub:''};}
 }
@@ -4431,8 +4431,9 @@ function _renderToolDetail(key,d,a){
       if(d.top_markets&&d.top_markets.length){h+=_eMiniTable(['국가','수입액','점유율','YoY'],d.top_markets.slice(0,5).map(function(m){return[(m.flag||'')+' '+E(m.name),'$'+((m.value_2023||0)/1e6).toFixed(0)+'M',(m.share||0).toFixed(1)+'%','<span style="color:'+((m.yoy||0)>=0?'var(--ok)':'var(--err)')+'">'+((m.yoy||0)>=0?'+':'')+(m.yoy||0)+'%</span>'];}));}
       break;
     case 'competitorRadar':
-      if(d.korea_position){var kp=d.korea_position;h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';h+=_eStatBox('한국 순위','#'+kp.rank,'var(--pri)');h+=_eStatBox('수출액','$'+((kp.value||0)/1e6).toFixed(0)+'M','var(--acc)');h+=_eStatBox('시장점유율',(kp.share||0).toFixed(1)+'%',(kp.share||0)>=5?'var(--ok)':'var(--acc)');h+='</div>';}
-      if(d.competitors&&d.competitors.length){h+=_eMiniTable(['#','국가','수출액','점유율'],d.competitors.slice(0,8).map(function(c,i){var isKR=c.country==='Korea'||c.country==='KR'||c.country==='South Korea';return['<b>'+(i+1)+'</b>',(isKR?'<b style="color:var(--pri)">':'')+E((c.flag||'')+' '+(c.country||''))+(isKR?'</b>':''),'$'+((c.value||0)/1e6).toFixed(0)+'M',(c.share||0).toFixed(1)+'%'];}));}
+      var _crKP=d.korea_position||d.korea;
+      if(_crKP){h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';h+=_eStatBox('한국 순위','#'+(_crKP.rank||'—'),'var(--pri)');h+=_eStatBox('수출액','$'+((_crKP.value||0)/1e6).toFixed(0)+'M','var(--acc)');h+=_eStatBox('시장점유율',(_crKP.share||0).toFixed(1)+'%',(_crKP.share||0)>=5?'var(--ok)':'var(--acc)');h+='</div>';}
+      if(d.competitors&&d.competitors.length){h+=_eMiniTable(['#','국가','수출액','점유율'],d.competitors.slice(0,8).map(function(c,i){var isKR=c.country==='Korea'||c.country==='KR'||c.country==='South Korea';return['<b>'+(i+1)+'</b>',(isKR?'<b style="color:var(--pri)">':'')+E((c.flag||'')+' '+(c.country||''))+(isKR?'</b>':''),'$'+((c.value||0)/1e6).toFixed(0)+'M',(c.share||0).toFixed(1)+'%'];}));}else if(d.summary||d.analysis){h+='<div style="font-size:11px;color:var(--w60);line-height:1.6">'+E(d.summary||d.analysis||'')+'</div>';}
       break;
     case 'marketTiming':
       if(d.current_timing){var ct=d.current_timing;var tsc=ct.score>=70?'var(--ok)':ct.score>=40?'var(--acc)':'var(--err)';h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">';h+=_eStatBox('타이밍 점수',ct.score+'/100',tsc);h+=_eStatBox('판정',E(ct.verdict||''),tsc);h+=_eStatBox('환율 동향',d.fx_analysis?E(d.fx_analysis.trend||''):'—','var(--pri)');h+='</div>';}
@@ -4451,8 +4452,9 @@ function _renderToolDetail(key,d,a){
       if(d.scenarios&&d.scenarios.length){h+=_eMiniTable(['인코텀즈','단가(USD)','총비용','마진율','순이익'],d.scenarios.map(function(s){return[E(s.incoterms),'$'+(s.unit_price_usd||0).toFixed(2),'$'+(s.total_cost||0).toLocaleString(),(s.margin_pct||0).toFixed(1)+'%','$'+(s.net_profit||0).toLocaleString()];}));}
       break;
     case 'tradeFinance':
-      if(d.recommended){h+='<div style="padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:10px"><div style="font-size:10px;color:var(--pri);font-weight:700">⭐ AI 추천 결제방식</div><div style="font-size:18px;font-weight:800;margin-top:4px">'+E(d.recommended.method)+'</div><div style="font-size:11px;color:var(--w60);margin-top:4px">'+E(d.recommended.reason||'')+'</div></div>';}
-      if(d.methods&&d.methods.length){h+=_eMiniTable(['결제방식','리스크','수수료','추천도'],d.methods.slice(0,6).map(function(m){return[E(m.method||m.name||''),E(m.risk_level||''),'<span style="color:var(--acc)">'+E(m.fee_range||m.cost||'')+'</span>',E(m.suitability||m.score||'')];}));}
+      var _tfR=d.recommended||(d.top_recommendation?{method:d.top_recommendation}:null)||(d.methods&&d.methods.find(function(m){return m.recommended;}))||null;
+      if(_tfR){var _tfName=_tfR.method||_tfR.name||d.top_recommendation||'';h+='<div style="padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:10px"><div style="font-size:10px;color:var(--pri);font-weight:700">⭐ AI 추천 결제방식</div><div style="font-size:18px;font-weight:800;margin-top:4px">'+E(_tfName)+'</div><div style="font-size:11px;color:var(--w60);margin-top:4px">'+E(_tfR.reason||_tfR.description||'')+'</div></div>';}
+      if(d.methods&&d.methods.length){h+=_eMiniTable(['결제방식','리스크','수수료','추천도'],d.methods.slice(0,6).map(function(m){return[E(m.method||m.name||''),E(m.risk_level||m.risk||''),'<span style="color:var(--acc)">'+E(m.fee_range||m.cost||m.fee||'')+'</span>',m.recommended?'<b style="color:var(--ok)">✓ 추천</b>':E(m.suitability||m.score||'')];}));}
       break;
     case 'certNav':
       h+='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px">';
@@ -4468,7 +4470,9 @@ function _renderToolDetail(key,d,a){
       h+='<div style="font-size:16px;margin-bottom:4px">'+(({US:'🇺🇸',EU:'🇪🇺',JP:'🇯🇵',CN:'🇨🇳',VN:'🇻🇳'}[d.country])||'🌐')+'</div>';
       h+='<div style="font-size:14px;font-weight:800">'+E(d.country_name||d.country||'')+' 라벨링 요건</div>';
       h+='<div style="font-size:11px;color:var(--w60)">'+E(d.regulatory_body||'')+'</div></div>';
-      if(d.required_fields&&d.required_fields.length){h+='<div style="font-size:11px;font-weight:700;margin-bottom:6px">📋 필수 항목 ('+d.required_fields.length+')</div>';d.required_fields.slice(0,8).forEach(function(f){h+='<div style="display:flex;gap:6px;padding:3px 0;font-size:11px;border-bottom:1px solid var(--w06)"><span style="color:var(--err)">●</span><b>'+E(f.name||f.field||'')+'</b><span style="color:var(--w40)">'+E(f.description||f.note||'')+'</span></div>';});}
+      var _lcFields=d.required_fields||[];
+      if(!_lcFields.length&&d.countries){(d.countries||[]).forEach(function(c){(c.required||[]).forEach(function(r){_lcFields.push(typeof r==='string'?{name:r}:r);});});}
+      if(_lcFields.length){h+='<div style="font-size:11px;font-weight:700;margin-bottom:6px">📋 필수 항목 ('+_lcFields.length+')</div>';_lcFields.slice(0,10).forEach(function(f){var fn=typeof f==='string'?f:(f.name||f.field||f.item||'');var fd=typeof f==='string'?'':(f.description||f.note||f.detail||'');h+='<div style="display:flex;gap:6px;padding:3px 0;font-size:11px;border-bottom:1px solid var(--w06)"><span style="color:var(--err)">●</span><b>'+E(fn)+'</b><span style="color:var(--w40)">'+E(fd)+'</span></div>';});}
       break;
     case 'scRisk':
       var orc=d.overall_risk>=4?'var(--err)':d.overall_risk>=3?'var(--acc)':d.overall_risk>=2?'var(--pri)':'var(--ok)';
@@ -4481,7 +4485,10 @@ function _renderToolDetail(key,d,a){
       break;
     case 'smartNego':
       if(d.recommended_incoterms&&d.recommended_incoterms.length){h+='<div style="display:grid;grid-template-columns:repeat('+Math.min(d.recommended_incoterms.length,3)+',1fr);gap:8px;margin-bottom:10px">';d.recommended_incoterms.forEach(function(ic,i){h+='<div style="padding:12px;border-radius:8px;background:'+(i===0?'rgba(0,212,255,.06)':'var(--w05)')+';border:1px solid '+(i===0?'var(--pri)':'var(--w06)')+';text-align:center">';if(i===0)h+='<div style="font-size:8px;font-weight:700;color:var(--pri);margin-bottom:2px">✓ 최우선</div>';h+='<div style="font-size:18px;font-weight:900">'+E(ic.code||'')+'</div><div style="font-size:10px;color:var(--w40);margin-top:4px">'+E(ic.desc||'')+'</div></div>';});h+='</div>';}
-      if(d.negotiation_tips&&d.negotiation_tips.length){h+='<div style="font-size:11px"><b>💡 협상 팁:</b><ul style="margin:4px 0;padding-left:16px">';d.negotiation_tips.slice(0,4).forEach(function(tip){h+='<li style="margin-bottom:2px;color:var(--w60)">'+E(typeof tip==='string'?tip:(tip.tip||tip.text||''))+'</li>';});h+='</ul></div>';}
+      if(d.recommended_payment){h+='<div style="padding:10px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:8px"><div style="font-size:10px;color:var(--pri);font-weight:700">💳 추천 결제</div><div style="font-size:14px;font-weight:800;margin-top:2px">'+E(typeof d.recommended_payment==='string'?d.recommended_payment:(d.recommended_payment.method||d.recommended_payment.name||''))+'</div></div>';}
+      if(d.price_strategy){h+='<div style="padding:10px;border-radius:8px;background:var(--w05);margin-bottom:8px"><div style="font-size:10px;font-weight:700;color:var(--acc);margin-bottom:4px">💰 가격 전략</div><div style="font-size:11px;color:var(--w60);line-height:1.5">'+E(typeof d.price_strategy==='string'?d.price_strategy:(d.price_strategy.summary||d.price_strategy.approach||JSON.stringify(d.price_strategy)))+'</div></div>';}
+      var _snTips=d.negotiation_tips||d.key_points||d.tips||[];
+      if(_snTips.length){h+='<div style="font-size:11px"><b>💡 협상 팁:</b><ul style="margin:4px 0;padding-left:16px">';_snTips.slice(0,5).forEach(function(tip){h+='<li style="margin-bottom:2px;color:var(--w60)">'+E(typeof tip==='string'?tip:(tip.tip||tip.text||tip.point||''))+'</li>';});h+='</ul></div>';}
       break;
     case 'cultureGuide':
       h+='<div style="text-align:center;margin-bottom:12px"><div style="font-size:32px">'+(d.flag||'🌐')+'</div><div style="font-size:16px;font-weight:800">'+E(d.name||d.country||'')+'</div>';
@@ -4492,8 +4499,10 @@ function _renderToolDetail(key,d,a){
       if(d.dos||d.donts){h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">';if(d.dos){h+='<div style="padding:10px;border-radius:8px;background:rgba(16,185,129,.05)"><div style="font-size:10px;font-weight:700;color:var(--ok);margin-bottom:4px">✅ Do\'s</div>';(Array.isArray(d.dos)?d.dos:[d.dos]).slice(0,4).forEach(function(x){h+='<div style="font-size:11px;color:var(--w60);margin-bottom:2px">• '+E(x)+'</div>';});h+='</div>';}if(d.donts){h+='<div style="padding:10px;border-radius:8px;background:rgba(239,68,68,.05)"><div style="font-size:10px;font-weight:700;color:var(--err);margin-bottom:4px">❌ Don\'ts</div>';(Array.isArray(d.donts)?d.donts:[d.donts]).slice(0,4).forEach(function(x){h+='<div style="font-size:11px;color:var(--w60);margin-bottom:2px">• '+E(x)+'</div>';});h+='</div>';}h+='</div>';}
       break;
     case 'exportCalendar':
-      if(d.trade_shows&&d.trade_shows.length){h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">🎪 주요 전시회 ('+d.trade_shows.length+'건)</div>';d.trade_shows.slice(0,6).forEach(function(s){h+='<div style="padding:8px;border-radius:8px;background:var(--w05);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:12px;font-weight:700;color:var(--pri)">'+E(s.name||'')+'</div><div style="font-size:10px;color:var(--w40)">📍 '+E(s.location||'')+' · 📆 '+E(s.date||'')+'</div></div>'+(s.country?'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--w06);color:var(--w60)">'+E(s.country)+'</span>':'')+'</div>';});}
-      if(d.deadlines&&d.deadlines.length){h+='<div style="font-size:12px;font-weight:700;margin:10px 0 8px">📌 주요 데드라인</div>';d.deadlines.slice(0,5).forEach(function(dl){h+='<div style="display:flex;gap:8px;padding:3px 0;font-size:11px;border-bottom:1px solid var(--w06)"><span style="color:var(--err);font-weight:700">'+E(dl.date||'')+'</span><span style="color:var(--w60)">'+E(dl.description||dl.event||'')+'</span></div>';});}
+      var _ecShows=d.trade_shows||d.upcoming_shows||[];
+      if(_ecShows.length){h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">🎪 주요 전시회 ('+_ecShows.length+'건)</div>';_ecShows.slice(0,6).forEach(function(s){h+='<div style="padding:8px;border-radius:8px;background:var(--w05);margin-bottom:4px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:12px;font-weight:700;color:var(--pri)">'+E(s.name||s.title||'')+'</div><div style="font-size:10px;color:var(--w40)">📍 '+E(s.location||s.venue||'')+' · 📆 '+E(s.date||s.dates||'')+'</div></div>'+(s.country?'<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:var(--w06);color:var(--w60)">'+E(s.country)+'</span>':'')+'</div>';});}
+      var _ecDL=d.deadlines||d.upcoming_disruptions||[];
+      if(_ecDL.length){h+='<div style="font-size:12px;font-weight:700;margin:10px 0 8px">📌 주요 일정/데드라인</div>';_ecDL.slice(0,5).forEach(function(dl){h+='<div style="display:flex;gap:8px;padding:3px 0;font-size:11px;border-bottom:1px solid var(--w06)"><span style="color:var(--err);font-weight:700">'+E(dl.date||dl.period||'')+'</span><span style="color:var(--w60)">'+E(dl.description||dl.event||dl.name||dl.type||'')+'</span></div>';});}
       if(d.holidays&&d.holidays.length){h+='<div style="font-size:12px;font-weight:700;margin:10px 0 8px">🏖️ 공휴일</div><div style="display:flex;flex-wrap:wrap;gap:4px">';d.holidays.slice(0,8).forEach(function(hl){h+='<span style="padding:3px 8px;border-radius:6px;background:var(--w05);font-size:10px">'+E(hl.date||'')+' '+E(hl.name||'')+'</span>';});h+='</div>';}
       break;
   }
