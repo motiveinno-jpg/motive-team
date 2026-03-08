@@ -6,6 +6,20 @@
 /* ═══════════════════════════════════════════
    HELPER FUNCTIONS
    ═══════════════════════════════════════════ */
+/* URL cleaner — strip tracking params, shorten */
+function _cleanUrl(raw) {
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    // Remove all tracking params
+    ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
+     'fbclid','gclid','cafe_mkt','NaPm','srsltid','mc_cid','mc_eid',
+     '_ga','_gl','ref','affiliate','trk','clickid','dclid','msclkid',
+     'nclid','twclid','wbraid','gbraid','yclid'].forEach(p => u.searchParams.delete(p));
+    return u.toString();
+  } catch { return raw; }
+}
+
 const _A = {
   flag(code) {
     const F = {US:'🇺🇸',JP:'🇯🇵',CN:'🇨🇳',DE:'🇩🇪',GB:'🇬🇧',FR:'🇫🇷',VN:'🇻🇳',TH:'🇹🇭',SG:'🇸🇬',MY:'🇲🇾',ID:'🇮🇩',PH:'🇵🇭',IN:'🇮🇳',AU:'🇦🇺',CA:'🇨🇦',KR:'🇰🇷',NL:'🇳🇱',IT:'🇮🇹',ES:'🇪🇸',BR:'🇧🇷',MX:'🇲🇽',SA:'🇸🇦',AE:'🇦🇪',TW:'🇹🇼'};
@@ -789,7 +803,7 @@ const Analyze = {
   async submitProduct(e) {
     e.preventDefault();
     const f = e.target;
-    const url = f.url.value.trim();
+    const url = _cleanUrl(f.url.value.trim());
     const name = f.name ? f.name.value.trim() : '';
     const category = f.category ? f.category.value : '';
     const fob = f.fob ? parseFloat(f.fob.value) : null;
