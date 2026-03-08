@@ -35,7 +35,7 @@ const _A = {
     return `<div style="position:relative;width:160px;height:160px;margin:0 auto">
       <svg viewBox="0 0 120 120" style="width:160px;height:160px;transform:rotate(-225deg)">
         <circle cx="60" cy="60" r="50" fill="none" stroke="var(--s3)" stroke-width="10" stroke-dasharray="235.6" stroke-dashoffset="47.1" stroke-linecap="round"/>
-        <circle cx="60" cy="60" r="50" fill="none" stroke="${c}" stroke-width="10" stroke-dasharray="235.6" stroke-dashoffset="${235.6 - (deg / 270) * 188.5 + 47.1}" stroke-linecap="round" style="transition:stroke-dashoffset 1s ease"/>
+        <circle cx="60" cy="60" r="50" fill="none" stroke="${c}" stroke-width="10" stroke-dasharray="235.6" stroke-dashoffset="${235.6 - (deg / 270) * 188.5}" stroke-linecap="round" style="transition:stroke-dashoffset 1s ease"/>
       </svg>
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
         <div style="font-size:36px;font-weight:900;color:#fff;line-height:1">${s}</div>
@@ -62,7 +62,8 @@ const _A = {
     </div>`;
   },
   pestelBar(label, score) {
-    const s = Math.min(5, Math.max(1, score || 3));
+    const raw = typeof score === 'number' ? score : 50;
+    const s = Math.max(1, Math.min(5, raw > 5 ? Math.round(raw / 20) : raw));
     const colors = ['','#ef4444','#f97316','#eab308','#22c55e','#3b82f6'];
     const labels = ['','매우 불리','불리','보통','유리','매우 유리'];
     return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -70,7 +71,7 @@ const _A = {
       <div style="display:flex;gap:3px;flex:1">${[1,2,3,4,5].map(i =>
         `<div style="flex:1;height:6px;border-radius:3px;background:${i <= s ? colors[s] : 'var(--s3)'}"></div>`
       ).join('')}</div>
-      <div style="width:60px;font-size:11px;color:${colors[s]};text-align:right">${labels[s]}</div>
+      <div style="width:60px;font-size:11px;color:${colors[s]};text-align:right">${labels[s]} (${raw})</div>
     </div>`;
   },
   safe(v) { return typeof v === 'string' ? v : (v ? JSON.stringify(v) : ''); }
@@ -257,7 +258,7 @@ const Analyze = {
       let mktContent = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">';
       mkts.forEach((code, i) => {
         const mc = typeof code === 'string' ? code : code;
-        const ma = mktAnalysis && mktAnalysis.find && mktAnalysis.find(x => x.name === mc || x.name === _A.countryName(mc));
+        const ma = mktAnalysis && (mktAnalysis[i] || (mktAnalysis.find && mktAnalysis.find(x => x.name === mc || x.name === _A.countryName(mc) || (x.country_profile && x.country_profile.flag === _A.flag(mc)))));
         mktContent += `<div style="background:var(--s2);border-radius:12px;padding:20px;border:1px solid var(--s3)">`;
         mktContent += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">`;
         mktContent += `<span style="font-size:32px">${_A.flag(mc)}</span>`;
@@ -432,9 +433,9 @@ const Analyze = {
       porItems.forEach(p => {
         const item = porter[p.key];
         if (item) {
-          const s = item.score || 3;
-          const c = s >= 4 ? '#ef4444' : s >= 3 ? '#eab308' : '#22c55e';
-          const lbl = s >= 4 ? '높음' : s >= 3 ? '중간' : '낮음';
+          const s = item.score || 50;
+          const c = s >= 70 ? '#ef4444' : s >= 40 ? '#eab308' : '#22c55e';
+          const lbl = s >= 70 ? '높음' : s >= 40 ? '중간' : '낮음';
           porContent += `<div style="padding:14px;background:var(--s2);border-radius:10px;border-left:3px solid ${c}">
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
               <span>${p.icon}</span>
@@ -596,12 +597,13 @@ const Analyze = {
     if (roadmap && Array.isArray(roadmap) && roadmap.length) {
       let rmContent = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">';
       roadmap.forEach((w, i) => {
-        const wk = typeof w === 'string' ? w : (w.title || w.week || w.description || JSON.stringify(w));
         const period = typeof w === 'object' ? (w.week || w.period || `${i+1}주차`) : `${i+1}주차`;
-        const desc = typeof w === 'object' ? (w.description || w.tasks || w.title || '') : w;
-        rmContent += `<div style="padding:12px;background:var(--s2);border-radius:8px;border-top:3px solid ${UI.scoreColor(30 + i * 8)}">
+        const focus = typeof w === 'object' ? (w.focus || w.title || '') : '';
+        const tasks = typeof w === 'object' && Array.isArray(w.tasks) ? w.tasks : (typeof w === 'string' ? [w] : []);
+        rmContent += `<div style="padding:14px;background:var(--s2);border-radius:10px;border-top:3px solid ${UI.scoreColor(30 + i * 20)}">
           <div style="font-size:11px;font-weight:800;color:var(--pri)">${period}</div>
-          <div style="font-size:12px;color:var(--tx);margin-top:4px;line-height:1.4">${typeof desc === 'string' ? desc : JSON.stringify(desc)}</div>
+          ${focus ? `<div style="font-size:13px;font-weight:700;color:#fff;margin-top:4px">${focus}</div>` : ''}
+          ${tasks.length ? '<div style="margin-top:6px">' + tasks.map(t => `<div style="font-size:11px;color:var(--tx);padding:2px 0">• ${t}</div>`).join('') + '</div>' : ''}
         </div>`;
       });
       rmContent += '</div>';
@@ -659,6 +661,77 @@ const Analyze = {
         trendContent += '</div>';
       }
       h += _A.section('산업 트렌드', '🔮', trendContent);
+    }
+
+    /* ── 19. RISK MATRIX ── */
+    const rm = r.risk_matrix;
+    if (rm && Array.isArray(rm) && rm.length) {
+      let rmxContent = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+      rmxContent += '<thead><tr style="border-bottom:2px solid var(--s3)"><th style="text-align:left;padding:8px;color:var(--tx2);font-size:11px">리스크</th><th style="text-align:center;padding:8px;color:var(--tx2);font-size:11px">발생 가능성</th><th style="text-align:center;padding:8px;color:var(--tx2);font-size:11px">영향도</th><th style="text-align:left;padding:8px;color:var(--tx2);font-size:11px">대응 방안</th></tr></thead><tbody>';
+      rm.forEach(row => {
+        const lc = row.likelihood === '높음' ? 'var(--red)' : row.likelihood === '중간' ? 'var(--org)' : 'var(--grn)';
+        const ic = row.impact === '높음' ? 'var(--red)' : row.impact === '중간' ? 'var(--org)' : 'var(--grn)';
+        rmxContent += `<tr style="border-bottom:1px solid var(--s3)"><td style="padding:8px;color:#fff;font-weight:600">${row.risk||'-'}</td><td style="padding:8px;text-align:center"><span style="color:${lc};font-weight:700">${row.likelihood||'-'}</span></td><td style="padding:8px;text-align:center"><span style="color:${ic};font-weight:700">${row.impact||'-'}</span></td><td style="padding:8px;color:var(--tx);font-size:12px">${row.mitigation||'-'}</td></tr>`;
+      });
+      rmxContent += '</tbody></table></div>';
+      h += _A.section('리스크 매트릭스', '🎲', rmxContent);
+    }
+
+    /* ── 20. INCOTERMS COMPARISON ── */
+    const inco = r.incoterms_comparison;
+    if (inco && Array.isArray(inco) && inco.length) {
+      let incoContent = '<div style="display:grid;gap:10px">';
+      inco.forEach(t => {
+        incoContent += `<div style="padding:14px;background:var(--s2);border-radius:10px;border-left:3px solid var(--acc)">
+          <div style="font-size:14px;font-weight:800;color:#fff;margin-bottom:6px">${t.incoterm||'-'}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+            <div><span style="color:var(--grn);font-weight:600">장점:</span> <span style="color:var(--tx)">${t.advantage||'-'}</span></div>
+            <div><span style="color:var(--red);font-weight:600">단점:</span> <span style="color:var(--tx)">${t.disadvantage||'-'}</span></div>
+            <div><span style="color:var(--tx3)">판매자:</span> <span style="color:var(--tx)">${t.seller_responsibility||'-'}</span></div>
+            <div><span style="color:var(--tx3)">구매자:</span> <span style="color:var(--tx)">${t.buyer_responsibility||'-'}</span></div>
+          </div>
+        </div>`;
+      });
+      incoContent += '</div>';
+      h += _A.section('인코텀즈 비교', '📜', incoContent);
+    }
+
+    /* ── 21. RECOMMENDED CHANNELS ── */
+    const ch = r.recommended_channels;
+    if (ch && Array.isArray(ch) && ch.length) {
+      let chContent = '<div style="display:grid;gap:6px">';
+      ch.forEach(c => {
+        chContent += `<div style="padding:10px 14px;background:var(--s2);border-radius:8px;font-size:13px;color:var(--tx);border-left:3px solid var(--pri)">🏪 ${typeof c === 'string' ? c : JSON.stringify(c)}</div>`;
+      });
+      chContent += '</div>';
+      h += _A.section('추천 판매 채널', '🛒', chContent);
+    }
+
+    /* ── 22. COMPETITIVE POSITIONING ── */
+    const cp = r.competitive_positioning;
+    if (cp && typeof cp === 'object') {
+      let cpContent = '';
+      if (cp.our_product) {
+        const ql = cp.our_product.quality_level || 5;
+        const pl = cp.our_product.price_level || 5;
+        cpContent += `<div style="display:flex;gap:20px;margin-bottom:14px;flex-wrap:wrap">
+          <div style="text-align:center;padding:14px 20px;background:var(--s2);border-radius:10px">
+            <div style="font-size:11px;color:var(--tx3)">품질 수준</div>
+            <div style="font-size:28px;font-weight:900;color:var(--grn)">${ql}<span style="font-size:14px;color:var(--tx3)">/10</span></div>
+          </div>
+          <div style="text-align:center;padding:14px 20px;background:var(--s2);border-radius:10px">
+            <div style="font-size:11px;color:var(--tx3)">가격 수준</div>
+            <div style="font-size:28px;font-weight:900;color:var(--org)">${pl}<span style="font-size:14px;color:var(--tx3)">/10</span></div>
+          </div>
+        </div>`;
+      }
+      if (cp.positioning_strategy) cpContent += `<div style="font-size:14px;color:var(--tx);line-height:1.7;padding:14px;background:var(--s2);border-radius:10px">${cp.positioning_strategy}</div>`;
+      h += _A.section('경쟁 포지셔닝', '🎯', cpContent);
+    }
+
+    /* ── DATA SOURCES ── */
+    if (r.data_sources && r.data_sources.length) {
+      h += `<div style="margin-top:12px;font-size:11px;color:var(--tx3)">데이터 출처: ${Array.isArray(r.data_sources) ? r.data_sources.join(', ') : r.data_sources}</div>`;
     }
 
     /* ── ACTIONS ── */
