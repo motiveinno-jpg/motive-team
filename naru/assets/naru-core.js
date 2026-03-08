@@ -527,8 +527,8 @@ const API = {
       product_url: prod.url || null,
       product_image_url: (prod.images && prod.images[0]) || null,
       user_id: S.user.id,
-      status: 'processing',
-      analysis_type: 'export'
+      status: 'analyzing',
+      analysis_type: 'free'
     }).select().single();
 
     // 3) analyze-export EF 호출 (실제 AI 분석)
