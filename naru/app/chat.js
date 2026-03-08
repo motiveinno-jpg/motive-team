@@ -6,7 +6,7 @@
 Router.register('chat', function(state) {
   const deals = state._deals || [];
 
-  if (deals.length === 0 && state.products.length === 0) {
+  if (deals.length === 0 && (!state.products || state.products.length === 0)) {
     return UI.empty('💬', '아직 진행 중인 거래가 없습니다',
       '바이어 매칭 후 거래가 시작되면 여기서 소통할 수 있습니다.',
       '제품 등록하기', "Router.go('analyze')");
@@ -58,7 +58,7 @@ Router.register('chat', function(state) {
     }
     h += '</div>';
     if (deal.last_message) {
-      h += `<div style="font-size:11px;color:var(--tx3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${UI.trunc(deal.last_message, 35)}</div>`;
+      h += `<div style="font-size:11px;color:var(--tx3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${UI.trunc((deal.last_message||'').replace(/</g,'&lt;'), 35)}</div>`;
     }
     h += '</div>';
   });
@@ -181,7 +181,7 @@ const Chat = {
         h += `<div style="margin-bottom:6px"><a href="${msg.file_url}" target="_blank" style="color:${isMine ? '#003' : 'var(--pri)'};font-size:12px">📎 ${msg.file_name || '첨부파일'}</a></div>`;
       }
 
-      h += msg.content || '';
+      h += (msg.content || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
       // Translated text
       if (Chat._translate && msg.translated) {
@@ -200,9 +200,10 @@ const Chat = {
     return h;
   },
 
-  selectDeal(dealId) {
+  async selectDeal(dealId) {
     S._activeDealId = dealId;
-    Chat.loadMessages(dealId);
+    notify();
+    await Chat.loadMessages(dealId);
     Chat.subscribeRealtime(dealId);
     notify();
   },
@@ -238,6 +239,8 @@ const Chat = {
     // Unsubscribe previous
     if (Chat._realtimeChannel) {
       sb.removeChannel(Chat._realtimeChannel);
+      const idx = S._realtimeSubs.indexOf(Chat._realtimeChannel);
+      if (idx > -1) S._realtimeSubs.splice(idx, 1);
     }
 
     Chat._realtimeChannel = sb.channel('messages-' + dealId)
@@ -305,11 +308,14 @@ const Chat = {
       return;
     }
 
-    // Update last message in deal
+    // Update last message in deal (DB + local state)
+    const now = new Date().toISOString();
     await sb.from('matchings').update({
       last_message: content,
-      last_message_at: new Date().toISOString()
+      last_message_at: now
     }).eq('id', dealId);
+    const deal = (S._deals || []).find(d => d.id === dealId);
+    if (deal) { deal.last_message = content; deal.last_message_at = now; }
   },
 
   async handleFile(event) {
@@ -325,14 +331,14 @@ const Chat = {
     UI.toast('파일 업로드 중...', 'info');
 
     const path = `chat/${S.user.id}/${Date.now()}_${file.name}`;
-    const { data, error } = await sb.storage.from('attachments').upload(path, file);
+    const { data, error } = await sb.storage.from('whistle-uploads').upload(path, file);
 
     if (error) {
       UI.toast('파일 업로드 실패: ' + UI.err(error), 'error');
       return;
     }
 
-    const { data: urlData } = sb.storage.from('attachments').getPublicUrl(path);
+    const { data: urlData } = sb.storage.from('whistle-uploads').getPublicUrl(path);
     const fileUrl = urlData?.publicUrl;
 
     const dealId = S._activeDealId;
@@ -371,8 +377,8 @@ const Chat = {
     const content = actions[action];
     if (!content) return;
 
-    document.getElementById('chat-input').value = content;
-    document.getElementById('chat-input').focus();
+    const el = document.getElementById('chat-input');
+    if (el) { el.value = content; el.focus(); }
   },
 
   async shareDocument(dealId) {
@@ -400,16 +406,16 @@ const Chat = {
 
     const dtype = (typeof DOC_TYPES !== 'undefined' ? DOC_TYPES : []).find(d => d.id === doc.type) || { ko: doc.type };
 
-    await sb.from('messages').insert({
+    const { error } = await sb.from('messages').insert({
       matching_id: dealId,
       sender_id: S.user.id,
       sender_name: S.company?.name || S.user.email,
       content: `📄 ${dtype.ko} (${doc.doc_number || ''}) 서류를 공유합니다.`,
-      type: 'document',
-      metadata: { document_id: docId, doc_type: doc.type }
+      type: 'document'
     });
 
     document.querySelectorAll('[id^="naru-modal"]').forEach(el => el.remove());
+    if (error) { UI.toast('서류 공유 실패: ' + UI.err(error), 'error'); return; }
     UI.toast('서류가 공유되었습니다.', 'success');
   },
 

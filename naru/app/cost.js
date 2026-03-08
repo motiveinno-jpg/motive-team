@@ -29,7 +29,7 @@ Router.register('cost', function(state) {
   h += '</div>';
 
   // Product selector (if products exist)
-  if (state.products.length > 0) {
+  if (state.products && state.products.length > 0) {
     h += '<div style="margin-bottom:16px">';
     h += '<label class="form-label">제품 선택 (선택사항)</label>';
     h += '<select id="cost-product" class="form-input" style="max-width:400px" onchange="CostSim.loadProduct(this.value)">';
@@ -116,8 +116,8 @@ Router.register('cost', function(state) {
   // Results
   h += '<div id="cost-result"></div>';
 
-  // Auto-calculate on load
-  h += '<script>setTimeout(()=>CostSim.calc(),100)</script>';
+  // Auto-calculate on load (script in innerHTML doesn't execute, use requestAnimationFrame)
+  setTimeout(() => CostSim.calc(), 100);
 
   return h;
 });
@@ -285,7 +285,7 @@ const CostSim = {
       h += '</div>';
 
       // Visual margin bar
-      const cogsBar = Math.round(cogs / fobKrw * 100);
+      const cogsBar = fobKrw > 0 ? Math.min(100, Math.round(cogs / fobKrw * 100)) : 0;
       const profitBar = 100 - cogsBar;
       h += '<div style="margin-top:8px">';
       h += '<div style="font-size:12px;color:var(--tx2);margin-bottom:6px">원가 구성</div>';

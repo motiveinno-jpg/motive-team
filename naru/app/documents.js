@@ -13,7 +13,7 @@ const DOC_TYPES = [
 ];
 
 Router.register('documents', function(state) {
-  if (!state.products.length) {
+  if (!state.products || !state.products.length) {
     return UI.empty('📄', '서류를 생성하려면 제품이 필요합니다',
       '먼저 제품을 등록하고 AI 분석을 완료하세요.',
       '제품 등록하기', "Router.go('analyze')");
@@ -229,10 +229,17 @@ const Docs = {
       const ok = await UI.confirm(`${dtype.ko} 생성 비용: ${UI.won(dtype.price)}\n\n결제하시겠습니까?`);
       if (!ok) return;
 
+      // Save pending doc data to sessionStorage for post-payment generation
+      sessionStorage.setItem('naru_pending_doc', JSON.stringify({
+        productId, docType, buyerName, buyerCountry, buyerAddress,
+        incoterms, currency, qty, unitPrice, notes
+      }));
+
       try {
         await Pay.payOnce(dtype.price, `나루 ${dtype.ko} 생성`, `NARU-DOC-${docType.toUpperCase()}-${Date.now()}`);
-        return; // Payment redirect handles rest
+        return; // Payment redirect → Docs.handlePaymentReturn() 에서 서류 생성
       } catch (e) {
+        sessionStorage.removeItem('naru_pending_doc');
         UI.toast('결제 오류: ' + UI.err(e), 'error');
         return;
       }
@@ -326,7 +333,8 @@ const Docs = {
     if (doc.content) {
       body += '<div style="background:#fff;color:#000;border-radius:var(--radius);padding:24px;font-size:13px;line-height:1.8;max-height:400px;overflow-y:auto;font-family:\'Noto Serif KR\',serif">';
       if (typeof doc.content === 'string') {
-        body += doc.content.replace(/\n/g, '<br>');
+        const safe = doc.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        body += safe.replace(/\n/g, '<br>');
       } else if (typeof doc.content === 'object') {
         // Structured content
         body += Docs._renderStructuredContent(doc.type, doc.content);
@@ -402,7 +410,7 @@ const Docs = {
     if (content.terms) {
       h += '<div style="margin-top:16px;padding-top:12px;border-top:1px solid #ddd;font-size:11px;color:#666">';
       h += '<div style="font-weight:700;margin-bottom:4px">Terms & Conditions</div>';
-      h += content.terms;
+      h += String(content.terms).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
       h += '</div>';
     }
 
@@ -604,6 +612,50 @@ const Docs = {
     }
 
     UI.modal('서류 일관성 검사 결과', body, { width: '500px' });
+  }
+};
+
+// Handle document generation after payment redirect
+Docs.handlePaymentReturn = async function() {
+  const pending = sessionStorage.getItem('naru_pending_doc');
+  if (!pending) return;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('pay') !== 'success') return;
+
+  sessionStorage.removeItem('naru_pending_doc');
+  try {
+    const d = JSON.parse(pending);
+    const dtype = DOC_TYPES.find(t => t.id === d.docType);
+    UI.toast(`결제 완료! ${dtype?.ko || '서류'} 생성 중...`, 'info');
+
+    const totalAmount = (d.qty && d.unitPrice) ? d.qty * d.unitPrice : null;
+    const { data: doc, error } = await sb.from('documents').insert({
+      product_id: d.productId, type: d.docType, status: 'generating',
+      buyer_name: d.buyerName || null, buyer_country: d.buyerCountry || null,
+      buyer_address: d.buyerAddress || null, incoterms: d.incoterms,
+      currency: d.currency, quantity: d.qty, unit_price: d.unitPrice,
+      total_amount: totalAmount, notes: d.notes || null, created_by: S.user.id
+    }).select().single();
+
+    if (error) { UI.toast('서류 생성 실패: ' + UI.err(error), 'error'); return; }
+
+    const result = await API.generateDoc(d.docType, null, {
+      document_id: doc.id, product_id: d.productId,
+      buyer: { name: d.buyerName, country: d.buyerCountry, address: d.buyerAddress },
+      trade: { incoterms: d.incoterms, currency: d.currency, quantity: d.qty, unit_price: d.unitPrice },
+      notes: d.notes
+    });
+
+    await sb.from('documents').update({
+      status: 'completed', content: result.content || result,
+      doc_number: result.doc_number || `NARU-${d.docType.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
+    }).eq('id', doc.id);
+
+    UI.toast(`${dtype?.ko || '서류'} 생성 완료!`, 'success');
+    await Docs.loadDocuments();
+    notify();
+  } catch (e) {
+    UI.toast('서류 생성 오류: ' + UI.err(e), 'error');
   }
 };
 

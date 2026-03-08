@@ -29,6 +29,12 @@ S._admin = {
 
 /* Override nav for admin */
 renderMainApp = function(container) {
+  // Block non-admin from seeing admin UI
+  if (S._adminBlocked) {
+    container.innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">관리자 권한이 없습니다. 로그아웃 중...</div>';
+    return;
+  }
+
   const navItems = [
     { id: 'dashboard', icon: '📊', label: '대시보드' },
     { id: 'admin-users', icon: '👥', label: '사용자' },
@@ -40,7 +46,7 @@ renderMainApp = function(container) {
   ];
 
   const nav = navItems.map(n =>
-    `<a href="#${n.id}" class="nav-item ${S.route === n.id ? 'active' : ''}" onclick="Router.go('${n.id}')">
+    `<a class="nav-item ${S.route === n.id ? 'active' : ''}" onclick="event.preventDefault();Router.go('${n.id}')" href="#${n.id}">
       <span class="nav-icon">${n.icon}</span>
       <span class="nav-label">${n.label}</span>
     </a>`
@@ -72,7 +78,7 @@ Router.register('dashboard', function(state) {
   h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">대시보드</h2>';
 
   // Key metrics
-  h += '<div class="stats-grid" style="grid-template-columns:repeat(6,1fr)">';
+  h += '<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">';
   h += `<div class="stat-card"><div class="stat-label">전체 사용자</div><div class="stat-value">${a.users.length || 0}</div></div>`;
   h += `<div class="stat-card"><div class="stat-label">기업 수</div><div class="stat-value">${a.companies.length || 0}</div></div>`;
   h += `<div class="stat-card"><div class="stat-label">분석 건수</div><div class="stat-value">${a.analyses.length || 0}</div></div>`;
@@ -85,9 +91,18 @@ Router.register('dashboard', function(state) {
   h += '<div class="card" style="margin-top:16px">';
   h += '<div class="card-header"><div class="card-title">매출 추이</div></div>';
   h += '<div style="height:200px;display:flex;align-items:flex-end;gap:8px;padding:16px 0">';
-  // Simple bar chart
-  const months = ['1월','2월','3월','4월','5월','6월'];
-  const values = [0, 0, 0, 0, 0, 0]; // Will be populated from billing_events
+  // Populate from billing_events — last 6 months
+  const now = new Date();
+  const months = [];
+  const values = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push((d.getMonth() + 1) + '월');
+    const mStart = d.toISOString();
+    const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString();
+    const mTotal = (a._billingEvents || []).filter(b => b.status === 'paid' && b.created_at >= mStart && b.created_at < mEnd).reduce((s, b) => s + (b.amount || 0), 0);
+    values.push(mTotal);
+  }
   const maxVal = Math.max(...values, 1);
   months.forEach((m, i) => {
     const pct = values[i] / maxVal * 100 || 5;
@@ -111,8 +126,9 @@ Router.register('dashboard', function(state) {
   } else {
     recentUsers.forEach(u => {
       h += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)">`;
-      h += `<div style="width:28px;height:28px;border-radius:50%;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:12px">${(u.email || '?')[0].toUpperCase()}</div>`;
-      h += `<div style="flex:1"><div style="font-size:12px;color:#fff">${u.email || '-'}</div><div style="font-size:10px;color:var(--tx3)">${UI.ago(u.created_at)}</div></div>`;
+      const safeEmail = (u.email || '?').replace(/</g,'&lt;');
+      h += `<div style="width:28px;height:28px;border-radius:50%;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:12px">${safeEmail[0].toUpperCase()}</div>`;
+      h += `<div style="flex:1"><div style="font-size:12px;color:#fff">${safeEmail}</div><div style="font-size:10px;color:var(--tx3)">${UI.ago(u.created_at)}</div></div>`;
       h += '</div>';
     });
   }
@@ -188,13 +204,16 @@ Router.register('admin-revenue', function(state) {
   h += '<div class="card-header"><div class="card-title">수익원별 분류</div></div>';
   h += '<table class="tbl"><thead><tr><th>수익원</th><th style="text-align:right">건수</th><th style="text-align:right">금액</th><th style="text-align:right">비율</th></tr></thead>';
   h += '<tbody>';
+  // Aggregate billing events by type
+  const paid = (state._admin._billingEvents || []).filter(b => b.status === 'paid');
+  const byType = (type) => paid.filter(b => (b.type || b.description || '').toLowerCase().includes(type));
   const sources = [
-    { name: 'AI 분석 (건당)', count: 0, amount: 0 },
-    { name: '서류 생성 (건당)', count: 0, amount: 0 },
-    { name: 'Starter 구독', count: 0, amount: 0 },
-    { name: 'Pro 구독', count: 0, amount: 0 },
-    { name: '알리바바 운영대행', count: 0, amount: 0 },
-    { name: '에스크로 수수료', count: 0, amount: 0 }
+    { name: 'AI 분석 (건당)', count: byType('분석').length || byType('analysis').length, amount: byType('분석').concat(byType('analysis')).reduce((s, b) => s + (b.amount || 0), 0) },
+    { name: '서류 생성 (건당)', count: byType('서류').length || byType('document').length, amount: byType('서류').concat(byType('document')).reduce((s, b) => s + (b.amount || 0), 0) },
+    { name: 'Starter 구독', count: byType('starter').length, amount: byType('starter').reduce((s, b) => s + (b.amount || 0), 0) },
+    { name: 'Pro 구독', count: byType('pro').length, amount: byType('pro').reduce((s, b) => s + (b.amount || 0), 0) },
+    { name: '알리바바 운영대행', count: byType('alibaba').length || byType('알리바바').length, amount: byType('alibaba').concat(byType('알리바바')).reduce((s, b) => s + (b.amount || 0), 0) },
+    { name: '에스크로 수수료', count: byType('escrow').length || byType('에스크로').length, amount: byType('escrow').concat(byType('에스크로')).reduce((s, b) => s + (b.amount || 0), 0) }
   ];
   const totalAmt = sources.reduce((s, x) => s + x.amount, 0) || 1;
   sources.forEach(s => {
@@ -412,20 +431,17 @@ Router.register('admin-system', function(state) {
 const AdminApp = {
   async loadDashboard() {
     // Load all admin data
-    const [
-      { data: users },
-      { data: companies },
-      { data: analyses },
-      { data: billing },
-      { data: contracts },
-      { data: leads }
-    ] = await Promise.all([
+    // Core tables (always exist)
+    const [{ data: users }, { data: companies }, { data: analyses }] = await Promise.all([
       sb.from('users').select('*').order('created_at', { ascending: false }).limit(100),
       sb.from('companies').select('*').order('created_at', { ascending: false }),
-      sb.from('analyses').select('*').order('created_at', { ascending: false }).limit(100),
-      sb.from('billing_events').select('*').order('created_at', { ascending: false }).limit(100),
-      sb.from('alibaba_contracts').select('*').order('created_at', { ascending: false }),
-      sb.from('leads').select('*').order('created_at', { ascending: false }).limit(200)
+      sb.from('analyses').select('*').order('created_at', { ascending: false }).limit(100)
+    ]);
+    // Optional tables (may not exist yet — graceful fallback)
+    const [billing, contracts, leads] = await Promise.all([
+      sb.from('billing_events').select('*').order('created_at', { ascending: false }).limit(100).then(r => r.data).catch(() => null),
+      sb.from('alibaba_contracts').select('*').order('created_at', { ascending: false }).then(r => r.data).catch(() => null),
+      sb.from('leads').select('*').order('created_at', { ascending: false }).limit(200).then(r => r.data).catch(() => null)
     ]);
 
     S._admin.users = users || [];
@@ -471,7 +487,10 @@ const AdminApp = {
   },
 
   async setRole(uid, role) {
-    await sb.from('users').update({ role }).eq('id', uid);
+    const ok = await UI.confirm(`이 사용자의 역할을 "${role}"(으)로 변경하시겠습니까?`);
+    if (!ok) return;
+    const { error } = await sb.from('users').update({ role }).eq('id', uid);
+    if (error) { UI.toast('역할 변경 실패: ' + UI.err(error), 'error'); return; }
     UI.toast('역할이 변경되었습니다.', 'success');
     document.querySelectorAll('[id^="naru-modal"]').forEach(el => el.remove());
     await AdminApp.loadDashboard();
@@ -531,11 +550,14 @@ const AdminApp = {
 const _origLoadProfile2 = Auth.loadProfile;
 Auth.loadProfile = async function() {
   await _origLoadProfile2.call(Auth);
-  // Check admin role
-  if (S.profile && S.profile.role !== 'admin') {
+  // Strict admin role check — block if no profile or not admin
+  if (!S.profile || S.profile.role !== 'admin') {
     UI.toast('관리자 권한이 필요합니다.', 'error');
+    S._adminBlocked = true;
+    setTimeout(() => Auth.signOut(), 2000);
     return;
   }
+  S._adminBlocked = false;
   await AdminApp.loadDashboard();
 };
 

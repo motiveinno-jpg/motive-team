@@ -21,7 +21,6 @@ const S = {
   profile: null,     // users row
   company: null,     // companies row
   products: [],
-  pipelines: [],
   analyses: [],
   loading: true,
   route: 'pipeline',
@@ -57,7 +56,6 @@ const Auth = {
         S.profile = null;
         S.company = null;
         S.products = [];
-        S.pipelines = [];
         S.analyses = [];
         S.sub = null;
         notify();
@@ -103,7 +101,7 @@ const Auth = {
       // ai_result → result 매핑, score 보정
       S.analyses = (analyses || []).map(a => ({
         ...a,
-        result: a.result || a.ai_result || {},
+        result: a.ai_result || {},
         score: a.score ?? a.ai_result?.overall_score ?? null
       }));
     }
@@ -182,6 +180,7 @@ const Router = {
     window.addEventListener('hashchange', () => {
       const hash = window.location.hash.slice(1) || 'pipeline';
       S.route = hash;
+      S._routeParams = {};
       notify();
     });
     const hash = window.location.hash.slice(1);
@@ -204,15 +203,19 @@ const Router = {
    ═══════════════════════════════════════════ */
 const UI = {
   // Toast notification
+  _toastCount: 0,
   toast(msg, type = 'info', duration = 3000) {
     const colors = { info: '#00d4ff', success: '#22c55e', warn: '#f59e0b', error: '#ef4444' };
+    const offset = 20 + (UI._toastCount % 5) * 56;
+    UI._toastCount++;
     const el = document.createElement('div');
-    el.style.cssText = `position:fixed;top:20px;right:20px;z-index:10000;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:600;color:#fff;background:${colors[type] || colors.info};box-shadow:0 8px 24px rgba(0,0,0,.4);transform:translateX(120%);transition:transform .3s ease;max-width:400px;word-break:keep-all`;
+    el.style.cssText = `position:fixed;top:${offset}px;right:20px;z-index:10000;padding:14px 24px;border-radius:12px;font-size:14px;font-weight:600;color:#fff;background:${colors[type] || colors.info};box-shadow:0 8px 24px rgba(0,0,0,.4);transform:translateX(120%);transition:transform .3s ease;max-width:400px;word-break:keep-all`;
     el.textContent = msg;
     document.body.appendChild(el);
     requestAnimationFrame(() => el.style.transform = 'translateX(0)');
     setTimeout(() => {
       el.style.transform = 'translateX(120%)';
+      UI._toastCount = Math.max(0, UI._toastCount - 1);
       setTimeout(() => el.remove(), 300);
     }, duration);
   },
@@ -247,16 +250,17 @@ const UI = {
   // Confirm dialog
   async confirm(msg) {
     return new Promise(resolve => {
+      let resolved = false;
+      const done = (v) => { if (resolved) return; resolved = true; UI.closeModal(id); resolve(v); };
       const id = UI.modal('확인', `
         <p style="font-size:14px;color:var(--tx);margin-bottom:20px;line-height:1.6">${msg}</p>
         <div style="display:flex;gap:10px;justify-content:flex-end">
-          <button onclick="UI.closeModal('${Date.now()}');window._confirmResolve(false)" class="btn btn-ghost" id="confirm-no">취소</button>
-          <button onclick="window._confirmResolve(true)" class="btn btn-pri" id="confirm-yes">확인</button>
+          <button class="btn btn-ghost" id="${id}-no">취소</button>
+          <button class="btn btn-pri" id="${id}-yes">확인</button>
         </div>
       `, { persistent: true });
-      window._confirmResolve = (v) => { UI.closeModal(id); resolve(v); };
-      document.getElementById('confirm-no').onclick = () => { UI.closeModal(id); resolve(false); };
-      document.getElementById('confirm-yes').onclick = () => { UI.closeModal(id); resolve(true); };
+      document.getElementById(id + '-no').onclick = () => done(false);
+      document.getElementById(id + '-yes').onclick = () => done(true);
     });
   },
 
@@ -540,14 +544,14 @@ const API = {
     const payload = {
       product_name: prod.name || prod.name_ko || '',
       product_name_en: prod.name_en || prod.name || '',
-      description: prod.description || '',
+      description: prod.description_ko || prod.description_en || '',
       category: prod.category || '',
       fob_price: prod.fob_price || null,
       moq: prod.moq || null,
-      brand_name: prod.brand_name || '',
+      brand_name: (S.company && S.company.name_en) || (S.company && S.company.name) || '',
       urls: prod.url ? [prod.url] : [],
       target_markets: opts.markets || ['US', 'JP', 'VN'],
-      existing_certs: prod.certs || [],
+      existing_certs: prod.certifications || [],
       analysis_id: aRow?.id || null,
       ...opts
     };
@@ -577,17 +581,17 @@ const API = {
 
   // Generate document
   async generateDoc(type, pipelineId, data = {}) {
-    return API.call('generate-document', { type, pipeline_id: pipelineId, ...data });
+    return API.call('create-document', { type, pipeline_id: pipelineId, ...data });
   },
 
   // Translate
   async translate(text, targetLang) {
-    return API.call('translate', { text, target_lang: targetLang });
+    return API.call('translate-text', { text, target_lang: targetLang });
   },
 
-  // Search buyers
+  // Search buyers (uses buyer-intelligence EF)
   async searchBuyers(productId) {
-    return API.call('search-buyers', { product_id: productId });
+    return API.call('buyer-intelligence', { product_id: productId, action: 'search' });
   }
 };
 
@@ -780,7 +784,7 @@ function renderMainApp(container) {
   ];
 
   const nav = navItems.map(n =>
-    `<a href="#${n.id}" class="nav-item ${S.route === n.id ? 'active' : ''}" onclick="Router.go('${n.id}')">
+    `<a class="nav-item ${S.route === n.id ? 'active' : ''}" onclick="event.preventDefault();Router.go('${n.id}')" href="#${n.id}">
       <span class="nav-icon">${n.icon}</span>
       <span class="nav-label">${n.label}</span>
     </a>`
@@ -870,6 +874,10 @@ async function initNaru() {
   onStateChange(renderApp);
   await Auth.init();
   await Pay.handleRedirect();
+  // Handle pending document generation after payment redirect
+  if (typeof Docs !== 'undefined' && Docs.handlePaymentReturn) {
+    await Docs.handlePaymentReturn();
+  }
 }
 
 // Auto-init when DOM ready
