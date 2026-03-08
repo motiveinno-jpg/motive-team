@@ -229,24 +229,41 @@ const Docs = {
 
     // Payment check — 구독자는 무료
     const dtype = DOC_TYPES.find(d => d.id === docType);
-    console.log('[NARU-DOC] 구독 상태:', S.sub ? S.sub.plan : 'none');
-    if (!S.sub) {
-      const ok = await UI.confirm(`${dtype.ko} 생성 비용: ${UI.won(dtype.price)}\n\n결제하시겠습니까?`);
-      if (!ok) return;
 
-      // Save pending doc data to sessionStorage for post-payment generation
-      sessionStorage.setItem('naru_pending_doc', JSON.stringify({
-        productId, docType, buyerName, buyerCountry, buyerAddress,
-        incoterms, currency, qty, unitPrice, notes
-      }));
-
+    // 구독 상태 재확인 (세션 중 로딩 실패 대비)
+    if (!S.sub && S.user) {
       try {
-        await Pay.payOnce(dtype.price, `나루 ${dtype.ko} 생성`, `NARU-DOC-${docType.toUpperCase()}-${Date.now()}`);
-        return; // Payment redirect → Docs.handlePaymentReturn() 에서 서류 생성
-      } catch (e) {
-        sessionStorage.removeItem('naru_pending_doc');
-        UI.toast('결제 오류: ' + UI.err(e), 'error');
-        return;
+        const { data: freshSub } = await sb.from('subscriptions').select('*')
+          .eq('user_id', S.user.id).eq('status', 'active').maybeSingle();
+        if (freshSub) S.sub = freshSub;
+      } catch {}
+    }
+    console.log('[NARU-DOC] 구독 상태:', S.sub ? S.sub.plan : 'none');
+
+    if (!S.sub) {
+      // 결제 시스템 확인
+      const toss = await Pay.getToss();
+      if (!toss) {
+        // 토스 미설정 — 무료 생성 허용 (베타)
+        console.log('[NARU-DOC] 토스 미설정, 무료 생성 허용');
+        UI.toast('베타 기간 무료 생성', 'info');
+      } else {
+        const ok = await UI.confirm(`${dtype.ko} 생성 비용: ${UI.won(dtype.price)}\n\n결제하시겠습니까?`);
+        if (!ok) return;
+
+        sessionStorage.setItem('naru_pending_doc', JSON.stringify({
+          productId, docType, buyerName, buyerCountry, buyerAddress,
+          incoterms, currency, qty, unitPrice, notes
+        }));
+
+        try {
+          await Pay.payOnce(dtype.price, `나루 ${dtype.ko} 생성`, `NARU-DOC-${docType.toUpperCase()}-${Date.now()}`);
+          return; // Payment redirect
+        } catch (e) {
+          sessionStorage.removeItem('naru_pending_doc');
+          UI.toast('결제 오류: ' + UI.err(e), 'error');
+          return;
+        }
       }
     }
 

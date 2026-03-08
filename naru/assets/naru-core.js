@@ -106,9 +106,10 @@ const Auth = {
       }));
     }
 
-    // Load subscription
-    const { data: sub } = await sb.from('subscriptions').select('*').eq('user_id', S.user.id).eq('status', 'active').single();
+    // Load subscription (maybeSingle to avoid error when 0 or 2+ rows)
+    const { data: sub } = await sb.from('subscriptions').select('*').eq('user_id', S.user.id).eq('status', 'active').maybeSingle();
     S.sub = sub;
+    console.log('[NARU] 구독:', sub ? sub.plan : 'none');
 
     // Load documents, deals, alibaba contracts, billing (non-blocking)
     Promise.all([
