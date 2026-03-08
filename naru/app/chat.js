@@ -301,7 +301,7 @@ const Chat = {
 
     const { error } = await sb.from('messages').insert(msgData);
     if (error) {
-      UI.toast('전송 실패: ' + error.message, 'error');
+      UI.toast('메시지 전송 실패: ' + UI.err(error), 'error');
       return;
     }
 
@@ -328,7 +328,7 @@ const Chat = {
     const { data, error } = await sb.storage.from('attachments').upload(path, file);
 
     if (error) {
-      UI.toast('업로드 실패: ' + error.message, 'error');
+      UI.toast('파일 업로드 실패: ' + UI.err(error), 'error');
       return;
     }
 
@@ -440,7 +440,7 @@ const Chat = {
 
     const { error } = await sb.from('matchings').update({ stage: nextStage }).eq('id', dealId);
     if (error) {
-      UI.toast('단계 변경 실패: ' + error.message, 'error');
+      UI.toast('단계 변경 실패: ' + UI.err(error), 'error');
       return;
     }
 

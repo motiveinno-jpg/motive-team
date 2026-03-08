@@ -140,7 +140,7 @@ const Analyze = {
           await Pay.payOnce(9900, 'AI 수출 분석 - ' + (product.name || 'Product'), 'NARU-A-' + product.id.slice(0, 8) + '-' + Date.now());
           return; // redirect
         } catch (payErr) {
-          UI.toast('결제 오류: ' + payErr.message, 'error');
+          UI.toast('결제 오류: ' + UI.err(payErr), 'error');
           return;
         }
       }
@@ -157,7 +157,7 @@ const Analyze = {
       Router.go('analyze', { pid: product.id });
       notify();
     } catch (err) {
-      UI.toast('오류: ' + err.message, 'error');
+      UI.toast(UI.err(err), 'error');
     }
   },
 

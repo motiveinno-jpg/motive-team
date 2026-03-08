@@ -176,7 +176,7 @@ const Pipeline = {
           await Pay.payOnce(9900, 'AI 수출 분석', 'NARU-A-' + pid.slice(0, 8) + '-' + Date.now());
           return; // Payment redirect will handle the rest
         } catch (e) {
-          UI.toast('결제 오류: ' + e.message, 'error');
+          UI.toast('결제 오류: ' + UI.err(e), 'error');
           return;
         }
       }
@@ -198,7 +198,7 @@ const Pipeline = {
       await Auth.loadProfile();
       notify();
     } catch (e) {
-      UI.toast('분석 오류: ' + e.message, 'error');
+      UI.toast('분석 오류: ' + UI.err(e), 'error');
       await sb.from('products').update({ status: 'registered' }).eq('id', pid);
       if (p) p.status = 'registered';
       notify();

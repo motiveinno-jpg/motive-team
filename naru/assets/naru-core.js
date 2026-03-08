@@ -31,7 +31,7 @@ const S = {
 };
 
 function onStateChange(fn) { S._listeners.push(fn); }
-function notify() { S._listeners.forEach(fn => { try { fn(S); } catch(e) { console.error('State listener error:', e); } }); }
+function notify() { S._listeners.forEach(fn => { try { fn(S); } catch(e) { console.error('상태 리스너 오류:', e); } }); }
 
 /* ═══════════════════════════════════════════
    3. AUTH
@@ -342,6 +342,38 @@ const UI = {
     return '#ef4444';
   },
 
+  // Error message translator (English → Korean)
+  err(e) {
+    const msg = (e && e.message) ? e.message : String(e || '');
+    const map = {
+      'Invalid login credentials': '이메일 또는 비밀번호가 올바르지 않습니다.',
+      'Email not confirmed': '이메일 인증이 필요합니다. 메일함을 확인해주세요.',
+      'User already registered': '이미 가입된 이메일입니다.',
+      'Password should be at least 6 characters': '비밀번호는 6자 이상이어야 합니다.',
+      'Email rate limit exceeded': '너무 많은 요청입니다. 잠시 후 다시 시도해주세요.',
+      'JWT expired': '세션이 만료되었습니다. 다시 로그인해주세요.',
+      'new row violates row-level security policy': '권한이 없습니다. 로그인 상태를 확인해주세요.',
+      'duplicate key value violates unique constraint': '이미 등록된 데이터입니다.',
+      'violates check constraint': '입력값이 허용 범위를 벗어났습니다.',
+      'violates foreign key constraint': '연결된 데이터가 존재하지 않습니다.',
+      'network': '네트워크 연결을 확인해주세요.',
+      'Failed to fetch': '서버에 연결할 수 없습니다. 네트워크를 확인해주세요.',
+      'API Error': 'API 요청에 실패했습니다.',
+      'TypeError': '시스템 오류가 발생했습니다.',
+      'null value in column': '필수 입력값이 누락되었습니다.',
+      'value too long': '입력값이 너무 깁니다.',
+      'Signups not allowed': '현재 회원가입이 비활성화되어 있습니다.',
+      'Email link is invalid or has expired': '이메일 링크가 만료되었습니다. 다시 요청해주세요.',
+      'Token has expired or is invalid': '인증 토큰이 만료되었습니다. 다시 로그인해주세요.'
+    };
+    for (const [eng, kor] of Object.entries(map)) {
+      if (msg.toLowerCase().includes(eng.toLowerCase())) return kor;
+    }
+    // If already Korean, return as-is
+    if (/[가-힣]/.test(msg)) return msg;
+    return '오류가 발생했습니다. (' + msg + ')';
+  },
+
   // Truncate text
   trunc(str, len = 40) {
     if (!str) return '';
@@ -425,7 +457,7 @@ const Pay = {
           await Pay.confirmPayment(pk, oid, amt);
           UI.toast('결제가 완료되었습니다.', 'success');
         } catch (e) {
-          UI.toast('결제 확인 중 오류: ' + e.message, 'error');
+          UI.toast('결제 확인 중 오류: ' + UI.err(e), 'error');
         }
       }
       // Clean URL
@@ -448,7 +480,7 @@ const Pay = {
           await Auth.loadProfile();
           notify();
         } catch (e) {
-          UI.toast('구독 처리 중 오류: ' + e.message, 'error');
+          UI.toast('구독 처리 중 오류: ' + UI.err(e), 'error');
         }
       }
       window.history.replaceState({}, '', window.location.pathname + window.location.hash);
@@ -471,7 +503,7 @@ const API = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || err.message || 'API Error');
+      throw new Error(err.error || err.message || 'API 요청에 실패했습니다.');
     }
     return res.json();
   },
@@ -746,7 +778,7 @@ const Naru = {
         UI.toast('가입 완료! 이메일을 확인해주세요.', 'success');
       }
     } catch (err) {
-      UI.toast(err.message || '인증 오류', 'error');
+      UI.toast(UI.err(err), 'error');
     }
   },
 
@@ -763,7 +795,7 @@ const Naru = {
       });
       UI.toast('회사 등록 완료!', 'success');
     } catch (err) {
-      UI.toast(err.message || '등록 오류', 'error');
+      UI.toast(UI.err(err), 'error');
     }
   }
 };

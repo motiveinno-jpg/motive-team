@@ -350,7 +350,7 @@ const Settings = {
 
     const { error } = await sb.from('companies').update(data).eq('id', S.company.id);
     if (error) {
-      UI.toast('저장 실패: ' + error.message, 'error');
+      UI.toast('저장 실패: ' + UI.err(error), 'error');
       return;
     }
     Object.assign(S.company, data);
@@ -367,7 +367,7 @@ const Settings = {
     try {
       await Pay.issueBillingKey(planId);
     } catch (e) {
-      UI.toast('구독 오류: ' + e.message, 'error');
+      UI.toast('구독 오류: ' + UI.err(e), 'error');
     }
   },
 
@@ -386,7 +386,7 @@ const Settings = {
       await Auth.loadProfile();
       notify();
     } catch (e) {
-      UI.toast('해지 오류: ' + e.message, 'error');
+      UI.toast('구독 해지 오류: ' + UI.err(e), 'error');
     }
   },
 
@@ -415,7 +415,7 @@ const Settings = {
     }
     const { error } = await sb.auth.updateUser({ password: f.password.value });
     if (error) {
-      UI.toast('변경 실패: ' + error.message, 'error');
+      UI.toast('비밀번호 변경 실패: ' + UI.err(error), 'error');
       return;
     }
     UI.toast('비밀번호가 변경되었습니다.', 'success');

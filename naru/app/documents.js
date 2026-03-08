@@ -233,7 +233,7 @@ const Docs = {
         await Pay.payOnce(dtype.price, `나루 ${dtype.ko} 생성`, `NARU-DOC-${docType.toUpperCase()}-${Date.now()}`);
         return; // Payment redirect handles rest
       } catch (e) {
-        UI.toast('결제 오류: ' + e.message, 'error');
+        UI.toast('결제 오류: ' + UI.err(e), 'error');
         return;
       }
     }
@@ -261,7 +261,7 @@ const Docs = {
     }).select().single();
 
     if (error) {
-      UI.toast('서류 생성 실패: ' + error.message, 'error');
+      UI.toast('서류 생성 실패: ' + UI.err(error), 'error');
       return;
     }
 
@@ -285,7 +285,7 @@ const Docs = {
       UI.toast(`${dtype.ko} 생성 완료!`, 'success');
     } catch (e) {
       await sb.from('documents').update({ status: 'error' }).eq('id', doc.id);
-      UI.toast(`서류 생성 오류: ${e.message}`, 'error');
+      UI.toast(`서류 생성 오류: ${UI.err(e)}`, 'error');
     }
 
     // Reload documents
@@ -520,7 +520,7 @@ const Docs = {
     }).select().single();
 
     if (error) {
-      UI.toast('복제 실패: ' + error.message, 'error');
+      UI.toast('복제 실패: ' + UI.err(error), 'error');
       return;
     }
 
