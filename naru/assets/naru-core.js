@@ -100,7 +100,12 @@ const Auth = {
     if (S.products.length) {
       const pids = S.products.map(p => p.id);
       const { data: analyses } = await sb.from('analyses').select('*').in('product_id', pids).order('created_at', { ascending: false });
-      S.analyses = analyses || [];
+      // ai_result → result 매핑, score 보정
+      S.analyses = (analyses || []).map(a => ({
+        ...a,
+        result: a.result || a.ai_result || {},
+        score: a.score ?? a.ai_result?.overall_score ?? null
+      }));
     }
 
     // Load subscription
@@ -508,9 +513,56 @@ const API = {
     return res.json();
   },
 
-  // Analyze product
+  // Analyze product — DB에서 제품 조회 후 analyze-export EF 호출
   async analyzeProduct(productId, opts = {}) {
-    return API.call('analyze-product-v18', { product_id: productId, ...opts });
+    // 1) 제품 정보 조회
+    const { data: prod, error: pErr } = await sb.from('products')
+      .select('*').eq('id', productId).single();
+    if (pErr || !prod) throw new Error('제품 정보를 불러올 수 없습니다.');
+
+    // 2) analyses 레코드 미리 생성 (EF가 status 업데이트용으로 사용)
+    const { data: aRow, error: aErr } = await sb.from('analyses').insert({
+      product_id: productId,
+      product_name: prod.name || prod.name_ko || '제품',
+      product_url: prod.url || null,
+      product_image_url: (prod.images && prod.images[0]) || null,
+      user_id: S.user.id,
+      status: 'processing',
+      analysis_type: 'export'
+    }).select().single();
+
+    // 3) analyze-export EF 호출 (실제 AI 분석)
+    const payload = {
+      product_name: prod.name || prod.name_ko || '',
+      product_name_en: prod.name_en || prod.name || '',
+      description: prod.description || '',
+      category: prod.category || '',
+      fob_price: prod.fob_price || null,
+      moq: prod.moq || null,
+      brand_name: prod.brand_name || '',
+      urls: prod.url ? [prod.url] : [],
+      target_markets: opts.markets || ['US', 'JP', 'VN'],
+      existing_certs: prod.certs || [],
+      analysis_id: aRow?.id || null,
+      ...opts
+    };
+
+    const result = await API.call('analyze-export', payload);
+
+    // 4) EF가 직접 업데이트 못 했으면 여기서 저장
+    if (aRow && result?.result) {
+      const score = result.result.overall_score || 0;
+      await sb.from('analyses').update({
+        status: 'completed',
+        score: score,
+        ai_result: result.result
+      }).eq('id', aRow.id);
+
+      // 제품 상태 업데이트
+      await sb.from('products').update({ status: 'matching' }).eq('id', productId);
+    }
+
+    return result;
   },
 
   // Generate document
