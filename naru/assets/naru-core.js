@@ -251,16 +251,19 @@ const UI = {
   async confirm(msg) {
     return new Promise(resolve => {
       let resolved = false;
-      const done = (v) => { if (resolved) return; resolved = true; UI.closeModal(id); resolve(v); };
-      const id = UI.modal('확인', `
-        <p style="font-size:14px;color:var(--tx);margin-bottom:20px;line-height:1.6">${msg}</p>
+      let modalId = null;
+      const done = (v) => { if (resolved) return; resolved = true; if (modalId) UI.closeModal(modalId); resolve(v); };
+      const body = `
+        <p style="font-size:14px;color:var(--tx);margin-bottom:20px;line-height:1.6;white-space:pre-line">${msg}</p>
         <div style="display:flex;gap:10px;justify-content:flex-end">
-          <button class="btn btn-ghost" id="${id}-no">취소</button>
-          <button class="btn btn-pri" id="${id}-yes">확인</button>
-        </div>
-      `, { persistent: true });
-      document.getElementById(id + '-no').onclick = () => done(false);
-      document.getElementById(id + '-yes').onclick = () => done(true);
+          <button class="btn btn-ghost" id="naru-confirm-no">취소</button>
+          <button class="btn btn-pri" id="naru-confirm-yes">확인</button>
+        </div>`;
+      modalId = UI.modal('확인', body, { persistent: true });
+      const noBtn = document.getElementById('naru-confirm-no');
+      const yesBtn = document.getElementById('naru-confirm-yes');
+      if (noBtn) noBtn.onclick = () => done(false);
+      if (yesBtn) yesBtn.onclick = () => done(true);
     });
   },
 
