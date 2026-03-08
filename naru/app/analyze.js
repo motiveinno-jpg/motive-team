@@ -127,9 +127,10 @@ const Analyze = {
     overlay.id = 'analyze-progress';
     overlay.innerHTML = `
       <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center">
-        <div style="background:var(--s2);border-radius:20px;padding:40px 48px;text-align:center;max-width:400px;width:90%">
+        <div style="background:var(--s2);border-radius:20px;padding:40px 48px;text-align:center;max-width:400px;width:90%;position:relative">
+          <button id="ap-close" style="position:absolute;top:12px;right:16px;background:none;border:none;color:var(--tx3);font-size:20px;cursor:pointer;display:none">&times;</button>
           <div id="ap-icon" style="font-size:48px;margin-bottom:16px">🔍</div>
-          <div id="ap-title" style="font-size:18px;font-weight:800;color:#fff;margin-bottom:8px">제품 등록 중...</div>
+          <div id="ap-title" style="font-size:18px;font-weight:800;color:#fff;margin-bottom:8px">준비 중...</div>
           <div id="ap-desc" style="font-size:13px;color:var(--tx2);margin-bottom:20px;line-height:1.6">제품 정보를 수집하고 있습니다</div>
           <div style="background:var(--s3);border-radius:8px;height:6px;overflow:hidden">
             <div id="ap-bar" style="height:100%;background:var(--pri);border-radius:8px;width:5%;transition:width .5s ease"></div>
@@ -139,21 +140,55 @@ const Analyze = {
       </div>`;
     document.body.appendChild(overlay);
 
+    // 닫기 버튼 (10초 후 표시)
+    setTimeout(() => {
+      const cb = document.getElementById('ap-close');
+      if (cb) { cb.style.display = 'block'; cb.onclick = () => { overlay.remove(); }; }
+    }, 10000);
+    // 타임아웃 안전장치 (2분)
+    const safetyTimeout = setTimeout(() => {
+      if (document.getElementById('analyze-progress')) {
+        overlay.remove();
+        UI.toast('시간이 초과되었습니다. 다시 시도해주세요.', 'error');
+      }
+    }, 120000);
+
+    let progressTimer = null;
+
+    function removeOverlay() {
+      clearTimeout(safetyTimeout);
+      if (progressTimer) clearInterval(progressTimer);
+      const el = document.getElementById('analyze-progress');
+      if (el) el.remove();
+    }
+
     function updateProgress(pct, icon, title, desc, step) {
       const el = document.getElementById('analyze-progress');
       if (!el) return;
-      document.getElementById('ap-bar').style.width = pct + '%';
-      document.getElementById('ap-icon').textContent = icon;
-      document.getElementById('ap-title').textContent = title;
-      document.getElementById('ap-desc').textContent = desc;
-      document.getElementById('ap-step').textContent = step;
+      const bar = document.getElementById('ap-bar');
+      if (bar) bar.style.width = pct + '%';
+      const ic = document.getElementById('ap-icon');
+      if (ic) ic.textContent = icon;
+      const ti = document.getElementById('ap-title');
+      if (ti) ti.textContent = title;
+      const de = document.getElementById('ap-desc');
+      if (de) de.textContent = desc;
+      const st = document.getElementById('ap-step');
+      if (st) st.textContent = step;
     }
 
     try {
       // Step 1: 제품 등록
       updateProgress(10, '📦', '제품 등록 중...', '데이터베이스에 제품을 등록하고 있습니다', '1/5 단계');
+
+      let productName = name;
+      if (!productName && url) {
+        try { productName = new URL(url).hostname + ' 제품'; } catch(_) { productName = '제품'; }
+      }
+      if (!productName) productName = '직접 등록 제품';
+
       const product = await Setup.createProduct({
-        name: name || (url ? new URL(url).hostname + ' 제품' : '직접 등록 제품'),
+        name: productName,
         url: url || null,
         category: category || null,
         fob_price: fob || null,
@@ -162,7 +197,7 @@ const Analyze = {
 
       // If not first and not subscribed, charge
       if (!isFirst && !S.sub) {
-        overlay.remove();
+        removeOverlay();
         try {
           await Pay.payOnce(9900, 'AI 수출 분석 - ' + (product.name || 'Product'), 'NARU-A-' + product.id.slice(0, 8) + '-' + Date.now());
           return;
@@ -179,18 +214,18 @@ const Analyze = {
       notify();
 
       // Step 3: AI 분석 시작
-      updateProgress(40, '🤖', 'AI 분석 진행 중...', '3명의 수출 전문가 패널이 분석하고 있습니다\n(약 30초~1분 소요)', '3/5 단계');
+      updateProgress(40, '🤖', 'AI 분석 진행 중...', '3명의 수출 전문가 패널이 분석하고 있습니다 (약 30초~1분 소요)', '3/5 단계');
 
       // 진행 바 애니메이션 (분석 중 서서히 증가)
-      let progressTimer = setInterval(() => {
+      progressTimer = setInterval(() => {
         const bar = document.getElementById('ap-bar');
-        if (!bar) { clearInterval(progressTimer); return; }
+        if (!bar) { clearInterval(progressTimer); progressTimer = null; return; }
         const w = parseFloat(bar.style.width);
         if (w < 85) bar.style.width = (w + 0.5) + '%';
       }, 500);
 
       const result = await API.analyzeProduct(product.id);
-      clearInterval(progressTimer);
+      if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
 
       // Step 4: 결과 저장
       updateProgress(90, '💾', '결과 저장 중...', '분석 리포트를 생성하고 있습니다', '4/5 단계');
@@ -200,13 +235,13 @@ const Analyze = {
       updateProgress(100, '✅', '분석 완료!', '수출 적합도 리포트가 준비되었습니다', '5/5 단계');
       await new Promise(r => setTimeout(r, 800));
 
-      overlay.remove();
+      removeOverlay();
       UI.toast('분석 완료!', 'success');
       Router.go('analyze', { pid: product.id });
       notify();
     } catch (err) {
-      if (typeof progressTimer !== 'undefined') clearInterval(progressTimer);
-      overlay.remove();
+      console.error('분석 오류:', err);
+      removeOverlay();
       UI.toast(UI.err(err), 'error');
     }
   },

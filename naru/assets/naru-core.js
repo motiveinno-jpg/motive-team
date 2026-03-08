@@ -516,11 +516,14 @@ const API = {
   // Analyze product — DB에서 제품 조회 후 analyze-export EF 호출
   async analyzeProduct(productId, opts = {}) {
     // 1) 제품 정보 조회
+    console.log('[NARU] analyzeProduct 시작:', productId);
     const { data: prod, error: pErr } = await sb.from('products')
       .select('*').eq('id', productId).single();
-    if (pErr || !prod) throw new Error('제품 정보를 불러올 수 없습니다.');
+    if (pErr) { console.error('[NARU] 제품 조회 실패:', pErr); throw new Error('제품 정보를 불러올 수 없습니다.'); }
+    if (!prod) throw new Error('제품 정보를 불러올 수 없습니다.');
 
     // 2) analyses 레코드 미리 생성 (EF가 status 업데이트용으로 사용)
+    console.log('[NARU] analyses 레코드 생성 중...');
     const { data: aRow, error: aErr } = await sb.from('analyses').insert({
       product_id: productId,
       product_name: prod.name || prod.name_ko || '제품',
@@ -530,8 +533,10 @@ const API = {
       status: 'analyzing',
       analysis_type: 'free'
     }).select().single();
+    if (aErr) console.error('[NARU] analyses 생성 실패:', aErr);
 
     // 3) analyze-export EF 호출 (실제 AI 분석)
+    console.log('[NARU] analyze-export EF 호출 중...');
     const payload = {
       product_name: prod.name || prod.name_ko || '',
       product_name_en: prod.name_en || prod.name || '',
@@ -548,6 +553,7 @@ const API = {
     };
 
     const result = await API.call('analyze-export', payload);
+    console.log('[NARU] EF 응답 수신:', !!result);
 
     // 4) EF가 직접 업데이트 못 했으면 여기서 저장
     if (aRow && result?.result) {
@@ -560,6 +566,10 @@ const API = {
 
       // 제품 상태 업데이트
       await sb.from('products').update({ status: 'matching' }).eq('id', productId);
+    } else if (aRow) {
+      // 결과가 없어도 실패 표시
+      console.warn('[NARU] EF 결과 없음, 상태 실패 처리');
+      await sb.from('analyses').update({ status: 'failed' }).eq('id', aRow.id);
     }
 
     return result;
@@ -636,10 +646,8 @@ const Setup = {
 
   async createProduct(data) {
     // data: { name, url, category, images, fob_price }
-    if (!S.company) throw new Error('회사 정보를 먼저 등록해주세요.');
-    const { data: product, error } = await sb.from('products').insert({
+    const row = {
       user_id: S.user.id,
-      company_id: S.company.id,
       name: data.name,
       name_ko: data.name,
       url: data.url || null,
@@ -647,8 +655,10 @@ const Setup = {
       images: data.images || [],
       fob_price: data.fob_price || null,
       status: 'registered'
-    }).select().single();
-    if (error) throw error;
+    };
+    if (S.company) row.company_id = S.company.id;
+    const { data: product, error } = await sb.from('products').insert(row).select().single();
+    if (error) { console.error('createProduct error:', error); throw error; }
     S.products.unshift(product);
     notify();
     return product;
