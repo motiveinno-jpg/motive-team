@@ -207,6 +207,8 @@ const Docs = {
   },
 
   async generate() {
+    try {
+    console.log('[NARU-DOC] generate() 시작');
     const productId = document.getElementById('doc-product')?.value;
     const docType = document.getElementById('doc-type')?.value;
     const buyerName = document.getElementById('doc-buyer-name')?.value?.trim();
@@ -218,13 +220,16 @@ const Docs = {
     const unitPrice = parseFloat(document.getElementById('doc-unit-price')?.value) || null;
     const notes = document.getElementById('doc-notes')?.value?.trim();
 
+    console.log('[NARU-DOC] 입력값:', { productId, docType, buyerName, incoterms, currency, qty, unitPrice });
+
     if (!productId || !docType) {
       UI.toast('제품과 서류 유형을 선택해주세요.', 'warn');
       return;
     }
 
-    // Payment check
+    // Payment check — 구독자는 무료
     const dtype = DOC_TYPES.find(d => d.id === docType);
+    console.log('[NARU-DOC] 구독 상태:', S.sub ? S.sub.plan : 'none');
     if (!S.sub) {
       const ok = await UI.confirm(`${dtype.ko} 생성 비용: ${UI.won(dtype.price)}\n\n결제하시겠습니까?`);
       if (!ok) return;
@@ -247,9 +252,10 @@ const Docs = {
 
     // Close modal
     document.querySelectorAll('[id^="naru-modal"]').forEach(el => el.remove());
-    UI.toast(`${dtype.ko} 생성 중...`, 'info');
+    UI.toast(`${dtype.ko} AI 생성 중... (30초~1분 소요)`, 'info');
 
     // Create document record
+    console.log('[NARU-DOC] DB insert 시작...');
     const totalAmount = (qty && unitPrice) ? qty * unitPrice : null;
     const { data: doc, error } = await sb.from('documents').insert({
       user_id: S.user.id,
@@ -272,12 +278,15 @@ const Docs = {
     }).select().single();
 
     if (error) {
+      console.error('[NARU-DOC] DB insert 실패:', error);
       UI.toast('서류 생성 실패: ' + UI.err(error), 'error');
       return;
     }
+    console.log('[NARU-DOC] DB insert 성공:', doc.id);
 
     try {
       // Call AI to generate document content
+      console.log('[NARU-DOC] EF create-document 호출...');
       const result = await API.generateDoc(docType, null, {
         document_id: doc.id,
         product_id: productId,
@@ -285,6 +294,7 @@ const Docs = {
         trade: { incoterms, currency, quantity: qty, unit_price: unitPrice },
         notes
       });
+      console.log('[NARU-DOC] EF 응답:', result);
 
       // Update document with generated content
       await sb.from('documents').update({
@@ -295,6 +305,7 @@ const Docs = {
 
       UI.toast(`${dtype.ko} 생성 완료!`, 'success');
     } catch (e) {
+      console.error('[NARU-DOC] EF 오류:', e);
       await sb.from('documents').update({ status: 'error' }).eq('id', doc.id);
       UI.toast(`서류 생성 오류: ${UI.err(e)}`, 'error');
     }
@@ -302,6 +313,10 @@ const Docs = {
     // Reload documents
     await Docs.loadDocuments();
     notify();
+    } catch (outerErr) {
+      console.error('[NARU-DOC] generate() 전체 오류:', outerErr);
+      UI.toast('서류 생성 중 오류: ' + (outerErr.message || outerErr), 'error');
+    }
   },
 
   async preview(docId) {
