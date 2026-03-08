@@ -122,10 +122,36 @@ const Analyze = {
       if (!ok) return;
     }
 
-    UI.toast('제품을 등록하고 분석을 시작합니다...', 'info');
+    // 진행 오버레이 표시
+    const overlay = document.createElement('div');
+    overlay.id = 'analyze-progress';
+    overlay.innerHTML = `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center">
+        <div style="background:var(--s2);border-radius:20px;padding:40px 48px;text-align:center;max-width:400px;width:90%">
+          <div id="ap-icon" style="font-size:48px;margin-bottom:16px">🔍</div>
+          <div id="ap-title" style="font-size:18px;font-weight:800;color:#fff;margin-bottom:8px">제품 등록 중...</div>
+          <div id="ap-desc" style="font-size:13px;color:var(--tx2);margin-bottom:20px;line-height:1.6">제품 정보를 수집하고 있습니다</div>
+          <div style="background:var(--s3);border-radius:8px;height:6px;overflow:hidden">
+            <div id="ap-bar" style="height:100%;background:var(--pri);border-radius:8px;width:5%;transition:width .5s ease"></div>
+          </div>
+          <div id="ap-step" style="font-size:11px;color:var(--tx3);margin-top:10px">1/5 단계</div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    function updateProgress(pct, icon, title, desc, step) {
+      const el = document.getElementById('analyze-progress');
+      if (!el) return;
+      document.getElementById('ap-bar').style.width = pct + '%';
+      document.getElementById('ap-icon').textContent = icon;
+      document.getElementById('ap-title').textContent = title;
+      document.getElementById('ap-desc').textContent = desc;
+      document.getElementById('ap-step').textContent = step;
+    }
 
     try {
-      // Create product
+      // Step 1: 제품 등록
+      updateProgress(10, '📦', '제품 등록 중...', '데이터베이스에 제품을 등록하고 있습니다', '1/5 단계');
       const product = await Setup.createProduct({
         name: name || (url ? new URL(url).hostname + ' 제품' : '직접 등록 제품'),
         url: url || null,
@@ -136,27 +162,51 @@ const Analyze = {
 
       // If not first and not subscribed, charge
       if (!isFirst && !S.sub) {
+        overlay.remove();
         try {
           await Pay.payOnce(9900, 'AI 수출 분석 - ' + (product.name || 'Product'), 'NARU-A-' + product.id.slice(0, 8) + '-' + Date.now());
-          return; // redirect
+          return;
         } catch (payErr) {
           UI.toast('결제 오류: ' + UI.err(payErr), 'error');
           return;
         }
       }
 
-      // Start analysis
+      // Step 2: URL 크롤링
+      updateProgress(25, '🌐', 'URL 크롤링 중...', url ? url.slice(0, 50) + '...' : '제품 정보를 수집합니다', '2/5 단계');
       await sb.from('products').update({ status: 'analyzing' }).eq('id', product.id);
       product.status = 'analyzing';
       notify();
 
-      const result = await API.analyzeProduct(product.id);
+      // Step 3: AI 분석 시작
+      updateProgress(40, '🤖', 'AI 분석 진행 중...', '3명의 수출 전문가 패널이 분석하고 있습니다\n(약 30초~1분 소요)', '3/5 단계');
 
-      UI.toast('분석 완료!', 'success');
+      // 진행 바 애니메이션 (분석 중 서서히 증가)
+      let progressTimer = setInterval(() => {
+        const bar = document.getElementById('ap-bar');
+        if (!bar) { clearInterval(progressTimer); return; }
+        const w = parseFloat(bar.style.width);
+        if (w < 85) bar.style.width = (w + 0.5) + '%';
+      }, 500);
+
+      const result = await API.analyzeProduct(product.id);
+      clearInterval(progressTimer);
+
+      // Step 4: 결과 저장
+      updateProgress(90, '💾', '결과 저장 중...', '분석 리포트를 생성하고 있습니다', '4/5 단계');
       await Auth.loadProfile();
+
+      // Step 5: 완료
+      updateProgress(100, '✅', '분석 완료!', '수출 적합도 리포트가 준비되었습니다', '5/5 단계');
+      await new Promise(r => setTimeout(r, 800));
+
+      overlay.remove();
+      UI.toast('분석 완료!', 'success');
       Router.go('analyze', { pid: product.id });
       notify();
     } catch (err) {
+      if (typeof progressTimer !== 'undefined') clearInterval(progressTimer);
+      overlay.remove();
       UI.toast(UI.err(err), 'error');
     }
   },
