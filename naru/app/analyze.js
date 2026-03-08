@@ -735,11 +735,50 @@ const Analyze = {
     }
 
     /* ── ACTIONS ── */
-    h += '<div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap;padding-bottom:40px">';
+    h += '<div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">';
     h += `<button onclick="Analyze.downloadPdf('${pid}')" class="btn btn-pri" style="padding:12px 24px">📄 PDF 다운로드</button>`;
     h += `<button onclick="Analyze.requestAlibaba('${pid}')" class="btn btn-ghost" style="border-color:rgba(249,115,22,.3);color:var(--org);padding:12px 24px">🏪 알리바바 입점 의뢰</button>`;
     h += `<button onclick="Pipeline.startAnalysis('${pid}')" class="btn btn-ghost" style="padding:12px 24px">🔄 재분석</button>`;
     h += '</div>';
+
+    /* ── NEXT STEPS — 분석 후 자동 안내 ── */
+    h += '<div class="card" data-next-steps style="margin-top:20px;border-color:var(--pri);background:linear-gradient(135deg,rgba(0,212,255,.05),rgba(168,85,247,.05));padding-bottom:24px">';
+    h += '<div style="padding:20px 24px 12px;display:flex;align-items:center;gap:10px">';
+    h += '<span style="font-size:22px">🚀</span>';
+    h += '<div><div style="font-size:16px;font-weight:800;color:#fff">다음 단계로 진행하세요</div>';
+    h += '<div style="font-size:12px;color:var(--tx2)">분석이 완료되었습니다. 수출을 시작하려면 아래 액션을 선택하세요.</div></div>';
+    h += '</div>';
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;padding:0 24px">';
+
+    // 1. 바이어 매칭
+    h += `<div onclick="Router.go('chat')" style="cursor:pointer;padding:18px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--radius);transition:all .2s" onmouseover="this.style.borderColor='var(--ylw)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--bd)';this.style.transform='none'">`;
+    h += '<div style="font-size:24px;margin-bottom:8px">🤝</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px">바이어 매칭</div>';
+    h += '<div style="font-size:12px;color:var(--tx2);line-height:1.5">AI가 추천한 시장의 바이어를<br>찾아 연결해 드립니다</div>';
+    h += '</div>';
+
+    // 2. 서류 생성
+    h += `<div onclick="Router.go('documents')" style="cursor:pointer;padding:18px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--radius);transition:all .2s" onmouseover="this.style.borderColor='var(--grn)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--bd)';this.style.transform='none'">`;
+    h += '<div style="font-size:24px;margin-bottom:8px">📄</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px">수출 서류 작성</div>';
+    h += '<div style="font-size:12px;color:var(--tx2);line-height:1.5">PI / CI / PL 등 수출 서류를<br>AI가 자동 생성합니다</div>';
+    h += '</div>';
+
+    // 3. 비용 시뮬레이터
+    h += `<div onclick="Router.go('cost')" style="cursor:pointer;padding:18px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--radius);transition:all .2s" onmouseover="this.style.borderColor='var(--acc)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--bd)';this.style.transform='none'">`;
+    h += '<div style="font-size:24px;margin-bottom:8px">💰</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px">비용 · 마진 계산</div>';
+    h += '<div style="font-size:12px;color:var(--tx2);line-height:1.5">FOB → 관세 → 물류 → 판매가<br>마진을 정밀 시뮬레이션</div>';
+    h += '</div>';
+
+    // 4. 알리바바 입점
+    h += `<div onclick="Analyze.requestAlibaba('${pid}')" style="cursor:pointer;padding:18px;background:var(--s2);border:1px solid var(--bd);border-radius:var(--radius);transition:all .2s" onmouseover="this.style.borderColor='var(--org)';this.style.transform='translateY(-2px)'" onmouseout="this.style.borderColor='var(--bd)';this.style.transform='none'">`;
+    h += '<div style="font-size:24px;margin-bottom:8px">🏪</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:4px">알리바바 입점</div>';
+    h += '<div style="font-size:12px;color:var(--tx2);line-height:1.5">세계 최대 B2B에 바로 입점<br>총판운영 또는 운영대행</div>';
+    h += '</div>';
+
+    h += '</div></div>'; // grid + card
 
     return h;
   },
@@ -830,9 +869,14 @@ const Analyze = {
       await new Promise(r => setTimeout(r, 800));
 
       removeOverlay();
-      UI.toast('분석 완료!', 'success');
+      UI.toast('분석 완료! 리포트를 확인하세요.', 'success');
       Router.go('analyze', { pid: product.id });
       notify();
+      // Scroll to next-steps section after render
+      setTimeout(() => {
+        const el = document.querySelector('[data-next-steps]');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 500);
     } catch (err) {
       console.error('분석 오류:', err);
       removeOverlay();
@@ -841,8 +885,333 @@ const Analyze = {
   },
 
   async downloadPdf(pid) {
+    const product = S.products.find(p => p.id === pid);
+    const analysis = S.analyses.find(a => a.product_id === pid);
+    if (!analysis || !analysis.ai_result) { UI.toast('분석 결과가 없습니다.', 'warn'); return; }
+
     UI.toast('PDF 생성 중...', 'info');
-    setTimeout(() => UI.toast('PDF 다운로드 기능은 곧 지원됩니다.', 'warn'), 1000);
+
+    // Load html2pdf.js dynamically
+    if (!window.html2pdf) {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+      document.head.appendChild(s);
+      await new Promise((res, rej) => { s.onload = res; s.onerror = rej; });
+    }
+
+    const r = analysis.ai_result;
+    const score = analysis.score || r.overall_score || 0;
+    const pName = (product && product.name) || analysis.product_name || r.crawled_product_name || '제품';
+    const date = new Date(analysis.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+    const company = S.company ? S.company.name : '';
+    const scoreColor = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
+    const grade = score >= 85 ? 'A+' : score >= 75 ? 'A' : score >= 65 ? 'B+' : score >= 55 ? 'B' : score >= 45 ? 'C' : 'D';
+
+    const safe = v => typeof v === 'string' ? v : (v ? JSON.stringify(v) : '');
+
+    let h = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+      @page { margin: 20mm 18mm 25mm 18mm; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font-family: -apple-system, 'Noto Sans KR', sans-serif; color: #1a1a2e; font-size: 11px; line-height: 1.6; }
+      .page-break { page-break-before: always; }
+      .header { text-align: center; padding: 30px 0 20px; border-bottom: 3px solid #0d1b3e; margin-bottom: 24px; }
+      .header .brand { font-size: 28px; font-weight: 900; color: #0d1b3e; letter-spacing: 2px; }
+      .header .brand span { color: #0099cc; }
+      .header .sub { font-size: 11px; color: #666; margin-top: 4px; letter-spacing: 1px; }
+      .report-title { font-size: 22px; font-weight: 800; color: #0d1b3e; text-align: center; margin: 20px 0 8px; }
+      .report-meta { text-align: center; font-size: 11px; color: #888; margin-bottom: 30px; }
+      .section { margin-bottom: 22px; }
+      .section-title { font-size: 14px; font-weight: 800; color: #0d1b3e; padding: 8px 12px; background: #f0f4f8; border-left: 4px solid #0099cc; margin-bottom: 12px; }
+      .score-box { display: flex; align-items: center; justify-content: center; gap: 30px; padding: 20px; background: linear-gradient(135deg, #0d1b3e, #1a2d5a); border-radius: 12px; color: #fff; margin-bottom: 24px; }
+      .score-num { font-size: 52px; font-weight: 900; }
+      .score-grade { font-size: 18px; font-weight: 700; margin-top: 2px; }
+      .score-bars { flex: 1; }
+      .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+      .bar-label { width: 70px; font-size: 10px; color: #ccc; }
+      .bar-track { flex: 1; height: 6px; background: rgba(255,255,255,.15); border-radius: 3px; }
+      .bar-fill { height: 100%; border-radius: 3px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10.5px; }
+      th { background: #f0f4f8; color: #0d1b3e; font-weight: 700; text-align: left; padding: 8px 10px; border-bottom: 2px solid #ddd; font-size: 10px; text-transform: uppercase; }
+      td { padding: 7px 10px; border-bottom: 1px solid #eee; color: #444; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+      .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+      .card { padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; }
+      .card-title { font-size: 10px; font-weight: 700; color: #0099cc; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+      .card-value { font-size: 16px; font-weight: 800; color: #0d1b3e; }
+      .card-desc { font-size: 10px; color: #888; margin-top: 4px; line-height: 1.5; }
+      .tag { display: inline-block; padding: 2px 8px; background: #f0f4f8; border-radius: 4px; font-size: 9px; color: #555; margin: 2px; }
+      .swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .swot-cell { padding: 10px; border-radius: 8px; }
+      .swot-cell h4 { font-size: 10px; font-weight: 800; margin-bottom: 4px; }
+      .swot-cell p { font-size: 10px; line-height: 1.5; color: #444; }
+      .footer { text-align: center; padding: 16px 0; border-top: 2px solid #0d1b3e; margin-top: 30px; font-size: 9px; color: #888; }
+      .footer .brand-f { font-weight: 800; color: #0d1b3e; font-size: 11px; }
+      .disclaimer { font-size: 8.5px; color: #aaa; margin-top: 6px; line-height: 1.4; }
+      .highlight { color: #0099cc; font-weight: 700; }
+      .text-block { font-size: 11px; color: #444; line-height: 1.7; margin-bottom: 10px; }
+      .timeline-step { display: flex; gap: 10px; margin-bottom: 10px; }
+      .timeline-dot { width: 20px; height: 20px; border-radius: 50%; background: #0099cc; color: #fff; font-size: 9px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+      .timeline-content { flex: 1; }
+      .risk-high { color: #ef4444; font-weight: 700; }
+      .risk-mid { color: #f59e0b; font-weight: 700; }
+      .risk-low { color: #22c55e; font-weight: 700; }
+    </style></head><body>`;
+
+    // ── COVER HEADER ──
+    h += `<div class="header">
+      <div class="brand">NARU<span> | 나루</span></div>
+      <div class="sub">AI 기반 수출 적합도 분석 리포트</div>
+    </div>`;
+    h += `<div class="report-title">${safe(pName)}</div>`;
+    h += `<div class="report-meta">${date} 발행 · ${company ? safe(company) + ' · ' : ''}분석 버전 ${r.analysis_version || '1.0'} · ${r.model_used || 'Gemini AI'}</div>`;
+
+    // ── SCORE OVERVIEW ──
+    h += `<div class="score-box">
+      <div style="text-align:center">
+        <div class="score-num" style="color:${scoreColor}">${score}</div>
+        <div class="score-grade" style="color:${scoreColor}">${grade}</div>
+        <div style="font-size:10px;color:#aaa;margin-top:4px">수출 적합도</div>
+      </div>
+      <div class="score-bars">`;
+    const bars = [['시장 적합도', r.market_fit],['경쟁 우위', r.competition],['규제 환경', r.regulatory],['가격 경쟁력', r.price_competitiveness],['브랜드 파워', r.brand_power],['물류 효율', r.logistics_score]];
+    bars.forEach(([label, val]) => {
+      const v = typeof val === 'number' ? val : 50;
+      const c = v >= 70 ? '#22c55e' : v >= 50 ? '#f59e0b' : '#ef4444';
+      h += `<div class="bar-row"><div class="bar-label">${label}</div><div class="bar-track"><div class="bar-fill" style="width:${v}%;background:${c}"></div></div><div style="width:24px;text-align:right;font-size:10px;color:${c};font-weight:700">${v}</div></div>`;
+    });
+    h += '</div></div>';
+
+    // ── EXECUTIVE SUMMARY ──
+    const es = r.executive_summary;
+    if (es) {
+      h += '<div class="section"><div class="section-title">Executive Summary</div>';
+      if (typeof es === 'object') {
+        if (es.situation) h += `<div class="text-block"><strong style="color:#0099cc">상황:</strong> ${safe(es.situation)}</div>`;
+        if (es.complication) h += `<div class="text-block"><strong style="color:#f97316">과제:</strong> ${safe(es.complication)}</div>`;
+        if (es.resolution) h += `<div class="text-block"><strong style="color:#22c55e">해결:</strong> ${safe(es.resolution)}</div>`;
+      } else { h += `<div class="text-block">${safe(es)}</div>`; }
+      h += '</div>';
+    } else if (r.summary) {
+      h += `<div class="section"><div class="section-title">Executive Summary</div><div class="text-block">${safe(r.summary)}</div></div>`;
+    }
+
+    // ── PRODUCT DETAIL ──
+    if (r.product_detail || r.hs_code || r.estimated_fob) {
+      h += '<div class="section"><div class="section-title">제품 정보</div><div class="grid3">';
+      if (r.hs_code && r.hs_code !== '0000.00') h += `<div class="card"><div class="card-title">HS 코드</div><div class="card-value">${r.hs_code}</div>${r.hs_code_detail?.hs6_desc ? `<div class="card-desc">${safe(r.hs_code_detail.hs6_desc)}</div>` : ''}</div>`;
+      if (r.estimated_fob && r.estimated_fob !== 'N/A') h += `<div class="card"><div class="card-title">예상 FOB</div><div class="card-value">${safe(r.estimated_fob)}</div></div>`;
+      const pd = r.product_detail;
+      if (pd && pd.actual_name) h += `<div class="card"><div class="card-title">제품명</div><div class="card-value" style="font-size:13px">${safe(pd.actual_name)}</div></div>`;
+      h += '</div></div>';
+    }
+
+    // ── RECOMMENDED MARKETS ──
+    const mkts = r.recommended_markets;
+    const mktAnalysis = r.market_analysis;
+    if (mkts && mkts.length) {
+      h += '<div class="section"><div class="section-title">추천 수출 시장</div><div class="grid3">';
+      mkts.forEach((code, i) => {
+        const mc = typeof code === 'string' ? code : code;
+        const ma = mktAnalysis && (mktAnalysis[i] || (mktAnalysis.find && mktAnalysis.find(x => x.name === mc || x.name === _A.countryName(mc))));
+        h += `<div class="card"><div style="font-size:10px;color:#0099cc;font-weight:800">#${i+1} 추천 시장</div>`;
+        h += `<div class="card-value">${_A.flag(mc)} ${_A.countryName(mc)}</div>`;
+        if (ma) {
+          if (ma.size) h += `<div style="display:flex;justify-content:space-between;font-size:10px;margin-top:6px"><span style="color:#888">시장 규모</span><span style="font-weight:600">${safe(ma.size)}</span></div>`;
+          if (ma.grow) h += `<div style="display:flex;justify-content:space-between;font-size:10px"><span style="color:#888">성장률</span><span style="color:#22c55e;font-weight:600">${safe(ma.grow)}</span></div>`;
+          if (ma.tariff) h += `<div style="display:flex;justify-content:space-between;font-size:10px"><span style="color:#888">관세</span><span>${safe(ma.tariff)}</span></div>`;
+          if (ma.entry_strategy) h += `<div class="card-desc" style="margin-top:6px">${safe(ma.entry_strategy)}</div>`;
+        }
+        h += '</div>';
+      });
+      h += '</div></div>';
+    }
+
+    // ── FTA / TARIFF TABLE ──
+    const fta = r.fta_tariff_table;
+    if (fta && fta.length) {
+      h += '<div class="section"><div class="section-title">관세 · FTA 분석</div>';
+      h += '<table><thead><tr><th>시장</th><th>FTA</th><th>MFN 관세</th><th>특혜 관세</th><th>절감</th><th>예상 물류비</th></tr></thead><tbody>';
+      fta.forEach(row => {
+        h += `<tr><td style="font-weight:700">${_A.flag(row.mkt)} ${_A.countryName(row.mkt)}</td><td>${safe(row.fta)||'-'}</td><td style="color:#ef4444">${safe(row.mfn)||'-'}</td><td style="color:#22c55e;font-weight:700">${safe(row.pref)||'-'}</td><td style="color:#a855f7">${safe(row.save)||'-'}</td><td>${safe(row.est_logistics)||'-'}</td></tr>`;
+      });
+      h += '</tbody></table></div>';
+    }
+
+    // ── MARGIN ANALYSIS ──
+    const margin = r.margin_analysis;
+    if (margin && typeof margin === 'object') {
+      h += '<div class="section"><div class="section-title">마진 분석</div><div class="grid3">';
+      [{l:'FOB 원가',v:margin.fob_cost},{l:'Landed Cost',v:margin.landed_cost},{l:'소비자가',v:margin.retail_price},{l:'총이익률',v:margin.gross_margin}].forEach(item => {
+        if (item.v) h += `<div class="card"><div class="card-title">${item.l}</div><div class="card-value">${safe(item.v)}</div></div>`;
+      });
+      h += '</div></div>';
+    }
+
+    // ── COMPETITOR + SWOT ──
+    const comp = r.competitor_analysis;
+    if (comp && typeof comp === 'object') {
+      h += '<div class="section"><div class="section-title">경쟁사 분석 · SWOT</div>';
+      if (comp.overview) h += `<div class="text-block">${safe(comp.overview)}</div>`;
+      const gc = comp.global_competitors;
+      if (gc && gc.length) {
+        h += '<table><thead><tr><th>경쟁사</th><th>강점</th><th>약점</th><th>가격</th></tr></thead><tbody>';
+        gc.forEach(c => { h += `<tr><td style="font-weight:700">${safe(c.name)||'-'}</td><td style="color:#22c55e">${safe(c.strength)||'-'}</td><td style="color:#ef4444">${safe(c.weakness)||'-'}</td><td>${safe(c.price)||'-'}</td></tr>`; });
+        h += '</tbody></table>';
+      }
+      const swot = comp.swot;
+      if (swot) {
+        h += '<div class="swot-grid">';
+        [{k:'strength',l:'강점 (S)',bg:'#f0fdf4',c:'#16a34a'},{k:'weakness',l:'약점 (W)',bg:'#fef2f2',c:'#dc2626'},{k:'opportunity',l:'기회 (O)',bg:'#eff6ff',c:'#2563eb'},{k:'threat',l:'위협 (T)',bg:'#fff7ed',c:'#ea580c'}].forEach(s => {
+          if (swot[s.k]) h += `<div class="swot-cell" style="background:${s.bg}"><h4 style="color:${s.c}">${s.l}</h4><p>${safe(swot[s.k])}</p></div>`;
+        });
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    // ── PESTEL ──
+    const pestel = r.pestel;
+    if (pestel && typeof pestel === 'object') {
+      h += '<div class="page-break"></div>';
+      h += '<div class="section"><div class="section-title">PESTEL 분석</div><div class="grid2">';
+      [{k:'political',l:'정치'},{k:'economic',l:'경제'},{k:'social',l:'사회'},{k:'technological',l:'기술'},{k:'environmental',l:'환경'},{k:'legal',l:'법률'}].forEach(p => {
+        const item = pestel[p.k];
+        if (item) {
+          const raw = typeof item.score === 'number' ? item.score : 50;
+          const s = raw > 5 ? Math.round(raw / 20) : raw;
+          const colors = ['','#ef4444','#f97316','#eab308','#22c55e','#3b82f6'];
+          const labels = ['','매우 불리','불리','보통','유리','매우 유리'];
+          h += `<div class="card"><div class="card-title">${p.l}</div><div style="display:flex;gap:3px;margin:6px 0">${[1,2,3,4,5].map(i => `<div style="flex:1;height:5px;border-radius:3px;background:${i <= s ? colors[s] : '#e5e7eb'}"></div>`).join('')}</div><div style="font-size:10px;color:${colors[s]};font-weight:700;margin-bottom:4px">${labels[s]} (${raw})</div>${item.analysis ? `<div class="card-desc">${safe(item.analysis)}</div>` : ''}</div>`;
+        }
+      });
+      h += '</div></div>';
+    }
+
+    // ── PORTER'S FIVE FORCES ──
+    const porter = r.porters_five_forces;
+    if (porter && typeof porter === 'object') {
+      h += '<div class="section"><div class="section-title">Porter\'s Five Forces</div><div class="grid2">';
+      [{k:'buyer_power',l:'구매자 교섭력'},{k:'supplier_power',l:'공급자 교섭력'},{k:'new_entrants',l:'신규 진입 위협'},{k:'substitutes',l:'대체재 위협'},{k:'rivalry',l:'기존 경쟁 강도'}].forEach(p => {
+        const item = porter[p.k];
+        if (item) {
+          const s = item.score || 50;
+          const c = s >= 70 ? '#ef4444' : s >= 40 ? '#eab308' : '#22c55e';
+          h += `<div class="card" style="border-left:3px solid ${c}"><div style="display:flex;justify-content:space-between"><div class="card-title">${p.l}</div><span style="font-size:10px;font-weight:700;color:${c}">${s >= 70 ? '높음' : s >= 40 ? '중간' : '낮음'}</span></div>${item.description ? `<div class="card-desc">${safe(item.description)}</div>` : ''}</div>`;
+        }
+      });
+      h += '</div></div>';
+    }
+
+    // ── TAM/SAM/SOM ──
+    const tam = r.tam_sam_som;
+    if (tam && (tam.tam || tam.sam || tam.som)) {
+      h += '<div class="section"><div class="section-title">시장 규모 (TAM / SAM / SOM)</div><div class="grid3">';
+      [{k:'tam',l:'TAM',d:'총 시장 규모',c:'#6366f1'},{k:'sam',l:'SAM',d:'접근 가능 시장',c:'#a855f7'},{k:'som',l:'SOM',d:'목표 시장 점유',c:'#22c55e'}].forEach(t => {
+        const item = tam[t.k];
+        if (item) h += `<div class="card" style="text-align:center;border-top:3px solid ${t.c}"><div style="font-size:10px;font-weight:800;color:${t.c}">${t.l}</div><div class="card-value" style="margin:6px 0">${safe(item.value)||'-'}</div><div style="font-size:9px;color:#888">${t.d}</div>${item.basis ? `<div class="card-desc">${safe(item.basis)}</div>` : ''}</div>`;
+      });
+      h += '</div></div>';
+    }
+
+    // ── CERTIFICATIONS ──
+    const certs = r.required_certs;
+    if (certs && certs.length) {
+      h += '<div class="section"><div class="section-title">필요 인증 · 규제</div>';
+      certs.forEach(c => { h += `<div class="tag" style="font-size:10px;padding:4px 10px;margin:3px">${typeof c === 'string' ? c : safe(c.name || c.cert || JSON.stringify(c))}</div>`; });
+      h += '</div>';
+    }
+
+    // ── RISK MATRIX ──
+    const rm = r.risk_matrix;
+    if (rm && rm.length) {
+      h += '<div class="section"><div class="section-title">리스크 매트릭스</div>';
+      h += '<table><thead><tr><th>리스크</th><th>가능성</th><th>영향도</th><th>대응 방안</th></tr></thead><tbody>';
+      rm.forEach(row => {
+        const lc = row.likelihood === '높음' ? 'risk-high' : row.likelihood === '중간' ? 'risk-mid' : 'risk-low';
+        const ic = row.impact === '높음' ? 'risk-high' : row.impact === '중간' ? 'risk-mid' : 'risk-low';
+        h += `<tr><td style="font-weight:700">${safe(row.risk)||'-'}</td><td class="${lc}">${safe(row.likelihood)||'-'}</td><td class="${ic}">${safe(row.impact)||'-'}</td><td>${safe(row.mitigation)||'-'}</td></tr>`;
+      });
+      h += '</tbody></table></div>';
+    }
+
+    // ── ACTION PLAN ──
+    const ap = r.action_plan;
+    if (ap && ap.length) {
+      h += '<div class="section"><div class="section-title">실행 계획</div>';
+      ap.forEach((step, i) => {
+        h += `<div class="timeline-step"><div class="timeline-dot">${i+1}</div><div class="timeline-content"><div style="font-size:11px;font-weight:700;color:#0d1b3e">${safe(step.phase || '')} ${safe(step.title || '')}</div>`;
+        if (step.items && step.items.length) step.items.forEach(it => { h += `<div style="font-size:10px;color:#666;padding:1px 0">• ${safe(it)}</div>`; });
+        if (step.estimated_cost) h += `<div style="font-size:10px;color:#f97316;margin-top:2px">${safe(step.estimated_cost)}</div>`;
+        h += '</div></div>';
+      });
+      h += '</div>';
+    }
+
+    // ── OPPORTUNITIES & RISKS ──
+    if ((r.opportunities && r.opportunities.length) || (r.risks && r.risks.length)) {
+      h += '<div class="section"><div class="section-title">기회 · 위험 요인</div><div class="grid2">';
+      if (r.opportunities && r.opportunities.length) {
+        h += '<div>';
+        r.opportunities.forEach(o => { h += `<div style="font-size:10px;color:#16a34a;padding:3px 0">✅ ${safe(typeof o === 'string' ? o : JSON.stringify(o))}</div>`; });
+        h += '</div>';
+      }
+      if (r.risks && r.risks.length) {
+        h += '<div>';
+        r.risks.forEach(ri => { h += `<div style="font-size:10px;color:#dc2626;padding:3px 0">⚠️ ${safe(typeof ri === 'string' ? ri : JSON.stringify(ri))}</div>`; });
+        h += '</div>';
+      }
+      h += '</div></div>';
+    }
+
+    // ── GOVERNMENT SUPPORT ──
+    const gov = r.government_support;
+    if (gov && typeof gov === 'object') {
+      h += '<div class="section"><div class="section-title">정부 지원</div><div class="grid3">';
+      if (gov.export_voucher) h += `<div class="card" style="border-top:3px solid #3b82f6"><div class="card-title">수출바우처</div><div class="card-desc">${safe(gov.export_voucher)}</div></div>`;
+      if (gov.kotra_support) h += `<div class="card" style="border-top:3px solid #22c55e"><div class="card-title">KOTRA 지원</div><div class="card-desc">${safe(gov.kotra_support)}</div></div>`;
+      if (gov.estimated_subsidy) h += `<div class="card" style="border-top:3px solid #a855f7"><div class="card-title">예상 보조금</div><div class="card-value">${safe(gov.estimated_subsidy)}</div></div>`;
+      h += '</div></div>';
+    }
+
+    // ── DATA SOURCES ──
+    if (r.data_sources && r.data_sources.length) {
+      h += `<div style="font-size:9px;color:#aaa;margin-top:12px">데이터 출처: ${Array.isArray(r.data_sources) ? r.data_sources.join(', ') : safe(r.data_sources)}</div>`;
+    }
+
+    // ── FOOTER ──
+    h += `<div class="footer">
+      <div class="brand-f">NARU | 나루</div>
+      <div style="font-size:9px;color:#888;margin-top:2px">(주)모티브이노베이션 · AI 기반 수출 통합 플랫폼 · naru.motiveinnovation.co.kr</div>
+      <div class="disclaimer">본 보고서는 AI 분석 엔진(${r.model_used || 'Gemini'})에 의해 자동 생성되었으며, 투자 또는 사업 결정의 유일한 근거로 사용되어서는 안 됩니다. 실제 시장 상황은 변동될 수 있으며, 전문가 상담을 권장합니다. © ${new Date().getFullYear()} Motive Innovation. All rights reserved.</div>
+    </div>`;
+
+    h += '</body></html>';
+
+    // Generate PDF
+    const container = document.createElement('div');
+    container.innerHTML = h;
+    container.style.position = 'absolute';
+    container.style.left = '-9999px';
+    container.style.width = '210mm';
+    document.body.appendChild(container);
+
+    try {
+      const filename = `NARU_수출분석_${pName.replace(/[^가-힣a-zA-Z0-9]/g, '_').slice(0, 30)}_${date.replace(/\s/g, '')}.pdf`;
+      await html2pdf().set({
+        margin: [8, 8, 12, 8],
+        filename,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], before: '.page-break' }
+      }).from(container).save();
+      UI.toast('PDF 다운로드 완료!', 'success');
+    } catch (err) {
+      console.error('PDF 생성 오류:', err);
+      UI.toast('PDF 생성 실패: ' + UI.err(err), 'error');
+    } finally {
+      container.remove();
+    }
   },
 
   async requestAlibaba(pid) {
