@@ -157,6 +157,14 @@ var UI={
   pb:function(p){var r=U.pl(p);return'<span class="badge" style="background:'+r[1]+'15;color:'+r[1]+';border:1px solid '+r[1]+'25">'+r[0]+'</span>';}
 };
 
+/* === AUDIT LOG === */
+function logAudit(action,entityType,entityId,details){
+  if(!S.user)return;
+  sb.from('audit_log').insert({user_id:S.user.id,user_email:S.user.email,action:action,entity_type:entityType||null,entity_id:entityId||null,details:details||{}}).then(function(r){
+    if(!r.error&&S.auditLog){S.auditLog.unshift({created_at:new Date().toISOString(),user_email:S.user.email,action:action,entity_type:entityType,entity_id:entityId,details:details||{}});}
+  });
+}
+
 /* === LOADING HELPERS === */
 function btnLoading(btn,loading){
   if(!btn)return;
@@ -206,6 +214,7 @@ function loadUser(){
       S.user=r.data;S.loading=false;
       loadAll();
       setupRealtimeSubscription();
+      logAudit('admin_login','user',r.data.id);
     }).catch(function(){set({loading:false});});
   }).catch(function(){set({loading:false});});
 }
@@ -244,6 +253,7 @@ function loadAll(){
     sb.from('deal_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.dealEvents=r.data||[];}),
     sb.from('quotes').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.quotes=r.data||[];}),
     sb.from('client_errors').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.clientErrors=r.data||[];}),
+    sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.auditLog=r.data||[];}),
     sb.from('email_logs').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.emailLogs=r.data||[];}),
     sb.from('trust_scores').select('*').then(function(r){S.trustScores={};(r.data||[]).forEach(function(ts){S.trustScores[ts.entity_id+'_'+ts.role]=ts;});}),
     sb.from('price_history').select('*').order('created_at',{ascending:false}).then(function(r){S.priceHistory=r.data||[];_buildPriceOutliers();})
@@ -1583,7 +1593,7 @@ function changeDealStage(dealId,newStage,evt){
     if(r.error){UI.toast('스테이지 변경 실패: '+r.error.message,'err');return;}
     var d=S.deals.find(function(x){return x.id===dealId;});
     if(d){d.stage=newStage;S.selectedDeal=d;}
-    UI.toast('스테이지가 '+newStage.toUpperCase()+'로 변경되었습니다','ok');
+    UI.toast('스테이지가 '+newStage.toUpperCase()+'로 변경되었습니다','ok');logAudit('change_deal_stage','deal',dealId,{stage:newStage});
     render();
   });
 }
@@ -2067,7 +2077,7 @@ function editUserPlan(uid,evt){
   sb.from('users').update({plan:plan,plan_started_at:new Date().toISOString()}).eq('id',uid).then(function(r){
     btnLoading(btn,false);
     if(r.error){UI.toast('실패','err');return;}
-    u.plan=plan;S.selectedUser=u;render();UI.toast('플랜 변경: '+plan.toUpperCase(),'ok');
+    u.plan=plan;S.selectedUser=u;render();UI.toast('플랜 변경: '+plan.toUpperCase(),'ok');logAudit('change_plan','user',uid,{plan:plan});
   });
 }
 
@@ -2079,7 +2089,7 @@ function editUserRole(uid,evt){
   sb.from('users').update({role:role}).eq('id',uid).then(function(r){
     btnLoading(btn,false);
     if(r.error){UI.toast('실패','err');return;}
-    u.role=role;S.selectedUser=u;render();UI.toast('역할 변경: '+role,'ok');
+    u.role=role;S.selectedUser=u;render();UI.toast('역할 변경: '+role,'ok');logAudit('change_role','user',uid,{role:role});
   });
 }
 
@@ -2092,7 +2102,7 @@ function toggleUserActive(uid,active,evt){
     if(r.error){UI.toast('실패','err');return;}
     var u=S.users.find(function(x){return x.id===uid;});
     if(u){u.is_active=val;S.selectedUser=u;}
-    render();UI.toast(val?'활성화':'비활성화','ok');
+    render();UI.toast(val?'활성화':'비활성화','ok');logAudit(val?'activate_user':'deactivate_user','user',uid);
   });
 }
 
@@ -2104,7 +2114,7 @@ function updateAStatus(aid,status,evt){
     if(r.error){UI.toast('실패','err');return;}
     var a=S.analyses.find(function(x){return x.id===aid;});
     if(a){a.status=status;S.selectedAnalysis=a;}
-    render();UI.toast('상태 변경','ok');
+    render();UI.toast('상태 변경','ok');logAudit('update_analysis_status','analysis',aid,{status:status});
   });
 }
 
@@ -2115,7 +2125,7 @@ function deleteAnalysis(aid,evt){
     btnLoading(btn,false);
     if(r.error){UI.toast('삭제 실패','err');return;}
     S.analyses=S.analyses.filter(function(a){return a.id!==aid;});
-    S.selectedAnalysis=null;render();UI.toast('삭제 완료','ok');
+    S.selectedAnalysis=null;render();UI.toast('삭제 완료','ok');logAudit('delete_analysis','analysis',aid);
   });
 }
 
@@ -2139,7 +2149,7 @@ function updateSR(id,evt){
     if(r.error){UI.toast('실패','err');return;}
     var sr=S.serviceRequests.find(function(x){return x.id===id;});
     if(sr){Object.assign(sr,data);S.selectedSR=sr;}
-    render();UI.toast('업데이트 완료','ok');
+    render();UI.toast('업데이트 완료','ok');logAudit('update_service_request','service_request',id,data);
   });
 }
 
@@ -2156,7 +2166,7 @@ function quickSR(id,status,evt){
     if(r.error){UI.toast('실패','err');return;}
     var sr=S.serviceRequests.find(function(x){return x.id===id;});
     if(sr){Object.assign(sr,upd);S.selectedSR=sr;}
-    render();UI.toast('상태: '+status,'ok');
+    render();UI.toast('상태: '+status,'ok');logAudit('quick_update_sr','service_request',id,{status:status});
   });
 }
 
@@ -2176,7 +2186,7 @@ function deleteSR(id,evt){
     btnLoading(btn,false);
     if(r.error){UI.toast('실패','err');return;}
     S.serviceRequests=S.serviceRequests.filter(function(x){return x.id!==id;});
-    S.selectedSR=null;render();UI.toast('삭제 완료','ok');
+    S.selectedSR=null;render();UI.toast('삭제 완료','ok');logAudit('delete_service_request','service_request',id);
   });
 }
 
@@ -2485,11 +2495,25 @@ function setEmailTab(t){S.emailTab=t;S._pg={};render();}
 
 function _fmtTime(dt){if(!dt)return '';var d=new Date(dt);var now=new Date();var diff=now-d;if(diff<6e4)return '방금';if(diff<36e5)return Math.floor(diff/6e4)+'분 전';if(diff<864e5)return Math.floor(diff/36e5)+'시간 전';return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);}
 
+function pgAuditLog(){
+  var logs=S.auditLog||[];
+  var h='<div class="card"><div class="card-h"><span>감사 로그 (최근 500건)</span><button class="btn btn-sm btn-ghost" onclick="sb.from(\'audit_log\').select(\'*\').order(\'created_at\',{ascending:false}).limit(500).then(function(r){S.auditLog=r.data||[];render();UI.toast(\'갱신 완료\',\'ok\');})">🔄 새로고침</button></div><div class="card-b">';
+  if(!logs.length)return h+UI.empty('📋','감사 로그 없음','아직 기록된 활동이 없습니다.')+'</div></div>';
+  h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>시각</th><th>사용자</th><th>액션</th><th>대상</th><th>상세</th></tr></thead><tbody>';
+  logs.forEach(function(l){
+    var det=l.details?JSON.stringify(l.details).slice(0,80):'';
+    h+='<tr><td style="white-space:nowrap;font-size:11px">'+_fmtTime(l.created_at)+'</td><td style="font-size:12px">'+(l.user_email||'-')+'</td><td>'+UI.badge(l.action||'-','pri')+'</td><td style="font-size:12px">'+(l.entity_type?l.entity_type+(l.entity_id?' #'+l.entity_id.slice(0,8):''):'—')+'</td><td style="font-size:11px;color:var(--w40);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+U.esc(det)+'</td></tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+
 function pgSystemHub(){
   var tab=S._systemHubTab||'health';
-  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🛡️ 시스템 & 에러</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">시스템 상태, 에러 로그 모니터링</p></div>';
-  h+=_admHubTabBar([{id:'health',icon:'🛡️',label:'시스템'},{id:'errors',icon:'🚨',label:'에러 로그'}],'_systemHubTab','health');
+  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">🛡️ 시스템 & 에러</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">시스템 상태, 에러 로그, 감사 추적</p></div>';
+  h+=_admHubTabBar([{id:'health',icon:'🛡️',label:'시스템'},{id:'errors',icon:'🚨',label:'에러 로그'},{id:'audit',icon:'📋',label:'감사 로그'}],'_systemHubTab','health');
   if(tab==='errors')return h+pgErrorMonitor();
+  if(tab==='audit')return h+pgAuditLog();
   return h+pgHealth();
 }
 
@@ -2791,7 +2815,7 @@ function markMilestonePaid(milestoneId,evt){
     if(r.error){UI.toast('결제 처리 실패','err');return;}
     var p=S.paymentMilestones.find(function(x){return x.id===milestoneId;});
     if(p){p.status='paid';p.paid_at=new Date().toISOString();}
-    UI.toast('결제 완료 처리됨','ok');render();
+    UI.toast('결제 완료 처리됨','ok');logAudit('approve_payment','payment_milestone',milestoneId);render();
   });
 }
 
