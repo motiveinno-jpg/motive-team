@@ -503,26 +503,49 @@ const API = {
 const Setup = {
   async createCompany(data) {
     // data: { name, biz_num, type, address, rep_name, phone }
-    const { data: company, error } = await sb.from('companies').insert({
-      user_id: S.user.id,
-      name: data.name,
-      name_ko: data.name,
-      biz_num: data.biz_num || null,
-      biz_number: data.biz_num || null,
-      type: data.type || 'seller',
-      company_type: data.type || 'seller',
-      address: data.address || null,
-      address_ko: data.address || null,
-      rep_name: data.rep_name || null,
-      ceo_name_ko: data.rep_name || null,
-      phone: data.phone || null
-    }).select().single();
-    if (error) throw error;
+    // Check if user already has a company (UNIQUE constraint on user_id)
+    const { data: existing } = await sb.from('companies').select('*').eq('user_id', S.user.id).single();
+
+    let company;
+    if (existing) {
+      // Update existing company
+      const { data: updated, error } = await sb.from('companies').update({
+        name: data.name,
+        name_ko: data.name,
+        biz_num: data.biz_num || null,
+        biz_number: data.biz_num || null,
+        company_type: data.type || existing.company_type || 'seller',
+        address: data.address || null,
+        address_ko: data.address || null,
+        rep_name: data.rep_name || null,
+        ceo_name_ko: data.rep_name || null,
+        phone: data.phone || null
+      }).eq('id', existing.id).select().single();
+      if (error) throw error;
+      company = updated;
+    } else {
+      // Create new company
+      const { data: created, error } = await sb.from('companies').insert({
+        user_id: S.user.id,
+        name: data.name,
+        name_ko: data.name,
+        biz_num: data.biz_num || null,
+        biz_number: data.biz_num || null,
+        company_type: data.type || 'seller',
+        address: data.address || null,
+        address_ko: data.address || null,
+        rep_name: data.rep_name || null,
+        ceo_name_ko: data.rep_name || null,
+        phone: data.phone || null
+      }).select().single();
+      if (error) throw error;
+      company = created;
+    }
 
     // Link user to company
     await sb.from('users').update({ company_id: company.id }).eq('id', S.user.id);
     S.company = company;
-    S.profile.company_id = company.id;
+    if (S.profile) S.profile.company_id = company.id;
     notify();
     return company;
   },
