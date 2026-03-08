@@ -74,13 +74,26 @@ const Auth = {
     // Load company if exists
     if (profile && profile.company_id) {
       const { data: company } = await sb.from('companies').select('*').eq('id', profile.company_id).single();
+      if (company) {
+        company.name = company.name || company.name_ko || '';
+        company.rep_name = company.rep_name || company.ceo_name_ko || '';
+        company.biz_num = company.biz_num || company.biz_number || '';
+        company.address = company.address || company.address_ko || '';
+        company.name_en = company.name_en || '';
+        company.address_en = company.address_en || '';
+      }
       S.company = company;
     }
 
-    // Load products
+    // Load products (try company_id first, fallback to user_id)
     if (S.company) {
-      const { data: products } = await sb.from('products').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false });
-      S.products = products || [];
+      let { data: products } = await sb.from('products').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false });
+      if (!products || products.length === 0) {
+        const { data: p2 } = await sb.from('products').select('*').eq('user_id', S.user.id).order('created_at', { ascending: false });
+        products = p2;
+      }
+      // Map name_ko to name if name is empty
+      S.products = (products || []).map(p => ({ ...p, name: p.name || p.name_ko || 'Unnamed' }));
     }
 
     // Load analyses
@@ -491,11 +504,17 @@ const Setup = {
   async createCompany(data) {
     // data: { name, biz_num, type, address, rep_name, phone }
     const { data: company, error } = await sb.from('companies').insert({
+      user_id: S.user.id,
       name: data.name,
+      name_ko: data.name,
       biz_num: data.biz_num || null,
+      biz_number: data.biz_num || null,
       type: data.type || 'manufacturer',
+      company_type: data.type || 'manufacturer',
       address: data.address || null,
+      address_ko: data.address || null,
       rep_name: data.rep_name || null,
+      ceo_name_ko: data.rep_name || null,
       phone: data.phone || null
     }).select().single();
     if (error) throw error;
@@ -512,8 +531,10 @@ const Setup = {
     // data: { name, url, category, images, fob_price }
     if (!S.company) throw new Error('회사 정보를 먼저 등록해주세요.');
     const { data: product, error } = await sb.from('products').insert({
+      user_id: S.user.id,
       company_id: S.company.id,
       name: data.name,
+      name_ko: data.name,
       url: data.url || null,
       category: data.category || null,
       images: data.images || [],
