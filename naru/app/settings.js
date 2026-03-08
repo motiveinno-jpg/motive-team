@@ -65,38 +65,38 @@ const Settings = {
 
     h += '<div class="form-group">';
     h += '<label class="form-label">회사명</label>';
-    h += `<input name="name" class="form-input" value="${c.name || ''}" required>`;
+    h += `<input name="name" class="form-input" value="${(c.name || '').replace(/"/g,'&quot;')}" required>`;
     h += '</div>';
 
     h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
     h += '<div class="form-group">';
     h += '<label class="form-label">대표자명</label>';
-    h += `<input name="rep_name" class="form-input" value="${c.rep_name || ''}">`;
+    h += `<input name="rep_name" class="form-input" value="${(c.rep_name || '').replace(/"/g,'&quot;')}">`;
     h += '</div>';
     h += '<div class="form-group">';
     h += '<label class="form-label">연락처</label>';
-    h += `<input name="phone" class="form-input" value="${c.phone || ''}">`;
+    h += `<input name="phone" class="form-input" value="${(c.phone || '').replace(/"/g,'&quot;')}">`;
     h += '</div>';
     h += '</div>';
 
     h += '<div class="form-group">';
     h += '<label class="form-label">사업자등록번호</label>';
-    h += `<input name="biz_num" class="form-input" value="${c.biz_num || ''}">`;
+    h += `<input name="biz_num" class="form-input" value="${(c.biz_num || '').replace(/"/g,'&quot;')}">`;
     h += '</div>';
 
     h += '<div class="form-group">';
     h += '<label class="form-label">주소</label>';
-    h += `<input name="address" class="form-input" value="${c.address || ''}">`;
+    h += `<input name="address" class="form-input" value="${(c.address || '').replace(/"/g,'&quot;')}">`;
     h += '</div>';
 
     h += '<div class="form-group">';
     h += '<label class="form-label">영문 회사명</label>';
-    h += `<input name="name_en" class="form-input" value="${c.name_en || ''}" placeholder="Motive Innovation Co., Ltd.">`;
+    h += `<input name="name_en" class="form-input" value="${(c.name_en || '').replace(/"/g,'&quot;')}" placeholder="Motive Innovation Co., Ltd.">`;
     h += '</div>';
 
     h += '<div class="form-group">';
     h += '<label class="form-label">영문 주소</label>';
-    h += `<input name="address_en" class="form-input" value="${c.address_en || ''}" placeholder="123 Gangnam-daero, Seoul, Korea">`;
+    h += `<input name="address_en" class="form-input" value="${(c.address_en || '').replace(/"/g,'&quot;')}" placeholder="123 Gangnam-daero, Seoul, Korea">`;
     h += '</div>';
 
     h += '<button type="submit" class="btn btn-pri" style="margin-top:8px">저장</button>';
@@ -106,7 +106,7 @@ const Settings = {
     // Account section
     h += '<div class="card" style="max-width:600px;margin-top:16px">';
     h += '<div class="card-header"><div class="card-title">계정</div></div>';
-    h += `<div style="font-size:13px;color:var(--tx2);margin-bottom:12px">이메일: ${state.user ? state.user.email : '-'}</div>`;
+    h += `<div style="font-size:13px;color:var(--tx2);margin-bottom:12px">이메일: ${state.user ? state.user.email.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '-'}</div>`;
     h += '<div style="display:flex;gap:10px">';
     h += '<button onclick="Settings.changePassword()" class="btn btn-ghost btn-sm">비밀번호 변경</button>';
     h += '<button onclick="Settings.deleteAccount()" class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(239,68,68,.3)">계정 삭제</button>';
@@ -377,11 +377,15 @@ const Settings = {
 
     try {
       const token = (await sb.auth.getSession()).data.session?.access_token;
-      await fetch(NARU_EF_BASE + '/manage-subscription', {
+      const res = await fetch(NARU_EF_BASE + '/manage-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({ action: 'cancel' })
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
       UI.toast('구독 해지 요청이 접수되었습니다.', 'success');
       await Auth.loadProfile();
       notify();
@@ -425,7 +429,7 @@ const Settings = {
   async deleteAccount() {
     const ok = await UI.confirm('정말 계정을 삭제하시겠습니까?\n\n모든 데이터가 삭제되며 복구할 수 없습니다.');
     if (!ok) return;
-    const ok2 = await UI.confirm('마지막 확인입니다.\n\n"삭제"를 입력하시겠습니까?');
+    const ok2 = await UI.confirm('마지막 확인입니다.\n\n정말로 되돌릴 수 없이 삭제하시겠습니까?');
     if (!ok2) return;
 
     // Mark account for deletion (admin handles actual deletion)
