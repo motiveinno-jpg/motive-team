@@ -252,9 +252,13 @@ const Docs = {
     // Create document record
     const totalAmount = (qty && unitPrice) ? qty * unitPrice : null;
     const { data: doc, error } = await sb.from('documents').insert({
+      user_id: S.user.id,
       product_id: productId,
       type: docType,
+      doc_type: docType,
       status: 'generating',
+      version: 1,
+      language: 'en',
       buyer_name: buyerName || null,
       buyer_country: buyerCountry || null,
       buyer_address: buyerAddress || null,
@@ -630,7 +634,8 @@ Docs.handlePaymentReturn = async function() {
 
     const totalAmount = (d.qty && d.unitPrice) ? d.qty * d.unitPrice : null;
     const { data: doc, error } = await sb.from('documents').insert({
-      product_id: d.productId, type: d.docType, status: 'generating',
+      user_id: S.user.id, product_id: d.productId, type: d.docType,
+      doc_type: d.docType, status: 'generating', version: 1, language: 'en',
       buyer_name: d.buyerName || null, buyer_country: d.buyerCountry || null,
       buyer_address: d.buyerAddress || null, incoterms: d.incoterms,
       currency: d.currency, quantity: d.qty, unit_price: d.unitPrice,
