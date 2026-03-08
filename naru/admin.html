@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>나루 — 관리자</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚢</text></svg>">
+<link rel="stylesheet" href="assets/naru.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+<div id="naru-app"></div>
+
+<script src="assets/naru-core.js"></script>
+<script>
+/**
+ * NARU Admin Dashboard
+ * 사용자 관리, 매출 분석, 알리바바 계정 관리, 바우처 추적, 시스템 설정
+ */
+
+S.route = 'dashboard';
+S._admin = {
+  users: [], companies: [], analyses: [],
+  revenue: { total: 0, monthly: 0, subscriptions: 0, oneTime: 0 },
+  alibaba: { accounts: [], contracts: [] },
+  outreach: { leads: 0, sent: 0, opened: 0, converted: 0 }
+};
+
+/* Override nav for admin */
+renderMainApp = function(container) {
+  const navItems = [
+    { id: 'dashboard', icon: '📊', label: '대시보드' },
+    { id: 'admin-users', icon: '👥', label: '사용자' },
+    { id: 'admin-revenue', icon: '💰', label: '매출' },
+    { id: 'admin-alibaba', icon: '🏪', label: '알리바바' },
+    { id: 'admin-outreach', icon: '📧', label: '아웃리치' },
+    { id: 'admin-voucher', icon: '🏛️', label: '바우처' },
+    { id: 'admin-system', icon: '⚙️', label: '시스템' }
+  ];
+
+  const nav = navItems.map(n =>
+    `<a href="#${n.id}" class="nav-item ${S.route === n.id ? 'active' : ''}" onclick="Router.go('${n.id}')">
+      <span class="nav-icon">${n.icon}</span>
+      <span class="nav-label">${n.label}</span>
+    </a>`
+  ).join('');
+
+  container.innerHTML = `
+    <div class="app-layout">
+      <aside class="app-sidebar">
+        <div class="sidebar-logo">나루 Admin</div>
+        <nav class="sidebar-nav">${nav}</nav>
+        <div class="sidebar-user">
+          <div style="font-size:13px;font-weight:600;color:#fff;margin-bottom:2px">관리자</div>
+          <div style="font-size:11px;color:var(--tx2)">${S.user ? S.user.email : ''}</div>
+          <button onclick="Auth.signOut()" style="margin-top:8px;background:none;border:1px solid var(--bd);border-radius:6px;padding:4px 12px;font-size:11px;color:var(--tx2);cursor:pointer">로그아웃</button>
+        </div>
+      </aside>
+      <main class="app-main" id="naru-main"></main>
+    </div>`;
+
+  const main = document.getElementById('naru-main');
+  Router.render(main);
+};
+
+/* ═══ Dashboard ═══ */
+Router.register('dashboard', function(state) {
+  const a = state._admin;
+  let h = '';
+
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">대시보드</h2>';
+
+  // Key metrics
+  h += '<div class="stats-grid" style="grid-template-columns:repeat(6,1fr)">';
+  h += `<div class="stat-card"><div class="stat-label">전체 사용자</div><div class="stat-value">${a.users.length || 0}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">기업 수</div><div class="stat-value">${a.companies.length || 0}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">분석 건수</div><div class="stat-value">${a.analyses.length || 0}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">월 매출</div><div class="stat-value" style="color:var(--grn)">${UI.won(a.revenue.monthly)}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">구독</div><div class="stat-value">${a.revenue.subscriptions || 0}건</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">리드</div><div class="stat-value">${a.outreach.leads || 0}</div></div>`;
+  h += '</div>';
+
+  // Revenue chart placeholder
+  h += '<div class="card" style="margin-top:16px">';
+  h += '<div class="card-header"><div class="card-title">매출 추이</div></div>';
+  h += '<div style="height:200px;display:flex;align-items:flex-end;gap:8px;padding:16px 0">';
+  // Simple bar chart
+  const months = ['1월','2월','3월','4월','5월','6월'];
+  const values = [0, 0, 0, 0, 0, 0]; // Will be populated from billing_events
+  const maxVal = Math.max(...values, 1);
+  months.forEach((m, i) => {
+    const pct = values[i] / maxVal * 100 || 5;
+    h += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">`;
+    h += `<div style="font-size:11px;color:var(--tx2)">${UI.won(values[i])}</div>`;
+    h += `<div style="width:100%;height:${pct}%;min-height:4px;background:var(--pri);border-radius:4px 4px 0 0;transition:height .5s"></div>`;
+    h += `<div style="font-size:10px;color:var(--tx3)">${m}</div>`;
+    h += '</div>';
+  });
+  h += '</div></div>';
+
+  // Recent activity
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">';
+
+  // Recent users
+  h += '<div class="card">';
+  h += '<div class="card-header"><div class="card-title">최근 가입</div></div>';
+  const recentUsers = (a.users || []).slice(0, 5);
+  if (recentUsers.length === 0) {
+    h += '<div style="color:var(--tx2);font-size:13px;padding:12px">아직 가입자가 없습니다.</div>';
+  } else {
+    recentUsers.forEach(u => {
+      h += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)">`;
+      h += `<div style="width:28px;height:28px;border-radius:50%;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:12px">${(u.email || '?')[0].toUpperCase()}</div>`;
+      h += `<div style="flex:1"><div style="font-size:12px;color:#fff">${u.email || '-'}</div><div style="font-size:10px;color:var(--tx3)">${UI.ago(u.created_at)}</div></div>`;
+      h += '</div>';
+    });
+  }
+  h += '</div>';
+
+  // Recent analyses
+  h += '<div class="card">';
+  h += '<div class="card-header"><div class="card-title">최근 분석</div></div>';
+  const recentAnalyses = (a.analyses || []).slice(0, 5);
+  if (recentAnalyses.length === 0) {
+    h += '<div style="color:var(--tx2);font-size:13px;padding:12px">분석 이력이 없습니다.</div>';
+  } else {
+    recentAnalyses.forEach(an => {
+      h += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bd)">`;
+      h += `<div class="score-circle" style="width:32px;height:32px;font-size:11px;border-color:${UI.scoreColor(an.score || 0)}">${an.score || '-'}</div>`;
+      h += `<div style="flex:1"><div style="font-size:12px;color:#fff">${UI.trunc(an.product_name || 'Product', 25)}</div><div style="font-size:10px;color:var(--tx3)">${UI.ago(an.created_at)}</div></div>`;
+      h += '</div>';
+    });
+  }
+  h += '</div>';
+
+  h += '</div>';
+
+  return h;
+});
+
+/* ═══ Users Management ═══ */
+Router.register('admin-users', function(state) {
+  const users = state._admin.users || [];
+  let h = '';
+
+  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">';
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;flex:1">사용자 관리</h2>';
+  h += `<span style="font-size:13px;color:var(--tx2)">${users.length}명</span>`;
+  h += '</div>';
+
+  h += '<table class="tbl"><thead><tr>';
+  h += '<th>이메일</th><th>회사</th><th>유형</th><th>구독</th><th>분석</th><th>가입일</th><th></th>';
+  h += '</tr></thead><tbody>';
+
+  users.forEach(u => {
+    h += '<tr>';
+    h += `<td style="color:#fff;font-weight:600">${u.email || '-'}</td>`;
+    h += `<td>${u.company_name || '-'}</td>`;
+    h += `<td>${UI.badge(u.role || 'client', u.role === 'admin' ? 'red' : 'pri')}</td>`;
+    h += `<td>${u.plan ? UI.badge(u.plan, 'grn') : UI.badge('free', 'default')}</td>`;
+    h += `<td>${u.analysis_count || 0}건</td>`;
+    h += `<td>${UI.date(u.created_at)}</td>`;
+    h += `<td><button onclick="AdminApp.viewUser('${u.id}')" class="btn btn-ghost btn-sm">상세</button></td>`;
+    h += '</tr>';
+  });
+
+  h += '</tbody></table>';
+  return h;
+});
+
+/* ═══ Revenue ═══ */
+Router.register('admin-revenue', function(state) {
+  const r = state._admin.revenue;
+  let h = '';
+
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">매출 관리</h2>';
+
+  h += '<div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">';
+  h += `<div class="stat-card"><div class="stat-label">총 매출</div><div class="stat-value" style="color:var(--grn)">${UI.won(r.total)}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">이번 달</div><div class="stat-value">${UI.won(r.monthly)}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">구독 매출</div><div class="stat-value">${UI.won(r.subscriptions)}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">건당 매출</div><div class="stat-value">${UI.won(r.oneTime)}</div></div>`;
+  h += '</div>';
+
+  // Revenue breakdown
+  h += '<div class="card" style="margin-top:16px">';
+  h += '<div class="card-header"><div class="card-title">수익원별 분류</div></div>';
+  h += '<table class="tbl"><thead><tr><th>수익원</th><th style="text-align:right">건수</th><th style="text-align:right">금액</th><th style="text-align:right">비율</th></tr></thead>';
+  h += '<tbody>';
+  const sources = [
+    { name: 'AI 분석 (건당)', count: 0, amount: 0 },
+    { name: '서류 생성 (건당)', count: 0, amount: 0 },
+    { name: 'Starter 구독', count: 0, amount: 0 },
+    { name: 'Pro 구독', count: 0, amount: 0 },
+    { name: '알리바바 운영대행', count: 0, amount: 0 },
+    { name: '에스크로 수수료', count: 0, amount: 0 }
+  ];
+  const totalAmt = sources.reduce((s, x) => s + x.amount, 0) || 1;
+  sources.forEach(s => {
+    h += `<tr><td>${s.name}</td><td style="text-align:right">${s.count}</td><td style="text-align:right">${UI.won(s.amount)}</td><td style="text-align:right">${(s.amount / totalAmt * 100).toFixed(1)}%</td></tr>`;
+  });
+  h += '</tbody></table></div>';
+
+  // Billing events
+  h += '<div class="card" style="margin-top:16px">';
+  h += '<div class="card-header"><div class="card-title">최근 결제 이력</div></div>';
+  const billing = state._admin._billingEvents || [];
+  if (billing.length === 0) {
+    h += '<div style="color:var(--tx2);font-size:13px;padding:12px">결제 이력이 없습니다.</div>';
+  } else {
+    h += '<table class="tbl"><thead><tr><th>일시</th><th>사용자</th><th>항목</th><th style="text-align:right">금액</th><th>상태</th></tr></thead><tbody>';
+    billing.forEach(b => {
+      h += `<tr><td>${UI.dateTime(b.created_at)}</td><td>${b.user_email || '-'}</td><td>${b.description || '-'}</td><td style="text-align:right;font-weight:700;color:#fff">${UI.won(b.amount)}</td><td>${b.status === 'paid' ? UI.badge('완료', 'grn') : UI.badge(b.status, 'ylw')}</td></tr>`;
+    });
+    h += '</tbody></table>';
+  }
+  h += '</div>';
+
+  return h;
+});
+
+/* ═══ Alibaba Management ═══ */
+Router.register('admin-alibaba', function(state) {
+  const ali = state._admin.alibaba;
+  let h = '';
+
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">알리바바 관리</h2>';
+
+  // Account overview
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">';
+
+  // Reseller accounts
+  h += '<div class="card" style="border-left:3px solid var(--org)">';
+  h += '<div class="card-header"><div class="card-title">총판운영 (A)</div></div>';
+  h += '<div style="font-size:13px;color:var(--tx2);margin-bottom:8px">모티브 계정으로 운영하는 제품</div>';
+  const resellers = (ali.contracts || []).filter(c => c.service_type === 'reseller');
+  h += `<div style="font-size:24px;font-weight:800;color:#fff">${resellers.length}건</div>`;
+  h += '<div style="margin-top:8px">';
+  h += `${UI.badge('활성 ' + resellers.filter(c => c.status === 'active').length, 'grn')} `;
+  h += `${UI.badge('대기 ' + resellers.filter(c => c.status === 'pending').length, 'ylw')}`;
+  h += '</div></div>';
+
+  // Agency accounts
+  h += '<div class="card" style="border-left:3px solid var(--acc)">';
+  h += '<div class="card-header"><div class="card-title">운영대행 (B)</div></div>';
+  h += '<div style="font-size:13px;color:var(--tx2);margin-bottom:8px">파트너사 자체 계정 운영대행</div>';
+  const agencies = (ali.contracts || []).filter(c => c.service_type === 'agency');
+  h += `<div style="font-size:24px;font-weight:800;color:#fff">${agencies.length}건</div>`;
+  h += '<div style="margin-top:8px">';
+  h += `${UI.badge('BASIC ' + agencies.filter(c => c.tier === 'BASIC').length, 'pri')} `;
+  h += `${UI.badge('PLUS ' + agencies.filter(c => c.tier === 'PLUS').length, 'acc')}`;
+  h += '</div></div>';
+
+  h += '</div>';
+
+  // Contracts list
+  h += '<div class="card">';
+  h += '<div class="card-header"><div class="card-title">계약 목록</div></div>';
+  const contracts = ali.contracts || [];
+  if (contracts.length === 0) {
+    h += '<div style="color:var(--tx2);font-size:13px;padding:12px">알리바바 계약이 없습니다.</div>';
+  } else {
+    h += '<table class="tbl"><thead><tr><th>회사</th><th>유형</th><th>제품</th><th>상태</th><th>마지막 동기화</th><th></th></tr></thead><tbody>';
+    contracts.forEach(c => {
+      const typeLabel = c.service_type === 'reseller' ? '총판운영' : '운영대행';
+      const typeBadge = c.service_type === 'reseller' ? UI.badge(typeLabel, 'org') : UI.badge(typeLabel + ' ' + (c.tier || 'BASIC'), 'acc');
+      h += `<tr><td style="color:#fff;font-weight:600">${c.company_name || '-'}</td><td>${typeBadge}</td><td>${c.product_name || '-'}</td><td>${c.status === 'active' ? UI.badge('활성', 'grn') : UI.badge(c.status || '대기', 'ylw')}</td><td>${c.last_sync ? UI.ago(c.last_sync) : '-'}</td><td><button onclick="AdminApp.manageContract('${c.id}')" class="btn btn-ghost btn-sm">관리</button></td></tr>`;
+    });
+    h += '</tbody></table>';
+  }
+  h += '</div>';
+
+  // Sync control
+  h += '<div class="card" style="margin-top:16px">';
+  h += '<div class="card-header"><div class="card-title">데이터 동기화</div></div>';
+  h += '<p style="font-size:13px;color:var(--tx2);margin-bottom:12px">알리바바 계정의 판매 데이터, RFQ, 문의를 크롤링하여 나루에 동기화합니다.</p>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<button onclick="AdminApp.syncAlibaba()" class="btn btn-pri btn-sm">전체 동기화 실행</button>';
+  h += '<button onclick="AdminApp.viewSyncLog()" class="btn btn-ghost btn-sm">동기화 로그</button>';
+  h += '</div></div>';
+
+  return h;
+});
+
+/* ═══ Outreach Management ═══ */
+Router.register('admin-outreach', function(state) {
+  const o = state._admin.outreach;
+  let h = '';
+
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">아웃리치 관리</h2>';
+
+  h += '<div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">';
+  h += `<div class="stat-card"><div class="stat-label">수집 리드</div><div class="stat-value">${o.leads || 0}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">발송</div><div class="stat-value">${o.sent || 0}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">오픈</div><div class="stat-value" style="color:var(--ylw)">${o.opened || 0}</div></div>`;
+  h += `<div class="stat-card"><div class="stat-label">전환</div><div class="stat-value" style="color:var(--grn)">${o.converted || 0}</div></div>`;
+  h += '</div>';
+
+  // Crawler control
+  h += '<div class="card" style="margin-top:16px">';
+  h += '<div class="card-header"><div class="card-title">리드 크롤러</div></div>';
+  h += '<p style="font-size:13px;color:var(--tx2);margin-bottom:12px">공개 데이터에서 제조사/바이어를 수집하여 미니 AI 분석 + 맞춤 초대장을 발송합니다.</p>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+  h += '<div class="form-group"><label class="form-label">소스</label>';
+  h += '<select id="outreach-source" class="form-input">';
+  h += '<option value="naver_shopping">네이버 쇼핑 셀러</option>';
+  h += '<option value="kita">KITA 수출기업</option>';
+  h += '<option value="coupang">쿠팡 판매자</option>';
+  h += '<option value="voucher_list">수출바우처 수혜기업</option>';
+  h += '</select></div>';
+  h += '<div class="form-group"><label class="form-label">카테고리</label>';
+  h += '<input id="outreach-category" class="form-input" placeholder="예: 화장품, 식품"></div>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<button onclick="AdminApp.startCrawl()" class="btn btn-pri btn-sm">크롤링 시작</button>';
+  h += '<button onclick="AdminApp.sendOutreach()" class="btn btn-ghost btn-sm">초대장 발송</button>';
+  h += '</div>';
+  h += '</div>';
+
+  // Lead list
+  h += '<div class="card" style="margin-top:16px">';
+  h += '<div class="card-header"><div class="card-title">수집된 리드</div></div>';
+  const leads = state._admin._leads || [];
+  if (leads.length === 0) {
+    h += '<div style="color:var(--tx2);font-size:13px;padding:12px">크롤링을 실행하면 리드가 수집됩니다.</div>';
+  } else {
+    h += '<table class="tbl"><thead><tr><th>회사명</th><th>소스</th><th>카테고리</th><th>이메일</th><th>점수</th><th>상태</th></tr></thead><tbody>';
+    leads.forEach(l => {
+      h += `<tr><td style="color:#fff">${l.company_name || '-'}</td><td>${l.source || '-'}</td><td>${l.category || '-'}</td><td>${l.email || '-'}</td><td>${l.score ? l.score + '점' : '-'}</td><td>${l.outreach_status === 'sent' ? UI.badge('발송', 'pri') : l.outreach_status === 'opened' ? UI.badge('오픈', 'ylw') : l.outreach_status === 'converted' ? UI.badge('전환', 'grn') : UI.badge('대기', 'default')}</td></tr>`;
+    });
+    h += '</tbody></table>';
+  }
+  h += '</div>';
+
+  return h;
+});
+
+/* ═══ Voucher Management ═══ */
+Router.register('admin-voucher', function(state) {
+  let h = '';
+
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">바우처 관리</h2>';
+
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">';
+
+  // Export voucher
+  h += '<div class="card">';
+  h += '<div class="card-header"><div class="card-title">수출바우처 수행기관</div></div>';
+  h += '<p style="font-size:13px;color:var(--tx2);margin-bottom:12px">모티브이노베이션은 수출바우처 수행기관으로 등록되어 있습니다. 수혜기업의 바우처 포인트를 정산받을 수 있습니다.</p>';
+  h += '<div style="display:flex;gap:8px">';
+  h += `<div class="stat-card" style="flex:1"><div class="stat-label">수혜기업</div><div class="stat-value">0</div></div>`;
+  h += `<div class="stat-card" style="flex:1"><div class="stat-label">정산 대기</div><div class="stat-value">0원</div></div>`;
+  h += '</div></div>';
+
+  // Manufacturing voucher
+  h += '<div class="card">';
+  h += '<div class="card-header"><div class="card-title">제조혁신바우처</div></div>';
+  h += '<p style="font-size:13px;color:var(--tx2);margin-bottom:12px">제조혁신바우처 수행기관 등록 완료. AI 분석/컨설팅 서비스를 바우처로 제공할 수 있습니다.</p>';
+  h += '<div style="display:flex;gap:8px">';
+  h += `<div class="stat-card" style="flex:1"><div class="stat-label">수혜기업</div><div class="stat-value">0</div></div>`;
+  h += `<div class="stat-card" style="flex:1"><div class="stat-label">정산 대기</div><div class="stat-value">0원</div></div>`;
+  h += '</div></div>';
+
+  h += '</div>';
+
+  // Voucher companies
+  h += '<div class="card">';
+  h += '<div class="card-header"><div class="card-title">바우처 수혜기업 목록</div></div>';
+  h += '<div style="color:var(--tx2);font-size:13px;padding:12px">수혜기업이 나루에 가입하면 자동으로 바우처 정산이 연동됩니다.</div>';
+  h += '</div>';
+
+  return h;
+});
+
+/* ═══ System Settings ═══ */
+Router.register('admin-system', function(state) {
+  let h = '';
+
+  h += '<h2 style="font-size:20px;font-weight:800;color:#fff;margin-bottom:20px">시스템 설정</h2>';
+
+  h += '<div class="card" style="max-width:600px;margin-bottom:16px">';
+  h += '<div class="card-header"><div class="card-title">결제 설정</div></div>';
+  h += '<div class="form-group"><label class="form-label">Toss Client Key</label>';
+  h += '<input class="form-input" value="test_ck_..." readonly></div>';
+  h += '<div class="form-group"><label class="form-label">Toss MID</label>';
+  h += '<input class="form-input" value="gmotivuy0z" readonly></div>';
+  h += '<div class="form-group"><label class="form-label">Stripe Publishable Key</label>';
+  h += '<input class="form-input" placeholder="pk_live_..." readonly></div>';
+  h += '</div>';
+
+  h += '<div class="card" style="max-width:600px;margin-bottom:16px">';
+  h += '<div class="card-header"><div class="card-title">AI 설정</div></div>';
+  h += '<div class="form-group"><label class="form-label">분석 모델</label>';
+  h += '<select class="form-input"><option>claude-opus-4-6</option><option>claude-sonnet-4-6</option></select></div>';
+  h += '<div class="form-group"><label class="form-label">분석 온도</label>';
+  h += '<input type="number" class="form-input" value="0.3" step="0.1" min="0" max="1"></div>';
+  h += '</div>';
+
+  h += '<div class="card" style="max-width:600px">';
+  h += '<div class="card-header"><div class="card-title">이메일 설정 (Resend)</div></div>';
+  h += '<div class="form-group"><label class="form-label">발신 도메인</label>';
+  h += '<input class="form-input" placeholder="naru.motiveinno.com" readonly></div>';
+  h += '<div class="form-group"><label class="form-label">발신 이메일</label>';
+  h += '<input class="form-input" placeholder="hello@naru.motiveinno.com" readonly></div>';
+  h += '</div>';
+
+  return h;
+});
+
+/* ═══ Admin App Logic ═══ */
+const AdminApp = {
+  async loadDashboard() {
+    // Load all admin data
+    const [
+      { data: users },
+      { data: companies },
+      { data: analyses },
+      { data: billing },
+      { data: contracts },
+      { data: leads }
+    ] = await Promise.all([
+      sb.from('users').select('*').order('created_at', { ascending: false }).limit(100),
+      sb.from('companies').select('*').order('created_at', { ascending: false }),
+      sb.from('analyses').select('*').order('created_at', { ascending: false }).limit(100),
+      sb.from('billing_events').select('*').order('created_at', { ascending: false }).limit(100),
+      sb.from('alibaba_contracts').select('*').order('created_at', { ascending: false }),
+      sb.from('leads').select('*').order('created_at', { ascending: false }).limit(200)
+    ]);
+
+    S._admin.users = users || [];
+    S._admin.companies = companies || [];
+    S._admin.analyses = analyses || [];
+    S._admin._billingEvents = billing || [];
+    S._admin.alibaba.contracts = contracts || [];
+    S._admin._leads = leads || [];
+
+    // Calculate revenue
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const paid = (billing || []).filter(b => b.status === 'paid');
+    S._admin.revenue.total = paid.reduce((s, b) => s + (b.amount || 0), 0);
+    S._admin.revenue.monthly = paid.filter(b => b.created_at >= monthStart).reduce((s, b) => s + (b.amount || 0), 0);
+
+    // Outreach stats
+    S._admin.outreach.leads = (leads || []).length;
+    S._admin.outreach.sent = (leads || []).filter(l => l.outreach_status === 'sent' || l.outreach_status === 'opened' || l.outreach_status === 'converted').length;
+    S._admin.outreach.opened = (leads || []).filter(l => l.outreach_status === 'opened' || l.outreach_status === 'converted').length;
+    S._admin.outreach.converted = (leads || []).filter(l => l.outreach_status === 'converted').length;
+
+    notify();
+  },
+
+  viewUser(uid) {
+    const u = S._admin.users.find(x => x.id === uid);
+    if (!u) return;
+
+    let body = '';
+    body += `<div style="font-size:14px;margin-bottom:16px">`;
+    body += `<div style="margin-bottom:8px"><span style="color:var(--tx2)">이메일:</span> <span style="color:#fff">${u.email}</span></div>`;
+    body += `<div style="margin-bottom:8px"><span style="color:var(--tx2)">가입일:</span> <span style="color:#fff">${UI.dateTime(u.created_at)}</span></div>`;
+    body += `<div style="margin-bottom:8px"><span style="color:var(--tx2)">역할:</span> ${UI.badge(u.role || 'client', 'pri')}</div>`;
+    body += '</div>';
+
+    body += '<div style="display:flex;gap:8px">';
+    body += `<button onclick="AdminApp.setRole('${uid}','admin')" class="btn btn-ghost btn-sm">관리자 지정</button>`;
+    body += `<button onclick="AdminApp.setRole('${uid}','client')" class="btn btn-ghost btn-sm">일반 전환</button>`;
+    body += '</div>';
+
+    UI.modal('사용자 상세', body, { width: '400px' });
+  },
+
+  async setRole(uid, role) {
+    await sb.from('users').update({ role }).eq('id', uid);
+    UI.toast('역할이 변경되었습니다.', 'success');
+    document.querySelectorAll('[id^="naru-modal"]').forEach(el => el.remove());
+    await AdminApp.loadDashboard();
+  },
+
+  manageContract(cid) {
+    UI.toast('계약 관리 기능 준비 중...', 'info');
+  },
+
+  async syncAlibaba() {
+    UI.toast('알리바바 동기화를 시작합니다...', 'info');
+    try {
+      await API.call('alibaba-crawler', { action: 'sync_all' });
+      UI.toast('동기화 완료!', 'success');
+      await AdminApp.loadDashboard();
+    } catch (e) {
+      UI.toast('동기화 오류: ' + e.message, 'error');
+    }
+  },
+
+  viewSyncLog() {
+    UI.toast('동기화 로그 기능 준비 중...', 'info');
+  },
+
+  async startCrawl() {
+    const source = document.getElementById('outreach-source')?.value;
+    const category = document.getElementById('outreach-category')?.value;
+    UI.toast(`${source} 크롤링 시작...`, 'info');
+    try {
+      await API.call('crawl-leads', { source, category, limit: 50 });
+      UI.toast('크롤링 완료!', 'success');
+      await AdminApp.loadDashboard();
+    } catch (e) {
+      UI.toast('크롤링 오류: ' + e.message, 'error');
+    }
+  },
+
+  async sendOutreach() {
+    const leads = (S._admin._leads || []).filter(l => !l.outreach_status);
+    if (leads.length === 0) {
+      UI.toast('발송할 리드가 없습니다.', 'warn');
+      return;
+    }
+    const ok = await UI.confirm(`${leads.length}건의 리드에 초대장을 발송하시겠습니까?`);
+    if (!ok) return;
+    try {
+      await API.call('send-outreach', { lead_ids: leads.map(l => l.id) });
+      UI.toast('초대장 발송 완료!', 'success');
+      await AdminApp.loadDashboard();
+    } catch (e) {
+      UI.toast('발송 오류: ' + e.message, 'error');
+    }
+  }
+};
+
+/* ═══ Admin-specific init ═══ */
+const _origLoadProfile2 = Auth.loadProfile;
+Auth.loadProfile = async function() {
+  await _origLoadProfile2.call(Auth);
+  // Check admin role
+  if (S.profile && S.profile.role !== 'admin') {
+    UI.toast('관리자 권한이 필요합니다.', 'error');
+    return;
+  }
+  await AdminApp.loadDashboard();
+};
+
+window.AdminApp = AdminApp;
+</script>
+</body>
+</html>
