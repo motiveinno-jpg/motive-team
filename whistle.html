@@ -355,7 +355,7 @@ var UI={
   ta:function(name,label,o){o=o||{};return'<div class="form-group"><label class="form-label">'+U.esc(label)+'</label><textarea class="form-textarea" name="'+name+'" rows="'+(o.rows||3)+'" placeholder="'+U.esc(o.placeholder||'')+'">'+U.esc(o.value||'')+'</textarea></div>';},
   fd:function(sel){var el=typeof sel==='string'?document.querySelector(sel):sel;if(!el)return{};var d={};el.querySelectorAll('input,select,textarea').forEach(function(i){if(i.name){d[i.name]=i.type==='number'&&i.value?Number(i.value):i.value;}});return d;},
   pb:function(p){var m={free:['FREE','var(--w40)'],starter:['STARTER','var(--pri)'],basic:['BASIC','var(--pri)'],pro:['PRO','var(--acc)'],alibaba:['ALIBABA','var(--err)']};var r=m[p]||m.free;return'<span class="badge" style="background:'+r[1]+'15;color:'+r[1]+';border:1px solid '+r[1]+'25">'+r[0]+'</span>';},
-  clp:function(id,content,maxH){maxH=maxH||120;return'<div id="clp-'+id+'" data-mh="'+maxH+'" style="max-height:'+maxH+'px;overflow:hidden;position:relative;transition:max-height .4s ease-out">'+content+'</div>'+'<div id="clp-g-'+id+'" style="height:48px;margin-top:-48px;position:relative;background:linear-gradient(to bottom,transparent,var(--card));pointer-events:none"></div>'+'<div style="text-align:center;margin-top:4px"><button id="clp-b-'+id+'" onclick="App.toggleClp(\''+id+'\')" style="background:none;border:1px solid var(--bd);border-radius:20px;padding:6px 24px;font-size:12px;color:var(--w60);cursor:pointer;transition:all .2s">더보기 ▾</button></div>';}
+  clp:function(id,content,maxH){return'<div id="clp-'+id+'">'+content+'</div>';}
 };
 
 /* === PLAN LIMITS === */
@@ -1430,9 +1430,8 @@ function pgAReport(){
     h+='</div>';
   }
 
-  // === PAGE-LEVEL 더보기 (Deep Analysis) ===
-  var _deepStart='';var _hasDeep=r.margin_analysis||r.market_analysis||(r.market_analysis&&r.market_analysis.length)||r.alibaba_strategy||r.action_plan||r.export_readiness||r.government_support;
-  if(_hasDeep){h+='<div id="clp-deep-report" data-mh="0" style="max-height:0;overflow:hidden;transition:max-height .5s ease-out">';}
+  // === DEEP ANALYSIS (always expanded) ===
+  var _hasDeep=r.margin_analysis||r.market_analysis||(r.market_analysis&&r.market_analysis.length)||r.alibaba_strategy||r.action_plan||r.export_readiness||r.government_support;
 
   // === MARGIN ANALYSIS (v5) ===
   if(r.margin_analysis){
@@ -1648,8 +1647,7 @@ function pgAReport(){
     h+='</div></div></div>';
   }
 
-  // Close deep report collapsible
-  if(_hasDeep){h+='</div>';h+='<div style="text-align:center;margin:16px 0;padding:16px;background:var(--w04);border-radius:12px;border:1px dashed var(--bd)"><button id="clp-b-deep-report" onclick="App.toggleClp(\'deep-report\')" style="background:linear-gradient(135deg,rgba(0,212,255,.1),rgba(0,136,255,.1));border:1px solid rgba(0,212,255,.2);border-radius:24px;padding:10px 40px;font-size:14px;font-weight:700;color:var(--pri);cursor:pointer;transition:all .2s">📊 상세 분석 더보기 ▾</button><div style="font-size:11px;color:var(--w30);margin-top:6px">마진분석 · 시장분석 · 인증현황 · 물류 · 로드맵 · 정부지원</div></div>';}
+  // Deep analysis sections shown inline (no collapsible)
 
   // === LINKED PRODUCTS ===
   var linkedProd=S.products.filter(function(p){return p.analysis_id===a.id;});
@@ -1710,21 +1708,33 @@ function downloadReportPDF(){
   setTimeout(function(){
     try{
       var doc=new jspdf.jsPDF('p','mm','a4');
-      doc.setFontSize(18);doc.text('Whistle AI Export Analysis Report',20,20);
-      doc.setFontSize(12);doc.text(a.product_name||'',20,30);
-      doc.setFontSize(10);doc.text('Generated: '+new Date().toLocaleDateString('ko'),20,38);
+      var pw=170;
+      function _chk(y,need){if(y+need>275){doc.addPage();return 20;}return y;}
+      function _sec(title,y){y=_chk(y,14);doc.setFontSize(13);doc.setTextColor(37,99,235);doc.text(title,20,y);doc.setTextColor(40,40,40);y+=8;doc.setFontSize(10);return y;}
+      function _txt(text,y,fs){fs=fs||10;doc.setFontSize(fs);var lines=doc.splitTextToSize(text,pw);y=_chk(y,lines.length*5);doc.text(lines,20,y);y+=lines.length*5+4;return y;}
+      doc.setFontSize(20);doc.setTextColor(20,20,20);doc.text('Whistle AI Export Analysis Report',20,20);
+      doc.setFontSize(12);doc.setTextColor(100,100,100);doc.text(a.product_name||'',20,30);
+      doc.setFontSize(9);doc.text('Generated: '+new Date().toLocaleDateString('ko')+' | Whistle AI',20,38);
       var r=a.ai_result||{};
-      doc.setFontSize(14);doc.text('Overall Score: '+(r.overall_score||'-')+'/100',20,50);
+      doc.setFontSize(16);doc.setTextColor(37,99,235);doc.text('Overall Score: '+(r.overall_score||'-')+'/100',20,50);
+      doc.setTextColor(40,40,40);
       var y=60;
-      if(r.executive_summary){doc.setFontSize(10);var lines=doc.splitTextToSize(r.executive_summary,170);doc.text(lines,20,y);y+=lines.length*5+10;}
-      if(r.estimated_fob){doc.text('Estimated FOB: '+r.estimated_fob,20,y);y+=8;}
+      if(r.executive_summary){y=_sec('Executive Summary',y);y=_txt(r.executive_summary,y);}
+      if(r.estimated_fob){doc.setFontSize(10);doc.text('Estimated FOB: '+r.estimated_fob,20,y);y+=8;}
       if(r.hs_code){doc.text('HS Code: '+r.hs_code,20,y);y+=8;}
-      if(r.hs_code_detail){var hsd=r.hs_code_detail;doc.setFontSize(9);if(hsd.hs6)doc.text('  HS 6-digit: '+hsd.hs6+' ('+( hsd.hs6_desc||'')+')',20,y);y+=6;if(hsd.hs10)doc.text('  HS 10-digit (HSK): '+hsd.hs10+' ('+(hsd.hs10_desc||'')+')',20,y);y+=6;if(hsd.basis){var bLines=doc.splitTextToSize('Classification: '+hsd.basis,170);doc.text(bLines,20,y);y+=bLines.length*4+4;}doc.setFontSize(10);}
-      if(r.fta_tariff_table&&r.fta_tariff_table.length){doc.setFontSize(11);doc.text('FTA Tariff Analysis',20,y);y+=8;doc.setFontSize(9);r.fta_tariff_table.forEach(function(ft){if(y>270){doc.addPage();y=20;}doc.text(ft.mkt+': '+ft.fta+' | MFN '+ft.mfn+' -> FTA '+ft.pref+' (Save '+ft.save+') | '+ft.rule,24,y);y+=5;});y+=4;doc.setFontSize(10);}
-      if(r.required_certs&&r.required_certs.length){doc.text('Required Certifications: '+r.required_certs.join(', '),20,y);y+=8;}
+      if(r.hs_code_detail){var hsd=r.hs_code_detail;y=_sec('HS Code Classification',y);if(hsd.hs6)y=_txt('HS6: '+hsd.hs6+' ('+(hsd.hs6_desc||'')+')',y,9);if(hsd.hs10)y=_txt('HSK: '+hsd.hs10+' ('+(hsd.hs10_desc||'')+')',y,9);if(hsd.basis)y=_txt('Basis: '+hsd.basis,y,9);}
+      if(r.competitor_analysis){y=_sec('Competitor Analysis',y);var ca=r.competitor_analysis;var caText=typeof ca==='object'?(ca.overview||JSON.stringify(ca)):ca;y=_txt(caText,y);}
+      if(r.pricing_strategy){y=_sec('Pricing Strategy',y);var ps=r.pricing_strategy;if(typeof ps==='object'){if(ps.recommended_fob)y=_txt('Recommended FOB: '+ps.recommended_fob,y);if(ps.recommended_retail)y=_txt('Recommended Retail: '+ps.recommended_retail,y);if(ps.price_vs_competition)y=_txt(ps.price_vs_competition,y);}else{y=_txt(ps,y);}}
+      if(r.fta_tariff_table&&r.fta_tariff_table.length){y=_sec('FTA Tariff Analysis ('+r.fta_tariff_table.length+' markets)',y);doc.setFontSize(9);r.fta_tariff_table.forEach(function(ft){y=_chk(y,6);doc.text(ft.mkt+': '+ft.fta+' | MFN '+ft.mfn+' -> FTA '+ft.pref+' (Save '+ft.save+')',24,y);y+=5;});y+=4;}
+      if(r.margin_analysis){y=_sec('Margin / Cost Analysis',y);var ma=r.margin_analysis;if(typeof ma==='object'){if(ma.overview)y=_txt(ma.overview,y);if(ma.gross_margin)y=_txt('Gross Margin: '+ma.gross_margin,y);if(ma.cost_breakdown){var cbd=ma.cost_breakdown;Object.keys(cbd).forEach(function(k){y=_chk(y,6);doc.text('  '+k+': '+cbd[k],24,y);y+=5;});y+=2;}}else{y=_txt(ma,y);}}
+      if(r.market_analysis){y=_sec('Market Analysis',y);var mka=r.market_analysis;if(Array.isArray(mka)){mka.forEach(function(m){y=_chk(y,10);var mn=typeof m==='object'?(m.market||m.country||''):m;y=_txt('Market: '+(typeof mn==='string'?mn:JSON.stringify(mn)),y);if(m.opportunity)y=_txt('  Opportunity: '+m.opportunity,y,9);if(m.barrier)y=_txt('  Barrier: '+m.barrier,y,9);});}else if(typeof mka==='object'){if(mka.overview)y=_txt(mka.overview,y);}else{y=_txt(mka,y);}}
+      if(r.export_readiness){y=_sec('Export Readiness',y);var er=r.export_readiness;if(typeof er==='object'){if(er.overview)y=_txt(er.overview,y);if(er.ready_items&&er.ready_items.length)y=_txt('Ready: '+er.ready_items.join(', '),y);if(er.missing_items&&er.missing_items.length)y=_txt('Missing: '+er.missing_items.join(', '),y);}else{y=_txt(er,y);}}
+      if(r.required_certs&&r.required_certs.length){y=_sec('Required Certifications',y);y=_txt(r.required_certs.join(', '),y);}
+      if(r.action_plan){y=_sec('Action Plan',y);var ap=r.action_plan;if(Array.isArray(ap)){ap.forEach(function(item,i){var txt=typeof item==='object'?((i+1)+'. '+(item.action||item.step||JSON.stringify(item))):((i+1)+'. '+item);y=_txt(txt,y,9);});}else if(typeof ap==='object'){if(ap.overview)y=_txt(ap.overview,y);}else{y=_txt(ap,y);}}
+      if(r.government_support){y=_sec('Government Support',y);var gs=r.government_support;if(typeof gs==='object'){if(gs.overview)y=_txt(gs.overview,y);if(gs.programs&&gs.programs.length)gs.programs.forEach(function(p){y=_txt('- '+(typeof p==='object'?(p.name||JSON.stringify(p)):p),y,9);});if(gs.estimated_subsidy)y=_txt('Estimated subsidy: '+gs.estimated_subsidy,y);}else{y=_txt(gs,y);}}
       doc.save('Whistle_AI_Report_'+a.product_name+'_'+new Date().toISOString().slice(0,10)+'.pdf');
       UI.toast('PDF 다운로드 완료!','ok');
-    }catch(e){UI.toast('PDF 생성 실패: '+e.message,'err');}
+    }catch(e){console.error(e);UI.toast('PDF 생성 실패: '+e.message,'err');}
   },100);
 }
 
@@ -9386,7 +9396,7 @@ function renderSidebar(){
   var _isAdmin=S.user&&S.user.role==='admin';
   var _hubPages={projects:['buyers','marketplace','deals','trends'],comms:['chat','emailhub','meetings'],ordershipping:['orders','tracking'],bizhub:['subscription','services','voucherreport','invite','partnership','guide']};
   function _isActive(mid){if(_hubPages[mid])return _hubPages[mid].indexOf(S.page)!==-1||S.page===mid;return S.page===mid;}
-  return '<div class="sidebar"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">'+UI.pb(S.user&&S.user.plan||'free')+'</div></div></div><div class="sidebar-nav">'+menu.map(function(m){if(m.id==='div')return '<div class="nav-section"></div>';if(m.id==='sec')return '<div style="font-size:9px;font-weight:700;color:var(--w20);text-transform:uppercase;letter-spacing:1px;padding:12px 16px 4px;margin-top:4px">'+m.label+'</div>';return '<div class="nav-item '+(_isActive(m.id)?'active':'')+'" onclick="App.nav(\''+m.id+'\')"><span class="icon">'+m.icon+'</span><span>'+m.label+'</span></div>';}).join('')+'</div><div class="sidebar-footer">'+(_isAdmin?'<div style="padding:6px 8px;margin-bottom:8px;border-top:1px solid var(--bd);padding-top:10px"><a href="admin.html" class="nav-item" style="color:var(--w40);text-decoration:none;font-size:12px" title="관리자 대시보드"><span class="icon">🛡️</span><span>관리자</span></a></div>':'')+'<div style="padding:6px 8px;margin-bottom:4px"><div class="nav-item" onclick="App.nav(\'guide\')" style="color:var(--w40);font-size:12px"><span class="icon">📚</span><span>수출 기본가이드</span></div></div>'+'<div class="nav-item" onclick="App.toggleTheme()" style="color:var(--w40);cursor:pointer"><span class="icon">'+(document.documentElement.getAttribute("data-theme")==="light"?"🌙":"☀️")+'</span><span>'+(document.documentElement.getAttribute("data-theme")==="light"?"다크모드":"라이트모드")+'</span></div>'+'<div class="nav-item" onclick="App.doLogout()" style="color:var(--w40)"><span class="icon">🚪</span><span>로그아웃</span></div></div></div>';
+  return '<div class="sidebar"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">'+UI.pb(S.user&&S.user.plan||'free')+'</div></div></div><div class="sidebar-nav">'+menu.map(function(m){if(m.id==='div')return '<div class="nav-section"></div>';if(m.id==='sec')return '<div style="font-size:9px;font-weight:700;color:var(--w20);text-transform:uppercase;letter-spacing:1px;padding:12px 16px 4px;margin-top:4px">'+m.label+'</div>';return '<div class="nav-item '+(_isActive(m.id)?'active':'')+'" onclick="App.nav(\''+m.id+'\')"><span class="icon">'+m.icon+'</span><span>'+m.label+'</span></div>';}).join('')+'</div><div class="sidebar-footer">'+<div style="padding:6px 8px;margin-bottom:4px"><div class="nav-item" onclick="App.nav(\'guide\')" style="color:var(--w40);font-size:12px"><span class="icon">📚</span><span>수출 기본가이드</span></div></div>'+'<div class="nav-item" onclick="App.toggleTheme()" style="color:var(--w40);cursor:pointer"><span class="icon">'+(document.documentElement.getAttribute("data-theme")==="light"?"🌙":"☀️")+'</span><span>'+(document.documentElement.getAttribute("data-theme")==="light"?"다크모드":"라이트모드")+'</span></div>'+'<div class="nav-item" onclick="App.doLogout()" style="color:var(--w40)"><span class="icon">🚪</span><span>로그아웃</span></div></div></div>';
 }
 
 function render(){
@@ -9397,7 +9407,7 @@ function render(){
   try{
   var unreadN=(S.notifications||[]).filter(function(n){return !n.is_read;}).length;
   app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div>'+_breadcrumb()+'</div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.toggleTheme()" style="font-size:14px;padding:4px 8px;border-radius:6px" title="테마 변경">'+(document.documentElement.getAttribute("data-theme")==="light"?"\uD83C\uDF19":"\u2600\uFE0F")+'</button><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(S.currency==='KRW'?'\u20A9 KRW':'\u0024 USD')+' \u21C4</button><div style="position:relative;cursor:pointer" onclick="App.toggleNotif(event)" title="알림"><span style="font-size:16px">🔔</span>'+(unreadN>0?'<span class="notif-dot"></span><span style="position:absolute;top:-6px;right:-8px;font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 4px;font-weight:700;min-width:14px;text-align:center">'+unreadN+'</span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+S.user.email+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div>'+(S.notifOpen?renderNotifPanel():'')+'<div class="page-content">'+renderPage()+'</div></div></div>';
-  var _pc2=document.querySelector('.page-content');if(_pc2&&_scrollY>0)_pc2.scrollTop=_scrollY;
+  var _pc2=document.querySelector('.page-content');if(_pc2&&_scrollY>0){_pc2.scrollTop=_scrollY;requestAnimationFrame(function(){_pc2.scrollTop=_scrollY;});}
   _renderMobNav();
   }catch(renderErr){console.error('[render error]',renderErr);app.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">페이지 렌더링 오류</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+UI.esc(renderErr.message)+'</div><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">새로고침</button><button onclick="App.nav(\'dashboard\')" style="padding:8px 20px;border-radius:8px;background:#666;color:#fff;border:none;cursor:pointer;margin-left:8px">대시보드</button></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:renderErr.stack,url:location.href,page:S.page,portal:'whistle'}).then(function(){});}catch(e){}}
 }
