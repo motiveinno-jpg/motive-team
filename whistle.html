@@ -401,7 +401,7 @@ function _planGate(feature){
   var cur=S.user&&S.user.plan||'free';
   var lim=PLAN_LIMITS[cur]||PLAN_LIMITS.free;
   var used=0,max=0,label='';
-  if(feature==='analysis'){used=S.analyses.filter(function(a){var d=new Date(a.created_at),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}).length;max=lim.analyses;label='AI 분석';}
+  if(feature==='analysis'){used=S.analyses.filter(function(a){var d=new Date(a.created_at),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}).length;max=lim.analyses+(S._singleAnalysisCredit||0);label='AI 분석';}
   else if(feature==='product'){used=S.products.length;max=lim.products;label='제품 등록';}
   else if(feature==='project'){used=S.projects.length;max=lim.projects;label='프로젝트';}
   else if(feature==='docgen'){used=(S.savedDocs||[]).length;max=lim.docs;label='서류 자동생성';}
@@ -425,6 +425,101 @@ function _lockOverlayEnd(gate){
   return '</div><div style="position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;z-index:5"><div style="text-align:center;padding:28px;border-radius:16px;background:rgba(6,11,24,.94);border:1px solid var(--bd-l);max-width:480px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)"><div style="font-size:32px;margin-bottom:10px">🔒</div><div style="font-size:14px;color:var(--w70);margin-bottom:8px;line-height:1.6">'+
     (gate.max===0?gate.label+' 기능은 유료 플랜부터 사용 가능합니다.':gate.label+' 한도 초과 (<b>'+gate.used+'/'+gate.max+'</b>)<br>업그레이드하세요.')+
     '</div>'+planCards+voucherMsg+'</div></div></div>';
+}
+
+/* === SINGLE ANALYSIS PAYMENT (단건 결제) === */
+function _showAnalysisPaywall(){
+  var isKo=!S.user||!S.user.country||S.user.country==='KR'||S.user.country==='Korea';
+  var cur=isKo?'₩':'$';var regP=isKo?'50,000':'40';var disP=isKo?'25,000':'20';var rawAmt=isKo?25000:20;
+  var body='<div style="text-align:center;padding:10px 0">'+
+    '<div style="font-size:40px;margin-bottom:12px">🔍</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">AI 분석 한도 초과</div>'+
+    '<div style="font-size:13px;color:var(--w40);margin-bottom:20px">무료 분석 횟수를 모두 사용했습니다.<br>아래 옵션 중 선택해주세요.</div>'+
+    /* 옵션1: 단건 결제 */
+    '<div style="padding:16px;border-radius:14px;border:2px solid var(--pri);background:rgba(0,212,255,.04);margin-bottom:12px;cursor:pointer;text-align:left" onclick="App.payOneAnalysis()">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:800;color:var(--pri)">⚡ 단건 AI 분석</span><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:3px 8px;border-radius:20px">50% OFF</span></div>'+
+      '<div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:22px;font-weight:900;color:var(--w95)">'+cur+disP+'</span><span style="font-size:13px;color:var(--w20);text-decoration:line-through">'+cur+regP+'</span></div>'+
+      '<div style="font-size:11px;color:var(--w40);margin-top:6px">1회 분석 즉시 이용 · 런칭 기념 특가</div>'+
+    '</div>'+
+    /* 옵션2: 구독 */
+    '<div style="padding:16px;border-radius:14px;border:1px solid var(--bd);background:var(--w04);cursor:pointer;text-align:left" onclick="App.closeModal(\'analysis-pw\');App.nav(\'subscription\')">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:800;color:var(--acc)">💎 구독 플랜</span><span style="font-size:10px;color:var(--ok);font-weight:700">BEST VALUE</span></div>'+
+      '<div style="font-size:12px;color:var(--w60);line-height:1.5">STARTER '+cur+(isKo?'99,000':'79')+'/월 — AI 분석 10회/월<br>PRO '+cur+(isKo?'299,000':'239')+'/월 — 무제한 분석</div>'+
+      '<div style="font-size:11px;color:var(--acc);margin-top:6px;font-weight:600">분석 2회 이상이면 구독이 유리합니다 →</div>'+
+    '</div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'analysis-pw',title:'🔍 AI 분석 결제',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'analysis-pw\')">취소</button>',width:'420px'}));
+  UI.showModal('analysis-pw');
+}
+
+function payOneAnalysis(){
+  if(!S.user){UI.toast('로그인이 필요합니다','warn');closeModal('analysis-pw');return;}
+  var isKo=!S.user.country||S.user.country==='KR'||S.user.country==='Korea';
+  closeModal('analysis-pw');
+
+  if(isKo){
+    /* 한국: 토스 단건 결제 */
+    if(TOSS_CONFIG.ck.indexOf('REPLACE')!==-1){
+      _showOneAnalysisCTA();return;
+    }
+    _getToss().then(function(payment){
+      if(!payment){UI.toast('토스 결제 초기화 실패','err');return;}
+      var orderId='WH-AI-'+S.user.id.slice(0,8)+'-'+Date.now();
+      var baseUrl=location.origin+location.pathname;
+      payment.requestPayment({
+        method:'CARD',
+        amount:{currency:'KRW',value:25000},
+        orderId:orderId,
+        orderName:'Whistle AI 단건 분석',
+        successUrl:baseUrl+'?toss_one_ok=1&orderId='+orderId,
+        failUrl:baseUrl+'?toss_one_fail=1'
+      }).catch(function(err){
+        if(err.code!=='USER_CANCEL')UI.toast('결제 오류: '+(err.message||err.code),'err');
+      });
+    });
+  } else {
+    /* 글로벌: Stripe 단건 결제 (UI only — EIN 대기) */
+    _showOneAnalysisCTA();
+  }
+}
+
+function _showOneAnalysisCTA(){
+  var body='<div style="text-align:center;padding:10px 0 20px"><div style="font-size:40px;margin-bottom:12px">💬</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:6px">결제 시스템 준비 중</div>'+
+    '<div style="font-size:13px;color:var(--w40);line-height:1.6;margin-bottom:20px">카드 결제가 곧 오픈됩니다.<br><b style="color:var(--acc)">계좌이체·카카오톡</b>으로 즉시 이용 가능합니다!</div>'+
+    '<div style="padding:14px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);margin-bottom:12px;text-align:left">'+
+      '<div style="font-size:12px;color:var(--w60);line-height:1.8">'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>금액</span><b style="color:var(--acc)">₩25,000 (정상가 ₩50,000)</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>은행</span><b style="color:var(--w90)">IBK 기업은행</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>예금주</span><b style="color:var(--w90)">(주)모티브이노베이션</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0"><span>계좌</span><b style="color:var(--w90)">카카오톡 상담 시 안내</b></div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="display:flex;flex-direction:column;gap:10px;max-width:320px;margin:0 auto">'+
+      '<a href="https://open.kakao.com/o/sMotiveInno" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:12px;background:#FEE500;color:#191919;font-weight:700;font-size:14px;text-decoration:none">💬 카카오톡 상담 / 결제</a>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--w20);margin-top:12px">입금 확인 후 분석 1회 즉시 충전</div></div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'one-pay-cta',title:'⚡ 단건 분석 결제',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'one-pay-cta\')">닫기</button>',width:'400px'}));
+  UI.showModal('one-pay-cta');
+}
+
+/* Handle toss one-time payment callback */
+function _checkTossOneCallback(){
+  var p=new URLSearchParams(location.search);
+  if(p.get('toss_one_ok')==='1'){
+    history.replaceState(null,'',location.pathname);
+    /* Record single analysis credit */
+    if(S.user){
+      sb.from('service_requests').insert({user_id:S.user.id,type:'single_analysis_payment',status:'completed',details:{amount:25000,orderId:p.get('orderId'),paid_at:new Date().toISOString()}}).then(function(){
+        S._singleAnalysisCredit=(S._singleAnalysisCredit||0)+1;
+        UI.toast('결제 완료! AI 분석 1회가 충전되었습니다 🎉','ok',5000);
+      });
+    }
+  }
+  if(p.get('toss_one_fail')==='1'){
+    history.replaceState(null,'',location.pathname);
+    UI.toast('결제가 취소되었습니다','info');
+  }
 }
 
 /* === DISCLAIMER === */
@@ -1023,7 +1118,7 @@ function submitA(){
   if(S._submitting){return;}S._submitting=true;GP.start();var _submitBtn=document.querySelector('[onclick*="submitA"]');btnLoad(_submitBtn,true);
   /* Plan limit check */
   var g=_planGate('analysis');
-  if(g.blocked){S._submitting=false;GP.done();UI.toast(g.label+' 한도 초과! 업그레이드가 필요합니다.','warn');nav('subscription');return;}
+  if(g.blocked){S._submitting=false;GP.done();_showAnalysisPaywall();return;}
   var d=S.analysisData;
   /* collect current step data */
   if(S.analysisStep===1){
@@ -8530,14 +8625,19 @@ function renderDealSidebar(deal,stIdx){
   var _escD=_getEscrowStatus(deal.id);
   if(_escD&&_escD.status!=='none'){
     h+='<div class="deal-sb-section">';
-    h+='<div class="deal-sb-section-title">🔒 에스크로 결제</div>';
-    var _escColors={requested:'var(--acc)',pending:'var(--acc)',secured:'var(--ok)',released:'var(--pri)'};
-    h+='<div style="font-size:12px"><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--w40)">금액</span><strong style="color:var(--acc)">$'+Number(_escD.amount||0).toLocaleString()+'</strong></div>';
-    h+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--w40)">통화</span><strong>'+(_escD.currency||'USD')+'</strong></div>';
+    h+='<div class="deal-sb-section-title">🔒 안전 거래 (에스크로)</div>';
+    h+='<div style="font-size:12px"><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--w40)">결제 금액</span><strong style="color:var(--acc)">'+(_escD.currency||'USD')+' '+Number(_escD.amount||0).toLocaleString()+'</strong></div>';
     h+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--w40)">조건</span><strong>'+(_escD.terms||'50/50')+'</strong></div>';
-    h+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--w40)">상태</span><span class="badge" style="font-size:9px;padding:2px 8px;background:'+(_escColors[_escD.status]||'var(--w12)')+';color:#fff">'+_escrowLabel(_escD.status)+'</span></div>';
+    if(_escD.fee)h+='<div style="display:flex;justify-content:space-between;padding:3px 0"><span style="color:var(--w40)">수수료 (2.5%)</span><span style="color:var(--w40)">'+(_escD.currency||'USD')+' '+Number(_escD.fee).toLocaleString()+'</span></div>';
+    if(_escD.netAmount)h+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-top:1px solid var(--w08);margin-top:4px;padding-top:6px"><span style="color:var(--w60);font-weight:700">정산 예정액</span><strong style="color:var(--ok)">'+(_escD.currency||'USD')+' '+Number(_escD.netAmount).toLocaleString()+'</strong></div>';
+    h+='<div style="display:flex;justify-content:space-between;padding:3px 0;margin-top:4px"><span style="color:var(--w40)">상태</span><span class="badge" style="font-size:9px;padding:2px 8px;background:'+_escrowColor(_escD.status)+';color:#fff">'+_escrowLabel(_escD.status)+'</span></div>';
     h+='</div>';
-    if(_escD.status==='secured')h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:6px;font-size:10px" onclick="App.releaseEscrow(\''+deal.id+'\')">💰 에스크로 해제 (대금 수령)</button>';
+    /* 상태별 액션 버튼 */
+    if(_escD.status==='secured')h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:6px;font-size:10px" onclick="App.escrowMarkShipped(\''+deal.id+'\')">📦 출하 완료 (배송 시작)</button>';
+    if(_escD.status==='shipping')h+='<div style="margin-top:6px;font-size:11px;color:var(--w40);text-align:center">바이어 수령 확인 대기중...</div>';
+    if(_escD.status==='delivered'||_escD.status==='shipping')h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:6px;font-size:10px" onclick="App.requestEscrowRelease(\''+deal.id+'\')">💰 정산 요청</button>';
+    if(_escD.status==='release_requested')h+='<div style="margin-top:6px;font-size:11px;color:var(--acc);text-align:center;font-weight:600">정산 처리중 (영업일 1~2일)</div>';
+    if(_escD.status==='released')h+='<div style="margin-top:6px;font-size:11px;color:var(--ok);text-align:center;font-weight:600">정산 완료 ✅</div>';
     h+='</div>';
   }
 
@@ -8572,21 +8672,38 @@ function renderDealActions(deal,stIdx){
   return '';
 }
 
-/* === ESCROW PAYMENT (localStorage simulation) === */
+/* === ESCROW PAYMENT SYSTEM ===
+ * Flow: 제조사 요청 → 바이어 결제 → Whistle 보관 → 바이어 수령확인 → 제조사 정산
+ * Statuses: requested → buyer_paid → secured → shipping → delivered → release_requested → released
+ */
 function _getEscrowStatus(dealId){var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
-function _setEscrow(dealId,data){localStorage.setItem('escrow_'+dealId,JSON.stringify(data));}
-function _escrowLabel(st){return{none:'없음',requested:'요청됨',pending:'대기중',secured:'에스크로 확보',released:'해제됨'}[st]||st;}
+function _setEscrow(dealId,data){localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
+  /* DB에도 기록 (실결제 연동 시 필요) */
+  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow',status:data.status,details:{deal_id:dealId,...data}},{onConflict:'user_id,type'}).catch(function(){});
+}
+function _escrowLabel(st){return{none:'없음',requested:'요청됨',buyer_paid:'바이어 결제완료',secured:'에스크로 확보 (Whistle 보관중)',shipping:'배송중',delivered:'수령 확인됨',release_requested:'정산 요청됨',released:'정산 완료'}[st]||st;}
+function _escrowColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
 
 function openEscrowModal(dealId){
   var deal=S.currentDealData||S._dealRoomDealData;
   var amt=0;
   if(deal&&deal.order)amt=Number(deal.order.total_amount||0);
   else if(deal&&deal.documents){var pi=deal.documents.find(function(d){return d.doc_type==='pi';});if(pi&&pi.content&&pi.content.total)amt=pi.content.total;}
-  var body='<div style="margin-bottom:14px;font-size:13px;color:var(--w60)">바이어에게 에스크로 결제를 요청합니다. 결제 대금은 안전하게 보관되며, 거래 완료 후 해제됩니다.</div>';
-  body+='<div class="form-group"><label class="form-label">결제 금액 (USD)</label><input class="form-input" id="esc-amount" type="number" min="1" step="0.01" value="'+amt+'" placeholder="0.00"></div>';
+  var body='<div style="margin-bottom:14px;padding:14px;border-radius:12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.12)">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:8px">🔒 안전 거래 (에스크로) 안내</div>'+
+    '<div style="font-size:12px;color:var(--w60);line-height:1.7">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">1</span> 제조사가 에스크로 결제 요청</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">2</span> 바이어가 결제 → <b>Whistle이 안전 보관</b></div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">3</span> 제조사가 물건 발송 (배송 추적)</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--ok);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">4</span> 바이어가 수령 확인</div>'+
+      '<div style="display:flex;align-items:center;gap:8px"><span style="background:var(--ok);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">5</span> <b>제조사에게 대금 정산</b> (수수료 2.5%)</div>'+
+    '</div></div>';
+  body+='<div class="form-group"><label class="form-label">결제 금액</label><input class="form-input" id="esc-amount" type="number" min="1" step="0.01" value="'+amt+'" placeholder="0.00"></div>';
   body+='<div class="form-group"><label class="form-label">통화</label><select class="form-input" id="esc-currency"><option value="USD" selected>USD</option><option value="EUR">EUR</option><option value="KRW">KRW</option><option value="CNY">CNY</option><option value="JPY">JPY</option></select></div>';
-  body+='<div class="form-group"><label class="form-label">결제 조건</label><select class="form-input" id="esc-terms"><option value="30/70">30% 선금 / 70% 잔금</option><option value="50/50">50% 선금 / 50% 잔금</option><option value="100_upfront">100% 선불</option></select></div>';
-  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'escrow-req',title:'🔒 에스크로 결제 요청',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'escrow-req\')">취소</button><button class="btn btn-pri" onclick="App.submitEscrowRequest(\''+dealId+'\')">💸 결제 요청 전송</button>',width:'460px'}));
+  body+='<div class="form-group"><label class="form-label">결제 조건</label><select class="form-input" id="esc-terms"><option value="30/70">30% 선금 / 70% 잔금 (출하 시)</option><option value="50/50">50% 선금 / 50% 잔금 (수령 시)</option><option value="100_delivery">100% 수령 후 결제</option><option value="100_upfront">100% 선불</option></select></div>';
+  body+='<div class="form-group"><label class="form-label">수령 확인 기한 (일)</label><select class="form-input" id="esc-confirm-days"><option value="7">7일 (기본)</option><option value="14">14일</option><option value="30">30일</option></select></div>';
+  body+='<div style="font-size:11px;color:var(--w30);margin-top:8px">※ 바이어가 기한 내 이의제기 없으면 자동 정산됩니다.</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'escrow-req',title:'🔒 에스크로 결제 요청',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'escrow-req\')">취소</button><button class="btn btn-pri" onclick="App.submitEscrowRequest(\''+dealId+'\')">💸 결제 요청 전송</button>',width:'480px'}));
   UI.showModal('escrow-req');
 }
 
@@ -8594,19 +8711,58 @@ function submitEscrowRequest(dealId){
   var amt=Number(document.getElementById('esc-amount').value);
   var cur=document.getElementById('esc-currency').value;
   var terms=document.getElementById('esc-terms').value;
+  var confirmDays=Number(document.getElementById('esc-confirm-days').value)||7;
   if(!amt||amt<=0){UI.toast('금액을 입력하세요','warn');return;}
-  _setEscrow(dealId,{status:'requested',amount:amt,currency:cur,terms:terms,requestedAt:new Date().toISOString()});
+  var fee=Math.round(amt*0.025*100)/100;
+  _setEscrow(dealId,{status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:Math.round((amt-fee)*100)/100,requestedAt:new Date().toISOString()});
   closeModal('escrow-req');
-  UI.toast('에스크로 결제 요청이 전송되었습니다','ok');
+  UI.toast('에스크로 결제 요청이 전송되었습니다. 바이어에게 결제 안내가 발송됩니다.','ok',4000);
   render();
 }
 
+/* 바이어가 결제 완료 시 (buyer.html에서 호출 / localStorage 공유) */
+function _escrowBuyerPaid(dealId){
+  var esc=_getEscrowStatus(dealId);if(!esc)return;
+  esc.status='secured';esc.paidAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+}
+
+/* 제조사: 출하 확인 → 배송중 */
+function escrowMarkShipped(dealId){
+  var esc=_getEscrowStatus(dealId);if(!esc||esc.status!=='secured')return;
+  esc.status='shipping';esc.shippedAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+  UI.toast('배송 시작이 기록되었습니다. 바이어가 수령 확인하면 정산됩니다.','ok',4000);
+  render();
+}
+
+/* 바이어 수령 확인 → 정산 대기 (buyer.html 또는 이메일 링크에서) */
+function _escrowDeliveryConfirmed(dealId){
+  var esc=_getEscrowStatus(dealId);if(!esc)return;
+  esc.status='delivered';esc.deliveredAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+}
+
+/* 제조사: 정산 요청 */
+function requestEscrowRelease(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc||(esc.status!=='delivered'&&esc.status!=='shipping')){
+    UI.toast('바이어 수령 확인 후 정산 가능합니다','warn');return;
+  }
+  esc.status='release_requested';esc.releaseRequestedAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+  UI.toast('정산 요청이 접수되었습니다. 영업일 1~2일 내 입금됩니다.','ok',4000);
+  render();
+}
+
+/* 관리자/시스템: 실제 정산 완료 */
 function releaseEscrow(dealId){
   var esc=_getEscrowStatus(dealId);
   if(!esc)return;
+  if(!confirm('에스크로 대금 $'+Number(esc.netAmount||esc.amount).toLocaleString()+' (수수료 $'+Number(esc.fee||0).toLocaleString()+' 차감)을 정산하시겠습니까?'))return;
   esc.status='released';esc.releasedAt=new Date().toISOString();
   _setEscrow(dealId,esc);
-  UI.toast('에스크로 대금이 해제되었습니다','ok');
+  UI.toast('에스크로 대금 $'+Number(esc.netAmount||esc.amount).toLocaleString()+'이 정산되었습니다','ok',5000);
   render();
 }
 
@@ -10151,8 +10307,9 @@ function seedTestData(){
   });
 }
 
-window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,convertDocCurrency:convertDocCurrency,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,UI:UI};
+window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,convertDocCurrency:convertDocCurrency,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,requestEscrowRelease:requestEscrowRelease,UI:UI};
 _handleTossCallback();
+_checkTossOneCallback();
 loadUser();
 window.addEventListener('hashchange',function(){handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);}).catch(function(e){console.error(e);});});
 sb.auth.onAuthStateChange(function(event, session){

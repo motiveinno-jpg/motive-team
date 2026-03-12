@@ -2636,7 +2636,11 @@ function renderDealActionChips(deal,stageIdx){
       h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Check Progress</div>';
       break;
     case'shipping':
-      if(deal.shipment&&deal.shipment.status==='delivered'){
+      var _escS=_getEscrowStatus(deal.id);
+      if(_escS&&_escS.status==='shipping'){
+        h+='<div class="chat-action-chip ok" onclick="B.confirmDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery &amp; Release Payment</div>';
+        h+='<div class="chat-action-chip" style="color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Dispute</div>';
+      } else if(deal.shipment&&deal.shipment.status==='delivered'){
         h+='<div class="chat-action-chip ok" onclick="B.confirmDelivery(\''+deal.matching.id+'\')">&#x1F4E6; Confirm Receipt</div>';
       } else {
         h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Track Shipment</div>';
@@ -2760,9 +2764,11 @@ function renderDealSidebar(deal,stageIdx){
     h+='<div style="font-size:11px"><span style="color:var(--w40)">Amount:</span> <strong style="color:var(--acc)">$'+Number(_escSB.amount||0).toLocaleString()+'</strong></div>';
     h+='<div style="font-size:11px"><span style="color:var(--w40)">Currency:</span> '+(_escSB.currency||'USD')+'</div>';
     h+='<div style="font-size:11px"><span style="color:var(--w40)">Terms:</span> '+(_escSB.terms||'50/50')+'</div>';
-    h+='<div style="font-size:11px;margin-top:4px"><span style="color:var(--w40)">Status:</span> <span class="badge" style="font-size:9px;padding:2px 8px;background:'+(_escClr[_escSB.status]||'var(--w12)')+';color:#fff">'+_escrowBuyerLabel(_escSB.status)+'</span></div>';
+    h+='<div style="font-size:11px;margin-top:4px"><span style="color:var(--w40)">Status:</span> <span class="badge" style="font-size:9px;padding:2px 8px;background:'+_escrowBuyerColor(_escSB.status)+';color:#fff">'+_escrowBuyerLabel(_escSB.status)+'</span></div>';
     if(_escSB.status==='requested')h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F4B3; Pay Now</button>';
-    if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured in Escrow</div>';
+    if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured — Safe with Whistle</div>';
+    if(_escSB.status==='shipping'){h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery</button>';h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px;color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Raise Dispute</button>';}
+    if(_escSB.status==='delivered')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Delivery Confirmed — Payment Released to Seller</div>';
     h+='</div>';
   }
 
@@ -2814,7 +2820,8 @@ function renderDealSidebar(deal,stageIdx){
 /* === ESCROW PAYMENT (localStorage simulation — shared with whistle.html) === */
 function _getEscrowStatus(dealId){var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
 function _setEscrow(dealId,data){localStorage.setItem('escrow_'+dealId,JSON.stringify(data));}
-function _escrowBuyerLabel(st){return{none:'None',requested:'Payment Requested',pending:'Pending',secured:'Funds Secured',released:'Released'}[st]||st;}
+function _escrowBuyerLabel(st){return{none:'None',requested:'Payment Requested',buyer_paid:'Paid',pending:'Pending',secured:'Funds Secured (Whistle Holding)',shipping:'Shipped — Awaiting Delivery',delivered:'Delivery Confirmed',release_requested:'Settlement Processing',released:'Settled'}[st]||st;}
+function _escrowBuyerColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
 
 function openEscrowPayModal(dealId){
   var esc=_getEscrowStatus(dealId);
@@ -2857,7 +2864,31 @@ function confirmEscrowPay(dealId){
   esc.status='secured';esc.paidAt=new Date().toISOString();
   _setEscrow(dealId,esc);
   S.modal=null;S.modalData=null;
-  toast('Payment secured in escrow!','ok');
+  toast('Payment secured in escrow! Funds will be held safely until you confirm delivery.','ok',5000);
+  render();
+}
+
+/* Buyer confirms delivery → triggers seller settlement */
+function confirmDelivery(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc||(esc.status!=='shipping'&&esc.status!=='secured')){toast('No active escrow to confirm','warn');return;}
+  if(!confirm('Confirm that you have received the goods? This will release payment to the seller.'))return;
+  esc.status='delivered';esc.deliveredAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+  toast('Delivery confirmed! Payment will be released to the seller.','ok',5000);
+  render();
+}
+
+/* Buyer raises dispute */
+function raiseEscrowDispute(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc)return;
+  var reason=prompt('Please describe the issue with your order:');
+  if(!reason)return;
+  esc.dispute={reason:reason,raisedAt:new Date().toISOString(),status:'open'};
+  _setEscrow(dealId,esc);
+  toast('Dispute raised. Our team will review and contact both parties within 48 hours.','warn',6000);
+  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:esc.amount,reason:reason}}).catch(function(){});
   render();
 }
 
@@ -3976,7 +4007,7 @@ window.B={
   // Documents
   showDocDetail:showDocDetail,
   // Escrow Payment
-  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,
+  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmDelivery:confirmDelivery,raiseEscrowDispute:raiseEscrowDispute,
   // Electronic Signature
   openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
   // Notifications
