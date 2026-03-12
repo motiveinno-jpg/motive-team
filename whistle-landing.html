@@ -161,6 +161,39 @@ function App() {
 
   const nav = (p, hash) => { setPage(p); setMobileMenu(false); if (hash) setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" }), 100); };
   const openSignup = () => { setShowSignup(true); setSignupStep(0); };
+  /* ── 결제 모달 (토스페이먼츠) ── */
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutPlan, setCheckoutPlan] = useState({ planId: "", name: "", price: "", cycle: "m" });
+  const [checkoutType, setCheckoutType] = useState("subscription"); // "subscription" | "single"
+  const openCheckout = (planId, name, price, cycle) => { setCheckoutPlan({ planId, name, price, cycle }); setCheckoutType("subscription"); setShowCheckout(true); };
+  const openSinglePay = () => { setCheckoutPlan({ planId: "ai_report", name: "AI 수출 상품분석 보고서", price: "50,000원", cycle: "" }); setCheckoutType("single"); setShowCheckout(true); };
+  const handleCheckout = async () => {
+    const TOSS_CK = "test_ck_placeholder"; // 승인 후 실제 키로 교체
+    try {
+      if (!window.TossPayments) {
+        const sc = document.createElement("script"); sc.src = "https://js.tosspayments.com/v2/standard";
+        await new Promise((ok, fail) => { sc.onload = ok; sc.onerror = fail; document.head.appendChild(sc); });
+      }
+      const toss = window.TossPayments(TOSS_CK);
+      const orderId = "WH-" + Date.now() + "-" + Math.random().toString(36).slice(2,8);
+      const amount = parseInt((checkoutPlan.price || "0").replace(/[^\d]/g, "")) || 0;
+      if (amount <= 0) { alert("결제 금액 오류"); return; }
+      const cycleName = { m: "월간", s: "6개월", a: "연간" }[checkoutPlan.cycle] || "";
+      const orderName = checkoutType === "single" ? checkoutPlan.name : "Whistle AI " + checkoutPlan.name + (cycleName ? " (" + cycleName + ")" : "");
+      const payment = toss.payment({ customerKey: "guest-" + Date.now() });
+      await payment.requestPayment({
+        method: checkoutType === "subscription" ? "CARD" : "CARD",
+        amount: { currency: "KRW", value: amount },
+        orderId,
+        orderName,
+        successUrl: window.location.origin + window.location.pathname + "?payment=success&orderId=" + orderId,
+        failUrl: window.location.origin + window.location.pathname + "?payment=fail",
+      });
+    } catch (e) {
+      if (e.code !== "USER_CANCEL") alert(e.message || "결제 처리 중 오류");
+    }
+    setShowCheckout(false);
+  };
   const [signupLoading, setSignupLoading] = useState(false);
   const handleSignup = async () => {
     const { company, name, email, phone, pw, product } = signupForm;
@@ -269,6 +302,45 @@ function App() {
   );
 
   /* ═══ SIGNUP MODAL ═══ */
+  /* ── 결제 확인 모달 ── */
+  const checkoutModal = showCheckout && (
+    <div style={{ position: "fixed", inset: 0, zIndex: 210, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onClick={() => setShowCheckout(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(8px)" }} />
+      <div style={{ position: "relative", width: "100%", maxWidth: 420, background: T.bgCard, borderRadius: 20, border: `1px solid ${T.borderL}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", padding: 32 }}>
+        <div onClick={() => setShowCheckout(false)} style={{ position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: 16, background: T.w08, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, color: T.w40 }}>✕</div>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>{checkoutType === "single" ? "📊" : "🚀"}</div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: T.w, marginBottom: 4 }}>{checkoutType === "single" ? "AI 상품분석 보고서 구매" : checkoutPlan.name + " 구독"}</h3>
+          <p style={{ fontSize: 13, color: T.w40 }}>{checkoutType === "single" ? "1건 단건결제" : { m: "월간 정기결제", s: "6개월 정기결제", a: "연간 정기결제" }[checkoutPlan.cycle] || "정기결제"}</p>
+        </div>
+        <div style={{ background: T.w08, borderRadius: 12, padding: 20, marginBottom: 24, textAlign: "center" }}>
+          <div style={{ fontSize: 13, color: T.w40, marginBottom: 4 }}>결제 금액</div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: T.w }}>{checkoutPlan.price}</div>
+          <div style={{ fontSize: 11, color: T.w20, marginTop: 4 }}>부가세 별도</div>
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: T.w40, marginBottom: 8, fontWeight: 600 }}>결제 수단</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["신용카드","체크카드"].map((m,i) => (
+              <div key={i} style={{ flex: 1, padding: "10px 12px", borderRadius: 8, background: i===0 ? T.pri+"20" : T.w08, border: `1px solid ${i===0 ? T.pri : T.border}`, textAlign: "center", fontSize: 13, fontWeight: 600, color: i===0 ? T.pri : T.w40, cursor: "pointer" }}>{m}</div>
+            ))}
+          </div>
+        </div>
+        <button onClick={handleCheckout} style={{ ...s.btn("pri"), width: "100%", padding: "14px 24px", fontSize: 15, fontWeight: 800 }}>
+          {checkoutPlan.price} 결제하기
+        </button>
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <span style={{ fontSize: 11, color: T.w20 }}>토스페이먼츠로 안전하게 결제됩니다</span>
+        </div>
+        <div style={{ marginTop: 16, padding: "10px 14px", background: T.w08, borderRadius: 8, fontSize: 11, color: T.w20, lineHeight: 1.6 }}>
+          • 구독 결제는 다음 결제일에 자동 갱신됩니다<br/>
+          • 7일 이내 미이용 시 전액 환불 가능합니다<br/>
+          • <a href="https://motiveinno-jpg.github.io/motive-team/refund.html" target="_blank" style={{ color: T.pri, textDecoration: "underline" }}>환불정책 보기</a>
+        </div>
+      </div>
+    </div>
+  );
+
   const signupModal = showSignup && (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div onClick={() => setShowSignup(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(8px)" }} />
@@ -1211,11 +1283,11 @@ function App() {
   const cycleLabel = { m: "/월", s: "/월 (6개월)", a: "/월 (연간)" };
   const cycleSave = { m: "", s: "10% 할인", a: "20% 할인" };
   const plans = [
-    { name: "Free", price: "무료", period: "", vPrice: "무료", desc: "수출 가능성 확인", cta: "무료 AI 분석 시작하기",
+    { name: "Free", price: "무료", period: "", vPrice: "무료", desc: "수출 가능성 확인", cta: "무료로 시작하기", planId: "free",
       features: [["AI 수출 분석 3회/월",true],["제품 등록 5개",true],["프로젝트 1건",true],["원가 계산기",true],["수출 로드맵 가이드",true],["서류 자동생성",false],["이메일 허브",false]], hi: false },
-    { name: "Starter", price: cyclePrices.starter[billCycle], regPrice: regularPrices.starter, period: cycleLabel[billCycle], vPrice: "29,700원", vRate: "70%", desc: "본격 수출 준비", cta: "무료 AI 분석 시작하기", save: cycleSave[billCycle],
+    { name: "Starter", price: cyclePrices.starter[billCycle], regPrice: regularPrices.starter, period: cycleLabel[billCycle], vPrice: "29,700원", vRate: "70%", desc: "본격 수출 준비", cta: "Starter 구독하기", planId: "starter", save: cycleSave[billCycle],
       features: [["AI 분석 10회/월",true],["제품 등록 20개",true],["프로젝트 5건",true],["서류 자동생성 무제한",true],["이메일 허브 50건/월",true],["수출 체크리스트",true],["카테고리별 로드맵",true]], hi: true },
-    { name: "Pro", price: cyclePrices.pro[billCycle], regPrice: regularPrices.pro, period: cycleLabel[billCycle], vPrice: "89,700원", vRate: "70%", desc: "전담 매니저 + 풀 플랫폼", cta: "무료 AI 분석 시작하기", save: cycleSave[billCycle],
+    { name: "Pro", price: cyclePrices.pro[billCycle], regPrice: regularPrices.pro, period: cycleLabel[billCycle], vPrice: "89,700원", vRate: "70%", desc: "전담 매니저 + 풀 플랫폼", cta: "Pro 구독하기", planId: "pro", save: cycleSave[billCycle],
       features: [["AI 분석 무제한",true],["제품/프로젝트 무제한",true],["바이어 매칭 1건/월",true],["전담 수출 매니저",true],["우선 서비스 처리",true],["모든 기능 무제한",true],["월 2회 전략 미팅",true]], hi: false },
   ];
 
@@ -1257,7 +1329,7 @@ function App() {
               <div style={{ fontSize: 13, color: T.w40, marginBottom: 16 }}>{p.desc}</div>
               <div style={{ flex: 1 }}>{p.features.map(([text,ok],j) => (<div key={j} style={{ display: "flex", alignItems: "center", padding: "5px 0", fontSize: 13, color: ok ? T.w60 : T.w20 }}><span style={{ color: ok ? T.ok : T.w20, fontSize: 14, marginRight: 8 }}>{ok ? "✓" : "✗"}</span>{text}</div>))}</div>
               {p.vRate && <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: 8, background: "rgba(255,184,0,.08)", border: "1px solid rgba(255,184,0,.18)", textAlign: "center" }}><div style={{ fontSize: 13, fontWeight: 800, color: T.acc }}>수출바우처 적용시 자부담 {p.vPrice}/월</div><div style={{ fontSize: 11, color: T.w40, marginTop: 2 }}>정부 {p.vRate} 지원 · 제조혁신바우처 가능</div></div>}
-              <button onClick={openSignup} style={{ ...s.btn(p.hi ? "pri" : "ghost"), width: "100%", marginTop: 18, padding: "12px 24px", fontSize: 14 }}>{p.cta}</button>
+              <button onClick={() => { if(p.planId==="free"){openSignup()}else{openCheckout(p.planId, p.name, p.price, billCycle)} }} style={{ ...s.btn(p.hi ? "pri" : "ghost"), width: "100%", marginTop: 18, padding: "12px 24px", fontSize: 14 }}>{p.cta}</button>
             </div></Fade>
           ))}
         </div>
@@ -1271,6 +1343,30 @@ function App() {
           </div>
         </Fade>
         <Fade delay={0.35} style={{ textAlign: "center", marginTop: 12 }}><p style={{ fontSize: 12, color: T.w20 }}>부가세 별도 · 6개월 10% / 연간 20% 할인 · 수출바우처/혁신바우처 정산 가능</p></Fade>
+
+        {/* ── 단건결제: AI 상품분석 보고서 ── */}
+        <Fade delay={0.4}>
+          <div style={{ marginTop: 40, padding: "32px 28px", background: `linear-gradient(135deg, ${T.bgCard}, #0d1a30)`, borderRadius: 16, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 20 }}>
+            <div style={{ flex: 1, minWidth: 280 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <span style={{ fontSize: 20 }}>📊</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: T.w }}>AI 수출 상품분석 보고서</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.bg, background: T.acc, padding: "2px 8px", borderRadius: 6 }}>건별 구매</span>
+              </div>
+              <p style={{ fontSize: 13, color: T.w40, lineHeight: 1.6, marginBottom: 4 }}>AI가 제품 사진 1장으로 13개국 시장 분석, 경쟁사·가격대·바이어 타겟·인증 요건을 자동 리포트합니다.</p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+                {["시장 경쟁력 분석","HS코드 자동 매칭","타겟 바이어 추천","인증·규제 확인","FOB 가격 산정"].map((t,i) => (
+                  <span key={i} style={{ fontSize: 11, color: T.w60, background: T.w08, padding: "3px 10px", borderRadius: 20 }}>✓ {t}</span>
+                ))}
+              </div>
+            </div>
+            <div style={{ textAlign: "center", minWidth: 200 }}>
+              <div style={{ fontSize: 32, fontWeight: 800, color: T.w, marginBottom: 4 }}>₩50,000<span style={{ fontSize: 14, color: T.w40, fontWeight: 400 }}>/건</span></div>
+              <button onClick={openSinglePay} style={{ ...s.btn("acc"), padding: "12px 32px", fontSize: 14, marginTop: 8 }}>분석 보고서 구매</button>
+              <div style={{ fontSize: 11, color: T.w20, marginTop: 6 }}>구독 없이 1건씩 결제 가능</div>
+            </div>
+          </div>
+        </Fade>
       </div>
     </div>
   );
@@ -1517,6 +1613,7 @@ function App() {
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.bg}}::-webkit-scrollbar-thumb{background:${T.w12};border-radius:3px}
       `}</style>
       {signupModal}
+      {checkoutModal}
       {loginModal}
       {analysisModal}
       {header}
