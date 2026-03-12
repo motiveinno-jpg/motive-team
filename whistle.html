@@ -1188,7 +1188,8 @@ function pgAReport(){
   // Utility functions
   var sc=function(s){return s>=80?'var(--ok)':s>=60?'var(--acc)':'var(--err)';};
   var scLabel=function(s){return s>=80?'우수':s>=60?'양호':'보완필요';};
-  var bar=function(label,val,max){max=max||100;var pct=Math.min(val/max*100,100);var col=sc(val);return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:12px;color:var(--w60)">'+label+'</span><div style="display:flex;align-items:center;gap:6px"><span style="font-size:11px;font-weight:600;color:'+col+'">'+scLabel(val)+'</span><span style="font-size:12px;font-weight:800;color:'+col+';font-family:JetBrains Mono;min-width:32px;text-align:right">'+val+'</span></div></div><div style="height:6px;border-radius:3px;background:var(--w08)"><div style="height:100%;border-radius:3px;background:'+col+';width:'+pct+'%;transition:width .5s ease"></div></div></div>';};
+  var scGrade=function(s){return s>=85?'A+':s>=75?'A':s>=65?'B+':s>=55?'B':s>=45?'C':'D';};
+  var bar=function(label,val,max){max=max||100;var pct=Math.min(val/max*100,100);var col=sc(val);return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="width:90px;font-size:12px;color:var(--w50);flex-shrink:0">'+label+'</div><div style="flex:1;height:8px;background:var(--w08);border-radius:4px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+col+';border-radius:4px;transition:width .6s ease"></div></div><div style="width:36px;text-align:right;font-size:13px;font-weight:700;color:'+col+';font-family:JetBrains Mono">'+val+'</div></div>';};
 
   var h='';
 
@@ -1199,30 +1200,47 @@ function pgAReport(){
   h+='<div style="font-size:11px;color:var(--w40);margin-top:2px">'+U.fd(a.created_at)+' · Whistle AI 수출 분석 보고서</div></div>';
   h+=UI.badge('AI 분석','pri');
   if(r.analysis_version)h+='<span class="badge badge-ghost" style="font-size:9px">'+UI.esc(r.analysis_version)+'</span>';
-  h+='<button class="btn btn-ghost btn-sm" onclick="App.downloadReportPDF()" style="font-size:11px">📥 PDF</button>';
-  h+='<button class="btn btn-ghost btn-sm" onclick="window.print()" style="font-size:11px">🖨️ 출력</button>';
+  h+='<button class="btn btn-pri btn-sm" onclick="App.downloadReportPDF()" style="font-size:11px">📥 PDF 다운로드</button>';
+  h+='<button class="btn btn-ghost btn-sm" onclick="window.print()" style="font-size:11px">🖨️</button>';
   h+='</div>';
 
   // Fallback banner
   if(S._fallbackAnalysis)h+='<div style="background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.2);border-radius:10px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--acc)">⚠️ AI 서버 미연결 — 기본 분석 결과입니다. 서버 복구 후 재분석을 권장합니다.</div>';
 
   // === SCORE OVERVIEW (HERO SECTION) ===
-  h+='<div class="card" style="margin-bottom:16px;border-color:'+sc(r.overall_score||0)+'25;background:linear-gradient(135deg,'+sc(r.overall_score||0)+'06,transparent)">';
+  var _os=r.overall_score||0;var _osc=sc(_os);var _gr=scGrade(_os);
+  h+='<div class="card" style="margin-bottom:16px;border-color:'+_osc+'25;background:linear-gradient(135deg,'+_osc+'06,transparent)">';
   h+='<div class="card-b" style="padding:24px">';
-  h+='<div style="display:flex;gap:24px;align-items:center">';
-  // Score circle
-  h+='<div style="position:relative;width:140px;height:140px;flex-shrink:0">';
-  h+='<svg viewBox="0 0 100 100" style="width:140px;height:140px;transform:rotate(-90deg)"><circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="8"/><circle cx="50" cy="50" r="42" fill="none" stroke="'+sc(r.overall_score||0)+'" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+Math.round((r.overall_score||0)/100*264)+' 264" style="transition:stroke-dasharray 1s ease"/></svg>';
-  h+='<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center"><div style="font-size:38px;font-weight:900;color:'+sc(r.overall_score||0)+';letter-spacing:-2px">'+(r.overall_score||'—')+'</div><div style="font-size:10px;color:var(--w40);font-weight:600">종합 점수</div></div></div>';
+  h+='<div style="display:flex;gap:24px;flex-wrap:wrap">';
+
+  // Left: product thumbnail + info
+  h+='<div style="flex:1;min-width:200px">';
+  var _thumb=r.thumbnail||(r.product_detail&&r.product_detail.image)||(r.input_data&&r.input_data.thumbnail)||'';
+  if(_thumb)h+='<img src="'+UI.esc(_thumb)+'" onerror="this.style.display=\'none\'" style="width:100%;max-height:180px;object-fit:cover;border-radius:12px;margin-bottom:14px">';
+  h+='<h2 style="font-size:22px;font-weight:900;line-height:1.3;margin-bottom:6px">'+UI.esc(a.product_name)+'</h2>';
+  if(r.input_data&&r.input_data.category)h+='<div style="font-size:13px;color:var(--pri);font-weight:600;margin-bottom:4px">'+UI.esc(r.input_data.category)+'</div>';
+  h+='<div style="font-size:12px;color:var(--w30)">'+U.fd(a.created_at)+' 분석 · '+(r.model_used||'')+(r.analysis_version?' · v'+r.analysis_version:'')+'</div>';
+  if(r.hs_code&&r.hs_code!=='0000.00')h+='<div style="font-size:12px;color:var(--w50);margin-top:6px">HS코드: <b style="color:var(--w80);font-family:JetBrains Mono">'+UI.esc(r.hs_code)+'</b></div>';
+  if(r.estimated_fob&&r.estimated_fob!=='N/A')h+='<div style="font-size:12px;color:var(--w50)">예상 FOB: <b style="color:var(--acc);font-family:JetBrains Mono">'+UI.esc(r.estimated_fob)+'</b></div>';
+  if(r.product_detail){var _pd=r.product_detail;if(_pd.actual_name)h+='<div style="font-size:12px;color:var(--w50);margin-top:4px">실제 제품명: '+UI.esc(_pd.actual_name)+'</div>';if(_pd.retail_price)h+='<div style="font-size:12px;color:var(--w50)">소비자가: '+UI.esc(_pd.retail_price)+'</div>';}
+  h+='</div>';
+
+  // Right: SVG arc gauge + score bars
+  h+='<div style="width:280px;flex-shrink:0">';
+  // Naru-style 270deg arc gauge
+  var _deg=(_os/100)*270;var _dashOff=235.6-(_deg/270)*188.5;
+  h+='<div style="position:relative;width:160px;height:160px;margin:0 auto">';
+  h+='<svg viewBox="0 0 120 120" style="width:160px;height:160px;transform:rotate(-225deg)"><circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="10" stroke-dasharray="235.6" stroke-dashoffset="47.1" stroke-linecap="round"/><circle cx="60" cy="60" r="50" fill="none" stroke="'+_osc+'" stroke-width="10" stroke-dasharray="235.6" stroke-dashoffset="'+_dashOff+'" stroke-linecap="round" style="transition:stroke-dashoffset 1s ease"/></svg>';
+  h+='<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:36px;font-weight:900;color:'+_osc+';line-height:1">'+_os+'</div><div style="font-size:14px;font-weight:700;color:'+_osc+';margin-top:2px">'+_gr+'</div><div style="font-size:11px;color:var(--w30)">'+scLabel(_os)+'</div></div></div>';
   // Score bars
-  h+='<div style="flex:1">';
+  h+='<div style="margin-top:20px">';
   h+=bar('시장 적합도',r.market_fit||0);
   h+=bar('가격 경쟁력',r.price_competitiveness||0);
   h+=bar('브랜드 파워',r.brand_power||0);
   h+=bar('경쟁 환경',r.competition||0);
   h+=bar('규제 대응',r.regulatory||0);
   h+=bar('물류 적합성',r.logistics_score||0);
-  h+='</div></div>';
+  h+='</div></div></div>';
   // Score details (v5 reasoning)
   if(r.score_details){var sd=r.score_details;h+='<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bd)">';h+='<div style="font-size:11px;color:var(--w40);font-weight:700;margin-bottom:10px">전문가 판단 근거</div>';var sdItems=[{k:'overall_reason',l:'종합'},{k:'market_fit_reason',l:'시장 적합도'},{k:'price_reason',l:'가격 경쟁력'},{k:'brand_reason',l:'브랜드'},{k:'competition_reason',l:'경쟁 환경'},{k:'regulatory_reason',l:'규제'},{k:'logistics_reason',l:'물류'}];sdItems.forEach(function(si){if(sd[si.k])h+='<div style="margin-bottom:8px"><span style="font-size:10px;color:var(--pri);font-weight:700">'+si.l+':</span> <span style="font-size:11px;color:var(--w60);line-height:1.6">'+UI.esc(sd[si.k])+'</span></div>';});h+='</div>';}
   // Quick stats
@@ -1746,37 +1764,101 @@ function pgAReport(){
 function downloadReportPDF(){
   var a=S.currentAnalysis;if(!a)return;
   UI.toast('PDF 생성 중...','info');
-  setTimeout(function(){
-    try{
-      var doc=new jspdf.jsPDF('p','mm','a4');
-      var pw=170;
-      function _chk(y,need){if(y+need>275){doc.addPage();return 20;}return y;}
-      function _sec(title,y){y=_chk(y,14);doc.setFontSize(13);doc.setTextColor(37,99,235);doc.text(title,20,y);doc.setTextColor(40,40,40);y+=8;doc.setFontSize(10);return y;}
-      function _txt(text,y,fs){fs=fs||10;doc.setFontSize(fs);var lines=doc.splitTextToSize(text,pw);y=_chk(y,lines.length*5);doc.text(lines,20,y);y+=lines.length*5+4;return y;}
-      doc.setFontSize(20);doc.setTextColor(20,20,20);doc.text('Whistle AI Export Analysis Report',20,20);
-      doc.setFontSize(12);doc.setTextColor(100,100,100);doc.text(a.product_name||'',20,30);
-      doc.setFontSize(9);doc.text('Generated: '+new Date().toLocaleDateString('ko')+' | Whistle AI',20,38);
-      var r=a.ai_result||{};
-      doc.setFontSize(16);doc.setTextColor(37,99,235);doc.text('Overall Score: '+(r.overall_score||'-')+'/100',20,50);
-      doc.setTextColor(40,40,40);
-      var y=60;
-      if(r.executive_summary){y=_sec('Executive Summary',y);y=_txt(r.executive_summary,y);}
-      if(r.estimated_fob){doc.setFontSize(10);doc.text('Estimated FOB: '+r.estimated_fob,20,y);y+=8;}
-      if(r.hs_code){doc.text('HS Code: '+r.hs_code,20,y);y+=8;}
-      if(r.hs_code_detail){var hsd=r.hs_code_detail;y=_sec('HS Code Classification',y);if(hsd.hs6)y=_txt('HS6: '+hsd.hs6+' ('+(hsd.hs6_desc||'')+')',y,9);if(hsd.hs10)y=_txt('HSK: '+hsd.hs10+' ('+(hsd.hs10_desc||'')+')',y,9);if(hsd.basis)y=_txt('Basis: '+hsd.basis,y,9);}
-      if(r.competitor_analysis){y=_sec('Competitor Analysis',y);var ca=r.competitor_analysis;var caText=typeof ca==='object'?(ca.overview||JSON.stringify(ca)):ca;y=_txt(caText,y);}
-      if(r.pricing_strategy){y=_sec('Pricing Strategy',y);var ps=r.pricing_strategy;if(typeof ps==='object'){if(ps.recommended_fob)y=_txt('Recommended FOB: '+ps.recommended_fob,y);if(ps.recommended_retail)y=_txt('Recommended Retail: '+ps.recommended_retail,y);if(ps.price_vs_competition)y=_txt(ps.price_vs_competition,y);}else{y=_txt(ps,y);}}
-      if(r.fta_tariff_table&&r.fta_tariff_table.length){y=_sec('FTA Tariff Analysis ('+r.fta_tariff_table.length+' markets)',y);doc.setFontSize(9);r.fta_tariff_table.forEach(function(ft){y=_chk(y,6);doc.text(ft.mkt+': '+ft.fta+' | MFN '+ft.mfn+' -> FTA '+ft.pref+' (Save '+ft.save+')',24,y);y+=5;});y+=4;}
-      if(r.margin_analysis){y=_sec('Margin / Cost Analysis',y);var ma=r.margin_analysis;if(typeof ma==='object'){if(ma.overview)y=_txt(ma.overview,y);if(ma.gross_margin)y=_txt('Gross Margin: '+ma.gross_margin,y);if(ma.cost_breakdown){var cbd=ma.cost_breakdown;Object.keys(cbd).forEach(function(k){y=_chk(y,6);doc.text('  '+k+': '+cbd[k],24,y);y+=5;});y+=2;}}else{y=_txt(ma,y);}}
-      if(r.market_analysis){y=_sec('Market Analysis',y);var mka=r.market_analysis;if(Array.isArray(mka)){mka.forEach(function(m){y=_chk(y,10);var mn=typeof m==='object'?(m.market||m.country||''):m;y=_txt('Market: '+(typeof mn==='string'?mn:JSON.stringify(mn)),y);if(m.opportunity)y=_txt('  Opportunity: '+m.opportunity,y,9);if(m.barrier)y=_txt('  Barrier: '+m.barrier,y,9);});}else if(typeof mka==='object'){if(mka.overview)y=_txt(mka.overview,y);}else{y=_txt(mka,y);}}
-      if(r.export_readiness){y=_sec('Export Readiness',y);var er=r.export_readiness;if(typeof er==='object'){if(er.overview)y=_txt(er.overview,y);if(er.ready_items&&er.ready_items.length)y=_txt('Ready: '+er.ready_items.join(', '),y);if(er.missing_items&&er.missing_items.length)y=_txt('Missing: '+er.missing_items.join(', '),y);}else{y=_txt(er,y);}}
-      if(r.required_certs&&r.required_certs.length){y=_sec('Required Certifications',y);y=_txt(r.required_certs.join(', '),y);}
-      if(r.action_plan){y=_sec('Action Plan',y);var ap=r.action_plan;if(Array.isArray(ap)){ap.forEach(function(item,i){var txt=typeof item==='object'?((i+1)+'. '+(item.action||item.step||JSON.stringify(item))):((i+1)+'. '+item);y=_txt(txt,y,9);});}else if(typeof ap==='object'){if(ap.overview)y=_txt(ap.overview,y);}else{y=_txt(ap,y);}}
-      if(r.government_support){y=_sec('Government Support',y);var gs=r.government_support;if(typeof gs==='object'){if(gs.overview)y=_txt(gs.overview,y);if(gs.programs&&gs.programs.length)gs.programs.forEach(function(p){y=_txt('- '+(typeof p==='object'?(p.name||JSON.stringify(p)):p),y,9);});if(gs.estimated_subsidy)y=_txt('Estimated subsidy: '+gs.estimated_subsidy,y);}else{y=_txt(gs,y);}}
-      doc.save('Whistle_AI_Report_'+a.product_name+'_'+new Date().toISOString().slice(0,10)+'.pdf');
-      UI.toast('PDF 다운로드 완료!','ok');
-    }catch(e){console.error(e);UI.toast('PDF 생성 실패: '+e.message,'err');}
-  },100);
+  var _safe=function(v){return typeof v==='string'?v.replace(/</g,'&lt;').replace(/>/g,'&gt;'):(v?JSON.stringify(v):'');};
+  var _loadLib=function(){if(window.html2pdf)return Promise.resolve();return new Promise(function(res,rej){var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});};
+  _loadLib().then(function(){
+    var r=a.ai_result||{};var score=r.overall_score||0;var pName=a.product_name||'제품';
+    var date=new Date(a.created_at).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'});
+    var company=S.company?S.company.name:'';
+    var scoreColor=score>=80?'#22c55e':score>=60?'#f59e0b':'#ef4444';
+    var grade=score>=85?'A+':score>=75?'A':score>=65?'B+':score>=55?'B':score>=45?'C':'D';
+    var gradeLabel=score>=80?'우수':score>=60?'양호':'보완필요';
+    var _cf=U.cl||function(c){return c;};
+    var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>';
+    h+='@page{margin:20mm 18mm 25mm 18mm}*{margin:0;padding:0;box-sizing:border-box}';
+    h+='body{font-family:-apple-system,"Noto Sans KR",sans-serif;color:#1a1a2e;font-size:11px;line-height:1.6}';
+    h+='.page-break{page-break-before:always}';
+    h+='.header{text-align:center;padding:30px 0 20px;border-bottom:3px solid #0d1b3e;margin-bottom:24px}';
+    h+='.header .brand{font-size:28px;font-weight:900;color:#0d1b3e;letter-spacing:2px}.header .brand span{color:#00d4ff}';
+    h+='.header .sub{font-size:11px;color:#666;margin-top:4px;letter-spacing:1px}';
+    h+='.report-title{font-size:22px;font-weight:800;color:#0d1b3e;text-align:center;margin:20px 0 8px}';
+    h+='.report-meta{text-align:center;font-size:11px;color:#888;margin-bottom:30px}';
+    h+='.section{margin-bottom:22px}.section-title{font-size:14px;font-weight:800;color:#0d1b3e;padding:8px 12px;background:#f0f4f8;border-left:4px solid #00d4ff;margin-bottom:12px}';
+    h+='.score-box{display:flex;align-items:center;justify-content:center;gap:30px;padding:20px;background:linear-gradient(135deg,#0d1b3e,#1a2d5a);border-radius:12px;color:#fff;margin-bottom:24px}';
+    h+='.score-num{font-size:52px;font-weight:900}.score-grade{font-size:18px;font-weight:700;margin-top:2px}';
+    h+='.score-bars{flex:1}.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}';
+    h+='.bar-label{width:70px;font-size:10px;color:#ccc}.bar-track{flex:1;height:6px;background:rgba(255,255,255,.15);border-radius:3px}.bar-fill{height:100%;border-radius:3px}';
+    h+='table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:10.5px}';
+    h+='th{background:#f0f4f8;color:#0d1b3e;font-weight:700;text-align:left;padding:8px 10px;border-bottom:2px solid #ddd;font-size:10px}';
+    h+='td{padding:7px 10px;border-bottom:1px solid #eee;color:#444}';
+    h+='.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}';
+    h+='.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}';
+    h+='.card{padding:12px;border:1px solid #e5e7eb;border-radius:8px}';
+    h+='.card-title{font-size:10px;font-weight:700;color:#00d4ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}';
+    h+='.card-value{font-size:16px;font-weight:800;color:#0d1b3e}.card-desc{font-size:10px;color:#888;margin-top:4px;line-height:1.5}';
+    h+='.tag{display:inline-block;padding:2px 8px;background:#f0f4f8;border-radius:4px;font-size:9px;color:#555;margin:2px}';
+    h+='.swot-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.swot-cell{padding:10px;border-radius:8px}';
+    h+='.swot-cell h4{font-size:10px;font-weight:800;margin-bottom:4px}.swot-cell p{font-size:10px;line-height:1.5;color:#444}';
+    h+='.text-block{font-size:11px;color:#444;line-height:1.7;margin-bottom:10px}';
+    h+='.timeline-step{display:flex;gap:10px;margin-bottom:10px}';
+    h+='.timeline-dot{width:20px;height:20px;border-radius:50%;background:#00d4ff;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}';
+    h+='.footer{text-align:center;padding:16px 0;border-top:2px solid #0d1b3e;margin-top:30px;font-size:9px;color:#888}';
+    h+='.footer .brand-f{font-weight:800;color:#0d1b3e;font-size:11px}';
+    h+='.disclaimer{font-size:8.5px;color:#aaa;margin-top:6px;line-height:1.4}';
+    h+='</style></head><body>';
+    // Cover header
+    h+='<div class="header"><div class="brand">WHISTLE<span> AI</span></div><div class="sub">AI 기반 수출 적합도 분석 리포트</div></div>';
+    h+='<div class="report-title">'+_safe(pName)+'</div>';
+    h+='<div class="report-meta">'+date+' 발행'+(company?' · '+_safe(company):'')+' · 분석 버전 '+(r.analysis_version||'1.0')+' · '+(r.model_used||'AI')+'</div>';
+    // Score overview
+    h+='<div class="score-box"><div style="text-align:center"><div class="score-num" style="color:'+scoreColor+'">'+score+'</div><div class="score-grade" style="color:'+scoreColor+'">'+grade+'</div><div style="font-size:10px;color:#aaa;margin-top:4px">수출 적합도 · '+gradeLabel+'</div></div><div class="score-bars">';
+    var bars=[['시장 적합도',r.market_fit],['경쟁 우위',r.competition],['규제 환경',r.regulatory],['가격 경쟁력',r.price_competitiveness],['브랜드 파워',r.brand_power],['물류 효율',r.logistics_score]];
+    bars.forEach(function(b){var v=typeof b[1]==='number'?b[1]:50;var c=v>=70?'#22c55e':v>=50?'#f59e0b':'#ef4444';h+='<div class="bar-row"><div class="bar-label">'+b[0]+'</div><div class="bar-track"><div class="bar-fill" style="width:'+v+'%;background:'+c+'"></div></div><div style="width:24px;text-align:right;font-size:10px;color:'+c+';font-weight:700">'+v+'</div></div>';});
+    h+='</div></div>';
+    // Executive Summary
+    var es=r.executive_summary||r.summary;
+    if(es){h+='<div class="section"><div class="section-title">Executive Summary</div>';if(typeof es==='object'){if(es.situation)h+='<div class="text-block"><strong style="color:#00d4ff">상황:</strong> '+_safe(es.situation)+'</div>';if(es.complication)h+='<div class="text-block"><strong style="color:#f97316">과제:</strong> '+_safe(es.complication)+'</div>';if(es.resolution)h+='<div class="text-block"><strong style="color:#22c55e">해결:</strong> '+_safe(es.resolution)+'</div>';}else{h+='<div class="text-block">'+_safe(es)+'</div>';}h+='</div>';}
+    // Product info
+    if(r.hs_code||r.estimated_fob||r.product_detail){h+='<div class="section"><div class="section-title">제품 정보</div><div class="grid3">';if(r.hs_code&&r.hs_code!=='0000.00'){h+='<div class="card"><div class="card-title">HS 코드</div><div class="card-value">'+_safe(r.hs_code)+'</div>';if(r.hs_code_detail&&r.hs_code_detail.hs6_desc)h+='<div class="card-desc">'+_safe(r.hs_code_detail.hs6_desc)+'</div>';if(r.hs_code_detail&&r.hs_code_detail.basis)h+='<div class="card-desc">분류 근거: '+_safe(r.hs_code_detail.basis)+'</div>';h+='</div>';}if(r.estimated_fob&&r.estimated_fob!=='N/A')h+='<div class="card"><div class="card-title">예상 FOB</div><div class="card-value">'+_safe(r.estimated_fob)+'</div></div>';if(r.product_detail&&r.product_detail.actual_name)h+='<div class="card"><div class="card-title">제품명</div><div class="card-value" style="font-size:13px">'+_safe(r.product_detail.actual_name)+'</div></div>';h+='</div></div>';}
+    // Recommended markets
+    var mkts=r.recommended_markets;var mktA=r.market_analysis;
+    if(mkts&&mkts.length){h+='<div class="section"><div class="section-title">추천 수출 시장</div><div class="grid3">';mkts.forEach(function(code,i){var mc=typeof code==='string'?code:code;var ma=mktA&&(mktA[i]||(mktA.find&&mktA.find(function(x){return x.name===mc||x.market===mc;})));h+='<div class="card"><div style="font-size:10px;color:#00d4ff;font-weight:800">#'+(i+1)+' 추천 시장</div><div class="card-value">'+_safe(_cf(mc))+'</div>';if(ma){if(ma.size)h+='<div style="display:flex;justify-content:space-between;font-size:10px;margin-top:6px"><span style="color:#888">시장 규모</span><span style="font-weight:600">'+_safe(ma.size)+'</span></div>';if(ma.grow)h+='<div style="display:flex;justify-content:space-between;font-size:10px"><span style="color:#888">성장률</span><span style="color:#22c55e;font-weight:600">'+_safe(ma.grow)+'</span></div>';if(ma.tariff)h+='<div style="display:flex;justify-content:space-between;font-size:10px"><span style="color:#888">관세</span><span>'+_safe(ma.tariff)+'</span></div>';if(ma.entry_strategy)h+='<div class="card-desc" style="margin-top:6px">'+_safe(ma.entry_strategy)+'</div>';}h+='</div>';});h+='</div></div>';}
+    // FTA table
+    var fta=r.fta_tariff_table;
+    if(fta&&fta.length){h+='<div class="section"><div class="section-title">관세 · FTA 분석</div><table><thead><tr><th>시장</th><th>FTA</th><th>MFN 관세</th><th>특혜 관세</th><th>절감</th><th>예상 물류비</th></tr></thead><tbody>';fta.forEach(function(row){h+='<tr><td style="font-weight:700">'+_safe(_cf(row.mkt))+'</td><td>'+_safe(row.fta||'-')+'</td><td style="color:#ef4444">'+_safe(row.mfn||'-')+'</td><td style="color:#22c55e;font-weight:700">'+_safe(row.pref||'-')+'</td><td style="color:#a855f7">'+_safe(row.save||'-')+'</td><td>'+_safe(row.est_logistics||'-')+'</td></tr>';});h+='</tbody></table></div>';}
+    // Margin analysis
+    var margin=r.margin_analysis;
+    if(margin&&typeof margin==='object'){h+='<div class="section"><div class="section-title">마진 분석</div><div class="grid3">';[{l:'FOB 원가',v:margin.fob_cost},{l:'Landed Cost',v:margin.landed_cost},{l:'소비자가',v:margin.retail_price},{l:'총이익률',v:margin.gross_margin}].forEach(function(item){if(item.v)h+='<div class="card"><div class="card-title">'+item.l+'</div><div class="card-value">'+_safe(item.v)+'</div></div>';});h+='</div></div>';}
+    // Competitor + SWOT
+    var comp=r.competitor_analysis;
+    if(comp&&typeof comp==='object'){h+='<div class="section"><div class="section-title">경쟁사 분석 · SWOT</div>';if(comp.overview)h+='<div class="text-block">'+_safe(comp.overview)+'</div>';var gc=comp.global_competitors;if(gc&&gc.length){h+='<table><thead><tr><th>경쟁사</th><th>강점</th><th>약점</th><th>가격</th></tr></thead><tbody>';gc.forEach(function(c){h+='<tr><td style="font-weight:700">'+_safe(c.name||'-')+'</td><td style="color:#22c55e">'+_safe(c.strength||'-')+'</td><td style="color:#ef4444">'+_safe(c.weakness||'-')+'</td><td>'+_safe(c.price||'-')+'</td></tr>';});h+='</tbody></table>';}var swot=comp.swot;if(swot){h+='<div class="swot-grid">';[{k:'strength',l:'강점 (S)',bg:'#f0fdf4',c:'#16a34a'},{k:'weakness',l:'약점 (W)',bg:'#fef2f2',c:'#dc2626'},{k:'opportunity',l:'기회 (O)',bg:'#eff6ff',c:'#2563eb'},{k:'threat',l:'위협 (T)',bg:'#fff7ed',c:'#ea580c'}].forEach(function(s){if(swot[s.k])h+='<div class="swot-cell" style="background:'+s.bg+'"><h4 style="color:'+s.c+'">'+s.l+'</h4><p>'+_safe(swot[s.k])+'</p></div>';});h+='</div>';}h+='</div>';}
+    // Pricing strategy
+    var ps=r.pricing_strategy;
+    if(ps&&typeof ps==='object'){h+='<div class="section"><div class="section-title">가격 전략</div><div class="grid3">';if(ps.recommended_fob)h+='<div class="card"><div class="card-title">추천 FOB</div><div class="card-value">'+_safe(ps.recommended_fob)+'</div></div>';if(ps.recommended_retail)h+='<div class="card"><div class="card-title">추천 소매가</div><div class="card-value">'+_safe(ps.recommended_retail)+'</div></div>';h+='</div>';if(ps.price_vs_competition)h+='<div class="text-block">'+_safe(ps.price_vs_competition)+'</div>';h+='</div>';}
+    // Certifications
+    var certs=r.required_certs;
+    if(certs&&certs.length){h+='<div class="section"><div class="section-title">필요 인증 · 규제</div>';certs.forEach(function(c){h+='<div class="tag" style="font-size:10px;padding:4px 10px;margin:3px">'+(typeof c==='string'?_safe(c):_safe(c.name||c.cert||JSON.stringify(c)))+'</div>';});h+='</div>';}
+    // Action plan
+    var ap=r.action_plan;
+    if(ap&&Array.isArray(ap)&&ap.length){h+='<div class="page-break"></div><div class="section"><div class="section-title">실행 계획</div>';ap.forEach(function(step,i){h+='<div class="timeline-step"><div class="timeline-dot">'+(i+1)+'</div><div style="flex:1"><div style="font-size:11px;font-weight:700;color:#0d1b3e">'+_safe(step.phase||'')+' '+_safe(step.title||'')+'</div>';if(step.items&&step.items.length)step.items.forEach(function(it){h+='<div style="font-size:10px;color:#666;padding:1px 0">• '+_safe(it)+'</div>';});if(step.estimated_cost)h+='<div style="font-size:10px;color:#f97316;margin-top:2px">'+_safe(step.estimated_cost)+'</div>';h+='</div></div>';});h+='</div>';}
+    // Risk matrix
+    var rm=r.risk_matrix;
+    if(rm&&rm.length){h+='<div class="section"><div class="section-title">리스크 매트릭스</div><table><thead><tr><th>리스크</th><th>가능성</th><th>영향도</th><th>대응 방안</th></tr></thead><tbody>';rm.forEach(function(row){var lc=row.likelihood==='높음'?'color:#ef4444;font-weight:700':row.likelihood==='중간'?'color:#f59e0b;font-weight:700':'color:#22c55e;font-weight:700';var ic=row.impact==='높음'?'color:#ef4444;font-weight:700':row.impact==='중간'?'color:#f59e0b;font-weight:700':'color:#22c55e;font-weight:700';h+='<tr><td style="font-weight:700">'+_safe(row.risk||'-')+'</td><td style="'+lc+'">'+_safe(row.likelihood||'-')+'</td><td style="'+ic+'">'+_safe(row.impact||'-')+'</td><td>'+_safe(row.mitigation||'-')+'</td></tr>';});h+='</tbody></table></div>';}
+    // Opportunities & Risks
+    if((r.opportunities&&r.opportunities.length)||(r.risks&&r.risks.length)){h+='<div class="section"><div class="section-title">기회 · 위험 요인</div><div class="grid2">';if(r.opportunities&&r.opportunities.length){h+='<div>';r.opportunities.forEach(function(o){h+='<div style="font-size:10px;color:#16a34a;padding:3px 0">✅ '+_safe(typeof o==='string'?o:JSON.stringify(o))+'</div>';});h+='</div>';}if(r.risks&&r.risks.length){h+='<div>';r.risks.forEach(function(ri){h+='<div style="font-size:10px;color:#dc2626;padding:3px 0">⚠️ '+_safe(typeof ri==='string'?ri:JSON.stringify(ri))+'</div>';});h+='</div>';}h+='</div></div>';}
+    // Government support
+    var gov=r.government_support;
+    if(gov&&typeof gov==='object'){h+='<div class="section"><div class="section-title">정부 지원</div><div class="grid3">';if(gov.export_voucher)h+='<div class="card" style="border-top:3px solid #3b82f6"><div class="card-title">수출바우처</div><div class="card-desc">'+_safe(gov.export_voucher)+'</div></div>';if(gov.kotra_support)h+='<div class="card" style="border-top:3px solid #22c55e"><div class="card-title">KOTRA 지원</div><div class="card-desc">'+_safe(gov.kotra_support)+'</div></div>';if(gov.estimated_subsidy)h+='<div class="card" style="border-top:3px solid #a855f7"><div class="card-title">예상 보조금</div><div class="card-value">'+_safe(gov.estimated_subsidy)+'</div></div>';h+='</div></div>';}
+    // Data sources
+    if(r.data_sources&&r.data_sources.length)h+='<div style="font-size:9px;color:#aaa;margin-top:12px">데이터 출처: '+(Array.isArray(r.data_sources)?r.data_sources.join(', '):_safe(r.data_sources))+'</div>';
+    // Footer
+    h+='<div class="footer"><div class="brand-f">WHISTLE AI</div><div style="font-size:9px;color:#888;margin-top:2px">(주)모티브이노베이션 · AI 기반 수출 통합 플랫폼 · whistle-ai.com</div><div class="disclaimer">본 보고서는 AI 분석 엔진('+(r.model_used||'AI')+')에 의해 자동 생성되었으며, 투자 또는 사업 결정의 유일한 근거로 사용되어서는 안 됩니다. 실제 시장 상황은 변동될 수 있으며, 전문가 상담을 권장합니다. © '+new Date().getFullYear()+' Motive Innovation. All rights reserved.</div></div>';
+    h+='</body></html>';
+    // Generate PDF via html2pdf.js
+    var container=document.createElement('div');container.innerHTML=h;container.style.position='absolute';container.style.left='-9999px';container.style.width='210mm';document.body.appendChild(container);
+    var filename='Whistle_AI_수출분석_'+pName.replace(/[^가-힣a-zA-Z0-9]/g,'_').slice(0,30)+'_'+date.replace(/\s/g,'')+'.pdf';
+    html2pdf().set({margin:[8,8,12,8],filename:filename,image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true,letterRendering:true},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],before:'.page-break'}}).from(container).save().then(function(){container.remove();UI.toast('PDF 다운로드 완료!','ok');}).catch(function(err){container.remove();console.error('PDF error:',err);UI.toast('PDF 생성 실패: '+err.message,'err');});
+  }).catch(function(err){console.error('html2pdf load error:',err);UI.toast('PDF 라이브러리 로드 실패','err');});
 }
 
 function viewA(id){var a=S.analyses.find(function(x){return x.id===id;});if(a)set({currentAnalysis:a,page:'analysis'});}
