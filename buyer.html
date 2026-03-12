@@ -642,13 +642,14 @@ function submitSourcingReq(){
   if(!desc||!desc.value.trim()){toast('Please describe the product you\'re looking for.','err');return;}
   if(!S.user){toast('Please sign in to submit a request.','err');return;}
   var msgText=desc.value.trim();
+  var trackingId='WH-INQ-'+Date.now();
   sb.from('contact_requests').insert({
     email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
-    inquiry_type:'sourcing',message:msgText,status:'pending',source:'buyer-sourcing'
+    inquiry_type:'sourcing',message:msgText,status:'pending',source:'buyer-sourcing',tracking_id:trackingId
   }).select().single().then(function(r){
     if(r.error){toast('Failed: '+r.error.message,'err');return;}
-    toast('Sourcing request submitted! Our team will contact you within 24 hours.','ok');
-    desc.value='';
+    S.modal='inquiryConfirm';S.modalData={trackingId:trackingId,product:msgText.slice(0,80),type:'sourcing'};
+    desc.value='';render();
     /* Auto-create buyer_request for marketplace matching */
     _autoCreateBuyerRequest(msgText,'sourcing');
     /* Notify admins about new sourcing request */
@@ -701,12 +702,13 @@ function submitCatSourcing(catId){
   var country=(document.getElementById('src-country')||{}).value||'';
   var notes=(document.getElementById('src-notes')||{}).value||'';
   var msg='[Category: '+catId+']\nProduct: '+product.value.trim()+'\nMOQ: '+(moq||'N/A')+'\nTarget Price: '+(price||'N/A')+'\nDestination: '+(country||'N/A')+'\n\n'+notes;
+  var trackingId='WH-INQ-'+Date.now();
   sb.from('contact_requests').insert({
     email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
-    inquiry_type:'sourcing',message:msg,status:'pending',source:'buyer-sourcing-'+catId.toLowerCase()
+    inquiry_type:'sourcing',message:msg,status:'pending',source:'buyer-sourcing-'+catId.toLowerCase(),tracking_id:trackingId
   }).select().single().then(function(r){
     if(r.error){toast('Failed: '+r.error.message,'err');return;}
-    toast('Sourcing request for '+catId+' submitted! We\'ll match you with manufacturers within 24 hours.','ok');
+    S.modal='inquiryConfirm';S.modalData={trackingId:trackingId,product:product.value.trim(),type:'sourcing-'+catId};
     _srcCat=null;render();
     /* Auto marketplace + notify */
     _autoCreateBuyerRequest(msg,'sourcing-'+catId);
@@ -744,6 +746,7 @@ function renderSidebar(){
   var items=[
     {id:'sec',label:'Home'},
     {id:'dashboard',icon:'&#x1F4CA;',label:'Dashboard'},
+    {id:'messages',icon:'&#x1F4AC;',label:'Messages',count:S.chatUnread},
     {id:'sec',label:'Discover'},
     {id:'search',icon:'&#x1F50D;',label:'Product Search'},
     {id:'sourcing',icon:'&#x1F3ED;',label:'Find Manufacturers'},
@@ -752,7 +755,6 @@ function renderSidebar(){
     {id:'pipeline',icon:'&#x1F680;',label:'Sourcing Pipeline',count:pipelineCount||0,subs:['deals','inquiries','pipeline']},
     {id:'ordership',icon:'&#x1F4E6;',label:'Orders & Shipping',count:activeOrders||0,subs:['orders','shipments','ordership']},
     {id:'documents',icon:'&#x1F4C4;',label:'Documents'},
-    {id:'messages',icon:'&#x1F4AC;',label:'Messages',count:S.chatUnread},
     {id:'sec',label:'Account'},
     {id:'profilehub',icon:'&#x1F464;',label:'Profile & Settings',subs:['profile','saved','partnership','profilehub']}
   ];
@@ -1066,9 +1068,10 @@ function pgDash(){
     S.inquiries.slice(0,5).forEach(function(inq){
       var st=inq.status||'pending';
       var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':'badge-ghost';
+      var statusFlow={pending:'Submitted',in_progress:'Under Review',matched:'Matched',completed:'Response Sent'};
       h+='<div class="inquiry-list-item" onclick="B.showInquiryDetail(\''+inq.id+'\')">';
-      h+='<div style="flex:1"><div style="font-weight:600;font-size:13px">'+esc(inq.product_query||inq.inquiry_type||'Inquiry')+'</div><div style="font-size:11px;color:var(--w40)">'+formatDate(inq.created_at)+'</div></div>';
-      h+='<span class="badge '+stCls+'">'+st.replace('_',' ')+'</span>';
+      h+='<div style="flex:1"><div style="font-weight:600;font-size:13px">'+esc(inq.product_query||inq.inquiry_type||'Inquiry')+'</div><div style="font-size:11px;color:var(--w40)">'+(inq.tracking_id?'<span style="font-family:\'JetBrains Mono\',monospace;color:var(--pri);font-size:10px">'+esc(inq.tracking_id)+'</span> &middot; ':'')+formatDate(inq.created_at)+'</div></div>';
+      h+='<span class="badge '+stCls+'">'+(statusFlow[st]||st.replace('_',' '))+'</span>';
       h+='</div>';
     });
     h+='</div></div>';
@@ -1664,10 +1667,13 @@ function openCustomSourcing(){
 
 function renderModal(){
   if(S.modal==='inquiry')return renderInquiryModal();
+  if(S.modal==='inquiryConfirm')return renderInquiryConfirmModal();
   if(S.modal==='marketplace_request')return renderMarketplaceModal();
   if(S.modal==='inquiryDetail')return renderInquiryDetailModal();
   if(S.modal==='orderDetail')return renderOrderDetailModal();
   if(S.modal==='docDetail')return renderDocDetailModal();
+  if(S.modal==='escrowPay')return renderEscrowPayModal();
+  if(S.modal==='signDoc'){var _smh=renderSignDocModal();setTimeout(function(){_initSigCanvas();},100);return _smh;}
   if(S.modal==='upgradePrompt')return renderUpgradePrompt();
   if(S.modal==='productDetail')return '<div class="modal-overlay" onclick="if(event.target===this)B.closeModal()"><div class="modal" style="max-width:720px"><div class="modal-h"><h3>Product Details</h3><button class="modal-close" onclick="B.closeModal()">&#10005;</button></div><div class="modal-b">'+(S.modalData||'')+'</div></div></div>';
   return '';
@@ -1727,6 +1733,28 @@ function renderInquiryModal(){
   return h;
 }
 
+function renderInquiryConfirmModal(){
+  var d=S.modalData||{};
+  var h='<div class="modal-overlay" onclick="B.closeModal()"><div class="modal" style="max-width:480px" onclick="event.stopPropagation()">';
+  h+='<div class="modal-h"><span>Inquiry Submitted</span><button class="modal-close" onclick="B.closeModal()">&#x2715;</button></div>';
+  h+='<div class="modal-b" style="text-align:center;padding:28px">';
+  h+='<div style="font-size:48px;margin-bottom:12px">&#x2705;</div>';
+  h+='<div style="font-size:18px;font-weight:800;margin-bottom:8px">Inquiry Received!</div>';
+  h+='<div style="font-size:13px;color:var(--w60);margin-bottom:20px">Your inquiry has been submitted successfully. Track its progress anytime.</div>';
+  h+='<div style="padding:16px;border-radius:var(--r-s);background:var(--w08);border:1px solid var(--bd);margin-bottom:16px">';
+  h+='<div style="font-size:10px;color:var(--w40);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Tracking ID</div>';
+  h+='<div style="font-size:18px;font-weight:800;font-family:\'JetBrains Mono\',monospace;color:var(--pri);letter-spacing:1px">'+esc(d.trackingId||'')+'</div>';
+  h+='</div>';
+  if(d.product)h+='<div style="font-size:12px;color:var(--w40);margin-bottom:4px">Product: <span style="color:var(--w70)">'+esc(d.product)+'</span></div>';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:16px">Status: <span class="badge badge-ghost">Submitted</span> &rarr; <span style="color:var(--w20)">Under Review</span> &rarr; <span style="color:var(--w20)">Matched</span> &rarr; <span style="color:var(--w20)">Response Sent</span></div>';
+  h+='<div style="padding:12px;border-radius:var(--r-s);background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.1);font-size:12px;color:var(--w60);margin-bottom:20px"><span style="color:var(--pri);font-weight:600">Estimated response:</span> Within 24 hours</div>';
+  h+='<div style="display:flex;gap:8px;justify-content:center">';
+  h+='<button class="btn btn-pri" onclick="B.set({_pipelineTab:\'inquiries\'});B.nav(\'pipeline\');B.closeModal()">View My Inquiries</button>';
+  h+='<button class="btn btn-ghost" onclick="B.closeModal()">Close</button>';
+  h+='</div></div></div></div>';
+  return h;
+}
+
 function submitInquiry(f){
   if(S._submitting)return;S._submitting=true;
   var d=S.modalData||{};
@@ -1734,13 +1762,15 @@ function submitInquiry(f){
   var fd=new FormData(f);
   var data={};fd.forEach(function(v,k){data[k]=v;});
 
+  var trackingId='WH-INQ-'+Date.now();
   var req={
     buyer_id:S.user.id,
     inquiry_type:data.inquiry_type||'import',
     destination_country:data.destination||S.user.country||'',
     target_moq:parseInt(data.quantity)||null,
     target_price:data.target_price||data.budget||null,
-    status:'pending'
+    status:'pending',
+    tracking_id:trackingId
   };
 
   // Build message
@@ -1772,8 +1802,8 @@ function submitInquiry(f){
       inquiry_type:data.inquiry_type,product_name:req.product_query,message:msg,
       destination_country:req.destination_country,target_moq:req.target_moq,target_price:req.target_price
     })}).catch(function(){});
-    toast('Inquiry submitted successfully!','ok');
-    S.modal=null;S.modalData=null;
+    S.modal='inquiryConfirm';S.modalData={trackingId:trackingId,product:req.product_query,type:data.inquiry_type};
+    render();
     loadInquiries();
   }).catch(function(){S._submitting=false;});
 }
@@ -1812,7 +1842,7 @@ function unsaveProduct(saveId){
 /* === MY INQUIRIES === */
 function pgInquiries(){
   var h='';
-  var statuses=['all','pending','in_progress','completed'];
+  var statuses=['all','pending','in_progress','matched','completed'];
   h+='<div style="display:flex;gap:8px;margin-bottom:16px">';
   statuses.forEach(function(st){
     var cnt=st==='all'?S.inquiries.length:S.inquiries.filter(function(i){return i.status===st;}).length;
@@ -1832,12 +1862,15 @@ function pgInquiries(){
   h+='<div class="card"><div>';
   list.forEach(function(inq){
     var st=inq.status||'pending';
-    var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':st==='cancelled'?'badge-err':'badge-ghost';
+    var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':st==='matched'?'badge-pri':st==='cancelled'?'badge-err':'badge-ghost';
     var typeLbl=inq.inquiry_type==='factory_contact'?'&#x1F3ED; Factory Contact':inq.inquiry_type==='custom_sourcing'?'&#x1F50D; Custom Sourcing':'&#x1F6A2; Import';
+    var statusFlow={pending:'Submitted',in_progress:'Under Review',matched:'Matched',completed:'Response Sent'};
     h+='<div class="inquiry-list-item" onclick="B.showInquiryDetail(\''+inq.id+'\')">';
     h+='<div style="flex:1"><div style="font-weight:600;font-size:13px">'+esc(inq.product_query||'Inquiry')+'</div>';
-    h+='<div style="font-size:11px;color:var(--w40);margin-top:2px">'+typeLbl+' &middot; '+formatDate(inq.created_at)+'</div></div>';
-    h+='<span class="badge '+stCls+'">'+st.replace('_',' ')+'</span>';
+    h+='<div style="font-size:11px;color:var(--w40);margin-top:2px">';
+    if(inq.tracking_id)h+='<span style="font-family:\'JetBrains Mono\',monospace;color:var(--pri);font-size:10px">'+esc(inq.tracking_id)+'</span> &middot; ';
+    h+=typeLbl+' &middot; '+formatDate(inq.created_at)+'</div></div>';
+    h+='<span class="badge '+stCls+'">'+(statusFlow[st]||st.replace('_',' '))+'</span>';
     h+='</div>';
   });
   h+='</div></div>';
@@ -1854,14 +1887,28 @@ function renderInquiryDetailModal(){
   var inq=S.modalData;
   if(!inq)return '';
   var st=inq.status||'pending';
-  var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':st==='cancelled'?'badge-err':'badge-ghost';
+  var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':st==='matched'?'badge-pri':st==='cancelled'?'badge-err':'badge-ghost';
   var typeLbl=inq.inquiry_type==='factory_contact'?'Factory Contact':inq.inquiry_type==='custom_sourcing'?'Custom Sourcing':'Import';
 
   var h='<div class="modal-overlay" onclick="B.closeModal()"><div class="modal" onclick="event.stopPropagation()">';
   h+='<div class="modal-h"><span>Inquiry Details</span><button class="modal-close" onclick="B.closeModal()">&#x2715;</button></div>';
   h+='<div class="modal-b">';
 
-  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><span class="badge '+stCls+'" style="font-size:12px">'+st.replace('_',' ')+'</span><span class="badge badge-purple">'+typeLbl+'</span></div>';
+  var statusFlow={pending:'Submitted',in_progress:'Under Review',matched:'Matched',completed:'Response Sent'};
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px"><span class="badge '+stCls+'" style="font-size:12px">'+(statusFlow[st]||st.replace('_',' '))+'</span><span class="badge badge-purple">'+typeLbl+'</span></div>';
+  if(inq.tracking_id){
+    h+='<div class="form-group"><div class="form-label">Tracking ID</div><div style="font-size:15px;font-weight:700;font-family:\'JetBrains Mono\',monospace;color:var(--pri)">'+esc(inq.tracking_id)+'</div></div>';
+  }
+  // Status progress bar
+  h+='<div style="margin-bottom:16px"><div class="form-label">Progress</div><div style="display:flex;gap:0;align-items:center">';
+  var steps=['Submitted','Under Review','Matched','Response Sent'];
+  var stIdx=st==='pending'?0:st==='in_progress'?1:st==='matched'?2:st==='completed'?3:0;
+  steps.forEach(function(step,i){
+    var done=i<=stIdx;
+    h+='<div style="flex:1;text-align:center"><div style="width:24px;height:24px;border-radius:50%;margin:0 auto 4px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;'+(done?'background:var(--pri-g);color:var(--bg)':'background:var(--w08);color:var(--w40)')+'">'+( done?'&#x2713;':(i+1))+'</div><div style="font-size:10px;color:'+(done?'var(--pri)':'var(--w20)')+'">'+step+'</div></div>';
+    if(i<steps.length-1)h+='<div style="flex:.5;height:2px;background:'+(i<stIdx?'var(--pri)':'var(--w08)')+'"></div>';
+  });
+  h+='</div></div>';
   h+='<div class="form-group"><div class="form-label">Product</div><div style="font-size:14px;font-weight:600">'+esc(inq.product_query||'N/A')+'</div></div>';
   if(inq.destination_country)h+='<div class="form-group"><div class="form-label">Destination</div><div>'+esc(inq.destination_country)+'</div></div>';
   if(inq.target_moq)h+='<div class="form-group"><div class="form-label">Target MOQ</div><div>'+inq.target_moq+' units</div></div>';
@@ -1882,8 +1929,9 @@ function renderInquiryDetailModal(){
   }
 
   h+='<div style="margin-top:16px;padding:14px;border-radius:var(--r-s);background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.1)"><div style="font-size:12px;color:var(--pri);font-weight:600">What happens next?</div><div style="font-size:12px;color:var(--w60);margin-top:4px">';
-  if(st==='pending')h+='Our team is reviewing your inquiry. We\'ll contact you within 24 hours.';
-  else if(st==='in_progress')h+='We are actively working on your request. You\'ll receive updates via email.';
+  if(st==='pending')h+='Your inquiry has been submitted. Our team will begin review within 24 hours.';
+  else if(st==='in_progress')h+='We are actively reviewing your request and sourcing matching manufacturers.';
+  else if(st==='matched')h+='We\'ve found matching manufacturers! A response will be sent to you shortly.';
   else if(st==='completed')h+='This inquiry has been completed. Thank you for using Whistle AI!';
   else h+='This inquiry has been cancelled.';
   h+='</div></div>';
@@ -2574,9 +2622,15 @@ function renderDealActionChips(deal,stageIdx){
     case'negotiation':
       h+='<div class="chat-action-chip ok" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</div>';
       h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Discuss Terms</div>';
+      var _escN=_getEscrowStatus(deal.id);
+      if(_escN&&_escN.status==='requested')h+='<div class="chat-action-chip ok" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F512; Pay via Escrow</div>';
+      else if(_escN&&_escN.status!=='none')h+='<div class="chat-action-chip" style="cursor:default;opacity:.7">&#x1F512; Escrow: '+_escrowBuyerLabel(_escN.status)+'</div>';
       break;
     case'order':
-      h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Discuss Payment</div>';
+      var _escO=_getEscrowStatus(deal.id);
+      if(_escO&&_escO.status==='requested')h+='<div class="chat-action-chip ok" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F512; Pay via Escrow</div>';
+      else if(_escO&&_escO.status!=='none')h+='<div class="chat-action-chip" style="cursor:default;opacity:.7">&#x1F512; Escrow: '+_escrowBuyerLabel(_escO.status)+'</div>';
+      else h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Discuss Payment</div>';
       break;
     case'production':
       h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Check Progress</div>';
@@ -2641,11 +2695,16 @@ function renderDealSidebar(deal,stageIdx){
   if((deal.documents||[]).length){
     h+='<div class="stage-card" style="padding:10px">';
     h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">&#x1F4C4; Documents ('+(deal.documents||[]).length+')</div>';
+    var _bSigs=_getDocSignatures();
     (deal.documents||[]).forEach(function(doc){
       var typeNames={pi:'PI',ci:'CI',pl:'PL',co:'CO',sc:'SC'};
+      var _bds=_bSigs[doc.id];
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px">';
       h+='<span class="badge badge-acc" style="font-size:9px;padding:1px 6px">'+(typeNames[doc.doc_type]||'DOC')+'</span>';
       h+='<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(doc.doc_number||'Document')+'</span>';
+      if(_bds&&_bds.status==='sent')h+='<span onclick="B.openSignDocModal(\''+doc.id+'\')" style="font-size:8px;padding:1px 5px;border-radius:4px;background:var(--acc);color:#fff;cursor:pointer">Sign</span>';
+      else if(_bds&&_bds.status==='signed')h+='<span style="font-size:8px;padding:1px 5px;border-radius:4px;background:var(--ok);color:#fff">Signed &#x2705;</span>';
+      else if(_bds&&_bds.status==='viewed')h+='<span onclick="B.openSignDocModal(\''+doc.id+'\')" style="font-size:8px;padding:1px 5px;border-radius:4px;background:var(--pri);color:#fff;cursor:pointer">Sign</span>';
       if(doc.pdf_url)h+='<a href="'+esc(doc.pdf_url)+'" target="_blank" style="font-size:9px;color:var(--pri)">PDF</a>';
       h+='</div>';
     });
@@ -2692,6 +2751,21 @@ function renderDealSidebar(deal,stageIdx){
     h+='</div>';
   }
 
+  // Escrow Payment
+  var _escSB=_getEscrowStatus(deal.id);
+  if(_escSB&&_escSB.status!=='none'){
+    h+='<div class="stage-card" style="padding:10px">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">&#x1F512; Escrow Payment</div>';
+    var _escClr={requested:'var(--acc)',pending:'var(--acc)',secured:'var(--ok)',released:'var(--pri)'};
+    h+='<div style="font-size:11px"><span style="color:var(--w40)">Amount:</span> <strong style="color:var(--acc)">$'+Number(_escSB.amount||0).toLocaleString()+'</strong></div>';
+    h+='<div style="font-size:11px"><span style="color:var(--w40)">Currency:</span> '+(_escSB.currency||'USD')+'</div>';
+    h+='<div style="font-size:11px"><span style="color:var(--w40)">Terms:</span> '+(_escSB.terms||'50/50')+'</div>';
+    h+='<div style="font-size:11px;margin-top:4px"><span style="color:var(--w40)">Status:</span> <span class="badge" style="font-size:9px;padding:2px 8px;background:'+(_escClr[_escSB.status]||'var(--w12)')+';color:#fff">'+_escrowBuyerLabel(_escSB.status)+'</span></div>';
+    if(_escSB.status==='requested')h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F4B3; Pay Now</button>';
+    if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured in Escrow</div>';
+    h+='</div>';
+  }
+
   // Shipment
   if(deal.shipment){
     var sh=deal.shipment;
@@ -2735,6 +2809,115 @@ function renderDealSidebar(deal,stageIdx){
   }
 
   return h;
+}
+
+/* === ESCROW PAYMENT (localStorage simulation — shared with whistle.html) === */
+function _getEscrowStatus(dealId){var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
+function _setEscrow(dealId,data){localStorage.setItem('escrow_'+dealId,JSON.stringify(data));}
+function _escrowBuyerLabel(st){return{none:'None',requested:'Payment Requested',pending:'Pending',secured:'Funds Secured',released:'Released'}[st]||st;}
+
+function openEscrowPayModal(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc||esc.status!=='requested'){toast('No payment request found','warn');return;}
+  var body='<div style="text-align:center;margin-bottom:16px"><div style="font-size:36px;margin-bottom:8px">&#x1F512;</div>';
+  body+='<div style="font-size:14px;font-weight:700;margin-bottom:4px">Escrow Payment</div>';
+  body+='<div style="font-size:12px;color:var(--w40)">Your funds will be securely held until the deal is completed.</div></div>';
+  body+='<div style="padding:12px;background:var(--w08);border-radius:var(--r-xs);margin-bottom:12px">';
+  body+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Amount</span><strong style="color:var(--acc)">$'+Number(esc.amount||0).toLocaleString()+'</strong></div>';
+  body+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Currency</span><strong>'+(esc.currency||'USD')+'</strong></div>';
+  body+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Terms</span><strong>'+(esc.terms||'50/50')+'</strong></div>';
+  body+='</div>';
+  body+='<div style="padding:8px 12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:var(--r-xs);font-size:11px;color:var(--w50);margin-bottom:12px">&#x1F6E1; Protected by Whistle Escrow. Funds are released to the seller only after you confirm delivery.</div>';
+  S.modal='escrowPay';S.modalData={dealId:dealId,esc:esc};render();
+}
+
+function renderEscrowPayModal(){
+  var d=S.modalData;if(!d)return '';
+  var esc=d.esc;
+  var h='<div class="modal-overlay" onclick="B.closeModal()"><div class="modal" style="max-width:460px" onclick="event.stopPropagation()">';
+  h+='<div class="modal-h"><span>&#x1F512; Escrow Payment</span><button class="modal-close" onclick="B.closeModal()">&#x2715;</button></div>';
+  h+='<div class="modal-b">';
+  h+='<div style="text-align:center;margin-bottom:16px"><div style="font-size:36px;margin-bottom:8px">&#x1F512;</div>';
+  h+='<div style="font-size:14px;font-weight:700;margin-bottom:4px">Secure Escrow Payment</div>';
+  h+='<div style="font-size:12px;color:var(--w40)">Your funds will be held securely until delivery is confirmed.</div></div>';
+  h+='<div style="padding:12px;background:var(--w08);border-radius:8px;margin-bottom:12px">';
+  h+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Amount</span><strong style="color:var(--acc);font-size:18px">$'+Number(esc.amount||0).toLocaleString()+'</strong></div>';
+  h+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Currency</span><strong>'+(esc.currency||'USD')+'</strong></div>';
+  h+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Terms</span><strong>'+(esc.terms||'50/50')+'</strong></div>';
+  h+='</div>';
+  h+='<div style="padding:8px 12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:8px;font-size:11px;color:var(--w50);margin-bottom:16px">&#x1F6E1; Protected by Whistle Escrow. Funds are released only after you confirm delivery.</div>';
+  h+='<button class="btn btn-pri btn-block btn-lg" onclick="B.confirmEscrowPay(\''+d.dealId+'\')">&#x1F4B3; Pay Now — $'+Number(esc.amount||0).toLocaleString()+'</button>';
+  h+='</div></div></div>';
+  return h;
+}
+
+function confirmEscrowPay(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc)return;
+  esc.status='secured';esc.paidAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+  S.modal=null;S.modalData=null;
+  toast('Payment secured in escrow!','ok');
+  render();
+}
+
+/* === ELECTRONIC SIGNATURE (localStorage simulation — shared with whistle.html) === */
+function _getDocSignatures(){try{return JSON.parse(localStorage.getItem('doc_signatures')||'{}');}catch(e){return {};}}
+function _setDocSignature(docId,data){var all=_getDocSignatures();all[docId]=data;localStorage.setItem('doc_signatures',JSON.stringify(all));}
+
+function openSignDocModal(docId){
+  var sigs=_getDocSignatures();
+  var sig=sigs[docId];
+  if(!sig){toast('No signature request found','warn');return;}
+  if(sig.status==='sent'){sig.status='viewed';_setDocSignature(docId,sig);}
+  S.modal='signDoc';S.modalData={docId:docId,sig:sig};render();
+}
+
+function renderSignDocModal(){
+  var d=S.modalData;if(!d)return '';
+  var h='<div class="modal-overlay" onclick="B.closeModal()"><div class="modal" style="max-width:520px" onclick="event.stopPropagation()">';
+  h+='<div class="modal-h"><span>&#x270D;&#xFE0F; Sign Document</span><button class="modal-close" onclick="B.closeModal()">&#x2715;</button></div>';
+  h+='<div class="modal-b">';
+  h+='<div style="font-size:13px;color:var(--w60);margin-bottom:12px">Please sign below to complete the document.</div>';
+  h+='<div style="font-size:12px;margin-bottom:8px"><span style="color:var(--w40)">Requested by:</span> <strong>'+(d.sig.buyer||'Seller')+'</strong></div>';
+  h+='<div style="margin-bottom:12px"><canvas id="sig-canvas" width="460" height="160" style="width:100%;height:160px;border:2px dashed var(--bd);border-radius:8px;background:var(--w04);cursor:crosshair"></canvas></div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn btn-ghost btn-sm" onclick="B.clearSigCanvas()">Clear</button><span style="flex:1"></span><span style="font-size:10px;color:var(--w30);align-self:center">Draw your signature above</span></div>';
+  h+='<button class="btn btn-pri btn-block btn-lg" onclick="B.submitDocSignature(\''+d.docId+'\')">&#x270D;&#xFE0F; Sign & Complete</button>';
+  h+='</div></div></div>';
+  return h;
+}
+
+function _initSigCanvas(){
+  var c=document.getElementById('sig-canvas');if(!c)return;
+  var ctx=c.getContext('2d');
+  var drawing=false;
+  ctx.strokeStyle='var(--w,#fff)';ctx.lineWidth=2;ctx.lineCap='round';
+  c.onmousedown=function(e){drawing=true;ctx.beginPath();var r=c.getBoundingClientRect();ctx.moveTo((e.clientX-r.left)*(c.width/r.width),(e.clientY-r.top)*(c.height/r.height));};
+  c.onmousemove=function(e){if(!drawing)return;var r=c.getBoundingClientRect();ctx.lineTo((e.clientX-r.left)*(c.width/r.width),(e.clientY-r.top)*(c.height/r.height));ctx.stroke();};
+  c.onmouseup=function(){drawing=false;};
+  c.onmouseleave=function(){drawing=false;};
+  // Touch support
+  c.ontouchstart=function(e){e.preventDefault();drawing=true;ctx.beginPath();var r=c.getBoundingClientRect();var t=e.touches[0];ctx.moveTo((t.clientX-r.left)*(c.width/r.width),(t.clientY-r.top)*(c.height/r.height));};
+  c.ontouchmove=function(e){e.preventDefault();if(!drawing)return;var r=c.getBoundingClientRect();var t=e.touches[0];ctx.lineTo((t.clientX-r.left)*(c.width/r.width),(t.clientY-r.top)*(c.height/r.height));ctx.stroke();};
+  c.ontouchend=function(){drawing=false;};
+  c._sigCtx=ctx;
+}
+
+function clearSigCanvas(){
+  var c=document.getElementById('sig-canvas');if(!c)return;
+  var ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+}
+
+function submitDocSignature(docId){
+  var c=document.getElementById('sig-canvas');
+  if(c){var ctx=c.getContext('2d');var imgData=ctx.getImageData(0,0,c.width,c.height);var hasDrawing=false;for(var i=3;i<imgData.data.length;i+=4){if(imgData.data[i]>0){hasDrawing=true;break;}}
+    if(!hasDrawing){toast('Please draw your signature first','warn');return;}}
+  var sigs=_getDocSignatures();
+  sigs[docId]=Object.assign(sigs[docId]||{},{status:'signed',signedAt:new Date().toISOString(),signatureData:c?c.toDataURL():null});
+  localStorage.setItem('doc_signatures',JSON.stringify(sigs));
+  S.modal=null;S.modalData=null;
+  toast('Document signed successfully!','ok');
+  render();
 }
 
 function renderStageContent(deal,stageIdx){
@@ -3455,7 +3638,10 @@ function renderDocDetailModal(){
       h+='</table>';
     }
   }
-  if(doc.pdf_url)h+='<a href="'+esc(doc.pdf_url)+'" target="_blank" class="btn btn-pri btn-block">&#x1F4E5; Download PDF</a>';
+  if(doc.pdf_url)h+='<a href="'+esc(doc.pdf_url)+'" target="_blank" class="btn btn-pri btn-block" style="margin-bottom:8px">&#x1F4E5; Download PDF</a>';
+  var _dSig=_getDocSignatures()[doc.id];
+  if(_dSig&&_dSig.status==='signed'){h+='<div style="padding:8px 12px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);text-align:center;font-size:12px;color:var(--ok);font-weight:600">&#x2705; Signed on '+new Date(_dSig.signedAt).toLocaleDateString()+'</div>';}
+  else if(_dSig&&(_dSig.status==='sent'||_dSig.status==='viewed')){h+='<button class="btn btn-block" style="background:#7C4DFF;color:white;border:none;cursor:pointer" onclick="B.closeModal();B.openSignDocModal(\''+doc.id+'\')">&#x270D;&#xFE0F; Sign Document</button>';}
   h+='</div></div></div>';return h;
 }
 
@@ -3789,6 +3975,10 @@ window.B={
   toggleSampleForm:toggleSampleForm,submitSampleReq:submitSampleReq,toggleDealSidebar:toggleDealSidebar,
   // Documents
   showDocDetail:showDocDetail,
+  // Escrow Payment
+  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,
+  // Electronic Signature
+  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
   // Notifications
   toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,
   // Translation
