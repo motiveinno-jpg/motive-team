@@ -100,22 +100,23 @@ serve(async (req) => {
       };
     } else if (type === "one_analysis") {
       // One-time analysis purchase
-      sessionConfig = {
-        customer: customerId,
-        mode: "payment",
-        line_items: [
-          {
+      const lineItem = price_id
+        ? { price: price_id, quantity: 1 }
+        : {
             price_data: {
               currency: "usd",
               product_data: {
                 name: "Whistle AI — Export Analysis",
                 description: "One-time market analysis report",
               },
-              unit_amount: Math.round(Number(amount || 2000)),
+              unit_amount: Math.round(Number(amount || 990)),
             },
             quantity: 1,
-          },
-        ],
+          };
+      sessionConfig = {
+        customer: customerId,
+        mode: "payment",
+        line_items: [lineItem],
         success_url: success_url || "https://whistle-ai.com/app#analysis",
         cancel_url: cancel_url || "https://whistle-ai.com/app#analysis",
         metadata: { user_id: user.id, type: "one_analysis" },
