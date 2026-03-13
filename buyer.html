@@ -318,6 +318,12 @@ function toast(msg,type,dur){
   var t=document.createElement('div');t.className='toast toast-'+(type||'ok');t.textContent=msg;
   document.body.appendChild(t);setTimeout(function(){t.remove();},dur||3000);
 }
+function _bPrompt(label,cb,ph){
+  var ov=document.createElement('div');ov.className='modal-overlay';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML='<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;max-width:400px;width:90%"><div style="font-size:14px;font-weight:700;margin-bottom:12px">'+esc(label)+'</div><textarea id="_bprompt_v" placeholder="'+(ph||'')+'" style="width:100%;min-height:80px;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--w04);color:var(--w90);font-size:13px;resize:vertical;box-sizing:border-box"></textarea><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button onclick="this.closest(\'.modal-overlay\').remove()" style="padding:8px 16px;border:1px solid var(--bd);border-radius:8px;background:transparent;color:var(--w60);cursor:pointer">Cancel</button><button onclick="var v=document.getElementById(\'_bprompt_v\').value;this.closest(\'.modal-overlay\').remove();if(v&&v.trim())window._bprompt_cb(v)" style="padding:8px 16px;border:none;border-radius:8px;background:var(--pri);color:white;cursor:pointer;font-weight:600">Submit</button></div></div>';
+  window._bprompt_cb=cb;document.body.appendChild(ov);
+  setTimeout(function(){var ta=document.getElementById('_bprompt_v');if(ta)ta.focus();},100);
+}
 
 /* === RENDER === */
 var _renderTimer=null;
@@ -3092,13 +3098,14 @@ function confirmEscrowDelivery(dealId){
 function raiseEscrowDispute(dealId){
   var escData=_getEscrowStatus(dealId);
   if(!escData)return;
-  var reason=prompt('Please describe the issue with your order:');
-  if(!reason)return;
-  escData.dispute={reason:reason,raisedAt:new Date().toISOString(),status:'open'};
-  _setEscrow(dealId,escData);
-  toast('Dispute raised. Our team will review and contact both parties within 48 hours.','warn',6000);
-  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
-  render();
+  _bPrompt('Please describe the issue with your order:',function(reason){
+    if(!reason||!reason.trim())return;
+    escData.dispute={reason:reason.trim(),raisedAt:new Date().toISOString(),status:'open'};
+    _setEscrow(dealId,escData);
+    toast('Dispute raised. Our team will review and contact both parties within 48 hours.','warn',6000);
+    if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
+    render();
+  },'Describe the issue in detail...');
 }
 
 /* === ELECTRONIC SIGNATURE (localStorage simulation — shared with whistle.html) === */
