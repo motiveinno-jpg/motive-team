@@ -3018,13 +3018,13 @@ function _getEscrowStatus(dealId){
 function _setEscrow(dealId,data){
   localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
-  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_buyer_'+dealId,status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt}},{onConflict:'user_id,type'}).catch(function(){});
+  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_buyer_'+dealId,status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt}},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer DB upsert fail:',e);});
 }
 function _loadEscrowFromDB(){
   if(!S.user)return Promise.resolve();
   return sb.from('service_requests').select('*').like('type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
     if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
-  }).catch(function(){});
+  }).catch(function(e){console.error('[escrow] buyer load fail:',e);});
 }
 function _escrowBuyerLabel(st){return{none:'None',requested:'Payment Requested',buyer_paid:'Paid',pending:'Pending',secured:'Funds Secured (Whistle Holding)',shipping:'Shipped — Awaiting Delivery',delivered:'Delivery Confirmed',release_requested:'Settlement Processing',released:'Settled'}[st]||st;}
 function _escrowBuyerColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
@@ -3097,7 +3097,7 @@ function raiseEscrowDispute(dealId){
   esc.dispute={reason:reason,raisedAt:new Date().toISOString(),status:'open'};
   _setEscrow(dealId,esc);
   toast('Dispute raised. Our team will review and contact both parties within 48 hours.','warn',6000);
-  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:esc.amount,reason:reason}}).catch(function(){});
+  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:esc.amount,reason:reason}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
   render();
 }
 
