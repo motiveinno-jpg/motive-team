@@ -1004,24 +1004,71 @@ function pgDash(){
   h+=UI.stat('월간 추이',thisMonthOrders,(orderTrend>0?'▲ +'+orderTrend:orderTrend<0?'▼ '+orderTrend:'— 변동없음')+' 전월 대비','#8b5cf6');
   h+='</div>';
   }
-  /* ★ 신규 사용자 시작 가이드 */
-  if(_isNewUser){
-    h+='<div style="background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(139,92,246,.08));border:1px solid rgba(0,212,255,.2);border-radius:12px;padding:24px;margin-bottom:20px">';
-    h+='<div style="font-size:16px;font-weight:700;margin-bottom:16px">🚀 수출 시작 가이드</div>';
-    h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">';
-    var _steps=[
-      {n:'1',t:'회사 정보 설정',d:'기본 정보를 입력하세요',p:'settings',done:S.company&&S.company.name_ko},
-      {n:'2',t:'제품 등록',d:'수출할 제품을 등록하세요',p:'products',done:pc>0},
-      {n:'3',t:'AI 수출 분석',d:'URL로 시장 분석을 받으세요',p:'analysis',done:ac>0},
-      {n:'4',t:'바이어 발굴',d:'AI가 바이어를 찾아드립니다',p:'buyers',done:bc>0}
+  /* ★ 온보딩 가이드 — 제품 1개 이상 + 딜 1건 이상이면 자동 숨김 */
+  var _dlCnt=(S._deals||[]).length;
+  var _hideOnboard=pc>=1&&_dlCnt>=1;
+  if(!_hideOnboard){
+    /* 각 스텝 완료 여부 및 요약 텍스트 */
+    var _obS1Done=ac>0;
+    var _obS2Done=pc>0;
+    var _obS3Done=bc>0;
+    var _obS4Done=_dlCnt>0;
+    /* 분석 요약 한 줄 */
+    var _obS1Sum='';
+    if(_obS1Done&&S.analyses[0]){
+      var _obA=S.analyses[0];var _obR=_obA.ai_result||{};
+      var _obMkts=(_obR.recommended_markets||[]).slice(0,3).map(function(m){return typeof m==='object'?(m.country||m.country_code||''):m;}).filter(Boolean);
+      _obS1Sum=(_obA.product_name||_obR.product_category||'제품')+(_obMkts.length?' → '+_obMkts.join('/')+ ' 추천':'');
+    }
+    var _obS2Sum='';if(_obS2Done)_obS2Sum=pc+'개 제품 등록 완료';
+    var _obS3Sum='';if(_obS3Done)_obS3Sum=bc+'개사 바이어 발굴 완료';
+    var _obS4Sum='';if(_obS4Done)_obS4Sum=_dlCnt+'건 딜 진행중';
+    var _obSteps=[
+      {n:'1',t:'AI 수출 분석',sub:'무료 1회',d:'제품 사진이나 URL로 수출 가능성을 확인하세요',done:_obS1Done,sum:_obS1Sum,a:"App.nav('analysis')",cta:'지금 분석 시작하기 →',prev:true},
+      {n:'2',t:'제품 등록',sub:'',d:'분석 결과를 기반으로 제품 정보를 완성하세요',done:_obS2Done,sum:_obS2Sum,a:"App.nav('products')",cta:'제품 등록하기 →',prev:_obS1Done},
+      {n:'3',t:'바이어 찾기',sub:'',d:'AI가 최적의 해외 바이어를 매칭합니다',done:_obS3Done,sum:_obS3Sum,a:"App.nav('buyers')",cta:'바이어 찾기 →',prev:_obS2Done},
+      {n:'4',t:'첫 거래 시작',sub:'',d:'견적서 발송 → 협상 → 계약 → 결제',done:_obS4Done,sum:_obS4Sum,a:"App.nav('deals')",cta:'거래 시작하기 →',prev:_obS3Done}
     ];
-    _steps.forEach(function(st){
-      var _col=st.done?'var(--ok)':'var(--w40)';
-      h+='<div onclick="App.nav(\''+st.p+'\')" style="cursor:pointer;background:var(--card);border-radius:8px;padding:16px;border:1px solid '+(st.done?'var(--ok)':'var(--bd)')+';transition:border-color .2s">';
-      h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-      h+='<div style="width:24px;height:24px;border-radius:50%;background:'+(st.done?'var(--ok)':'var(--w20)')+';display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:'+(st.done?'#fff':'var(--w50)')+'">'+( st.done?'✓':st.n)+'</div>';
-      h+='<span style="font-weight:600;color:'+_col+'">'+st.t+'</span></div>';
-      h+='<div style="font-size:12px;color:var(--w40)">'+st.d+'</div></div>';
+    var _obDoneCnt=_obSteps.filter(function(s){return s.done;}).length;
+    var _obPct=Math.round((_obDoneCnt/4)*100);
+    h+='<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.2);background:linear-gradient(135deg,rgba(0,212,255,.04),rgba(139,92,246,.03))">';
+    h+='<div class="card-h" style="display:flex;align-items:center;gap:10px"><span style="font-size:15px">🎯</span><span style="font-size:15px;font-weight:700">수출 시작 가이드</span>'+UI.badge(_obPct+'%','pri')+'</div>';
+    h+='<div class="card-b">';
+    /* 프로그레스 바 */
+    h+='<div style="height:6px;border-radius:3px;background:var(--w08);margin-bottom:18px;overflow:hidden"><div style="height:100%;width:'+_obPct+'%;background:linear-gradient(90deg,var(--pri),#8b5cf6);border-radius:3px;transition:width .4s ease"></div></div>';
+    _obSteps.forEach(function(st,idx){
+      var isActive=!st.done&&st.prev;/* 현재 해야 할 단계 */
+      var isLocked=!st.done&&!st.prev;/* 이전 단계 미완료 */
+      /* 카드 스타일 */
+      var cardBg=st.done?'rgba(0,230,118,.04)':isActive?'var(--w04)':'var(--w02)';
+      var cardBorder=st.done?'rgba(0,230,118,.2)':isActive?'rgba(0,212,255,.2)':'var(--w06)';
+      var cardOpacity=isLocked?'0.55':'1';
+      h+='<div onclick="'+st.a+'" style="cursor:pointer;display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border-radius:10px;background:'+cardBg+';border:1px solid '+cardBorder+';margin-bottom:'+(idx<3?'8':'0')+'px;opacity:'+cardOpacity+';transition:all .2s">';
+      /* 스텝 번호/체크 아이콘 */
+      if(st.done){
+        h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:#fff;font-weight:700">✓</div>';
+      }else if(isActive){
+        h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--pri);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:#fff;font-weight:700">'+st.n+'</div>';
+      }else{
+        h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--w10);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px;color:var(--w30);font-weight:700">'+(isLocked?'🔒':st.n)+'</div>';
+      }
+      /* 텍스트 영역 */
+      h+='<div style="flex:1;min-width:0">';
+      h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+      h+='<span style="font-size:14px;font-weight:700;color:'+(st.done?'var(--ok)':isActive?'var(--w90)':'var(--w40)')+'">Step '+st.n+': '+st.t+'</span>';
+      if(st.sub)h+='<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:600">'+st.sub+'</span>';
+      if(isLocked)h+='<span style="font-size:10px;color:var(--w30)">Step '+(parseInt(st.n)-1)+' 완료 후 활성화</span>';
+      h+='</div>';
+      if(st.done&&st.sum){
+        h+='<div style="font-size:12px;color:var(--ok);margin-top:4px">✅ '+st.sum+'</div>';
+      }else{
+        h+='<div style="font-size:12px;color:var(--w40);margin-top:4px">'+st.d+'</div>';
+      }
+      /* CTA 버튼 — 완료된 건 제외, 활성 단계는 강조 */
+      if(!st.done&&isActive){
+        h+='<div style="margin-top:8px"><span style="font-size:13px;font-weight:600;color:var(--pri)">'+st.cta+'</span></div>';
+      }
+      h+='</div></div>';
     });
     h+='</div></div>';
   }
