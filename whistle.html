@@ -9487,10 +9487,14 @@ function _submitDealDocInner(){
       message_type:'system',channel:'platform',direction:'outbound'
     }).then(function(){});
     S._dealDocForm=null;
-    // Advance deal if first document
-    if(deal.stage==='matched'){
+    // Auto-advance deal stage based on document type
+    var _curStage=deal.matching?deal.matching.status:'';
+    if(_curStage==='matched'||_curStage==='sample'){
       sb.from('matchings').update({status:'quotation'}).eq('id',deal.id).then(function(){});
-      deal.matching.status='quotation';
+      if(deal.matching)deal.matching.status='quotation';
+    }else if(f.type==='sc'&&_curStage==='quotation'){
+      sb.from('matchings').update({status:'negotiation'}).eq('id',deal.id).then(function(){});
+      if(deal.matching)deal.matching.status='negotiation';
     }
     loadSharedDocs().then(function(){loadMatchings();});
   });
@@ -9609,6 +9613,16 @@ function createDealShipment(){
     S._dealShipForm=false;
     // Update order status
     sb.from('orders').update({status:'shipping'}).eq('id',deal.order.id);
+    // Auto-advance deal stage to shipping
+    if(deal.matching&&deal.matching.status!=='shipping'&&deal.matching.status!=='completed'){
+      sb.from('matchings').update({status:'shipping'}).eq('id',deal.id).then(function(){});
+      deal.matching.status='shipping';
+    }
+    // Notify buyer about shipment
+    if(deal.buyerId){
+      var companyName=S.company?S.company.name_en||S.company.name_ko:'Manufacturer';
+      sb.from('notifications').insert({user_id:deal.buyerId,type:'shipment',title:'Shipment registered',body:companyName+' has shipped your order. '+(type==='ocean'?'Ocean':'Air')+' freight, ETA: '+(eta||'TBD'),link_page:'deals',link_id:deal.id,is_read:false}).then(function(){});
+    }
     // System message
     sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
       body:'[출하 등록] '+(type==='ocean'?'해운':type==='air'?'항공':'특송')+' | B/L: '+(bl||'TBD')+' | '+pol+' → '+pod+(eta?' | ETA: '+eta:''),
@@ -9779,7 +9793,7 @@ function pgBizHub(){
 
 function renderPage(){
   if(S.user&&!S.user.onboarding_completed&&S.page==='dashboard')return pgOnboarding();
-  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'deals':S.page='projects';S._pjTab='buyers';return pgProjects();case'buyers':case'buyerhub':S.page='projects';S._pjTab='buyers';return pgProjects();case'services':return pgServices();case'docgen':return pgDocgen();case'chat':return pgChat();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'tracking':return pgTracking();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'meetings':return pgMeetings();case'alibaba':return pgAlibaba();case'marketplace':return pgMarketplace();case'trends':return pgTrends();case'partnership':return pgPartnership();case'guide':return pgGuide();case'processmap':return pgProcessMap();case'invite':return pgInviteReferral();case'comms':return pgComms();case'ordershipping':return pgOrderShipping();case'bizhub':return pgBizHub();default:return pgDash();}
+  switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'deals':S.page='projects';S._pjTab='buyers';return pgProjects();case'buyers':case'buyerhub':S.page='projects';S._pjTab='buyers';return pgProjects();case'services':return pgServices();case'documents':case'docgen':return pgDocgen();case'chat':return pgChat();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'tracking':return pgTracking();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'meetings':return pgMeetings();case'alibaba':return pgAlibaba();case'marketplace':return pgMarketplace();case'trends':return pgTrends();case'partnership':return pgPartnership();case'guide':return pgGuide();case'processmap':return pgProcessMap();case'invite':return pgInviteReferral();case'comms':return pgComms();case'ordershipping':return pgOrderShipping();case'bizhub':return pgBizHub();default:return pgDash();}
 }
 
 /* === BUYER SEARCH TRENDS === */
