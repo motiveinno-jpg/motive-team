@@ -9064,7 +9064,6 @@ function renderSellerActionChips(deal,stIdx){
   }
   if(stage==='negotiation'){
     h+='<div class="deal-action-chip primary" onclick="App.showDealOrderForm()">✅ 주문 생성</div>';
-    h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'ci\')">📄 상업송장</div>';
     h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'sc\')">📋 계약서</div>';
   }
   if(stage==='negotiation'){
@@ -9074,6 +9073,7 @@ function renderSellerActionChips(deal,stIdx){
   }
   if(stage==='order'){
     h+='<div class="deal-action-chip primary" onclick="App.advanceDealOrder(\'production\')">🏭 생산 시작</div>';
+    h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'ci\')">📄 상업송장</div>';
     h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'pl\')">📦 패킹리스트</div>';
     var _esc2=_getEscrowStatus(deal.id);
     if(!_esc2||_esc2.status==='none')h+='<div class="deal-action-chip" onclick="App.openEscrowModal(\''+deal.id+'\')">🔒 에스크로 결제 요청</div>';
@@ -9081,8 +9081,11 @@ function renderSellerActionChips(deal,stIdx){
   }
   if(stage==='production'){
     h+='<div class="deal-action-chip primary" onclick="App.showDealShipForm()">🚢 출하 등록</div>';
+    h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'ci\')">📄 상업송장</div>';
     h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'pl\')">📦 패킹리스트</div>';
     h+='<div class="deal-action-chip" onclick="App.openDealDocForm(\'co\')">📜 원산지증명</div>';
+    var _esc3=_getEscrowStatus(deal.id);
+    if(!_esc3||_esc3.status==='none')h+='<div class="deal-action-chip" onclick="App.openEscrowModal(\''+deal.id+'\')">🔒 에스크로 결제 요청</div>';
   }
   if(stage==='shipping'){
     h+='<div class="deal-action-chip primary" onclick="App.completeDeal()">🎉 거래 완료</div>';
@@ -9188,7 +9191,7 @@ function renderDealSidebar(deal,stIdx){
     /* 상태별 액션 버튼 */
     if(_escD.status==='secured')h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:6px;font-size:10px" onclick="App.escrowMarkShipped(\''+deal.id+'\')">📦 출하 완료 (배송 시작)</button>';
     if(_escD.status==='shipping')h+='<div style="margin-top:6px;font-size:11px;color:var(--w40);text-align:center">바이어 수령 확인 대기중...</div>';
-    if(_escD.status==='delivered'||_escD.status==='shipping')h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:6px;font-size:10px" onclick="App.requestEscrowRelease(\''+deal.id+'\')">💰 정산 요청</button>';
+    if(_escD.status==='delivered')h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:6px;font-size:10px" onclick="App.requestEscrowRelease(\''+deal.id+'\')">💰 정산 요청</button>';
     if(_escD.status==='release_requested')h+='<div style="margin-top:6px;font-size:11px;color:var(--acc);text-align:center;font-weight:600">정산 처리중 (영업일 1~2일)</div>';
     if(_escD.status==='released')h+='<div style="margin-top:6px;font-size:11px;color:var(--ok);text-align:center;font-weight:600">정산 완료 ✅</div>';
     h+='</div>';
@@ -9249,7 +9252,7 @@ function _escrowLabel(st){return{none:'없음',requested:'요청됨',buyer_paid:
 function _escrowColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
 
 function openEscrowModal(dealId){
-  var deal=S.currentDealData||S._dealRoomDealData;
+  var deal=S._currentDeal||S._dealRoomDealData;
   var amt=0;
   if(deal&&deal.order)amt=Number(deal.order.total_amount||0);
   else if(deal&&deal.documents){var pi=deal.documents.find(function(d){return d.doc_type==='pi';});if(pi&&pi.content&&pi.content.total)amt=pi.content.total;}
@@ -9285,7 +9288,7 @@ function submitEscrowRequest(dealId){
   var escData={status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:net,requestedAt:new Date().toISOString()};
   _setEscrow(dealId,escData);
   /* Also write escrow record for buyer so they can see it cross-device */
-  var deal=S.currentDealData||S._dealRoomDealData;
+  var deal=S._currentDeal||S._dealRoomDealData;
   if(!deal||!deal.buyerId){
     console.error('[submitEscrowRequest] deal or buyerId not found, dealId='+dealId);
     closeModal('escrow-req');
@@ -9585,13 +9588,13 @@ function createDealOrder(){
     sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
       body:'[주문 확정] '+num+' — $'+amt.toLocaleString()+' ('+terms+')',
       message_type:'system',channel:'platform',direction:'outbound'}).then(function(mr){if(mr.error)console.error('msg insert:',mr.error);});
-    // Create payment milestones
-    var dep30=Math.round(amt*0.3*100)/100;
-    var bal70=Math.round(amt*0.7*100)/100;
-    sb.from('payment_milestones').insert([
-      {user_id:S.user.id,order_id:r.data.id,name:'deposit',percentage:30,amount:dep30,status:'pending'},
-      {user_id:S.user.id,order_id:r.data.id,name:'balance_before_shipment',percentage:70,amount:bal70,status:'pending'}
-    ]);
+    // Create payment milestones based on payment terms
+    var _msArr=[];
+    if(terms==='L/C'){_msArr=[{user_id:S.user.id,order_id:r.data.id,name:'letter_of_credit',percentage:100,amount:amt,status:'pending'}];}
+    else if(terms==='Escrow'){_msArr=[{user_id:S.user.id,order_id:r.data.id,name:'escrow_full',percentage:100,amount:amt,status:'pending'}];}
+    else if(terms==='D/P'){_msArr=[{user_id:S.user.id,order_id:r.data.id,name:'documents_against_payment',percentage:100,amount:amt,status:'pending'}];}
+    else{var dep30=Math.round(amt*0.3*100)/100;var bal70=Math.round(amt*0.7*100)/100;_msArr=[{user_id:S.user.id,order_id:r.data.id,name:'deposit',percentage:30,amount:dep30,status:'pending'},{user_id:S.user.id,order_id:r.data.id,name:'balance_before_shipment',percentage:70,amount:bal70,status:'pending'}];}
+    if(_msArr.length)sb.from('payment_milestones').insert(_msArr);
     loadOrders().then(function(){loadMatchings();loadMilestones();});
   });
 }
@@ -9664,6 +9667,11 @@ function createDealShipment(){
 /* === DEAL STAGE TRANSITIONS === */
 function advanceDeal(newStatus){
   var deal=S._currentDeal;if(!deal)return;
+  // Validate stage transition
+  var _validOrder=['matched','quotation','sample','negotiation','order','production','shipping','completed'];
+  var _curIdx=_validOrder.indexOf(deal.matching?deal.matching.status:'');
+  var _newIdx=_validOrder.indexOf(newStatus);
+  if(_newIdx>=0&&_curIdx>=0&&_newIdx>_curIdx+2){UI.toast('단계를 순서대로 진행해주세요.','warn');return;}
   sb.from('matchings').update({status:newStatus}).eq('id',deal.id).then(function(r){
     if(r.error){UI.toast('상태 업데이트 실패','err');return;}
     if(deal.matching)deal.matching.status=newStatus;

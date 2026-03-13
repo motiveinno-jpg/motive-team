@@ -2589,7 +2589,8 @@ function loadSamples(){
 
 function computeStage(deal){
   if(deal.shipment){
-    if(deal.shipment.status==='delivered'||deal.shipment.status==='customs_clearance')return 'completed';
+    if(deal.shipment.status==='delivered')return 'completed';
+    if(deal.shipment.status==='customs_clearance')return 'shipping';
     return 'shipping';
   }
   if(deal.order){
@@ -3040,6 +3041,7 @@ function renderDealSidebar(deal,stageIdx){
     h+='<div style="font-size:11px"><span style="color:var(--w40)">Terms:</span> '+(_escSB.terms||'50/50')+'</div>';
     h+='<div style="font-size:11px;margin-top:4px"><span style="color:var(--w40)">Status:</span> <span class="badge" style="font-size:9px;padding:2px 8px;background:'+_escrowBuyerColor(_escSB.status)+';color:#fff">'+_escrowBuyerLabel(_escSB.status)+'</span></div>';
     if(_escSB.status==='requested'){h+='<button class="btn btn-acc btn-sm" style="width:100%;margin-top:8px;font-size:11px;font-weight:700" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F4B3; Review &amp; Pay Escrow</button>';h+='<div style="font-size:9px;color:var(--w30);text-align:center;margin-top:4px">Your funds are protected until delivery is confirmed</div>';}
+    if(_escSB.status==='buyer_paid')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(49,130,246,.06);border:1px solid rgba(49,130,246,.15);font-size:10px;color:#3182F6;text-align:center">&#x2705; Payment Recorded — Whistle is verifying your payment</div>';
     if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured — Safe with Whistle</div>';
     if(_escSB.status==='shipping'){h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmEscrowDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery</button>';h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px;color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Raise Dispute</button>';}
     if(_escSB.status==='delivered')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Delivery Confirmed — Payment Released to Seller</div>';
@@ -3158,7 +3160,7 @@ function confirmEscrowPay(dealId){
   var escData=_getEscrowStatus(dealId);
   if(!escData||escData.status!=='requested')return;
   var btn=document.getElementById('escrow-pay-btn');if(btn)btn.disabled=true;
-  escData.status='secured';escData.paidAt=new Date().toISOString();escData.method='wire';
+  escData.status='buyer_paid';escData.paidAt=new Date().toISOString();escData.method='wire';
   _setEscrow(dealId,escData);
   S.modal=null;S.modalData=null;
   // Notify seller via service_requests
@@ -3198,7 +3200,7 @@ function payMilestone(dealId,msId){
   if(!ms){toast('Milestone not found','warn');return;}
   if(!confirm('Pay milestone "'+ms.name.replace(/_/g,' ')+'" — $'+Number(ms.amount||0).toLocaleString()+'?'))return;
   ms.status='paid';ms.paid_at=new Date().toISOString();
-  sb.from('order_milestones').update({status:'paid',paid_at:ms.paid_at}).eq('id',msId).then(function(){toast('Milestone payment recorded','ok');}).catch(function(){toast('Failed to update milestone','err');});
+  sb.from('payment_milestones').update({status:'paid',paid_at:ms.paid_at}).eq('id',msId).then(function(){toast('Milestone payment recorded','ok');}).catch(function(){toast('Failed to update milestone','err');});
   render();
 }
 
@@ -3609,14 +3611,14 @@ function requestQuote(matchingId){
 function acceptQuote(matchingId){
   var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
   if(!deal)return;
-  sb.from('matchings').update({status:'sample'}).eq('id',matchingId).then(function(){
+  sb.from('matchings').update({status:'negotiation'}).eq('id',matchingId).then(function(){
     sb.from('messages').insert({
       buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
-      body:'[Quotation Accepted] I accept the quotation. Let\'s proceed — would you like to send a sample first?',
+      body:'[Quotation Accepted] I accept the quotation. Let\'s proceed with the next steps.',
       message_type:'system',channel:'platform',direction:'inbound'
     }).then(function(){});
     if(deal.sellerId)sb.from('notifications').insert({user_id:deal.sellerId,type:'deal',title:'Quotation Accepted',body:(S.user.company_name||S.user.display_name||'Buyer')+' accepted your quotation',link_page:'deals',link_id:deal.id,is_read:false}).then(function(){});
-    toast('Quotation accepted! Moving to sample stage.','ok');
+    toast('Quotation accepted! Moving to negotiation stage.','ok');
     deal.matching.status='sample';
     buildDeals();render();
   });
@@ -3661,6 +3663,11 @@ function confirmDelivery(matchingId){
   }
   sb.from('matchings').update({status:'completed'}).eq('id',matchingId).then(function(){
     if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){});
+    // Auto-update escrow if active
+    var _escDlv=_getEscrowStatus(deal.id);
+    if(_escDlv&&(_escDlv.status==='shipping'||_escDlv.status==='secured'||_escDlv.status==='buyer_paid')){
+      _escDlv.status='delivered';_escDlv.deliveredAt=new Date().toISOString();_setEscrow(deal.id,_escDlv);
+    }
     sb.from('messages').insert({
       buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
       body:'[Delivery Confirmed] Goods received successfully. Thank you!',
