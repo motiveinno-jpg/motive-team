@@ -249,17 +249,49 @@ var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('
 function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetryB(url,opts,retries,delay);});}
 function _fetchRetryB(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'}},opts||{})).then(function(r){if(!r.ok&&retries>1)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetryB(url,opts,retries-1,delay*2));},delay);});});}
 var sb=window.supabase.createClient(SB_URL,SB_KEY);
-/* Stripe config (buyer = USD) — TODO: Replace pk with actual Stripe publishable key after EIN/Mercury/Stripe activation */
+/* Stripe config (buyer = USD) — MOTIVE Global, Inc. (acct_1T9mvXBEJTGmEnmc) */
 var STRIPE_CFG={
-  pk:'pk_test_REPLACE_WITH_YOUR_STRIPE_PUBLISHABLE_KEY',
+  pk:'', /* TODO: Set publishable key from Stripe Dashboard → https://dashboard.stripe.com/apikeys */
   fn:SB_URL+'/functions/v1',
   prices:{starter:{m:'price_buyer_starter_m',s:'price_buyer_starter_s',a:'price_buyer_starter_a'},pro:{m:'price_buyer_pro_m',s:'price_buyer_pro_s',a:'price_buyer_pro_a'},enterprise:{m:'price_buyer_enterprise_m'}}
 };
 var _stripe=null;
 function _getStripe(){
-  if(!_stripe&&STRIPE_CFG.pk.indexOf('REPLACE')===-1){_stripe=Stripe(STRIPE_CFG.pk);}
-  if(!_stripe){toast('Payment system is being configured. Please try again later.','warn');}
+  if(!_stripe&&STRIPE_CFG.pk){_stripe=Stripe(STRIPE_CFG.pk);}
   return _stripe;
+}
+function _isStripeReady(){return !!STRIPE_CFG.pk;}
+
+/* Stripe Escrow Payment — create Stripe Checkout session for escrow deal payments */
+function initiateStripeEscrowPayment(dealId,amount,currency){
+  if(!_isStripeReady()){
+    toast('Card payment is being configured. Please use Wire Transfer for now.','info',5000);
+    return;
+  }
+  var stripe=_getStripe();
+  if(!stripe){toast('Failed to initialize Stripe. Please try Wire Transfer.','warn');return;}
+  var btn=document.getElementById('escrow-pay-btn');
+  if(btn){btn.disabled=true;btn.textContent='Connecting to Stripe...';}
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){toast('Please log in first','warn');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; Pay Now';}return;}
+    fetch(STRIPE_CFG.fn+'/create-checkout-session',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
+      body:JSON.stringify({deal_id:dealId,amount:amount,currency:currency||'USD',type:'escrow',success_url:location.origin+location.pathname+'#deals',cancel_url:location.origin+location.pathname+'#deals'})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.error){toast(data.error,'err');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; Pay Now';}return;}
+      if(data.url){window.location.href=data.url;}
+      else if(data.clientSecret){
+        document.body.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="stripe-esc-ck" onclick="if(event.target===this)B.closeStripeEscrow()"><div class="modal" style="max-width:520px"><div class="modal-h"><h3>Secure Payment</h3><button class="modal-close" onclick="B.closeStripeEscrow()">&#10005;</button></div><div class="modal-b"><div id="stripe-esc-mount" style="min-height:300px"></div></div></div></div>');
+        var sm=document.getElementById('stripe-esc-ck');if(sm)sm.style.display='flex';
+        stripe.initEmbeddedCheckout({clientSecret:data.clientSecret}).then(function(checkout){window._bStripeEsc=checkout;checkout.mount('#stripe-esc-mount');});
+      }
+    }).catch(function(err){toast('Connection error: '+err.message,'err');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; Pay Now';}});
+  });
+}
+function closeStripeEscrow(){
+  if(window._bStripeEsc){window._bStripeEsc.destroy();window._bStripeEsc=null;}
+  closeModal('stripe-esc-ck');
 }
 
 /* === STATE === */
@@ -1611,6 +1643,9 @@ function pgProductDetail(){
     if(p.moq)h+='<div><div style="font-size:11px;color:var(--w40)">MOQ</div><div style="font-size:24px;font-weight:800">'+p.moq.toLocaleString()+'<span style="font-size:12px;font-weight:400;color:var(--w40)"> units</span></div></div>';
     h+='</div>';
 
+    // Total Cost Estimator
+    h+=renderCostEstimator(p,'whistle');
+
     // Category / HS Code / Origin / Lead Time
     if(p.category)h+='<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--w40)">Category:</span> <span style="font-size:13px">'+esc(p.category)+'</span></div>';
     if(p.hs_code)h+='<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--w40)">HS Code:</span> <span style="font-size:13px;font-family:JetBrains Mono,monospace">'+esc(p.hs_code)+'</span></div>';
@@ -1703,6 +1738,9 @@ function pgProductDetail(){
 
   // Related Products section
   h+=renderRelatedProducts(pd);
+
+  // Auto-trigger cost estimator calculation after render
+  setTimeout(function(){_updateCostEstimate();},50);
 
   return h;
 }
@@ -1818,6 +1856,105 @@ function loadNaverProducts(query,cb){
   });
 }
 
+/* === TOTAL COST ESTIMATOR === */
+function _getShippingRegion(country){
+  if(!country)return 'others';
+  var c=(country||'').toUpperCase().trim();
+  var asia=['VN','TH','MY','SG','PH','ID','JP','CN','TW','HK','IN','BD','KH','MM','LA','BN','MN','PK','LK','NP'];
+  var americas=['US','CA','MX','BR','AR','CL','CO','PE','EC','UY','PA','CR','GT','DO','HN','SV','NI','BO','PY','VE','JM','TT','CU','HT','PR'];
+  var europe=['GB','UK','DE','FR','IT','ES','NL','BE','SE','NO','DK','FI','AT','CH','IE','PT','PL','CZ','RO','HU','GR','BG','HR','SK','SI','EE','LV','LT'];
+  if(asia.indexOf(c)>-1)return 'asia';
+  if(americas.indexOf(c)>-1)return 'americas';
+  if(europe.indexOf(c)>-1)return 'europe';
+  return 'others';
+}
+function _shippingRate(region){
+  var rates={asia:3,americas:5,europe:4,others:5};
+  return rates[region]||5;
+}
+function renderCostEstimator(product,source){
+  if(!product||source!=='whistle'||!product.fob_price)return '';
+  var fobPrice=parseFloat(product.fob_price);
+  if(!fobPrice||isNaN(fobPrice))return '';
+  var moq=product.moq||100;
+  var uc=S.user&&S.user.country?S.user.country.toUpperCase():'US';
+  var destOpts=[{v:'VN',l:'Vietnam'},{v:'US',l:'United States'},{v:'JP',l:'Japan'},{v:'DE',l:'Germany'},{v:'GB',l:'United Kingdom'},{v:'SG',l:'Singapore'},{v:'TH',l:'Thailand'},{v:'MY',l:'Malaysia'},{v:'ID',l:'Indonesia'},{v:'PH',l:'Philippines'},{v:'BR',l:'Brazil'},{v:'MX',l:'Mexico'},{v:'CA',l:'Canada'},{v:'FR',l:'France'},{v:'AU',l:'Australia'},{v:'OTHER',l:'Other'}];
+  var h='<div id="cost-estimator" style="margin-top:16px;padding:16px;background:var(--w08);border-radius:var(--r-s);border:1px solid var(--bd)">';
+  h+='<div style="font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px">&#x1F4B0; Total Cost Estimator</div>';
+  h+='<div class="grid-2" style="gap:10px;margin-bottom:12px">';
+  h+='<div class="form-group" style="margin-bottom:0"><label class="form-label">Quantity (units)</label><input class="form-input" type="number" id="ce-qty" value="'+moq+'" min="1" oninput="B._updateCostEstimate()" style="font-size:13px"></div>';
+  h+='<div class="form-group" style="margin-bottom:0"><label class="form-label">Destination</label><select class="form-select" id="ce-dest" onchange="B._updateCostEstimate()" style="font-size:13px">';
+  destOpts.forEach(function(o){h+='<option value="'+o.v+'"'+(uc===o.v?' selected':'')+'>'+o.l+'</option>';});
+  h+='</select></div></div>';
+  h+='<div id="ce-result" style="font-size:12px;color:var(--w60)"></div>';
+  h+='<div style="font-size:10px;color:var(--w20);margin-top:8px;font-style:italic">Estimates only. Actual shipping and customs duty may vary by carrier, weight, and local regulations.</div>';
+  h+='</div>';
+  return h;
+}
+function _updateCostEstimate(){
+  var el=document.getElementById('ce-result');
+  if(!el)return;
+  var pd=S._productDetailPage;
+  if(!pd||!pd.data||!pd.data.fob_price)return;
+  var fob=parseFloat(pd.data.fob_price);
+  var qty=parseInt((document.getElementById('ce-qty')||{}).value)||1;
+  var dest=(document.getElementById('ce-dest')||{}).value||'OTHER';
+  var region=_getShippingRegion(dest);
+  var rate=_shippingRate(region);
+  var estWeight=0.5; // avg 0.5kg per unit estimate
+  var fobTotal=fob*qty;
+  var shippingTotal=rate*estWeight*qty;
+  var dutyLow=fobTotal*0.05;
+  var dutyHigh=fobTotal*0.15;
+  var totalLow=fobTotal+shippingTotal+dutyLow;
+  var totalHigh=fobTotal+shippingTotal+dutyHigh;
+  var regionLabel={asia:'Asia',americas:'Americas',europe:'Europe',others:'Other regions'}[region]||'Other';
+  var h='<div style="padding:12px;background:var(--card);border-radius:var(--r-xs);border:1px solid var(--bd)">';
+  h+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--w40)">FOB ('+fxFormat(fob)+' x '+qty.toLocaleString()+')</span><span style="font-weight:600">'+fxFormat(fobTotal)+'</span></div>';
+  h+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:var(--w40)">Est. Shipping ('+regionLabel+' ~$'+rate+'/kg)</span><span style="font-weight:600">~'+fxFormat(shippingTotal)+'</span></div>';
+  h+='<div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="color:var(--w40)">Est. Customs Duty (5-15%)</span><span style="font-weight:600">'+fxFormat(dutyLow)+' ~ '+fxFormat(dutyHigh)+'</span></div>';
+  h+='<div style="border-top:1px solid var(--bd);padding-top:8px;display:flex;justify-content:space-between"><span style="font-weight:700;color:var(--pri)">Estimated Total</span><span style="font-weight:800;font-size:15px;color:var(--acc)">'+fxFormat(totalLow)+' ~ '+fxFormat(totalHigh)+'</span></div>';
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+/* === MOQ/BUDGET GUIDANCE === */
+function _checkMoqBudget(){
+  var guideEl=document.getElementById('moq-budget-guide');
+  if(!guideEl)return;
+  var d=S.modalData||{};
+  var p=d.product;
+  if(!p)return;
+  var fobPrice=d.source==='whistle'?parseFloat(p.fob_price||0):0;
+  var moq=p.moq||0;
+  var qtyEl=document.querySelector('input[name="quantity"]');
+  var budgetEl=document.querySelector('input[name="buyer_budget"]');
+  var qty=parseInt((qtyEl||{}).value)||0;
+  var budget=parseFloat((budgetEl||{}).value)||0;
+  var h='';
+  // Budget-based guidance
+  if(budget>0&&fobPrice>0){
+    var affordableUnits=Math.floor(budget/fobPrice);
+    if(affordableUnits<1){
+      h+='<div style="padding:8px 12px;border-radius:var(--r-xs);background:rgba(255,82,82,.08);border:1px solid rgba(255,82,82,.15);font-size:12px;color:var(--err);margin-bottom:8px">';
+      h+='Your budget of $'+budget.toLocaleString()+' is below the unit price of '+fxFormat(fobPrice)+'. Consider a <a href="#" onclick="event.preventDefault();B.set({inquiryType:\'sample_order\'})" style="color:var(--pri);font-weight:600">Sample Order</a> instead.</div>';
+    } else if(moq>0&&affordableUnits<moq){
+      h+='<div style="padding:8px 12px;border-radius:var(--r-xs);background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:12px;color:var(--acc);margin-bottom:8px">';
+      h+='Your budget of $'+budget.toLocaleString()+' covers ~<strong>'+affordableUnits.toLocaleString()+'</strong> units at '+fxFormat(fobPrice)+'/unit. This is below the MOQ of <strong>'+moq.toLocaleString()+'</strong>. ';
+      h+='Consider a <a href="#" onclick="event.preventDefault();B.set({inquiryType:\'sample_order\'})" style="color:var(--pri);font-weight:600">Sample Order</a> (10-50 units) first.</div>';
+    } else {
+      h+='<div style="padding:8px 12px;border-radius:var(--r-xs);background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.15);font-size:12px;color:var(--ok);margin-bottom:8px">';
+      h+='Your budget of $'+budget.toLocaleString()+' covers ~<strong>'+affordableUnits.toLocaleString()+'</strong> units at '+fxFormat(fobPrice)+'/unit.'+(moq>0?' (MOQ: '+moq.toLocaleString()+')':'')+'</div>';
+    }
+  }
+  // Quantity vs MOQ guidance
+  if(qty>0&&moq>0&&qty<moq&&!budget){
+    h+='<div style="padding:8px 12px;border-radius:var(--r-xs);background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:12px;color:var(--acc);margin-bottom:8px">';
+    h+='Your quantity of '+qty.toLocaleString()+' is below the MOQ of <strong>'+moq.toLocaleString()+'</strong>. Consider a <a href="#" onclick="event.preventDefault();B.set({inquiryType:\'sample_order\'})" style="color:var(--pri);font-weight:600">Sample Order</a> to test before bulk purchase.</div>';
+  }
+  guideEl.innerHTML=h;
+}
+
 /* === INQUIRY SYSTEM === */
 function openInquiry(source,id){
   var product=null;
@@ -1875,6 +2012,7 @@ function renderInquiryModal(){
 
   var types=[
     {id:'import',icon:'&#x1F6A2;',title:'Import This Product',desc:'Import the product as-is to your country'},
+    {id:'sample_order',icon:'&#x1F4E6;',title:'Sample Order',desc:'Order small quantities (10-50 units) for testing before bulk purchase'},
     {id:'factory_contact',icon:'&#x1F3ED;',title:'Connect with Factory',desc:'OEM/ODM partnership or direct factory contact ($200~700)'},
     {id:'custom_sourcing',icon:'&#x1F50D;',title:'Custom Sourcing',desc:'Find products matching your specific requirements'}
   ];
@@ -1888,8 +2026,15 @@ function renderInquiryModal(){
   h+='<input type="hidden" name="inquiry_type" value="'+S.inquiryType+'">';
 
   if(S.inquiryType==='import'){
-    h+='<div class="grid-2"><div class="form-group"><label class="form-label">Quantity (units) *</label><input class="form-input" name="quantity" type="number" placeholder="e.g., 1000" required></div><div class="form-group"><label class="form-label">Destination Country</label><input class="form-input" name="destination" value="'+esc(S.user.country||'')+'" placeholder="e.g., US"></div></div>';
+    h+='<div class="grid-2"><div class="form-group"><label class="form-label">Quantity (units) *</label><input class="form-input" name="quantity" type="number" placeholder="e.g., 1000" required oninput="B._checkMoqBudget(this)"></div><div class="form-group"><label class="form-label">Destination Country</label><input class="form-input" name="destination" value="'+esc(S.user.country||'')+'" placeholder="e.g., US"></div></div>';
     h+='<div class="form-group"><label class="form-label">Target Price (USD/unit)</label><input class="form-input" name="target_price" placeholder="e.g., $3-5"></div>';
+    h+='<div class="form-group"><label class="form-label">Your Budget (optional)</label><input class="form-input" name="buyer_budget" type="number" placeholder="e.g., 1000" oninput="B._checkMoqBudget()"></div>';
+    h+='<div id="moq-budget-guide"></div>';
+  } else if(S.inquiryType==='sample_order'){
+    h+='<div style="padding:10px 14px;border-radius:var(--r-xs);background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.1);font-size:12px;color:var(--w60);margin-bottom:14px">';
+    h+='<strong style="color:var(--pri)">Sample Order:</strong> Order 10-50 units to test product quality, packaging, and market response before committing to bulk orders. Sample pricing is typically 20-50% higher than bulk FOB price.</div>';
+    h+='<div class="grid-2"><div class="form-group"><label class="form-label">Sample Quantity *</label><input class="form-input" name="quantity" type="number" placeholder="e.g., 20" min="1" max="100" required></div><div class="form-group"><label class="form-label">Destination Country</label><input class="form-input" name="destination" value="'+esc(S.user.country||'')+'" placeholder="e.g., VN"></div></div>';
+    h+='<div class="form-group"><label class="form-label">Your Budget (USD)</label><input class="form-input" name="buyer_budget" type="number" placeholder="e.g., 500"></div>';
   } else if(S.inquiryType==='factory_contact'){
     h+='<div class="form-group"><label class="form-label">Purpose</label><select class="form-select" name="purpose"><option value="OEM">OEM (My brand, their product)</option><option value="ODM">ODM (Custom formulation)</option><option value="Direct">Direct purchase from factory</option></select></div>';
     h+='<div class="grid-2"><div class="form-group"><label class="form-label">Quantity</label><input class="form-input" name="quantity" type="number" placeholder="e.g., 5000"></div><div class="form-group"><label class="form-label">Destination</label><input class="form-input" name="destination" value="'+esc(S.user.country||'')+'" placeholder="e.g., US"></div></div>';
@@ -1942,13 +2087,15 @@ function submitInquiry(f){
     inquiry_type:data.inquiry_type||'import',
     destination_country:data.destination||S.user.country||'',
     target_moq:parseInt(data.quantity)||null,
-    target_price:data.target_price||data.budget||null,
+    target_price:data.target_price||data.budget||data.buyer_budget||null,
     status:'pending',
     tracking_id:trackingId
   };
 
   // Build message
   var msg='';
+  if(data.inquiry_type==='sample_order')msg+='[SAMPLE ORDER]\n';
+  if(data.buyer_budget)msg+='Budget: $'+data.buyer_budget+'\n';
   if(data.purpose)msg+='Purpose: '+data.purpose+'\n';
   if(data.specs)msg+='Specs: '+data.specs+'\n';
   if(data.requirements)msg+='Requirements: '+data.requirements+'\n';
@@ -2048,7 +2195,7 @@ function pgInquiries(){
   list.forEach(function(inq){
     var st=inq.status||'pending';
     var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':st==='matched'?'badge-pri':st==='cancelled'?'badge-err':'badge-ghost';
-    var typeLbl=inq.inquiry_type==='factory_contact'?'&#x1F3ED; Factory Contact':inq.inquiry_type==='custom_sourcing'?'&#x1F50D; Custom Sourcing':'&#x1F6A2; Import';
+    var typeLbl=inq.inquiry_type==='factory_contact'?'&#x1F3ED; Factory Contact':inq.inquiry_type==='custom_sourcing'?'&#x1F50D; Custom Sourcing':inq.inquiry_type==='sample_order'?'&#x1F4E6; Sample Order':'&#x1F6A2; Import';
     var statusFlow={pending:'Submitted',in_progress:'Under Review',matched:'Matched',completed:'Response Sent'};
     h+='<div class="inquiry-list-item" onclick="B.showInquiryDetail(\''+inq.id+'\')">';
     h+='<div style="flex:1"><div style="font-weight:600;font-size:13px">'+esc(inq.product_query||'Inquiry')+'</div>';
@@ -2073,7 +2220,7 @@ function renderInquiryDetailModal(){
   if(!inq)return '';
   var st=inq.status||'pending';
   var stCls=st==='completed'?'badge-ok':st==='in_progress'?'badge-acc':st==='matched'?'badge-pri':st==='cancelled'?'badge-err':'badge-ghost';
-  var typeLbl=inq.inquiry_type==='factory_contact'?'Factory Contact':inq.inquiry_type==='custom_sourcing'?'Custom Sourcing':'Import';
+  var typeLbl=inq.inquiry_type==='factory_contact'?'Factory Contact':inq.inquiry_type==='custom_sourcing'?'Custom Sourcing':inq.inquiry_type==='sample_order'?'Sample Order':'Import';
 
   var h='<div class="modal-overlay" onclick="B.closeModal()"><div class="modal" onclick="event.stopPropagation()">';
   h+='<div class="modal-h"><span>Inquiry Details</span><button class="modal-close" onclick="B.closeModal()">&#x2715;</button></div>';
@@ -3175,12 +3322,12 @@ function renderEscrowPayModal(){
   h+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Currency</span><strong>'+(esc.currency||'USD')+'</strong></div>';
   h+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px"><span style="color:var(--w40)">Terms</span><strong>'+(esc.terms||'50/50')+'</strong></div>';
   h+='</div>';
-  h+='<div style="padding:8px 12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:8px;font-size:11px;color:var(--w50);margin-bottom:16px">&#x26A0;&#xFE0F; Payment tracking is currently in beta. Actual payment processing (Stripe/Wire) will be activated soon. This records the payment status for your deal.</div>';
+  h+='<div style="padding:8px 12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:8px;font-size:11px;color:var(--w50);margin-bottom:16px">&#x1F6E1;&#xFE0F; Your payment is protected. Funds are released to the seller only after you confirm delivery.</div>';
   var _csym=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
   h+='<div style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--w04)">';
   h+='<div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--w60)">Payment Method</div>';
-  h+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;border:1.5px solid var(--acc);background:rgba(0,212,255,.04);cursor:pointer;margin-bottom:6px"><input type="radio" name="esc_method" value="wire" checked style="accent-color:var(--acc)"><span style="font-size:12px"><strong>Wire Transfer (T/T)</strong><br><span style="font-size:10px;color:var(--w40)">Bank wire to Whistle escrow account</span></span></label>';
-  h+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;border:1px solid var(--w08);cursor:pointer;opacity:.5"><input type="radio" name="esc_method" value="stripe" disabled><span style="font-size:12px"><strong>Card / Stripe</strong><br><span style="font-size:10px;color:var(--w30)">Coming soon — Stripe integration pending</span></span></label>';
+  h+='<label id="esc-method-stripe" style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;border:1.5px solid var(--acc);background:rgba(0,212,255,.04);cursor:pointer;margin-bottom:6px" onclick="B._escMethodSelect(\'stripe\')"><input type="radio" name="esc_method" value="stripe" checked style="accent-color:var(--acc)"><span style="font-size:12px"><strong>&#x1F4B3; Credit/Debit Card (Instant)</strong><br><span style="font-size:10px;color:var(--w40)">Pay securely with card &nbsp; <span style="opacity:.6">VISA &bull; Mastercard &bull; AMEX</span></span></span></label>';
+  h+='<label id="esc-method-wire" style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;border:1px solid var(--w08);cursor:pointer" onclick="B._escMethodSelect(\'wire\')"><input type="radio" name="esc_method" value="wire" style="accent-color:var(--acc)"><span style="font-size:12px"><strong>&#x1F3E6; Bank Wire Transfer</strong><br><span style="font-size:10px;color:var(--w40)">Wire transfer to escrow account (2-3 business days)</span></span></label>';
   h+='</div>';
   h+='<div style="text-align:center;margin-bottom:8px"><div style="font-size:22px;font-weight:800;color:var(--acc)">'+_csym+Number(esc.amount||0).toLocaleString()+'</div><div style="font-size:10px;color:var(--w30)">Total escrow amount</div></div>';
   h+='<button id="escrow-pay-btn" class="btn btn-acc" style="width:100%;font-size:13px;font-weight:700;padding:12px" onclick="B.confirmEscrowPay(\''+d.dealId+'\')">&#x1F512; Confirm Escrow Payment</button>';
@@ -3189,14 +3336,36 @@ function renderEscrowPayModal(){
   return h;
 }
 
+function _escMethodSelect(method){
+  var stripe=document.getElementById('esc-method-stripe');
+  var wire=document.getElementById('esc-method-wire');
+  if(method==='stripe'){
+    if(stripe){stripe.style.borderColor='var(--acc)';stripe.style.background='rgba(0,212,255,.04)';}
+    if(wire){wire.style.borderColor='var(--w08)';wire.style.background='transparent';}
+  }else{
+    if(wire){wire.style.borderColor='var(--acc)';wire.style.background='rgba(0,212,255,.04)';}
+    if(stripe){stripe.style.borderColor='var(--w08)';stripe.style.background='transparent';}
+  }
+  var radio=document.querySelector('input[name=esc_method][value="'+method+'"]');
+  if(radio)radio.checked=true;
+}
 function confirmEscrowPay(dealId){
   var escData=_getEscrowStatus(dealId);
   if(!escData||escData.status!=='requested')return;
+  var methodEl=document.querySelector('input[name=esc_method]:checked');
+  var method=methodEl?methodEl.value:'stripe';
+
+  if(method==='stripe'){
+    /* Stripe card payment */
+    initiateStripeEscrowPayment(dealId,escData.amount,escData.currency||'USD');
+    return;
+  }
+
+  /* Wire transfer flow (original) */
   var btn=document.getElementById('escrow-pay-btn');if(btn)btn.disabled=true;
   escData.status='buyer_paid';escData.paidAt=new Date().toISOString();escData.method='wire';
   _setEscrow(dealId,escData);
   S.modal=null;S.modalData=null;
-  // Notify seller via service_requests
   if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_payment',status:'pending',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency||'USD',method:'wire'}}).catch(function(e){console.error('[escrow] payment notify fail:',e);});
   toast('Payment confirmed! Settlement will proceed after delivery is verified.','ok',5000);
   render();
@@ -4387,7 +4556,7 @@ function openBuyerCheckout(planId){
 
 function initBuyerStripe(planId){
   var stripe=_getStripe();
-  if(!stripe){toast('Stripe is not configured yet. Contact support.','warn');return;}
+  if(!stripe){toast('Card payment is being set up. Please contact support@motiveinno.com for assistance.','info');return;}
   var cycleEl=document.querySelector('input[name=b_cycle]:checked');
   var cycle=cycleEl?cycleEl.value:'m';
   var priceId=STRIPE_CFG.prices[planId]&&STRIPE_CFG.prices[planId][cycle];
@@ -4499,7 +4668,7 @@ window.B={
   set:set,render:render,nav:nav,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,
   doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,
   doSearch:doSearch,quickSearch:quickSearch,setSource:setSource,setFilter:setFilter,clearFilters:clearFilters,loadMoreResults:loadMoreResults,openProductDetail:openProductDetail,
-  openInquiry:openInquiry,openCustomSourcing:openCustomSourcing,submitInquiry:submitInquiry,closeModal:closeModal,
+  openInquiry:openInquiry,openCustomSourcing:openCustomSourcing,submitInquiry:submitInquiry,closeModal:closeModal,_updateCostEstimate:_updateCostEstimate,_checkMoqBudget:_checkMoqBudget,
   saveProduct:saveProduct,unsaveProduct:unsaveProduct,inquireAllSaved:inquireAllSaved,
   showInquiryDetail:showInquiryDetail,
   saveProfile:saveProfile,changePassword:changePassword,
@@ -4521,7 +4690,7 @@ window.B={
   // Documents
   showDocDetail:showDocDetail,
   // Escrow Payment
-  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmEscrowDelivery:confirmEscrowDelivery,raiseEscrowDispute:raiseEscrowDispute,
+  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmEscrowDelivery:confirmEscrowDelivery,raiseEscrowDispute:raiseEscrowDispute,closeStripeEscrow:closeStripeEscrow,_escMethodSelect:_escMethodSelect,
   // Order Actions
   payMilestone:payMilestone,confirmOrderReceipt:confirmOrderReceipt,
   // Electronic Signature

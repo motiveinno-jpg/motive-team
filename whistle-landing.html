@@ -109,7 +109,7 @@ function App() {
   const [anonUrl, setAnonUrl] = useState(""); const [anonLoading, setAnonLoading] = useState(false); const [anonResult, setAnonResult] = useState(null);
   const [anonTab, setAnonTab] = useState("file"); const [anonFile, setAnonFile] = useState(null); const [anonFilePreview, setAnonFilePreview] = useState(null);
   const [showAnalysisModal, setShowAnalysisModal] = useState(false); const [analysisStage, setAnalysisStage] = useState(0);
-  const [countdown, setCountdown] = useState(30); const [countdownActive, setCountdownActive] = useState(false); const [analysisExpired, setAnalysisExpired] = useState(false);
+  /* 30초 타이머/블러/잠금 제거됨 — 결과 전체 공개, 하단 CTA로 전환 유도 */
   const [dragOver, setDragOver] = useState(false); const [uploadProgress, setUploadProgress] = useState(0);
   const [guideStep, setGuideStep] = useState(0);
   const [reviewCat, setReviewCat] = useState("all");
@@ -117,7 +117,7 @@ function App() {
   const [reviewPaused, setReviewPaused] = useState(false);
   const [rvCols, setRvCols] = useState(typeof window !== "undefined" && window.innerWidth < 768 ? 1 : 3);
   const fileInputRef = useRef(null);
-  const countdownRef = useRef(null);
+  const countdownRef = useRef(null); /* 유지: nav 등에서 참조하므로 */
   const SB_FUNC = "https://lylktgxngrlxmsldxdqj.supabase.co/functions/v1";
   const [RELAY, setRelay] = useState((location.hostname === "localhost" || location.hostname === "127.0.0.1") ? "http://localhost:3456" : "");
   const [relayReady, setRelayReady] = useState(false);
@@ -135,17 +135,14 @@ function App() {
   const handleFileDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f && f.size > 10485760) { alert("파일 크기가 10MB를 초과합니다."); return; } if (f && isAllowedFile(f)) { readFileWithProgress(f); } else if (f) { alert("지원되는 파일: 이미지, PDF, CSV, 텍스트, Excel"); } };
   const handleFileSelect = (e) => { const f = e.target.files[0]; if (f && f.size > 10485760) { alert("파일 크기가 10MB를 초과합니다."); return; } if (f && isAllowedFile(f)) { readFileWithProgress(f); } else if (f) { alert("지원되는 파일: 이미지, PDF, CSV, 텍스트, Excel"); } };
 
-  const startCountdown = () => { setCountdown(90); setCountdownActive(true); setAnalysisExpired(false);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    countdownRef.current = setInterval(() => { setCountdown(prev => { if (prev <= 1) { clearInterval(countdownRef.current); setCountdownActive(false); setAnalysisExpired(true); return 0; } return prev - 1; }); }, 1000);
-  };
+  /* startCountdown 제거됨 — 프리뷰 잠금 없음 */
   useEffect(() => { return () => { if (countdownRef.current) clearInterval(countdownRef.current); }; }, []);
 
   const runAnonAnalysis = () => {
     if (anonLoading) return;
     if (anonTab === "url") { const u = anonUrl.trim(); if (!u) { alert("상품 URL을 입력해주세요."); return; } try { new URL(u); } catch(e) { alert("올바른 URL 형식이 아닙니다. (https://...)"); return; } }
     if (anonTab === "file" && !anonFile) { alert("제품 파일을 업로드해주세요. (이미지, PDF, CSV, 텍스트)"); return; }
-    setAnonLoading(true); setAnonResult(null); setShowAnalysisModal(true); setAnalysisStage(0); setAnalysisExpired(false); setCountdownActive(false);
+    setAnonLoading(true); setAnonResult(null); setShowAnalysisModal(true); setAnalysisStage(0);
     const stages = [800, 2200, 4000, 6000]; stages.forEach((ms, i) => setTimeout(() => setAnalysisStage(i + 1), ms));
     const doFetch = (bodyData) => {
       const ctrl = new AbortController();
@@ -156,7 +153,7 @@ function App() {
       else headers["apikey"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0";
       fetch(endpoint, { method: "POST", headers, body: JSON.stringify(bodyData), signal: ctrl.signal })
         .then(r => { if (!r.ok) throw new Error("서버 응답 오류 (" + r.status + ")"); return r.json(); })
-        .then(d => { clearTimeout(timer); setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); startCountdown(); } else { alert(d.error || "분석 실패"); setShowAnalysisModal(false); } })
+        .then(d => { clearTimeout(timer); setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); } else { alert(d.error || "분석 실패"); setShowAnalysisModal(false); } })
         .catch((e) => { clearTimeout(timer); setAnonLoading(false);
           const msg = e.name === "AbortError" ? "분석 시간이 초과되었습니다. 다시 시도해주세요."
             : "AI 분석 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.\n\n문의: contact@whistle-ai.com";
@@ -542,12 +539,7 @@ function App() {
             </div>
             <span style={{ fontSize: 14, fontWeight: 700, color: T.w }}>Whistle AI 수출 분석</span>
             {!anonLoading && anonResult && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12 }}>
-                {countdownActive && <><div style={{ width: 32, height: 32, borderRadius: 16, background: `${T.acc}15`, border: `2px solid ${T.acc}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: T.acc }}>{countdown}</span>
-                </div><span style={{ fontSize: 11, color: T.acc, fontWeight: 600 }}>초 후 잠금</span></>}
-                {analysisExpired && <span style={{ fontSize: 11, fontWeight: 700, color: T.err, padding: "3px 10px", background: `${T.err}15`, borderRadius: 6 }}>미리보기 종료</span>}
-              </div>
+              <span style={{ fontSize: 11, fontWeight: 600, color: T.ok, padding: "3px 10px", background: `${T.ok}15`, borderRadius: 6, marginLeft: 12 }}>전체 공개</span>
             )}
           </div>
           <div onClick={() => { setShowAnalysisModal(false); if(countdownRef.current) clearInterval(countdownRef.current); }} style={{ width: 32, height: 32, borderRadius: 8, background: T.w08, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 14, color: T.w40 }}>✕</div>
@@ -576,7 +568,7 @@ function App() {
           ) : anonResult ? (
             <div style={{ position: "relative" }}>
               {/* 분석 결과 전체 */}
-              <div style={{ padding: "24px 28px", filter: analysisExpired ? "blur(8px)" : "none", userSelect: analysisExpired ? "none" : "auto", pointerEvents: analysisExpired ? "none" : "auto", transition: "filter .5s" }}>
+              <div style={{ padding: "24px 28px" }}>
                 {/* 헤더: 점수 + 제품명 */}
                 <div style={{ display: "flex", gap: 20, marginBottom: 24, padding: 20, background: T.bgSurface, borderRadius: 14, border: `1px solid ${T.border}` }}>
                   <div style={{ width: 80, height: 80, borderRadius: 16, background: `${(anonResult.overall_score||0) >= 70 ? T.ok : (anonResult.overall_score||0) >= 50 ? T.acc : T.err}10`, border: `3px solid ${(anonResult.overall_score||0) >= 70 ? T.ok : (anonResult.overall_score||0) >= 50 ? T.acc : T.err}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -604,10 +596,13 @@ function App() {
                             {m.score && <span style={{ fontSize: 14, fontWeight: 800, color: m.score >= 80 ? T.ok : T.acc }}>{m.score}점</span>}
                           </div>
                           {m.reason && <div style={{ fontSize: 12, color: T.w40, lineHeight: 1.5, marginBottom: 6 }}>{m.reason}</div>}
-                          {(m.market_size || m.growth) && <div style={{ display: "flex", gap: 6 }}>
+                          {(m.market_size || m.growth) && <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                             {m.market_size && <span style={{ fontSize: 10, padding: "2px 6px", background: `${T.pri}10`, borderRadius: 4, color: T.pri }}>{m.market_size}</span>}
                             {m.growth && <span style={{ fontSize: 10, padding: "2px 6px", background: `${T.ok}10`, borderRadius: 4, color: T.ok }}>+{m.growth}</span>}
                           </div>}
+                          <div onClick={openSignup} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6, background: `${T.pri}12`, border: `1px solid ${T.pri}30`, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.pri, marginTop: 4, transition: "all .2s" }}>
+                            <span style={{ fontSize: 13 }}>→</span> 이 시장 바이어 찾기 <span style={{ fontSize: 9, color: T.w40, marginLeft: 2 }}>(가입 필요)</span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -653,6 +648,9 @@ function App() {
                           <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 4, background: c.difficulty === "상" ? `${T.err}15` : c.difficulty === "중" ? `${T.acc}15` : `${T.ok}15`, color: c.difficulty === "상" ? T.err : c.difficulty === "중" ? T.acc : T.ok }}>{c.difficulty}</span>
                         </div>
                       ))}
+                      <div onClick={openSignup} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6, background: `${T.pri}12`, border: `1px solid ${T.pri}30`, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.pri, marginTop: 8, transition: "all .2s" }}>
+                        <span style={{ fontSize: 13 }}>→</span> 인증 가이드 보기
+                      </div>
                     </div>
                   )}
                   <div>
@@ -660,11 +658,17 @@ function App() {
                       <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>🏷️</span> HS 코드</div>
                       <div style={{ fontSize: 18, fontWeight: 800, color: T.pri, fontFamily: "JetBrains Mono, monospace" }}>{anonResult.hs_code}</div>
                       {anonResult.hs_description && <div style={{ fontSize: 11, color: T.w40, marginTop: 4 }}>{anonResult.hs_description}</div>}
+                      <div onClick={openSignup} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6, background: `${T.pri}12`, border: `1px solid ${T.pri}30`, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.pri, marginTop: 8, transition: "all .2s" }}>
+                        <span style={{ fontSize: 13 }}>→</span> 관세/FTA 확인하기
+                      </div>
                     </div>}
                     {anonResult.fob_price && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}>
                       <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 18 }}>💰</span> FOB 가격</div>
                       <div style={{ fontSize: 18, fontWeight: 800, color: T.acc }}>${anonResult.fob_price.min} ~ ${anonResult.fob_price.max} <span style={{ fontSize: 12, fontWeight: 400, color: T.w40 }}>/ {anonResult.fob_price.unit}</span></div>
                       {anonResult.fob_price.competitor_avg && <div style={{ fontSize: 11, color: T.w40, marginTop: 4 }}>경쟁사 평균: ${anonResult.fob_price.competitor_avg}</div>}
+                      <div onClick={openSignup} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 10px", borderRadius: 6, background: `${T.acc}12`, border: `1px solid ${T.acc}30`, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.acc, marginTop: 8, transition: "all .2s" }}>
+                        <span style={{ fontSize: 13 }}>→</span> 견적서 만들기
+                      </div>
                     </div>}
                   </div>
                 </div>
@@ -721,34 +725,22 @@ function App() {
                   {anonResult.pricing_strategy && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}><div style={{ fontSize: 13, fontWeight: 700, color: T.acc, marginBottom: 6 }}>💱 가격 전략</div><div style={{ fontSize: 11, color: T.w40, lineHeight: 1.6 }}>{anonResult.pricing_strategy}</div></div>}
                   {anonResult.logistics_summary && <div style={{ padding: 14, background: T.bgSurface, borderRadius: 10, border: `1px solid ${T.border}` }}><div style={{ fontSize: 13, fontWeight: 700, color: T.purple, marginBottom: 6 }}>🚢 물류 요약</div><div style={{ fontSize: 11, color: T.w40, lineHeight: 1.5 }}>{anonResult.logistics_summary.recommended_method}<br/>{anonResult.logistics_summary.estimated_cost}<br/>{anonResult.logistics_summary.lead_time}</div></div>}
                 </div>
-              </div>
 
-              {/* 30초 후 블러 오버레이 — 회원가입 유도 */}
-              {analysisExpired && (
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(6,11,24,.7)", backdropFilter: "blur(4px)", zIndex: 10 }}>
-                  <div style={{ maxWidth: 480, padding: "40px 36px", background: T.bgCard, borderRadius: 20, border: `1px solid ${T.borderL}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", textAlign: "center" }}>
-                    <div style={{ width: 64, height: 64, borderRadius: 32, background: `${T.pri}15`, border: `2px solid ${T.pri}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 28 }}>🔒</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 6 }}>미리보기가 종료되었습니다</div>
-                    <div style={{ fontSize: 14, color: T.w40, lineHeight: 1.6, marginBottom: 20 }}>회원가입하시면 <span style={{ color: T.pri, fontWeight: 700 }}>1회 무료 분석</span>과<br/>전체 13개 섹션 리포트를 확인할 수 있습니다</div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-                      {[{name:"Free",pr:"무료",rp:"",desc:"AI 분석 1회 (최초 무료)",hi:false},{name:"Starter",pr:"99,000원/월",rp:"199,000원",desc:"분석 10회 + 서류생성",hi:true},{name:"Pro",pr:"299,000원/월",rp:"599,000원",desc:"무제한 + 프리미엄",hi:false}].map((p,i) => (
-                        <div key={i} style={{ flex: 1, padding: "14px 10px", borderRadius: 12, background: p.hi ? `${T.pri}10` : T.bgSurface, border: `1.5px solid ${p.hi ? T.pri : T.border}`, textAlign: "center" }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: p.hi ? T.pri : T.w60 }}>{p.name}</div>
-                          {p.rp && <div style={{ fontSize: 10, color: T.w20, textDecoration: "line-through" }}>{p.rp}</div>}
-                          <div style={{ fontSize: 14, fontWeight: 800, color: T.w, margin: "2px 0 2px" }}>{p.pr}</div>
-                          <div style={{ fontSize: 10, color: T.w20 }}>{p.desc}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <button onClick={() => { setShowAnalysisModal(false); openSignup(); }} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16 }}>무료 AI 분석 시작하기</button>
-                    <div style={{ fontSize: 11, color: T.w20, marginTop: 10 }}>가입 즉시 1회 무료 분석 · 카드 불필요</div>
-                    <div onClick={() => { setShowAnalysisModal(false); nav("voucher"); }} style={{ marginTop: 12, padding: "10px 16px", background: `${T.acc}08`, borderRadius: 8, border: `1px solid ${T.acc}20`, cursor: "pointer" }}>
-                      <span style={{ fontSize: 12, color: T.acc, fontWeight: 600 }}>🏷️ 수출바우처 보유 기업이라면?</span>
-                      <span style={{ fontSize: 11, color: T.w40, marginLeft: 6 }}>정부 지원금으로 무료 이용 →</span>
-                    </div>
+                {/* ═══ 결과 하단 CTA — 자연스러운 가입 유도 ═══ */}
+                <div style={{ marginTop: 32, padding: "28px 24px", background: `linear-gradient(135deg, ${T.pri}08, ${T.purple}08)`, borderRadius: 16, border: `1px solid ${T.pri}25`, textAlign: "center" }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: T.w, marginBottom: 8 }}>이 분석을 기반으로 수출 시작하기</div>
+                  <div style={{ fontSize: 13, color: T.w60, lineHeight: 1.7, marginBottom: 20, maxWidth: 460, margin: "0 auto 20px" }}>
+                    이 분석 결과를 저장하고, 맞춤 바이어 매칭 · 서류 자동 생성 · 액션 가이드까지 받아보세요.<br/>
+                    <span style={{ color: T.pri, fontWeight: 600 }}>무료 가입만으로 1회 전체 분석이 제공됩니다.</span>
+                  </div>
+                  <button onClick={() => { setShowAnalysisModal(false); openSignup(); }} style={{ ...s.btn("pri"), padding: "16px 48px", fontSize: 16, marginBottom: 12 }}>무료 가입하고 액션 가이드 받기</button>
+                  <div style={{ fontSize: 11, color: T.w20 }}>카드 등록 불필요 · 가입 즉시 이용 가능</div>
+                  <div onClick={() => { setShowAnalysisModal(false); nav("voucher"); }} style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 14, padding: "8px 16px", background: `${T.acc}08`, borderRadius: 8, border: `1px solid ${T.acc}20`, cursor: "pointer" }}>
+                    <span style={{ fontSize: 12, color: T.acc, fontWeight: 600 }}>수출바우처 보유 기업이라면?</span>
+                    <span style={{ fontSize: 11, color: T.w40 }}>정부 지원금으로 무료 이용 →</span>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           ) : null}
         </div>
