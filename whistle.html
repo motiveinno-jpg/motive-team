@@ -9323,7 +9323,12 @@ function submitEscrowRequest(dealId){
 /* 바이어가 결제 완료 시 (buyer.html에서 호출 / localStorage 공유) */
 function _escrowBuyerPaid(dealId){
   var esc=_getEscrowStatus(dealId);if(!esc)return;
-  esc.status='secured';esc.paidAt=new Date().toISOString();
+  esc.status='buyer_paid';esc.paidAt=new Date().toISOString();
+  _setEscrow(dealId,esc);
+}
+function _escrowConfirmSecured(dealId){
+  var esc=_getEscrowStatus(dealId);if(!esc||esc.status!=='buyer_paid')return;
+  esc.status='secured';esc.securedAt=new Date().toISOString();
   _setEscrow(dealId,esc);
 }
 
@@ -9400,12 +9405,14 @@ function submitSignatureRequest(docId){
   var buyerReq=document.getElementById('sig-buyer-req')?document.getElementById('sig-buyer-req').checked:true;
   var sellerReq=document.getElementById('sig-seller-req')?document.getElementById('sig-seller-req').checked:true;
   _setDocSignature(docId,{status:'sent',buyer:buyer,buyerRequired:buyerReq,sellerRequired:sellerReq,sentAt:new Date().toISOString()});
-  // Notify buyer about signature request
-  if(S.user&&S.currentDeal){
-    var _dealMatch=S.currentDeal.matching||{};
-    var _buyerId=_dealMatch.buyer_id;
-    if(_buyerId){
-      sb.from('notifications').insert({user_id:_buyerId,title:'Signature Required',body:'A document requires your signature for deal: '+(S.currentDeal.product_name||'Deal'),link_page:'deals',link_id:S.currentDeal.id,is_read:false}).then(function(){}).catch(function(e){console.error('[sig] notify buyer fail:',e);});
+  // Notify buyer about signature request (support both legacy deals and DealRoom)
+  var _sigDeal=S.currentDeal||S._currentDeal||(S._dealRoomDeals&&S._dealRoomDeals.find(function(d){return d.documents&&d.documents.some(function(doc){return doc.id===docId;});}));
+  if(S.user&&_sigDeal){
+    var _dealMatch=_sigDeal.matching||{};
+    var _buyerId=_dealMatch.buyer_id||(_sigDeal.buyer&&_sigDeal.buyer.buyer_user_id)||_sigDeal.buyer_user_id;
+    if(!_buyerId&&_sigDeal.buyerId){(function(){var bid=_sigDeal.buyerId;sb.from('buyers').select('buyer_user_id').eq('id',bid).single().then(function(r){if(r.data&&r.data.buyer_user_id){sb.from('notifications').insert({user_id:r.data.buyer_user_id,title:'Signature Required',body:'A document requires your signature for deal: '+(_sigDeal.product_name||'Deal'),link_page:'deals',link_id:_sigDeal.id,is_read:false}).catch(function(e){console.error('[sig] notify buyer fail:',e);});}});})();}
+    else if(_buyerId){
+      sb.from('notifications').insert({user_id:_buyerId,title:'Signature Required',body:'A document requires your signature for deal: '+(_sigDeal.product_name||'Deal'),link_page:'deals',link_id:_sigDeal.id,is_read:false}).then(function(){}).catch(function(e){console.error('[sig] notify buyer fail:',e);});
     }
   }
   closeModal('sig-req');
