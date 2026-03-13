@@ -7972,7 +7972,7 @@ function requestVoucherConsulting(){
 }
 
 /* === NAV & RENDER === */
-function nav(p){S.page=p;S.currentAnalysis=null;S.currentProject=null;S.analysisStep=0;S.analysisData=null;S.docType=null;S._docPrefill=null;S._pjTab=null;S._pjBuyerDrawer=null;closeMob();_cleanupSubs();location.hash=p;render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;
+function nav(p){if(S.page===p&&!S.currentAnalysis&&!S.currentProject)return;S.page=p;S.currentAnalysis=null;S.currentProject=null;S.analysisStep=0;S.analysisData=null;S.docType=null;S._docPrefill=null;S._pjTab=null;S._pjBuyerDrawer=null;if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;}closeMob();_cleanupSubs();S._navScrollReset=true;location.hash=p;render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;
 try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:p,role:S.user?S.user.role:null,session_id:window._pvSid,portal:'whistle'}).then(function(){});}catch(e){}}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){document.querySelectorAll('[id="'+id+'"]').forEach(function(e){e.remove();});},300);}
 
@@ -9859,7 +9859,7 @@ function render(){
   try{
   var unreadN=(S.notifications||[]).filter(function(n){return !n.is_read;}).length;
   app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div>'+_breadcrumb()+'</div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.toggleTheme()" style="font-size:14px;padding:4px 8px;border-radius:6px" title="테마 변경">'+(document.documentElement.getAttribute("data-theme")==="light"?"\uD83C\uDF19":"\u2600\uFE0F")+'</button><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(S.currency==='KRW'?'\u20A9 KRW':'\u0024 USD')+' \u21C4</button><div style="position:relative;cursor:pointer" onclick="App.toggleNotif(event)" title="알림"><span style="font-size:16px">🔔</span>'+(unreadN>0?'<span class="notif-dot"></span><span style="position:absolute;top:-6px;right:-8px;font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 4px;font-weight:700;min-width:14px;text-align:center">'+unreadN+'</span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+S.user.email+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div>'+(S.notifOpen?renderNotifPanel():'')+'<div class="page-content">'+renderPage()+'</div></div></div>';
-  var _pc2=document.querySelector('.page-content');if(_pc2&&_scrollY>0){_pc2.scrollTop=_scrollY;requestAnimationFrame(function(){_pc2.scrollTop=_scrollY;});}
+  var _pc2=document.querySelector('.page-content');if(_pc2&&_scrollY>0&&!S._navScrollReset){_pc2.scrollTop=_scrollY;requestAnimationFrame(function(){_pc2.scrollTop=_scrollY;});}S._navScrollReset=false;
   _renderMobNav();
   }catch(renderErr){console.error('[render error]',renderErr);app.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">페이지 렌더링 오류</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+UI.esc(renderErr.message)+'</div><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">새로고침</button><button onclick="App.nav(\'dashboard\')" style="padding:8px 20px;border-radius:8px;background:#666;color:#fff;border:none;cursor:pointer;margin-left:8px">대시보드</button></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:renderErr.stack,url:location.href,page:S.page,portal:'whistle'}).then(function(){});}catch(e){}}
 }
@@ -9882,7 +9882,7 @@ function _renderMobNav(){
   var h='<div class="mob-bottom-nav"><div class="mob-bottom-nav-inner">';
   items.forEach(function(m){
     var active=m.id==='_more'?(S.page!=='dashboard'&&S.page!=='analysis'&&!_mobHubs.projects.concat(_mobHubs.comms).some(function(p){return S.page===p;})):(_mobHubs[m.id]?_mobHubs[m.id].indexOf(S.page)!==-1:S.page===m.id);
-    var dot=(m.id==='chat'&&unreadChat>0)?'<span class="mob-nav-dot"></span>':'';
+    var dot=(m.id==='comms'&&unreadChat>0)?'<span class="mob-nav-dot"></span>':'';
     var onclick=m.id==='_more'?'App.toggleMob()':'App.nav(\''+m.id+'\');App.closeMob()';
     h+='<div class="mob-nav-item'+(active?' active':'')+'" onclick="'+onclick+'">'+dot+'<span class="mob-nav-icon">'+m.icon+'</span><span>'+m.label+'</span></div>';
   });
@@ -10340,8 +10340,9 @@ window.App={set:set,nav:nav,render:render,doLogin:doLogin,doSignup:doSignup,doRe
 _handleTossCallback();
 _checkTossOneCallback();
 loadUser();
-window.addEventListener('hashchange',function(){handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user)nav(hp);}).catch(function(e){console.error(e);});});
-window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&PL[hp]&&S.user){nav(hp);}});
+window.addEventListener('hashchange',function(){if(!S.user)return;handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp])nav(hp);}).catch(function(e){console.error(e);});});
+/* popstate with hash → hashchange already fires, so only handle non-hash popstate */
+window.addEventListener('popstate',function(){if(!location.hash){var hp='dashboard';if(PL[hp]&&S.user)nav(hp);}});
 sb.auth.onAuthStateChange(function(event, session){
   if(event === 'SIGNED_OUT'){ S.user = null; S.company = null; render(); }
   else if(event === 'TOKEN_REFRESHED'){ loadUser(); }
