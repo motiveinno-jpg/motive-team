@@ -688,7 +688,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs(),_loadEscrowFromDB()]).then(function(){S._singleAnalysisCredit=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length-(S.analyses||[]).filter(function(a){return a.payment_type==='single';}).length;if(S._singleAnalysisCredit<0)S._singleAnalysisCredit=0;loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs(),_loadEscrowFromDB()]).then(function(){S._singleAnalysisCredit=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length-(S.analyses||[]).filter(function(a){return a.payment_type==='single';}).length;if(S._singleAnalysisCredit<0)S._singleAnalysisCredit=0;enrichBuyerProfiles();loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
       });
     });
   });
@@ -770,41 +770,127 @@ function pgAuth(){
   return '<div class="auth-wrap"><div class="auth-card"><div class="auth-logo"><div class="auth-logo-icon">W</div><div><div class="auth-title">Whistle AI</div><div class="auth-sub">수출 성공의 시작</div></div></div><div class="auth-tabs"><div class="auth-tab '+(isL?'active':'')+'" onclick="App.set({authMode:\'login\',authError:\'\'})">로그인</div><div class="auth-tab '+(!isL?'active':'')+'" onclick="App.set({authMode:\'signup\',authError:\'\'})">회원가입</div></div>'+(S.authError?'<div class="auth-error">'+UI.esc(S.authError)+'</div>':'')+(isL?'<form onsubmit="App.doLogin(event)">'+UI.inp('email','이메일',{type:'email',placeholder:'email@company.com',required:true})+UI.inp('password','비밀번호',{type:'password',placeholder:'비밀번호',required:true})+'<button class="btn btn-pri btn-block btn-lg" type="submit" style="margin-top:8px"'+(S._loggingIn?' disabled':'')+'>'+( S._loggingIn?'로그인 중...':'로그인')+'</button><div style="text-align:center;margin-top:12px"><a href="#" onclick="event.preventDefault();App.set({authMode:\'reset\',authError:\'\'})" style="font-size:12px;color:var(--w40)">비밀번호를 잊으셨나요?</a></div></form>':'<form onsubmit="App.doSignup(event)">'+UI.inp('company_name','회사명',{placeholder:'(주)모티브이노베이션',required:true})+UI.inp('email','이메일',{type:'email',placeholder:'email@company.com',required:true})+UI.inp('password','비밀번호',{type:'password',placeholder:'8자 이상 (영문+숫자+특수문자)',required:true})+'<div style="margin:12px 0 4px;padding:10px 14px;background:rgba(255,184,0,.06);border-radius:10px;border:1px solid rgba(255,184,0,.15)"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--w60)"><input type="checkbox" name="has_voucher" style="accent-color:#FFB800;width:16px;height:16px"><span style="font-weight:600">🏷️ 수출바우처 또는 혁신바우처를 보유하고 있습니다</span></label><div style="font-size:10px;color:var(--w20);margin-top:4px;padding-left:24px">보유 시 바우처 전용 가격 및 결과보고서 자동생성이 적용됩니다</div></div><label style="display:flex;align-items:flex-start;gap:8px;margin:8px 0 4px;cursor:pointer;font-size:11px;color:var(--w40)"><input type="checkbox" name="agree_terms" style="margin-top:2px;accent-color:var(--pri)" required><span><a href="terms.html" target="_blank" style="color:var(--pri);text-decoration:underline">이용약관</a> 및 <a href="privacy.html" target="_blank" style="color:var(--pri);text-decoration:underline">개인정보처리방침</a>에 동의합니다 (필수)</span></label><button class="btn btn-pri btn-block btn-lg" type="submit" style="margin-top:8px">무료 시작하기</button></form>')+'<div style="position:relative;text-align:center;margin:18px 0 14px"><div style="position:absolute;top:50%;left:0;right:0;height:1px;background:var(--bd)"></div><span style="position:relative;background:var(--card);padding:0 12px;font-size:11px;color:var(--w20)">또는</span></div><div style="display:flex;flex-direction:column;gap:8px"><button onclick="App.socialLogin(\'google\')" class="btn btn-ghost btn-block" style="font-size:13px;padding:10px 16px;border-color:var(--bd-l)"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:8px"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.94 10.94 0 001 12c0 1.78.42 3.46 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>Google로 계속</button><button onclick="App.socialLogin(\'kakao\')" class="btn btn-block" style="font-size:13px;padding:10px 16px;background:#FEE500;color:#191919;border:none;font-weight:600"><svg width="16" height="16" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:8px"><path d="M12 3C6.48 3 2 6.58 2 10.94c0 2.82 1.87 5.29 4.69 6.69-.15.56-.96 3.6-.99 3.82 0 0-.02.17.09.24.11.06.24.01.24.01.32-.04 3.7-2.44 4.28-2.86.55.08 1.12.12 1.69.12 5.52 0 10-3.58 10-7.94C22 6.58 17.52 3 12 3z" fill="#191919"/></svg>카카오로 계속</button></div><div style="text-align:center;margin-top:16px;font-size:11px;color:var(--w20)">가입 즉시 AI 수출 분석 1회 무료</div></div></div>';
 }
 
-/* ★ Blurred Buyer Matching — FOMO section for free plan */
+/* ★ Blurred Buyer Matching — FOMO + real data for paid plans */
+var _countryFlags={US:'🇺🇸',DE:'🇩🇪',JP:'🇯🇵',GB:'🇬🇧',SG:'🇸🇬',CN:'🇨🇳',FR:'🇫🇷',CA:'🇨🇦',AU:'🇦🇺',KR:'🇰🇷',VN:'🇻🇳',TH:'🇹🇭',IN:'🇮🇳',AE:'🇦🇪',BR:'🇧🇷',MX:'🇲🇽',NL:'🇳🇱',IT:'🇮🇹',ES:'🇪🇸',SE:'🇸🇪',ID:'🇮🇩',MY:'🇲🇾',PH:'🇵🇭',TR:'🇹🇷',HK:'🇭🇰',TW:'🇹🇼',RU:'🇷🇺',SA:'🇸🇦',EG:'🇪🇬',ZA:'🇿🇦',NG:'🇳🇬',KE:'🇰🇪',PL:'🇵🇱',NO:'🇳🇴',DK:'🇩🇰',FI:'🇫🇮',NZ:'🇳🇿',QA:'🇶🇦',KW:'🇰🇼',CO:'🇨🇴',CL:'🇨🇱',PE:'🇵🇪'};
+var _countryNames={US:'미국',DE:'독일',JP:'일본',GB:'영국',SG:'싱가포르',CN:'중국',FR:'프랑스',CA:'캐나다',AU:'호주',KR:'한국',VN:'베트남',TH:'태국',IN:'인도',AE:'UAE',BR:'브라질',MX:'멕시코',NL:'네덜란드',IT:'이탈리아',ES:'스페인',SE:'스웨덴',ID:'인도네시아',MY:'말레이시아',PH:'필리핀',TR:'터키',HK:'홍콩',TW:'대만',RU:'러시아',SA:'사우디',EG:'이집트',ZA:'남아공',NG:'나이지리아'};
+
+function _buyerAvatar(buyer,size){
+  size=size||40;
+  var av=buyer&&buyer.avatar_url;
+  var name=buyer?(buyer.company_name||buyer.contact_name||'B'):'B';
+  if(av)return '<img src="'+UI.esc(av)+'" style="width:'+size+'px;height:'+size+'px;border-radius:50%;object-fit:cover;flex-shrink:0">';
+  var colors=['#00d4ff','#ff6b6b','#ffc107','#4caf50','#9c27b0','#ff9800','#3b82f6'];
+  var ci=name.charCodeAt(0)%colors.length;
+  return '<div style="width:'+size+'px;height:'+size+'px;border-radius:50%;background:'+colors[ci]+';display:flex;align-items:center;justify-content:center;font-size:'+Math.round(size*0.4)+'px;font-weight:800;color:#fff;flex-shrink:0">'+UI.esc(name.charAt(0).toUpperCase())+'</div>';
+}
+
+function _buyerCard(buyer,opts){
+  opts=opts||{};
+  var isBlurred=opts.blur;
+  var cc=buyer.country||'';
+  var flag=_countryFlags[cc]||'🌐';
+  var cName=_countryNames[cc]||cc;
+  var company=buyer.company_name||'Unknown Company';
+  var contact=buyer.contact_name||buyer.display_name||'';
+  var industry=buyer.industry||buyer.categories||'';
+  var matchScore=opts.matchScore||0;
+
+  var h='<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:var(--w04);border:1px solid var(--bd);margin-bottom:8px;transition:background .15s'+(opts.onclick?';cursor:pointer':'')+'"'+(opts.onclick?' onclick="'+opts.onclick+'"':'')+' onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\'var(--w04)\'">';
+  /* Avatar */
+  if(isBlurred){
+    h+='<div style="width:44px;height:44px;border-radius:50%;background:var(--w15);display:flex;align-items:center;justify-content:center;flex-shrink:0;filter:blur(3px)"><span style="font-size:18px">👤</span></div>';
+  }else{
+    h+=_buyerAvatar(buyer,44);
+  }
+  /* Info */
+  h+='<div style="flex:1;min-width:0">';
+  h+='<div style="display:flex;align-items:center;gap:6px">';
+  h+='<span style="font-size:14px">'+flag+'</span>';
+  if(isBlurred){
+    h+='<span style="font-size:13px;font-weight:700;filter:blur(5px);user-select:none">'+UI.esc(company)+'</span>';
+  }else{
+    h+='<span style="font-size:13px;font-weight:700">'+UI.esc(company)+'</span>';
+  }
+  h+='</div>';
+  h+='<div style="font-size:11px;color:var(--w50);margin-top:2px">';
+  if(isBlurred){
+    h+='<span style="filter:blur(4px);user-select:none">'+UI.esc(contact||'Contact Name')+'</span>';
+    h+=' · '+cName;
+  }else{
+    if(contact)h+=UI.esc(contact)+' · ';
+    h+=cName;
+    if(industry)h+=' · '+UI.esc(typeof industry==='string'?industry:industry.join(', '));
+  }
+  h+='</div></div>';
+  /* Match score / status */
+  if(matchScore){
+    h+='<div style="text-align:right;flex-shrink:0"><div style="font-size:18px;font-weight:900;color:'+(matchScore>=80?'var(--ok)':matchScore>=60?'var(--acc)':'var(--w40)')+'">'+matchScore+'%</div>';
+    h+='<div style="font-size:9px;color:var(--w30)">매칭</div></div>';
+  }
+  if(opts.badge){h+='<span class="badge '+opts.badge.cls+'" style="font-size:10px;flex-shrink:0">'+opts.badge.text+'</span>';}
+  h+='</div>';
+  return h;
+}
+
 function renderBlurredBuyers(){
   var plan=S.user&&S.user.plan||'free';
-  if(plan!=='free')return '';
-  var _demoBuyers=[
-    {flag:'🇺🇸',country:'United States',industry:'Health & Beauty',volume:'$50,000~100,000',company:'Global Health Dist█████',contact:'John S█████',match:92},
-    {flag:'🇩🇪',country:'Germany',industry:'Food & Beverage',volume:'$30,000~80,000',company:'Euro Trade Gm█████',contact:'Hans M█████',match:88},
-    {flag:'🇯🇵',country:'Japan',industry:'Electronics',volume:'$20,000~60,000',company:'Tokyo Import█████',contact:'Tanaka █████',match:85},
-    {flag:'🇬🇧',country:'United Kingdom',industry:'Cosmetics',volume:'$40,000~90,000',company:'London Beauty█████',contact:'Sarah W█████',match:81},
-    {flag:'🇸🇬',country:'Singapore',industry:'Health Supplements',volume:'$25,000~70,000',company:'Asia Pacific █████',contact:'Lee Ch█████',match:79}
-  ];
-  var totalHidden=0;var _realMatchings=(S.matchings||[]);totalHidden=_realMatchings.length;
+  var isPaid=(plan!=='free');
+  var _realMatchings=(S.matchings||[]);
+  var totalMatch=_realMatchings.length;
+  var buyers=S.buyers||[];
+
   var h='<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.2);position:relative;overflow:hidden">';
-  h+='<div class="card-h"><span>🤝 바이어 매칭</span>'+(totalHidden?UI.badge(totalHidden+'건 매칭','acc'):UI.badge('대기중','w40'))+'</div>';
+  h+='<div class="card-h"><span>🤝 바이어 매칭</span>'+(totalMatch?UI.badge(totalMatch+'건 매칭','acc'):UI.badge('대기중','w40'))+'</div>';
   h+='<div class="card-b">';
-  if(totalHidden>0){
-    h+='<div style="font-size:12px;color:var(--w60);margin-bottom:14px">현재 <strong style="color:var(--acc)">'+totalHidden+'건</strong>의 매칭이 진행중입니다. 업그레이드하면 상세 정보를 확인할 수 있습니다.</div>';
+
+  if(totalMatch>0){
+    if(!isPaid){
+      h+='<div style="font-size:12px;color:var(--w60);margin-bottom:14px">현재 <strong style="color:var(--acc)">'+totalMatch+'명</strong>의 바이어가 매칭되었습니다. 구독하면 상세 정보를 확인하고 직접 컨택할 수 있습니다.</div>';
+    }else{
+      h+='<div style="font-size:12px;color:var(--w60);margin-bottom:14px">매칭된 바이어 <strong style="color:var(--ok)">'+totalMatch+'명</strong> — 바이어를 클릭하여 딜을 시작하세요.</div>';
+    }
     _realMatchings.slice(0,5).forEach(function(m){
-      h+='<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;background:var(--w08);margin-bottom:6px">';
-      h+='<div style="font-size:20px;flex-shrink:0">🤝</div>';
-      h+='<div style="flex:1;min-width:0">';
-      h+='<div style="font-size:13px;font-weight:600;filter:blur(4px);user-select:none">'+UI.esc(m.buyer_company||'Buyer')+'</div>';
-      h+='<div style="font-size:11px;color:var(--w40)">매칭 상태: '+(m.status==='active'?'활성':'대기')+'</div>';
-      h+='</div></div>';
+      var buyer=buyers.find(function(b){return b.id===m.buyer_id;})||{company_name:m.buyer_company||'Buyer',country:m.buyer_country||''};
+      var score=m.match_score||Math.floor(Math.random()*20+70);
+      var stLabel={active:'활성',proposed:'제안',negotiation:'협상',contract:'계약',completed:'완료'};
+      h+=_buyerCard(buyer,{
+        blur:!isPaid,
+        matchScore:score,
+        badge:{cls:isPaid?'badge-ok':'badge-acc',text:stLabel[m.status]||m.status||'매칭'},
+        onclick:isPaid?'App.openDeal(\''+m.id+'\')':''
+      });
     });
+    if(totalMatch>5){
+      h+='<div style="text-align:center;padding:8px 0;font-size:12px;color:var(--w40)">외 '+(totalMatch-5)+'건 더</div>';
+    }
   }else{
+    /* Demo buyers for empty state */
+    var _demoBuyers=[
+      {avatar_url:'',company_name:'Global Health Distributors',contact_name:'John Smith',country:'US',industry:'Health & Beauty'},
+      {avatar_url:'',company_name:'Euro Trade GmbH',contact_name:'Hans Müller',country:'DE',industry:'Food & Beverage'},
+      {avatar_url:'',company_name:'Tokyo Import Co.',contact_name:'Tanaka Yuki',country:'JP',industry:'Electronics'},
+      {avatar_url:'',company_name:'London Beauty Ltd.',contact_name:'Sarah Williams',country:'GB',industry:'Cosmetics'}
+    ];
+    h+='<div style="font-size:12px;color:var(--w60);margin-bottom:14px">제품을 등록하면 AI가 자동으로 바이어를 매칭합니다. 아래는 매칭 예시입니다.</div>';
+    _demoBuyers.forEach(function(db){
+      h+=_buyerCard(db,{blur:true,matchScore:Math.floor(Math.random()*15+78)});
+    });
+  }
+
+  if(!isPaid){
+    h+='<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--w08)">';
+    h+='<div style="font-size:12px;color:var(--w40);margin-bottom:8px">프로필 사진, 회사명, 연락처를 확인하려면 구독이 필요합니다</div>';
+    h+='<button class="btn btn-pri btn-sm" onclick="App.nav(\'subscription\')" style="font-size:12px;padding:8px 24px">구독하고 바이어 확인하기 →</button>';
+    h+='</div>';
+  }else if(!totalMatch){
     h+='<div style="text-align:center;padding:20px 0"><div style="font-size:32px;margin-bottom:10px">🔍</div>';
     h+='<div style="font-size:14px;font-weight:600;margin-bottom:6px">아직 매칭된 바이어가 없습니다</div>';
     h+='<div style="font-size:12px;color:var(--w40);margin-bottom:14px;line-height:1.6">제품을 등록하고 AI 분석을 완료하면<br>바이어 매칭이 자동으로 시작됩니다.</div>';
     h+='<button class="btn btn-pri btn-sm" onclick="App.nav(\'products\')" style="font-size:12px">제품 등록하기 →</button>';
     h+='</div>';
   }
-  h+='<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--w08)">';
-  h+='<button class="btn btn-pri btn-sm" onclick="App.nav(\'subscription\')" style="font-size:12px;padding:8px 20px">PRO 플랜에서 전체 매칭 확인 →</button>';
-  h+='</div></div></div>';
+
+  h+='</div></div>';
   return h;
 }
 
@@ -4909,6 +4995,28 @@ function buildSellerDeals(){
   S._deals=deals;
 }
 
+/* Enrich buyers with user profile data (avatar_url, etc) */
+function enrichBuyerProfiles(){
+  var bids=(S.buyers||[]).filter(function(b){return b.buyer_user_id&&!b._enriched;}).map(function(b){return b.buyer_user_id;});
+  if(!bids.length)return;
+  sb.from('users').select('id,avatar_url,display_name,company_name,country,industry,description,website').in('id',bids).then(function(r){
+    if(!r.data)return;
+    r.data.forEach(function(u){
+      var buyer=(S.buyers||[]).find(function(b){return b.buyer_user_id===u.id;});
+      if(buyer){
+        if(u.avatar_url)buyer.avatar_url=u.avatar_url;
+        if(u.industry)buyer.industry=u.industry;
+        if(u.description&&!buyer.notes)buyer.notes=u.description;
+        if(u.website)buyer.website=u.website;
+        if(u.display_name&&!buyer.contact_name)buyer.contact_name=u.display_name;
+        if(u.country&&!buyer.country)buyer.country=u.country;
+        buyer._enriched=true;
+      }
+    });
+    render();
+  }).catch(function(){});
+}
+
 function computeSellerStage(deal){
   if(deal.shipment){
     if(deal.shipment.status==='delivered'||deal.shipment.status==='customs_clearance')return 'completed';
@@ -6231,7 +6339,19 @@ function pgSettings(){
     return '<div style="padding:10px;border-radius:8px;background:var(--w08);display:flex;align-items:center;gap:8px"><span>'+dt.i+'</span><div style="flex:1"><div style="font-size:11px;font-weight:600">'+dt.l+'</div>'+(d.length?'<div style="font-size:10px;color:var(--ok)">'+d[0].file_name+'</div>':'<div style="font-size:10px;color:var(--w30)">미등록</div>')+'</div>'+(d.length?'<button class="btn btn-ghost" style="padding:2px 6px;font-size:10px" onclick="App.delCompDoc(\''+d[0].id+'\')">삭제</button>':'<button class="btn btn-pri" style="padding:2px 8px;font-size:10px" onclick="App.uploadCompDoc(\''+dt.k+'\')">업로드</button>')+'</div>';
   }).join('');
 
-  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">⚙️ 설정</h2></div>'+profileBar+
+  /* Representative avatar */
+  var _uAvatar=S.user.avatar_url||'';
+  var avatarCard='<div class="card" style="margin-bottom:10px"><div class="card-h">👤 대표자 프로필 사진</div><div class="card-b">'+
+    '<div style="display:flex;align-items:center;gap:16px">'+
+    '<div id="mfg-avatar-box" style="width:80px;height:80px;border-radius:50%;border:2px dashed var(--bd-l);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;background:var(--sf);flex-shrink:0" onclick="document.getElementById(\'mfg-avatar-inp\').click()">'+
+    (_uAvatar?'<img src="'+U.esc(_uAvatar)+'" style="width:100%;height:100%;object-fit:cover">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:28px">👤</div><div style="font-size:9px">사진</div></div>')+
+    '</div>'+
+    '<div style="flex:1"><input class="form-input" id="mfg-avatar-url" placeholder="사진 URL 직접 입력 또는 클릭하여 업로드" value="'+U.esc(_uAvatar)+'" onchange="App.saveMfgAvatarUrl(this.value)">'+
+    '<input type="file" id="mfg-avatar-inp" accept="image/*" style="display:none" onchange="App.uploadMfgAvatar(this)">'+
+    '<div style="font-size:10px;color:var(--w20);margin-top:4px">권장: 200×200px, PNG/JPG. 바이어에게 표시됩니다.</div></div>'+
+    '</div></div></div>';
+
+  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">⚙️ 설정</h2></div>'+profileBar+avatarCard+
   '<form id="stf" onsubmit="event.preventDefault();App.saveSt()">'+
   '<div class="card" style="margin-bottom:10px"><div class="card-h">🏢 회사 정보</div><div class="card-b"><div class="grid-2">'+UI.inp('name_ko','회사명(한글)',{value:c.name_ko||''})+UI.inp('name_en','회사명(영문)',{value:c.name_en||''})+'</div><div class="grid-2">'+UI.inp('address_ko','주소(한글)',{value:c.address_ko||''})+UI.inp('address_en','주소(영문)',{value:c.address_en||''})+'</div><div class="grid-2">'+UI.inp('ceo_name_ko','대표자(한글)',{value:c.ceo_name_ko||c.ceo_name||''})+UI.inp('ceo_name_en','대표자(영문)',{value:c.ceo_name_en||''})+'</div><div class="grid-3">'+UI.inp('phone','전화',{value:c.phone||''})+UI.inp('fax','팩스',{value:c.fax||''})+UI.inp('biz_number','사업자번호',{value:c.biz_number||''})+'</div></div></div>'+
   '<div class="card" style="margin-bottom:10px"><div class="card-h">📊 사업 정보</div><div class="card-b"><div class="grid-3">'+UI.sel('personal_id_type','기업 유형',[{value:'',label:'선택'},{value:'corporation',label:'법인사업자'},{value:'individual',label:'개인사업자'},{value:'individual_person',label:'개인'}],c.personal_id_type||'')+UI.sel('category','카테고리',U.CAT,c.category||'')+UI.sel('manufacturing_type','제조유형',[{value:'',label:'선택'},{value:'direct',label:'직접제조'},{value:'oem',label:'OEM'},{value:'odm',label:'ODM'},{value:'trading',label:'무역/유통'}],c.manufacturing_type||'')+'</div></div></div>'+
@@ -6366,6 +6486,25 @@ function saveCompanyProfile(){
     Object.assign(S.company,profileData);
     render();UI.toast('제조사 프로필이 저장되었습니다!','ok');
   });
+}
+
+/* === MANUFACTURER AVATAR === */
+function uploadMfgAvatar(inp){
+  var file=inp.files[0];if(!file)return;
+  if(file.size>5*1024*1024){UI.toast('5MB 이하 파일만 가능합니다','err');return;}
+  var path='avatars/'+S.user.id+'/avatar_'+Date.now()+'_'+file.name;
+  sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
+    if(r.error){UI.toast('업로드 실패: '+r.error.message,'err');return;}
+    var url=sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;
+    saveMfgAvatarUrl(url);
+  }).catch(function(e){UI.toast('업로드 오류','err');});
+}
+function saveMfgAvatarUrl(url){
+  sb.from('users').update({avatar_url:url}).eq('id',S.user.id).then(function(r){
+    if(r.error){UI.toast('저장 실패','err');return;}
+    S.user.avatar_url=url;
+    UI.toast('프로필 사진이 저장되었습니다!','ok');render();
+  }).catch(function(e){UI.toast('네트워크 오류','err');});
 }
 
 /* === ORDER MANAGEMENT === */
@@ -8304,6 +8443,12 @@ function pgDeals(){
   buildSellerDeals();
   if(!S._dealRoomDealsLoaded){S._dealRoomDealsLoaded=true;loadDealRoomDeals();}
   var deals=S._deals||[];
+  var _plan=S.user&&S.user.plan||'free';
+  /* Free plan: show blur matching CTA at top of deals page */
+  var _blurBanner='';
+  if(_plan==='free'&&(S.matchings||[]).length>0){
+    _blurBanner='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.3);background:linear-gradient(135deg,rgba(255,184,0,.04),rgba(0,212,255,.04))"><div class="card-b" style="text-align:center;padding:16px"><div style="font-size:16px;margin-bottom:6px">🔒</div><div style="font-size:13px;font-weight:700;margin-bottom:4px">바이어 프로필이 블러 처리되어 있습니다</div><div style="font-size:11px;color:var(--w40);margin-bottom:10px">구독하면 바이어의 사진, 회사명, 연락처를 확인할 수 있습니다</div><button class="btn btn-pri btn-sm" onclick="App.nav(\'subscription\')" style="font-size:12px">구독하고 바이어 확인 →</button></div></div>';
+  }
   /* --- 시뮬레이션: 실제 딜이 없으면 데모 데이터 표시 --- */
   var isDemo=false;
   if(!deals.length&&!(S._dealRoomDeals&&S._dealRoomDeals.length)){
@@ -8323,7 +8468,7 @@ function pgDeals(){
   var filterLabels={all:'전체',matched:'매칭',quotation:'견적',sample:'샘플',negotiation:'협상',order:'주문',production:'생산',shipping:'출하',completed:'완료'};
   var filtered=S._dealFilter==='all'?deals:deals.filter(function(d){return d.stage===S._dealFilter;});
 
-  var h='';
+  var h=_blurBanner;
 
   /* Demo banner */
   if(isDemo){
@@ -8390,13 +8535,32 @@ function pgDeals(){
     var buyerName=deal.buyer?(deal.buyer.company_name||deal.buyer.contact_name||deal.buyer.email):'Unknown Buyer';
     var country=deal.buyer?deal.buyer.country:'';
     var pendingSamples=(deal.dealSamples||[]).filter(function(s){return s.status==='requested';}).length;
+    var _isBlur=(_plan==='free'&&!deal._demo);
 
-    h+='<div class="card" style="cursor:pointer;transition:border-color .2s;position:relative" onclick="'+(deal._demo?'App.showDemoDetail(\''+deal.id+'\')':'App.openDeal(\''+deal.id+'\')')+'">';
+    h+='<div class="card" style="cursor:pointer;transition:border-color .2s;position:relative" onclick="'+(deal._demo?'App.showDemoDetail(\''+deal.id+'\')':(_isBlur?'App.nav(\'subscription\')':'App.openDeal(\''+deal.id+'\')'))+'">';
     h+='<div style="display:flex;align-items:center;gap:12px;padding:16px">';
-    h+='<div style="width:44px;height:44px;border-radius:12px;background:var(--w08);display:flex;align-items:center;justify-content:center;font-size:22px">'+stObj.icon+'</div>';
+    /* Buyer avatar + country flag */
+    var _bFlag=country?(_countryFlags[country]||'🌐'):'';
+    if(_isBlur){
+      h+='<div style="position:relative;flex-shrink:0"><div style="width:44px;height:44px;border-radius:50%;background:var(--w15);display:flex;align-items:center;justify-content:center;filter:blur(3px)"><span style="font-size:18px">👤</span></div>';
+      if(_bFlag)h+='<span style="position:absolute;bottom:-2px;right:-2px;font-size:14px;line-height:1">'+_bFlag+'</span>';
+      h+='</div>';
+    }else{
+      var _bAvatar=deal.buyer?_buyerAvatar(deal.buyer,44):'<div style="width:44px;height:44px;border-radius:12px;background:var(--w08);display:flex;align-items:center;justify-content:center;font-size:22px">'+stObj.icon+'</div>';
+      h+='<div style="position:relative;flex-shrink:0">'+_bAvatar;
+      if(_bFlag)h+='<span style="position:absolute;bottom:-2px;right:-2px;font-size:14px;line-height:1">'+_bFlag+'</span>';
+      h+='</div>';
+    }
     h+='<div style="flex:1;min-width:0">';
-    h+='<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(buyerName)+'</div>';
-    h+='<div style="font-size:11px;color:var(--w40)">'+(country?country+' · ':'')+UI.esc(deal.title)+'</div>';
+    var _cLabel=country?(_countryNames[country]||country):'';
+    if(_isBlur){
+      h+='<div style="font-size:14px;font-weight:700;filter:blur(5px);user-select:none">'+UI.esc(buyerName)+'</div>';
+      h+='<div style="font-size:11px;color:var(--w40)">'+(_cLabel?_cLabel+' · ':'')+UI.esc(deal.title)+'</div>';
+    }else{
+      h+='<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(buyerName)+'</div>';
+      var _contactName=deal.buyer&&deal.buyer.contact_name&&deal.buyer.contact_name!==buyerName?deal.buyer.contact_name:'';
+      h+='<div style="font-size:11px;color:var(--w40)">'+(_contactName?UI.esc(_contactName)+' · ':'')+(_cLabel?_cLabel+' · ':'')+UI.esc(deal.title)+'</div>';
+    }
     h+='</div>';
     h+='<div style="text-align:right">';
     h+='<span class="badge badge-pri" style="font-size:10px">'+stObj.label+'</span>';
