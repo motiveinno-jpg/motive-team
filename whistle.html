@@ -271,8 +271,8 @@ function btnLoad(btn,loading){
 }
 
 var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0');
-var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'';
-var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://'))RELAY_URL=t;}}).catch(function(){})})();
+var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'';window.RELAY_URL=RELAY_URL;
+var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://')){RELAY_URL=t;window.RELAY_URL=t;}}}).catch(function(){})})();
 function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetry(url,opts,retries,delay);});}
 function _fetchRetry(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'}},opts||{})).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetry(url,opts,retries-1,delay*2));},delay);});});}
 
@@ -667,7 +667,7 @@ var _authErrMap={
   'Email rate limit exceeded':'인증 이메일 발송 제한에 도달했습니다. 잠시 후 다시 시도해주세요.',
   'Invalid email':'올바른 이메일 형식이 아닙니다.',
   'Signup requires a valid password':'유효한 비밀번호를 입력해주세요 (6자 이상).',
-  'Password should be at least 6 characters':'비밀번호는 6자 이상이어야 합니다.',
+  'Password should be at least 6 characters':'비밀번호는 8자 이상, 영문+숫자+특수문자를 포함해야 합니다.',
   'For security purposes':'보안을 위해 잠시 후 다시 시도해주세요.'
 };
 function _authErr(msg){if(!msg)return msg;for(var k in _authErrMap){if(msg.indexOf(k)>=0)return _authErrMap[k];}return msg;}
@@ -679,7 +679,7 @@ function doLogin(e){e.preventDefault();var f=e.target;S.authError='';S._loggingI
   });
 }
 function doSignup(e){e.preventDefault();var f=e.target;
-  if(f.password.value.length<6)return set({authError:'비밀번호는 6자 이상이어야 합니다.'});
+  var _pw=f.password.value;if(_pw.length<8||!/[a-zA-Z]/.test(_pw)||!/[0-9]/.test(_pw)||!/[^a-zA-Z0-9]/.test(_pw))return set({authError:'비밀번호는 8자 이상, 영문+숫자+특수문자를 포함해야 합니다.'});
   S.authError='';var _meta={role:'client',company_name:f.company_name.value};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:_meta}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
@@ -740,7 +740,7 @@ function renderBlurredBuyers(){
     {flag:'🇬🇧',country:'United Kingdom',industry:'Cosmetics',volume:'$40,000~90,000',company:'London Beauty█████',contact:'Sarah W█████',match:81},
     {flag:'🇸🇬',country:'Singapore',industry:'Health Supplements',volume:'$25,000~70,000',company:'Asia Pacific █████',contact:'Lee Ch█████',match:79}
   ];
-  var totalHidden=Math.floor(Math.random()*8)+12;
+  if(!S._demoBuyerCount)S._demoBuyerCount=Math.floor(Math.random()*8)+12;var totalHidden=S._demoBuyerCount;
   var h='<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.2);position:relative;overflow:hidden">';
   h+='<div class="card-h"><span>🤝 관심 바이어</span>'+UI.badge(totalHidden+'명 대기','acc')+'</div>';
   h+='<div class="card-b">';
@@ -1199,8 +1199,9 @@ function autoCreateProduct(analysisId,res,productName){
 /* ── AI 영문 카탈로그 생성 ── */
 function genCatalogEN(productId){
   var p=S.products.find(function(x){return x.id===productId;});if(!p){UI.toast('제품을 찾을 수 없습니다','err');return;}
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다. 잠시 후 다시 시도해주세요.','warn');return;}
   UI.toast('AI 영문 카탈로그 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){return r.json();}).then(function(data){
+  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){return r.json();}).then(function(data){
     if(!data.ok)throw new Error(data.error||'생성 실패');
     var res=data.result;
     sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).then(function(r2){
@@ -2505,6 +2506,7 @@ function naverSearch(productId){
   if(!p){UI.toast('제품을 찾을 수 없습니다','warn');return;}
   var keyword=p.name_ko||p.name||'';
   if(!keyword){UI.toast('제품명이 없습니다','warn');return;}
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
   UI.toast('검색 중...','info');
   fetch(RELAY_URL+'/api/naver/search?q='+encodeURIComponent(keyword)+'&display=20',{headers:{'ngrok-skip-browser-warning':'1'}})
     .then(function(r){return r.json();})
@@ -4050,8 +4052,9 @@ function getCertGuide(pjId,idx){
   var tc=(p.target_countries||[])[0]||p.target_market||'US';
   var prod=S.products.find(function(pr){return pr.id===p.product_id;});
   var cat=prod?prod.category:'K-Beauty 화장품';
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
   UI.toast('AI 가이드 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
+  fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
   .then(function(r){return r.json();}).then(function(data){
     if(data.ok&&data.guide){
       cert.ai_guide=data.guide;
@@ -4678,10 +4681,11 @@ function translateEmail(targetLang){
   var sj=document.querySelector('#ef [name=subject]');var bd=document.querySelector('#ef [name=body]');
   if(!sj||!bd||!bd.value.trim()){UI.toast('번역할 내용이 없습니다','warn');return;}
   var langLabel=targetLang==='en'?'영어':'한국어';
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
   UI.toast('제목+본문 '+langLabel+' 번역 중...','info');
   var texts=[sj.value,bd.value];
   Promise.all(texts.map(function(t){
-    return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
+    return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
   })).then(function(results){
     sj.value=results[0];bd.value=results[1];
     UI.toast(langLabel+' 번역 완료','ok');
@@ -4691,7 +4695,8 @@ function sendE(){
   var d=UI.fd('#ef');if(!d.to){UI.toast('받는 사람 입력','warn');return;}
   var btn=document.querySelector('#em .btn-pri');if(btn){btn.disabled=true;btn.textContent='발송 중...';}
   var bs=document.querySelector('#ef [name=bsel]');var buyerId=bs?bs.value:'';
-  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json'},
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');if(btn){btn.disabled=false;btn.textContent='발송';}return;}
+  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
     body:JSON.stringify({to:d.to,subject:d.subject||'',bodyText:d.body||'',userId:S.user.id,buyerId:buyerId||null})
   }).then(function(r){return r.json();}).then(function(data){
     if(data.ok){
@@ -4873,7 +4878,8 @@ function translateChatMsg(msgId,targetLang){
   if(!text)return;
   _chatTranslations[key]='loading';render();
   _relayReady.then(function(){
-    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
+    if(!RELAY_URL){_chatTranslations[key]='(번역 서버 연결 필요)';render();return;}
+    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
       _chatTranslations[key]=d.ok?d.translated:text;render();
     }).catch(function(){_chatTranslations[key]=text;render();});
   });
@@ -5697,7 +5703,8 @@ function genForwarderRFQ(){
 function sendRFQEmail(){
   if(!window._lastRFQ){UI.toast('RFQ를 먼저 생성하세요','warn');return;}
   var email=prompt('포워더 이메일 주소:');if(!email)return;
-  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
+  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     to:email,subject:'[RFQ] Freight Quotation Request — '+(S.company&&S.company.name_en||'Korean Manufacturer'),
     bodyText:window._lastRFQ,userId:S.user.id
   })}).then(function(r){return r.json();}).then(function(data){
@@ -6523,8 +6530,9 @@ function findBuyersAI(){
   var d=UI.fd('#abf');if(!d.target_market){UI.toast('목표 시장을 선택하세요','warn');return;}
   var prod=S.products[0];var certs=[];
   if(prod&&S.projects.length){var sp=S.projects[0].stage_progress||{};certs=(sp.certs||[]).filter(function(c){return c.status==='approved';}).map(function(c){return c.name;});}
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
   document.getElementById('ai-buyers-result').innerHTML='<div style="padding:20px;text-align:center"><div class="spinner" style="margin:0 auto 10px"></div><div style="font-size:13px;color:var(--w40)">AI가 '+d.target_market+' 시장 바이어를 분석중...</div></div>';
-  fetch(RELAY_URL+'/api/whistle/find-buyers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/find-buyers',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     targetMarket:d.target_market,productCategory:d.product_cat||'Skincare',fobPrice:d.fob_hint||'',
     productName:prod?prod.name_en||prod.name_ko:'',hsCode:prod?prod.hs_code:'3304.99',
     certifications:certs.join(', ')||'없음'
@@ -6862,8 +6870,9 @@ function getMeetingPrep(mid){
   var m=S.meetings.find(function(x){return x.id===mid;});if(!m){UI.toast('미팅 없음','warn');return;}
   var buyer=m.buyer_id?S.buyers.find(function(b){return b.id===m.buyer_id;}):null;
   var product=S.products.length?S.products[0]:null;
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
   UI.toast('AI 브리핑 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     meeting:m,buyer:buyer,product:product,company:S.company
   })}).then(function(r){return r.json();}).then(function(j){
     if(j.error){UI.toast('실패: '+j.error,'err');return;}
@@ -7528,8 +7537,9 @@ function setAlibabaInquiryStatus(iqId,status){
 function getAlibabaReply(iqId){
   var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(!iq)return;
   var product=S.products.length?S.products[0]:null;
+  if(!RELAY_URL){UI.toast('서버 연결이 필요합니다','warn');return;}
   UI.toast('AI 응답 생성 중...','info');
-  fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     inquiry:iq,product:product,company:S.company
   })}).then(function(r){return r.json();}).then(function(j){
     if(j.error){UI.toast('실패: '+j.error,'err');return;}
@@ -10325,7 +10335,7 @@ sb.auth.onAuthStateChange(function(event, session){
 <!-- 실시간 문의 채팅 위젯 -->
 <script>
 (function(){
-  var RELAY=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':(typeof RELAY_URL!=='undefined'&&RELAY_URL?RELAY_URL:'');
+  var RELAY=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':(window.RELAY_URL||'');
   var PAGE='client';
   var open=false,step=0,msgs=[],info={name:'',email:'',phone:''};
   var el=document.createElement('div');el.id='wc-root';document.body.appendChild(el);
@@ -10357,7 +10367,7 @@ sb.auth.onAuthStateChange(function(event, session){
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:'더 자세한 상담을 원하시면 아래 정보를 남겨주세요.'});step=1;}r();},
     submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){alert('이름/회사명을 입력해주세요.');return;}msgs.push({from:'bot',text:info.name+'님, 반갑습니다! 궁금한 점을 자유롭게 입력해주세요.'});step=2;r();},
-    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();fetch(RELAY+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(r){return r.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송 실패. 잠시 후 다시 시도해주세요.'});r();});}
+    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var _r=RELAY||window.RELAY_URL||'';if(!_r){msgs.push({from:'bot',text:'문의가 접수되었습니다. contact@whistle-ai.com으로도 문의 가능합니다.'});r();return;}fetch(_r+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(resp){if(!resp.ok)throw new Error('HTTP '+resp.status);return resp.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송에 실패했습니다. contact@whistle-ai.com으로 문의해주세요.'});r();});}
   };r();
 })();
 </script>
