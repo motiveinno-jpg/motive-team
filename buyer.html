@@ -1974,7 +1974,7 @@ function submitInquiry(f){
     S.modal='inquiryConfirm';S.modalData={trackingId:trackingId,product:req.product_query,type:data.inquiry_type};
     render();
     loadInquiries();
-  }).catch(function(){S._submitting=false;});
+  }).catch(function(e){S._submitting=false;console.error('[submitInquiry]',e);toast('Network error. Please try again.','err');});
 }
 
 function closeModal(elId){if(elId){var el=document.getElementById(elId);if(el)el.remove();}S.modal=null;S.modalData=null;render();}
@@ -2126,7 +2126,7 @@ function loadMyRequests(){
   sb.from('buyer_requests').select('*').eq('buyer_user_id',S.user.id)
     .order('created_at',{ascending:false}).limit(100).then(function(r){
     S.myRequests=r.data||[];render();
-  });
+  }).catch(function(e){console.error('[loadMyRequests]',e);S.myRequests=[];});
 }
 function loadRequestProposals(reqId){
   sb.from('buyer_request_proposals').select('*').eq('request_id',reqId)
@@ -2274,7 +2274,7 @@ function submitRequest(){
     target_market:fd.get('target_market')||null,
     product_type:fd.get('product_type')||null,
     deadline:fd.get('deadline')||null,
-    is_urgent:!!form.querySelector('[name=is_urgent]').checked,
+    is_urgent:!!(form.querySelector('[name=is_urgent]')&&form.querySelector('[name=is_urgent]').checked),
     status:'open'
   };
   sb.from('buyer_requests').insert(req).then(function(r){
@@ -2331,8 +2331,8 @@ function acceptProposal(propId,reqId){
       }).catch(function(){});
       toast('Proposal accepted! Deal pipeline started.','ok');
       loadMyRequests();loadBuyerLinks();loadMatchings();
-    });
-  });
+    }).catch(function(e){console.error('[acceptProposal] matching:',e);toast('Error creating deal','err');});
+  }).catch(function(e){console.error('[acceptProposal] buyer:',e);toast('Error creating buyer record','err');});
 }
 
 function rejectProposal(propId,reqId){
@@ -2498,7 +2498,7 @@ function saveProfile(f){
     S.user.phone=data.phone;
     toast('Profile saved!','ok');
     render();
-  });
+  }).catch(function(e){console.error('[saveProfile]',e);toast('Network error. Please try again.','err');});
 }
 
 function changePassword(f){
@@ -3479,6 +3479,7 @@ function submitReview(matchingId){
 function requestQuote(matchingId){
   var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
   if(!deal)return;
+  if(!deal.buyerLinkId||!deal.sellerId){toast('Deal is not yet matched. Please wait for seller response.','warn');return;}
   sb.from('messages').insert({
     buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
     body:'Hi! I\'d like to request a formal quotation (Proforma Invoice) for this product. Please include pricing, MOQ, lead time, and payment terms.',
@@ -3486,7 +3487,7 @@ function requestQuote(matchingId){
   }).then(function(){
     toast('Quotation request sent to seller!','ok');
     render();
-  });
+  }).catch(function(e){console.error('[requestQuote]',e);toast('Failed to send request','err');});
 }
 
 function acceptQuote(matchingId){
@@ -4423,7 +4424,7 @@ document.addEventListener('click',function(e){if(S.notifOpen){var dd=document.qu
   window.WC={
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:'For further assistance, please share your details below.'});step=1;}r();},
-    submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){alert('Please enter your name or company.');return;}msgs.push({from:'bot',text:'Hi '+info.name+'! Feel free to type your question.'});step=2;r();},
+    submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){toast('Please enter your name or company.','warn');return;}msgs.push({from:'bot',text:'Hi '+info.name+'! Feel free to type your question.'});step=2;r();},
     send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var relay=getRelay();if(!relay){msgs.push({from:'bot',text:'Chat service is connecting... please try again in a moment.'});r();return;}fetch(relay+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(res){return res.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'Your message has been received.'});r();}}).catch(function(){msgs.push({from:'bot',text:'Failed to send. Please try again later.'});r();});}
   };r();
 })();
