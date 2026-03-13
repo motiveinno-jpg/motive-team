@@ -3232,7 +3232,12 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
         h+='<div style="display:flex;justify-content:'+(isSeller?'flex-end':'flex-start')+';align-items:flex-end;gap:3px">';
         if(!isSeller)h+='<div style="width:22px;height:22px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(buyerName.charAt(0))+'</div>';
         h+='<div style="max-width:75%;padding:8px 12px;border-radius:'+(isSeller?'12px 12px 3px 12px':'12px 12px 12px 3px')+';background:'+(isSeller?'var(--pri)':'var(--w08)')+';color:'+(isSeller?'#fff':'var(--w90)')+';font-size:12px;line-height:1.5">';
-        if(isFile&&m.file_url){h+='<a href="'+U.esc(m.file_url)+'" target="_blank" style="color:'+(isSeller?'#fff':'var(--pri)')+';text-decoration:underline">\ud83d\udcce '+UI.esc(body)+'</a>';}
+        var _fUrl=m.file_url||(m.metadata&&m.metadata.file_url)||'';
+        if(isFile&&_fUrl){
+          var _isImg=m.metadata&&m.metadata.is_image;
+          if(_isImg){h+='<img src="'+U.esc(_fUrl)+'" style="max-width:180px;border-radius:8px;margin-bottom:4px;display:block" onerror="this.style.display=\'none\'">';}
+          h+='<a href="'+U.esc(_fUrl)+'" target="_blank" style="color:'+(isSeller?'#fff':'var(--pri)')+';text-decoration:underline">\ud83d\udcce '+UI.esc(m.metadata&&m.metadata.file_name||body)+'</a>';
+        }
         else{h+=UI.esc(body);}
         h+='<div style="font-size:8px;color:'+(isSeller?'rgba(255,255,255,.35)':'var(--w20)')+';margin-top:3px;text-align:right">'+new Date(m.created_at).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})+'</div>';
         h+='</div></div>';
@@ -7170,6 +7175,15 @@ function loadMarketplace(){
     .order('created_at',{ascending:false}).limit(100).then(function(r){
     S.marketplaceRequests=r.data||[];render();
   });
+  /* Also load direct buyer inquiries targeting this seller's products */
+  if(S.user){
+    var pids=(S.products||[]).map(function(p){return p.id;});
+    if(pids.length){
+      sb.from('contact_requests').select('*').in('product_id',pids).order('created_at',{ascending:false}).limit(50).then(function(r){
+        S._directInquiries=r.data||[];render();
+      });
+    }
+  }
 }
 function loadMyProposals(){
   if(!S.user)return;
@@ -7189,6 +7203,21 @@ function pgMarketplace(){
   h+='<button class="btn btn-sm '+(S._marketFilter==='open'?'btn-pri':'btn-ghost')+'" onclick="App.set({_marketFilter:\'open\'})">공개 중</button>';
   h+='<button class="btn btn-sm '+(S._marketFilter==='my'?'btn-acc':'btn-ghost')+'" onclick="App.set({_marketFilter:\'my\'})">내 제안</button>';
   h+='</div></div>';
+  /* Direct inquiries about my products */
+  var _diq=S._directInquiries||[];
+  if(_diq.length){
+    h+='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.2);background:linear-gradient(135deg,rgba(255,184,0,.04),transparent)">';
+    h+='<div class="card-h"><span>📩 내 제품 바이어 문의 ('+_diq.length+'건)</span></div><div class="card-b" style="padding:0">';
+    _diq.slice(0,5).forEach(function(iq){
+      h+='<div style="padding:10px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">';
+      h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(iq.company_name||iq.contact_name||'Anonymous')+'</div>';
+      h+='<div style="font-size:11px;color:var(--w40);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(iq.product_query||iq.message||'').slice(0,80)+'</div></div>';
+      h+='<div style="font-size:10px;color:var(--w30)">'+new Date(iq.created_at).toLocaleDateString()+'</div>';
+      var _badge=iq.status==='pending'?'badge-acc':'badge-ok';
+      h+='<span class="badge '+_badge+'" style="font-size:9px">'+UI.esc(iq.status)+'</span></div>';
+    });
+    h+='</div></div>';
+  }
   // search bar
   h+=SF.bar('marketplace',{placeholder:'바이어 요청 검색 (제품명, 카테고리, 시장...)',filters:[
     {name:'category',label:'전체 카테고리',options:[{value:'K-Beauty',label:'K-Beauty'},{value:'K-Food',label:'K-Food'},{value:'K-Health',label:'K-Health'},{value:'K-Fashion',label:'K-Fashion'},{value:'K-Electronics',label:'K-Electronics'},{value:'K-Living',label:'K-Living'}]},
@@ -8827,9 +8856,16 @@ function submitEscrowRequest(dealId){
   var _noDecimal=(cur==='KRW'||cur==='JPY');
   var fee=_noDecimal?Math.round(amt*0.025):Math.round(amt*0.025*100)/100;
   var net=_noDecimal?Math.round(amt-fee):Math.round((amt-fee)*100)/100;
-  _setEscrow(dealId,{status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:net,requestedAt:new Date().toISOString()});
+  var escData={status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:net,requestedAt:new Date().toISOString()};
+  _setEscrow(dealId,escData);
+  /* Also write escrow record for buyer so they can see it cross-device */
+  var deal=S.currentDealData||S._dealRoomDealData;
+  if(deal&&deal.buyerId){
+    sb.from('service_requests').upsert({user_id:deal.buyerId,type:'escrow_'+dealId,status:escData.status,details:Object.assign({deal_id:dealId},escData)},{onConflict:'user_id,type'}).catch(function(){});
+    sb.from('notifications').insert({user_id:deal.buyerId,type:'deal',title:'에스크로 결제 요청',body:amt.toLocaleString()+' '+cur+' 결제가 요청되었습니다.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(){});
+  }
   closeModal('escrow-req');
-  UI.toast('에스크로 결제 요청이 전송되었습니다. 바이어에게 결제 안내가 발송됩니다.','ok',4000);
+  UI.toast('에스크로 결제 요청이 전송되었습니다.','ok',4000);
   render();
 }
 
@@ -9996,7 +10032,7 @@ function _renderMobNav(){
 }
 
 function renderNotifPanel(){
-  var ICONS={order:'📋',email:'✉️',buyer:'🤝',service:'💼',cert:'📜',analysis:'🔬',system:'🔔',meeting:'📅',alibaba:'🏪',sample:'📦',shipment:'🚢',payment:'💰'};
+  var ICONS={order:'📋',email:'✉️',buyer:'🤝',deal:'🤝',service:'💼',cert:'📜',analysis:'🔬',system:'🔔',meeting:'📅',alibaba:'🏪',sample:'📦',shipment:'🚢',payment:'💰',trend:'📊'};
   var list=S.notifications.slice(0,20);
   var unread=list.filter(function(n){return !n.is_read;}).length;
   var h='<div id="notif-panel" style="position:absolute;top:52px;right:16px;z-index:950;width:380px;max-width:calc(100vw - 32px);max-height:480px;background:var(--card);border:1px solid var(--bd-l);border-radius:var(--r);box-shadow:var(--shadow-lg);display:flex;flex-direction:column;overflow:hidden">';
