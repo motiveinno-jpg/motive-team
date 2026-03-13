@@ -151,7 +151,7 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .notif-item{padding:12px 14px;border-bottom:1px solid var(--w08);cursor:pointer;transition:background .15s;font-size:12px}
 .notif-item:hover{background:var(--w08)}
 .notif-item.unread{border-left:3px solid var(--pri)}
-@media(max-width:768px){.chat-list{width:100%}.chat-panel{display:none}.chat-layout.chat-open .chat-list{display:none}.chat-layout.chat-open .chat-panel{display:flex}}
+@media(max-width:768px){.chat-list{width:100%}.chat-panel{display:none}.chat-layout.chat-open .chat-list{display:none}.chat-layout.chat-open .chat-panel{display:flex}.chat-layout.chat-open #chatBackBtn{display:flex!important}}
 /* Deal Pipeline */
 .deal-stages{display:flex;align-items:center;gap:0;overflow-x:auto;padding:16px 0;margin-bottom:20px}
 .deal-stage{display:flex;align-items:center;gap:6px;padding:8px 14px;font-size:11px;font-weight:600;color:var(--w20);white-space:nowrap;position:relative;cursor:default;transition:all .2s}
@@ -1876,7 +1876,7 @@ function pgInquiries(){
   statuses.forEach(function(st){
     var cnt=st==='all'?S.inquiries.length:S.inquiries.filter(function(i){return i.status===st;}).length;
     var active=(!S._inqFilter&&st==='all')||(S._inqFilter===st);
-    h+='<button class="btn btn-sm '+(active?'btn-pri':'btn-ghost')+'" onclick="B._inqFilter=\''+st+'\';B.render()">'+st.replace('_',' ')+' ('+cnt+')</button>';
+    h+='<button class="btn btn-sm '+(active?'btn-pri':'btn-ghost')+'" onclick="B.set({_inqFilter:\''+st+'\'})">'+st.replace('_',' ')+' ('+cnt+')</button>';
   });
   h+='</div>';
 
@@ -2902,6 +2902,7 @@ function renderEscrowPayModal(){
   h+='</div>';
   h+='<div style="padding:8px 12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:8px;font-size:11px;color:var(--w50);margin-bottom:16px">&#x1F6E1; Protected by Whistle Escrow. Funds are released only after you confirm delivery.</div>';
   var _csym=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
+  h+='<div style="margin-bottom:10px;padding:8px 12px;border-radius:8px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12);font-size:11px;color:var(--acc)">&#x26A0;&#xFE0F; Escrow payments currently track status only. Actual payment integration (Stripe) will be activated soon.</div>';
   h+='<button class="btn btn-pri btn-block btn-lg" id="escrow-pay-btn" onclick="B.confirmEscrowPay(\''+d.dealId+'\')">&#x1F4B3; Pay Now — '+_csym+Number(esc.amount||0).toLocaleString()+'</button>';
   h+='</div></div></div>';
   return h;
@@ -3461,7 +3462,7 @@ function pgMessages(){
     h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--w40);font-size:13px"><div style="text-align:center"><div style="font-size:36px;margin-bottom:12px">&#x1F4AC;</div>Select a conversation</div></div>';
   } else {
     h+='<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">';
-    h+='<button class="btn btn-ghost btn-sm" onclick="B.closeChat()" style="display:none" id="chatBackBtn">&#x2190;</button>';
+    h+='<button class="btn btn-ghost btn-sm" onclick="B.closeChat()" id="chatBackBtn" style="display:none">&#x2190; Back</button>';
     h+='<div style="font-weight:700;font-size:14px">'+esc(getSellerName(S.currentChat.sellerId))+'</div></div>';
     h+='<div class="chat-msgs" id="chatMsgs">';
     var lastDate='';
@@ -3472,7 +3473,7 @@ function pgMessages(){
       h+=renderChatBubble(m,isMine);
     });
     h+='</div>';
-    h+='<div class="chat-input-row"><input class="form-input" id="chatInput" placeholder="Type a message..." onkeydown="if(event.key===\'Enter\')B.sendChat()"><button class="btn btn-pri" onclick="B.sendChat()">Send</button></div>';
+    h+='<div class="chat-input-row" style="display:flex;gap:6px;align-items:center"><label style="cursor:pointer;padding:8px;border-radius:8px;background:var(--w08);display:flex;align-items:center;flex-shrink:0" title="Attach file"><span style="font-size:14px">&#x1F4CE;</span><input type="file" onchange="B.chatAttachFile(this)" style="display:none" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"></label><input class="form-input" id="chatInput" placeholder="Type a message..." onkeydown="if(event.key===\'Enter\')B.sendChat()" style="flex:1"><button class="btn btn-pri" onclick="B.sendChat()">Send</button></div>';
   }
   h+='</div></div>';
   return h;
@@ -3506,6 +3507,30 @@ function sendChat(){
     S.chatMessages=S.chatMessages.filter(function(m){return!m.id.toString().startsWith('temp_');});
     S.chatMessages.push(r.data);render();scrollChatBottom();
   });
+}
+
+function chatAttachFile(input){
+  if(!input.files||!input.files[0]||!S.currentChat)return;
+  var file=input.files[0];
+  if(file.size>10*1024*1024){toast('Max file size is 10MB','warn');return;}
+  var ext=file.name.split('.').pop().toLowerCase();
+  var path='chat/'+S.user.id+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  toast('Uploading...','info');
+  sb.storage.from('documents').upload(path,file).then(function(r){
+    if(r.error){toast('Upload failed: '+r.error.message,'err');return;}
+    var url=sb.storage.from('documents').getPublicUrl(path).data.publicUrl;
+    var isImg=/^(jpg|jpeg|png|gif|webp)$/i.test(ext);
+    var body=isImg?'[Image] '+file.name:'[File] '+file.name;
+    var msg={user_id:S.currentChat.sellerId,buyer_id:S.currentChat.buyerLinkId,body:body,sender_type:'buyer',message_type:'file',metadata:{file_url:url,file_name:file.name,file_type:ext,is_image:isImg},channel:'platform',direction:'inbound'};
+    S.chatMessages.push(Object.assign({id:'temp_'+Date.now(),created_at:new Date().toISOString()},msg));
+    render();scrollChatBottom();
+    sb.from('messages').insert(msg).select().single().then(function(r){
+      if(r.error){toast('Send failed','err');return;}
+      S.chatMessages=S.chatMessages.filter(function(m){return!m.id.toString().startsWith('temp_');});
+      S.chatMessages.push(r.data);toast('File sent','ok');render();scrollChatBottom();
+    });
+  });
+  input.value='';
 }
 
 function initChatRealtime(buyerLinkId){
@@ -4075,7 +4100,7 @@ window.B={
   // Deals
   openDeal:openDeal,closeDeal:closeDeal,sendDealMessage:sendDealMessage,
   // Chat
-  openChat:openChat,closeChat:closeChat,sendChat:sendChat,
+  openChat:openChat,closeChat:closeChat,sendChat:sendChat,chatAttachFile:chatAttachFile,
   // Orders
   showOrderDetail:showOrderDetail,
   // Reviews
