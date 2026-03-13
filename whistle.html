@@ -688,7 +688,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){S._singleAnalysisCredit=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length-(S.analyses||[]).filter(function(a){return a.payment_type==='single';}).length;if(S._singleAnalysisCredit<0)S._singleAnalysisCredit=0;loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs(),_loadEscrowFromDB()]).then(function(){S._singleAnalysisCredit=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length-(S.analyses||[]).filter(function(a){return a.payment_type==='single';}).length;if(S._singleAnalysisCredit<0)S._singleAnalysisCredit=0;loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
       });
     });
   });
@@ -958,7 +958,7 @@ function pgDash(){
   /* 활동 타임라인 */
   var _af=S._actFilter||'all';
   h+='<div class="card"><div class="card-h"><span>🕐 최근 활동</span><div style="display:flex;gap:4px">';
-  ['all','analysis','email','order','buyer'].forEach(function(f){var lb={all:'전체',analysis:'분석',email:'이메일',order:'주문',buyer:'바이어'}[f];h+='<span onclick="App.set({_actFilter:\''+f+'\'})" style="font-size:10px;padding:3px 8px;border-radius:12px;cursor:pointer;background:'+(_af===f?'rgba(0,212,255,.1)':'transparent')+';color:'+(_af===f?'var(--pri)':'var(--w40)')+'">'+lb+'</span>';});
+  ['all','analysis','email','order','buyer'].forEach(function(f){var lb={all:'전체',analysis:'분석',email:'이메일',order:'주문',buyer:'바이어'}[f];h+='<span onclick="App.set({_actFilter:\''+f+'\'})" style="font-size:12px;padding:6px 12px;border-radius:12px;cursor:pointer;min-height:32px;display:inline-flex;align-items:center;background:'+(_af===f?'rgba(0,212,255,.1)':'transparent')+';color:'+(_af===f?'var(--pri)':'var(--w40)')+'">'+lb+'</span>';});
   h+='</div></div><div class="card-b" style="max-height:300px;overflow-y:auto">';
   var timeline=[];
   if(_af==='all'||_af==='analysis')(S.analyses||[]).slice(0,5).forEach(function(a){timeline.push({t:a.created_at,icon:'🔬',text:'AI 분석: '+U.tr(a.product_name,25),pg:'analysis',cat:'analysis'});});
@@ -1221,9 +1221,9 @@ function submitA(){
       loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast('AI 분석 완료!','ok');});
       pushNotif('analysis','AI 분석 완료: '+d.product_name,(res.overall_score||'')+'점 — 상세 리포트가 준비되었습니다','analysis',null,true);
       /* Track usage + billing */
-      sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'ai_analysis',quantity:1,metadata:{analysis_id:r.data.id,product:d.product_name}}}).catch(function(){});
+      sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'ai_analysis',quantity:1,metadata:{analysis_id:r.data.id,product:d.product_name}}}).catch(function(e){console.error('[billing] usage record fail:',e);});
       var _aSub=S.user||{};var _aFree=(!_aSub.plan||_aSub.plan==='free');var _aPrice=_aFree?50000:(_aSub.plan==='starter'?30000:0);
-      if(_aPrice>0){sb.from('billing_events').insert({user_id:S.user.id,event_type:'ai_analysis',amount:_aPrice,currency:'KRW',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free'}}).catch(function(){});}
+      if(_aPrice>0){sb.from('billing_events').insert({user_id:S.user.id,event_type:'ai_analysis',amount:_aPrice,currency:'KRW',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free'}}).catch(function(e){console.error('[billing] analysis event fail:',e);});}
     }).catch(function(err){
       console.error('[analyze-export] Client error:',err.message);
       /* EF v5 may have updated DB to failed; check before fallback */
@@ -1258,11 +1258,17 @@ function cancelAnalysis(){
 
 /* ── Auto-create product from analysis ── */
 function autoCreateProduct(analysisId,res,productName){
+  /* 중복 방지: 같은 analysis_id로 이미 등록된 제품이 있으면 스킵 */
+  var existing=(S.products||[]).find(function(p){return p.analysis_id===analysisId;});
+  if(existing){console.log('[autoCreateProduct] already exists for analysis '+analysisId);return;}
   var inp=res.input_data||{};
   var prod={user_id:S.user.id,analysis_id:analysisId,name_ko:productName||inp.product_name_en||'',name_en:inp.product_name_en||'',category:inp.category||null,hs_code:res.hs_code||null,fob_price:inp.fob_price||null,moq:inp.moq||null,certifications:res.existing_certs||[],status:'draft'};
-  sb.from('products').insert(prod).select().single().then(function(r2){
-    if(r2.error){UI.toast('자동 제품등록 실패','warn');return;}
-    loadP().then(function(){UI.toast('제품 자동 등록: '+prod.name_ko,'ok');});
+  sb.from('products').select('id').eq('analysis_id',analysisId).eq('user_id',S.user.id).limit(1).then(function(chk){
+    if(chk.data&&chk.data.length>0){console.log('[autoCreateProduct] DB duplicate found');return;}
+    sb.from('products').insert(prod).select().single().then(function(r2){
+      if(r2.error){UI.toast('자동 제품등록 실패','warn');return;}
+      loadP().then(function(){UI.toast('제품 자동 등록: '+prod.name_ko,'ok');});
+    });
   });
 }
 
@@ -3785,7 +3791,7 @@ function submitPjDoc(){
     /* Auto-send chat message if buyer selected */
     if(d.buyer_id){
       var typeN={pi:'견적송장(PI)',ci:'상업송장(CI)',pl:'패킹리스트(PL)',co:'원산지증명(CO)',sc:'계약서(SC)'};
-      sb.from('messages').insert({buyer_id:d.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[서류 생성] '+(typeN[docType]||docType)+' - '+docNum+' (총액: $'+total.toFixed(2)+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(){});
+      sb.from('messages').insert({buyer_id:d.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[서류 생성] '+(typeN[docType]||docType)+' - '+docNum+' (총액: $'+total.toFixed(2)+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(e){console.error('[doc] buyer message fail:',e);});
     }
   });
 }
@@ -4610,7 +4616,7 @@ function _genDocInner(items,bd,rd,c){
     /* 서류 건당 과금 billing event 기록 */
     var _docPrice=_docPrices[_curDocType]||5000;
     var _sub=S.user||{};var _isFree=(!_sub.plan||_sub.plan==='free');
-    if(_isFree||_sub.plan==='starter'){sb.from('billing_events').insert({user_id:S.user.id,event_type:'document_generation',amount:_docPrice,currency:'KRW',status:'pending',metadata:{doc_type:_curDocType,doc_id:(r.data&&r.data[0])?r.data[0].id:null,plan:_sub.plan||'free'}}).then(function(br){if(!br.error)console.log('billing event created: '+_docPrice+'원');}).catch(function(){});}
+    if(_isFree||_sub.plan==='starter'){sb.from('billing_events').insert({user_id:S.user.id,event_type:'document_generation',amount:_docPrice,currency:'KRW',status:'pending',metadata:{doc_type:_curDocType,doc_id:(r.data&&r.data[0])?r.data[0].id:null,plan:_sub.plan||'free'}}).then(function(br){if(!br.error)console.log('billing event created: '+_docPrice+'원');}).catch(function(e){console.error('[billing] doc event fail:',e);});}
   });
 }
 
@@ -8925,7 +8931,7 @@ function _getEscrowStatus(dealId){
 function _setEscrow(dealId,data){
   localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
-  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_'+dealId,status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays}},{onConflict:'user_id,type'}).catch(function(){});
+  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_'+dealId,status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays}},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] DB upsert fail:',e);});
 }
 function _loadEscrowFromDB(dealId){
   if(!S.user)return Promise.resolve();
@@ -8974,10 +8980,14 @@ function submitEscrowRequest(dealId){
   _setEscrow(dealId,escData);
   /* Also write escrow record for buyer so they can see it cross-device */
   var deal=S.currentDealData||S._dealRoomDealData;
-  if(deal&&deal.buyerId){
-    sb.from('service_requests').upsert({user_id:deal.buyerId,type:'escrow_'+dealId,status:escData.status,details:Object.assign({deal_id:dealId},escData)},{onConflict:'user_id,type'}).catch(function(){});
-    sb.from('notifications').insert({user_id:deal.buyerId,type:'deal',title:'에스크로 결제 요청',body:amt.toLocaleString()+' '+cur+' 결제가 요청되었습니다.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(){});
+  if(!deal||!deal.buyerId){
+    console.error('[submitEscrowRequest] deal or buyerId not found, dealId='+dealId);
+    closeModal('escrow-req');
+    UI.toast('거래 정보를 찾을 수 없습니다. 거래 상세에서 다시 시도해주세요.','warn');
+    return;
   }
+  sb.from('service_requests').upsert({user_id:deal.buyerId,type:'escrow_'+dealId,status:escData.status,details:Object.assign({deal_id:dealId},escData)},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer record upsert fail:',e);});
+  sb.from('notifications').insert({user_id:deal.buyerId,type:'deal',title:'에스크로 결제 요청',body:amt.toLocaleString()+' '+cur+' 결제가 요청되었습니다.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(e){console.error('[escrow] buyer notification fail:',e);});
   closeModal('escrow-req');
   UI.toast('에스크로 결제 요청이 전송되었습니다.','ok',4000);
   render();
@@ -9038,7 +9048,7 @@ function _getDocSignatures(){try{return Object.assign({},JSON.parse(localStorage
 function _setDocSignature(docId,data){
   var all=_getDocSignatures();all[docId]=data;localStorage.setItem('doc_signatures',JSON.stringify(all));
   if(!S._sigCache)S._sigCache={};S._sigCache[docId]=data;
-  if(S.user&&docId)sb.from('documents').update({signature_status:data.status,signature_data:data,updated_at:new Date().toISOString()}).eq('id',docId).catch(function(){});
+  if(S.user&&docId)sb.from('documents').update({signature_status:data.status,signature_data:data,updated_at:new Date().toISOString()}).eq('id',docId).catch(function(e){console.error('[signature] DB update fail:',e);});
 }
 function _sigStatusLabel(st){return{none:'없음',sent:'서명 요청됨',viewed:'확인됨',signed:'서명 완료'}[st]||st;}
 
@@ -9217,7 +9227,8 @@ function createDealOrder(){
   var terms=_el('do-terms');
   var deadline=_el('do-deadline');
   var notes=_el('do-notes').trim();
-  if(!amt){UI.toast('금액을 입력해주세요.','warn');return;}
+  if(!num){UI.toast('주문번호를 입력해주세요.','warn');var _numEl=document.getElementById('do-num');if(_numEl)_numEl.focus();return;}
+  if(!amt||amt<=0){UI.toast('금액을 입력해주세요.','warn');var _amtEl=document.getElementById('do-amt');if(_amtEl)_amtEl.focus();return;}
   sb.from('orders').insert({
     user_id:S.user.id,buyer_id:deal.buyerId,
     order_number:num,total_amount:amt,
