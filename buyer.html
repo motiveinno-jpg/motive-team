@@ -2138,7 +2138,7 @@ function submitRequest(){
     toast('Request posted!','ok');
     S.modal=null;
     loadMyRequests();
-    fetch(RELAY+'/api/whistle/marketplace-notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+    if(RELAY)fetch(RELAY+'/api/whistle/marketplace-notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
       body:JSON.stringify({type:'new_request',title:title,category:fd.get('category'),buyer:S.user.company_name,country:S.user.country})
     }).catch(function(){});
   });
@@ -2182,7 +2182,7 @@ function acceptProposal(propId,reqId){
       // 5. Close request
       sb.from('buyer_requests').update({status:'completed',accepted_proposal_id:propId,updated_at:new Date().toISOString()}).eq('id',reqId).then(function(){});
       // 6. Notify seller
-      fetch(RELAY+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+      if(RELAY)fetch(RELAY+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
         body:JSON.stringify({userId:prop.seller_user_id,type:'marketplace',title:'Proposal accepted: '+request.title,body:request.buyer_company+' accepted your proposal. Start the deal!',linkPage:'buyers',telegram:true})
       }).catch(function(){});
       toast('Proposal accepted! Deal pipeline started.','ok');
@@ -2631,23 +2631,25 @@ function renderDealActionChips(deal,stageIdx){
 
   switch(stage){
     case'matched':
+      if(deal.matching&&deal.matching.id){
       h+='<div class="chat-action-chip" onclick="B.requestQuote(\''+deal.matching.id+'\')">&#x1F4B0; Request Quote</div>';
+      }
       h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Say Hello</div>';
       break;
     case'quotation':
       var hasPI=deal.documents.some(function(d){return d.doc_type==='pi';});
       if(hasPI){
-        h+='<div class="chat-action-chip ok" onclick="B.acceptQuote(\''+deal.matching.id+'\')">&#x2705; Accept Quote</div>';
+        if(deal.matching&&deal.matching.id)h+='<div class="chat-action-chip ok" onclick="B.acceptQuote(\''+deal.matching.id+'\')">&#x2705; Accept Quote</div>';
         h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Negotiate</div>';
       } else {
-        h+='<div class="chat-action-chip" onclick="B.requestQuote(\''+deal.matching.id+'\')">&#x1F4B0; Request Quote Again</div>';
+        if(deal.matching&&deal.matching.id)h+='<div class="chat-action-chip" onclick="B.requestQuote(\''+deal.matching.id+'\')">&#x1F4B0; Request Quote Again</div>';
       }
       break;
     case'sample':
       var hasPending=(deal.dealSamples||[]).some(function(s){return s.status==='requested'||s.status==='preparing';});
       var hasDelivered=(deal.dealSamples||[]).some(function(s){return s.status==='delivered';});
       if(hasDelivered){
-        h+='<div class="chat-action-chip ok" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Approve Sample</div>';
+        if(deal.matching&&deal.matching.id)h+='<div class="chat-action-chip ok" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Approve Sample</div>';
         h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Request Changes</div>';
       } else if(!hasPending){
         h+='<div class="chat-action-chip accent" onclick="B.toggleSampleForm(\''+deal.id+'\')">&#x1F4E6; Request Sample</div>';
@@ -2656,7 +2658,7 @@ function renderDealActionChips(deal,stageIdx){
       }
       break;
     case'negotiation':
-      h+='<div class="chat-action-chip ok" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</div>';
+      if(deal.matching&&deal.matching.id)h+='<div class="chat-action-chip ok" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</div>';
       h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Discuss Terms</div>';
       var _escN=_getEscrowStatus(deal.id);
       if(_escN&&_escN.status==='requested')h+='<div class="chat-action-chip ok" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F512; Pay via Escrow</div>';
@@ -2683,7 +2685,8 @@ function renderDealActionChips(deal,stageIdx){
       }
       break;
     case'completed':
-      var hasReview=S.reviews.some(function(rv){return deal.matching&&rv.target_id===deal.matching.id;});
+      var _mid=deal.matching&&deal.matching.id;
+      var hasReview=_mid&&S.reviews.some(function(rv){return rv.target_id===_mid;});
       if(!hasReview){h+='<div class="chat-action-chip accent" onclick="B.toggleDealSidebar()">&#x2B50; Write Review</div>';}
       break;
   }
@@ -2711,7 +2714,7 @@ function renderInlineSampleForm(deal){
   h+='</div>';
   h+='<input type="text" id="smp-addr" placeholder="Shipping address" style="width:100%;padding:7px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:8px;color:var(--w);font-size:11px;outline:none;margin-bottom:6px">';
   h+='<textarea id="smp-notes" rows="1" placeholder="Notes (optional)" style="width:100%;padding:7px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:8px;color:var(--w);font-size:11px;resize:none;outline:none;font-family:inherit;margin-bottom:6px"></textarea>';
-  h+='<button class="btn btn-pri btn-sm" onclick="B.submitSampleReq(\''+deal.matching.id+'\')" style="width:100%;border-radius:8px">&#x1F4E8; Send Request</button>';
+  h+='<button class="btn btn-pri btn-sm" onclick="B.submitSampleReq(\''+(deal.matching&&deal.matching.id||'')+'\')" style="width:100%;border-radius:8px"'+(deal.matching&&deal.matching.id?'':' disabled')+'>&#x1F4E8; Send Request</button>';
   h+='</div>';
   return h;
 }
@@ -2831,7 +2834,8 @@ function renderDealSidebar(deal,stageIdx){
   var canReview=deal.stage==='completed';
   if(deal.order&&(deal.order.status==='completed'||deal.order.status==='delivered'))canReview=true;
   if(canReview){
-    var existingReview=S.reviews.find(function(rv){return rv.target_id===deal.matching.id&&rv.target_type==='matching';});
+    var _smid2=deal.matching&&deal.matching.id;
+    var existingReview=_smid2?S.reviews.find(function(rv){return rv.target_id===_smid2&&rv.target_type==='matching';}):null;
     h+='<div class="stage-card" style="padding:10px">';
     h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">&#x2B50; Review</div>';
     if(existingReview){
@@ -2845,7 +2849,7 @@ function renderDealSidebar(deal,stageIdx){
       h+='</div>';
       h+='<input type="text" placeholder="Title (optional)" value="'+esc(S.reviewDraft.title||'')+'" oninput="B._rvTitle=this.value" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:6px;color:var(--w);font-size:11px;margin-bottom:4px;outline:none">';
       h+='<textarea placeholder="Your review..." oninput="B._rvContent=this.value" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:6px;color:var(--w);font-size:11px;min-height:40px;resize:vertical;outline:none;font-family:inherit;margin-bottom:4px">'+esc(S.reviewDraft.content||'')+'</textarea>';
-      h+='<button class="btn btn-pri btn-sm" onclick="B.submitReview(\''+deal.matching.id+'\')" style="width:100%;font-size:10px"'+(S.reviewDraft.rating?'':' disabled')+'>Submit Review</button>';
+      h+='<button class="btn btn-pri btn-sm" onclick="B.submitReview(\''+(_smid||'')+'\')" style="width:100%;font-size:10px"'+(S.reviewDraft.rating&&_smid?'':' disabled')+'>Submit Review</button>';
     }
     h+='</div>';
   }
@@ -3028,7 +3032,7 @@ function renderStageContent(deal,stageIdx){
       h+='<div style="font-size:12px;color:var(--w60)">You\'ve been matched with <strong>'+esc(getSellerName(deal.sellerId))+'</strong>! Start a conversation to discuss your needs.</div>';
       h+='<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
       h+='<button class="btn btn-pri btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Start Chatting</button>';
-      h+='<button class="btn btn-ghost btn-sm" onclick="B.requestQuote(\''+deal.matching.id+'\')">&#x1F4B0; Request Quotation</button>';
+      if(deal.matching&&deal.matching.id)h+='<button class="btn btn-ghost btn-sm" onclick="B.requestQuote(\''+deal.matching.id+'\')">&#x1F4B0; Request Quotation</button>';
       h+='</div>';
       break;
     case'quotation':
@@ -3051,7 +3055,7 @@ function renderStageContent(deal,stageIdx){
           if(piContent.incoterms)h+='<div style="font-size:11px;color:var(--w40)">Incoterms: '+esc(piContent.incoterms)+'</div>';
         }
         h+='<div style="display:flex;gap:8px;margin-top:10px">';
-        h+='<button class="btn btn-pri btn-sm" onclick="B.acceptQuote(\''+deal.matching.id+'\')">&#x2705; Accept &amp; Proceed</button>';
+        if(deal.matching&&deal.matching.id)h+='<button class="btn btn-pri btn-sm" onclick="B.acceptQuote(\''+deal.matching.id+'\')">&#x2705; Accept &amp; Proceed</button>';
         h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Negotiate</button>';
         h+='</div></div>';
       }
@@ -3061,7 +3065,7 @@ function renderStageContent(deal,stageIdx){
       var deliveredSamples=(deal.dealSamples||[]).filter(function(s){return s.status==='delivered';});
       if(deliveredSamples.length){
         h+='<div style="display:flex;gap:8px;margin-top:10px">';
-        h+='<button class="btn btn-pri btn-sm" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Sample Approved — Proceed to Negotiation</button>';
+        if(deal.matching&&deal.matching.id)h+='<button class="btn btn-pri btn-sm" onclick="B.confirmSampleOk(\''+deal.matching.id+'\')">&#x1F44D; Sample Approved — Proceed to Negotiation</button>';
         h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Request Changes</button>';
         h+='</div>';
       }
@@ -3070,7 +3074,7 @@ function renderStageContent(deal,stageIdx){
       h+='<div style="font-size:12px;color:var(--w60)">Finalize pricing, MOQ, delivery schedule, and payment terms with the seller. Once agreed, the seller will create the order.</div>';
       h+='<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">';
       h+='<button class="btn btn-pri btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Continue Discussion</button>';
-      h+='<button class="btn btn-ghost btn-sm" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</button>';
+      if(deal.matching&&deal.matching.id)h+='<button class="btn btn-ghost btn-sm" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</button>';
       h+='</div>';
       break;
     case'order':
@@ -3087,7 +3091,7 @@ function renderStageContent(deal,stageIdx){
       h+='<div style="font-size:12px;color:var(--w60)">Your shipment is on its way! Track delivery status below.</div>';
       if(deal.shipment&&deal.shipment.status==='delivered'){
         h+='<div style="display:flex;gap:8px;margin-top:10px">';
-        h+='<button class="btn btn-pri btn-sm" onclick="B.confirmDelivery(\''+deal.matching.id+'\')">&#x1F4E6; Confirm Receipt</button>';
+        if(deal.matching&&deal.matching.id)h+='<button class="btn btn-pri btn-sm" onclick="B.confirmDelivery(\''+deal.matching.id+'\')">&#x1F4E6; Confirm Receipt</button>';
         h+='</div>';
       }
       break;
@@ -3150,7 +3154,7 @@ function renderStageContent(deal,stageIdx){
       h+='<textarea id="smp-notes" rows="2" placeholder="e.g., specific variant, color, packaging requirements..." style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;resize:vertical;outline:none;font-family:inherit"></textarea></div>';
       h+='</div>';
       h+='<div style="display:flex;gap:8px;margin-top:10px">';
-      h+='<button class="btn btn-pri btn-sm" onclick="B.submitSampleReq(\''+deal.matching.id+'\')">&#x1F4E8; Submit Request</button>';
+      h+='<button class="btn btn-pri btn-sm" onclick="B.submitSampleReq(\''+(deal.matching&&deal.matching.id||'')+'\')"'+(deal.matching&&deal.matching.id?'':' disabled')+'>&#x1F4E8; Submit Request</button>';
       h+='<button class="btn btn-ghost btn-sm" onclick="B.toggleSampleForm(null)">Cancel</button>';
       h+='</div></div>';
     }else{
@@ -3215,7 +3219,8 @@ function renderStageContent(deal,stageIdx){
   var canReview=deal.stage==='completed'||deal.stage==='delivered';
   if(deal.order&&(deal.order.status==='completed'||deal.order.status==='delivered'))canReview=true;
   if(canReview){
-    var existingReview=S.reviews.find(function(rv){return rv.target_id===deal.matching.id&&rv.target_type==='matching';});
+    var _smid3=deal.matching&&deal.matching.id;
+    var existingReview=_smid3?S.reviews.find(function(rv){return rv.target_id===_smid3&&rv.target_type==='matching';}):null;
     h+='<div class="stage-card"><div class="stage-card-title">&#x2B50; Review & Rating</div>';
     if(existingReview){
       h+='<div style="padding:8px 0">';
@@ -3242,7 +3247,7 @@ function renderStageContent(deal,stageIdx){
         h+='<span onclick="B.toggleReviewTag(\''+tag+'\')" class="badge '+(sel?'badge-pri':'badge-ghost')+'" style="cursor:pointer;font-size:10px">'+tag+'</span>';
       });
       h+='</div>';
-      h+='<button class="btn btn-pri btn-sm" onclick="B.submitReview(\''+deal.matching.id+'\')" style="margin-top:6px"'+(S.reviewDraft.rating?'':' disabled')+'>Submit Review</button>';
+      h+='<button class="btn btn-pri btn-sm" onclick="B.submitReview(\''+(_smid3||'')+'\')" style="margin-top:6px"'+(S.reviewDraft.rating&&_smid3?'':' disabled')+'>Submit Review</button>';
     }
     h+='</div>';
   }
@@ -3854,7 +3859,7 @@ function renderSystemCard(m,body){
     // Show accept/negotiate buttons for PI documents in quotation stage
     if(deal&&deal.stage==='quotation'&&(typeCode==='PI'||docType==='견적송장')){
       h+='<div class="rc-footer">';
-      h+='<button class="btn btn-pri btn-sm" onclick="B.acceptQuote(\''+deal.matching.id+'\')" style="font-size:10px">&#x2705; Accept</button>';
+      if(deal.matching&&deal.matching.id)h+='<button class="btn btn-pri btn-sm" onclick="B.acceptQuote(\''+deal.matching.id+'\')" style="font-size:10px">&#x2705; Accept</button>';
       h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()" style="font-size:10px">&#x1F4AC; Negotiate</button>';
       h+='</div>';
     }
