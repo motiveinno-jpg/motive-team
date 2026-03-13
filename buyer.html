@@ -674,7 +674,7 @@ function _autoCreateBuyerRequest(msg,type){
 }
 function _notifyAdminsNewRequest(contactReq){
   /* 관리자에게 새 바이어 요청 알림 */
-  sb.from('users').select('id').eq('role','admin').then(function(r){
+  sb.from('users').select('id').eq('role','admin').limit(20).then(function(r){
     if(!r.data||!r.data.length)return;
     var notifs=r.data.map(function(admin){
       return {user_id:admin.id,type:'buyer',title:'New buyer sourcing request',
@@ -996,14 +996,14 @@ function getSellerName(uid){var s=S.sellerInfo[uid];return s?(s.name_en||s.name_
 
 function loadInquiries(){
   if(!S.user)return;
-  sb.from('contact_requests').select('*').eq('buyer_id',S.user.id).order('created_at',{ascending:false}).then(function(r){
+  sb.from('contact_requests').select('*').eq('buyer_id',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.inquiries=r.data||[];render();
   });
 }
 
 function loadSavedProducts(){
   if(!S.user)return;
-  sb.from('buyer_saved_products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).then(function(r){
+  sb.from('buyer_saved_products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.savedProducts=r.data||[];render();
   });
 }
@@ -1981,13 +1981,13 @@ function renderInquiryDetailModal(){
 function loadMyRequests(){
   if(!S.user)return;
   sb.from('buyer_requests').select('*').eq('buyer_user_id',S.user.id)
-    .order('created_at',{ascending:false}).then(function(r){
+    .order('created_at',{ascending:false}).limit(100).then(function(r){
     S.myRequests=r.data||[];render();
   });
 }
 function loadRequestProposals(reqId){
   sb.from('buyer_request_proposals').select('*').eq('request_id',reqId)
-    .order('created_at',{ascending:true}).then(function(r){
+    .order('created_at',{ascending:true}).limit(50).then(function(r){
     S.requestProposals[reqId]=r.data||[];render();
   });
 }
@@ -2372,13 +2372,13 @@ var DEAL_STAGES=[
 
 function loadMatchings(){
   var bids=getBuyerIds();if(!bids.length)return;
-  sb.from('matchings').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).then(function(r){
+  sb.from('matchings').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.matchings=r.data||[];buildDeals();
   });
 }
 function loadSamples(){
   var bids=getBuyerIds();if(!bids.length)return;
-  sb.from('samples').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).then(function(r){
+  sb.from('samples').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.samples=r.data||[];buildDeals();
   });
 }
@@ -2500,7 +2500,7 @@ function openDeal(dealId){
   }
   // Load milestones if order exists
   if(deal.order){
-    sb.from('payment_milestones').select('*').eq('order_id',deal.order.id).order('created_at',{ascending:true}).then(function(r){
+    sb.from('payment_milestones').select('*').eq('order_id',deal.order.id).order('created_at',{ascending:true}).limit(50).then(function(r){
       S.orderMilestones=r.data||[];render();
     });
   }
@@ -2534,8 +2534,10 @@ function sendDealMessage(){
   setTimeout(function(){var el=document.getElementById('dealChatMsgs');if(el)el.scrollTop=el.scrollHeight;},50);
   sb.from('messages').insert(msg).select().single().then(function(r){
     if(r.error){toast('Failed to send','err');return;}
-    S.dealMessages=S.dealMessages.filter(function(m){return!String(m.id).startsWith('tmp_');});
-    S.dealMessages.push(r.data);render();
+    var tmpId=S.dealMessages.findIndex(function(m){return String(m.id).startsWith('tmp_')&&m.body===r.data.body;});
+    if(tmpId>-1)S.dealMessages.splice(tmpId,1);
+    if(!S.dealMessages.find(function(m){return m.id===r.data.id;}))S.dealMessages.push(r.data);
+    render();
   });
 }
 
@@ -2870,7 +2872,7 @@ function _setEscrow(dealId,data){
 }
 function _loadEscrowFromDB(){
   if(!S.user)return Promise.resolve();
-  return sb.from('service_requests').select('*').eq('type','escrow').eq('user_id',S.user.id).then(function(r){
+  return sb.from('service_requests').select('*').like('type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
     if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
   }).catch(function(){});
 }
@@ -3259,7 +3261,7 @@ function renderStageContent(deal,stageIdx){
 /* === REVIEWS === */
 function loadReviews(){
   if(!S.user)return;
-  sb.from('reviews').select('*').eq('reviewer_id',S.user.id).order('created_at',{ascending:false}).then(function(r){
+  sb.from('reviews').select('*').eq('reviewer_id',S.user.id).order('created_at',{ascending:false}).limit(100).then(function(r){
     S.reviews=r.data||[];render();
   });
 }
@@ -3525,7 +3527,7 @@ function scrollChatBottom(){var el=document.getElementById('chatMsgs');if(el)el.
 /* === ORDERS === */
 function loadOrders(){
   var bids=getBuyerIds();if(!bids.length)return;
-  sb.from('orders').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).then(function(r){
+  sb.from('orders').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.orders=r.data||[];render();
     loadShipments();
   });
@@ -3569,7 +3571,7 @@ function showOrderDetail(orderId){
   var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
   S.modal='orderDetail';S.modalData=o;
   // Load milestones
-  sb.from('payment_milestones').select('*').eq('order_id',orderId).order('created_at',{ascending:true}).then(function(r){
+  sb.from('payment_milestones').select('*').eq('order_id',orderId).order('created_at',{ascending:true}).limit(50).then(function(r){
     S.orderMilestones=r.data||[];render();
   });
   render();
@@ -3633,11 +3635,11 @@ function loadShipments(){
     // Try loading via orders query
     sb.from('orders').select('id').in('buyer_id',bids).then(function(r){
       var ids=(r.data||[]).map(function(o){return o.id;});
-      if(ids.length){sb.from('shipments').select('*').in('order_id',ids).order('created_at',{ascending:false}).then(function(r2){S.shipments=r2.data||[];render();});}
+      if(ids.length){sb.from('shipments').select('*').in('order_id',ids).order('created_at',{ascending:false}).limit(200).then(function(r2){S.shipments=r2.data||[];render();});}
     });
     return;
   }
-  sb.from('shipments').select('*').in('order_id',orderIds).order('created_at',{ascending:false}).then(function(r){
+  sb.from('shipments').select('*').in('order_id',orderIds).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.shipments=r.data||[];render();
   });
 }
