@@ -291,9 +291,9 @@ function closeMob(){var sb=document.querySelector('.sidebar');var ov=document.qu
 function set(obj){for(var k in obj)S[k]=obj[k];render();}
 
 /* === TOAST === */
-function toast(msg,type){
+function toast(msg,type,dur){
   var t=document.createElement('div');t.className='toast toast-'+(type||'ok');t.textContent=msg;
-  document.body.appendChild(t);setTimeout(function(){t.remove();},3000);
+  document.body.appendChild(t);setTimeout(function(){t.remove();},dur||3000);
 }
 
 /* === RENDER === */
@@ -847,7 +847,7 @@ function doLogin(f){
   }).catch(function(){set({_loggingIn:false,authError:'Login failed. Please try again.'});});
 }
 function doSignup(f){
-  if(f.password.value.length<6)return set({authError:'Password must be at least 6 characters'});
+  var _pw=f.password.value;if(_pw.length<8||!/[a-zA-Z]/.test(_pw)||!/[0-9]/.test(_pw)||!/[^a-zA-Z0-9]/.test(_pw))return set({authError:'Password must be 8+ characters with letters, numbers, and special characters.'});
   set({authError:''});
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:{role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value}}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
@@ -2665,16 +2665,16 @@ function renderDealActionChips(deal,stageIdx){
     case'shipping':
       var _escS=_getEscrowStatus(deal.id);
       if(_escS&&_escS.status==='shipping'){
-        h+='<div class="chat-action-chip ok" onclick="B.confirmDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery &amp; Release Payment</div>';
+        h+='<div class="chat-action-chip ok" onclick="B.confirmEscrowDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery &amp; Release Payment</div>';
         h+='<div class="chat-action-chip" style="color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Dispute</div>';
       } else if(deal.shipment&&deal.shipment.status==='delivered'){
-        h+='<div class="chat-action-chip ok" onclick="B.confirmDelivery(\''+deal.matching.id+'\')">&#x1F4E6; Confirm Receipt</div>';
+        h+='<div class="chat-action-chip ok" onclick="B.confirmDelivery(\''+(deal.matching&&deal.matching.id||'')+'\')">&#x1F4E6; Confirm Receipt</div>';
       } else {
         h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Track Shipment</div>';
       }
       break;
     case'completed':
-      var hasReview=S.reviews.some(function(rv){return rv.target_id===deal.matching.id;});
+      var hasReview=S.reviews.some(function(rv){return deal.matching&&rv.target_id===deal.matching.id;});
       if(!hasReview){h+='<div class="chat-action-chip accent" onclick="B.toggleDealSidebar()">&#x2B50; Write Review</div>';}
       break;
   }
@@ -2794,7 +2794,7 @@ function renderDealSidebar(deal,stageIdx){
     h+='<div style="font-size:11px;margin-top:4px"><span style="color:var(--w40)">Status:</span> <span class="badge" style="font-size:9px;padding:2px 8px;background:'+_escrowBuyerColor(_escSB.status)+';color:#fff">'+_escrowBuyerLabel(_escSB.status)+'</span></div>';
     if(_escSB.status==='requested')h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F4B3; Pay Now</button>';
     if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured — Safe with Whistle</div>';
-    if(_escSB.status==='shipping'){h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery</button>';h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px;color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Raise Dispute</button>';}
+    if(_escSB.status==='shipping'){h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmEscrowDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery</button>';h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px;color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Raise Dispute</button>';}
     if(_escSB.status==='delivered')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Delivery Confirmed — Payment Released to Seller</div>';
     h+='</div>';
   }
@@ -2895,14 +2895,14 @@ function confirmEscrowPay(dealId){
   render();
 }
 
-/* Buyer confirms delivery → triggers seller settlement */
-function confirmDelivery(dealId){
+/* Buyer confirms delivery → triggers seller settlement (escrow flow) */
+function confirmEscrowDelivery(dealId){
   var esc=_getEscrowStatus(dealId);
   if(!esc||(esc.status!=='shipping'&&esc.status!=='secured')){toast('No active escrow to confirm','warn');return;}
   if(!confirm('Confirm that you have received the goods? This will release payment to the seller.'))return;
   esc.status='delivered';esc.deliveredAt=new Date().toISOString();
   _setEscrow(dealId,esc);
-  toast('Delivery confirmed! Payment will be released to the seller.','ok',5000);
+  toast('Delivery confirmed! Payment will be released to the seller.','ok');
   render();
 }
 
@@ -4036,7 +4036,7 @@ window.B={
   // Documents
   showDocDetail:showDocDetail,
   // Escrow Payment
-  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmDelivery:confirmDelivery,raiseEscrowDispute:raiseEscrowDispute,
+  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmEscrowDelivery:confirmEscrowDelivery,raiseEscrowDispute:raiseEscrowDispute,
   // Electronic Signature
   openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
   // Notifications
@@ -4065,7 +4065,7 @@ window.B={
 };
 
 // Close notification dropdown on outside click
-document.addEventListener('click',function(){if(S.notifOpen){S.notifOpen=false;render();}});
+document.addEventListener('click',function(e){if(S.notifOpen){var dd=document.getElementById('notif-dropdown');if(dd&&dd.contains(e.target))return;S.notifOpen=false;render();}});
 
 })();
 </script>
