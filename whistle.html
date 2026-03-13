@@ -2404,14 +2404,15 @@ function submitDirectProject(){
   var initProgress=buildStageProgress(category,mkts[0],null,isAlibaba);
   /* 제품도 자동 생성 */
   sb.from('products').insert({user_id:S.user.id,name_ko:d.product_name,name_en:d.product_name,category:category,fob_price:parseFloat(d.fob_price)||null,moq:parseInt(d.moq)||null,status:'active'}).then(function(pr){
+    if(pr.error){_toastE(pr.error);UI.toast('제품 등록 실패','err');return;}
     var prodId=(pr.data&&pr.data[0])?pr.data[0].id:null;
     sb.from('projects').insert({user_id:S.user.id,product_id:prodId,name:d.project_name,target_countries:mkts,status:'planning',stage_progress:initProgress,alibaba_customer:isAlibaba}).then(function(r){
       if(r.error){_toastE(r.error);return;}
       closeModal('directpj');
       UI.toast('프로젝트 생성 완료!','ok');
       Promise.all([loadPr(),loadP()]).then(function(){set({page:'projects',currentAnalysis:null});});
-    });
-  });
+    }).catch(function(e){console.error('[submitDirectProject] project insert:',e);UI.toast('프로젝트 생성 실패','err');});
+  }).catch(function(e){console.error('[submitDirectProject] product insert:',e);UI.toast('제품 등록 실패','err');});
 }
 
 /* 방법3: 기존 제품 선택 */
@@ -3934,15 +3935,15 @@ function setPjStage(stage){
 }
 
 function addPjNote(){
-  UI.prompt('메모',function(t){var p=S.currentProject;if(!p)return;
-  var n=p.notes||[];n.push({text:t,date:new Date().toISOString()});
+  UI.prompt('메모',function(t){if(!t||!t.trim())return;var p=S.currentProject;if(!p)return;
+  var n=p.notes||[];n.push({text:t.trim(),date:new Date().toISOString()});
   sb.from('projects').update({notes:n}).eq('id',p.id).then(function(r){
     if(r.error){_toastE(r.error);return;}p.notes=n;render();UI.toast('추가','ok');
-  });
+  }).catch(function(e){console.error('[addPjNote]',e);UI.toast('저장 실패','err');});
   },'메모를 입력하세요');
 }
 
-function rmPjNote(i){var p=S.currentProject;if(!p)return;var n=p.notes||[];n.splice(i,1);sb.from('projects').update({notes:n}).eq('id',p.id).then(function(r){if(!r.error){p.notes=n;render();}});}
+function rmPjNote(i){var p=S.currentProject;if(!p)return;var n=(p.notes||[]).slice();n.splice(i,1);sb.from('projects').update({notes:n}).eq('id',p.id).then(function(r){if(r.error){_toastE(r.error);return;}p.notes=n;render();}).catch(function(e){console.error('[rmPjNote]',e);});}
 
 function delPj(id){if(!confirm('이 프로젝트를 삭제하시겠습니까? 관련 데이터가 함께 삭제됩니다.'))return;sb.from('projects').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error);return;}S.currentProject=null;loadPr().then(function(){render();UI.toast('삭제','ok');});});}
 
@@ -9316,7 +9317,7 @@ function advanceDeal(newStatus){
   var deal=S._currentDeal;if(!deal)return;
   sb.from('matchings').update({status:newStatus}).eq('id',deal.id).then(function(r){
     if(r.error){UI.toast('상태 업데이트 실패','err');return;}
-    deal.matching.status=newStatus;
+    if(deal.matching)deal.matching.status=newStatus;
     var stageLabels={sample:'샘플',negotiation:'협상',order:'주문',completed:'완료'};
     var stageLabel=stageLabels[newStatus]||newStatus;
     sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
