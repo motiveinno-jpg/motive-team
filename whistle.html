@@ -653,7 +653,7 @@ function loadUser(){
         S.company=cr.data||null;S.loading=false;
         /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
         var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
+        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs()]).then(function(){S._singleAnalysisCredit=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length-(S.analyses||[]).filter(function(a){return a.payment_type==='single';}).length;if(S._singleAnalysisCredit<0)S._singleAnalysisCredit=0;loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();});
       });
     });
   });
@@ -8740,8 +8740,10 @@ function submitEscrowRequest(dealId){
   var terms=document.getElementById('esc-terms').value;
   var confirmDays=Number(document.getElementById('esc-confirm-days').value)||7;
   if(!amt||amt<=0){UI.toast('금액을 입력하세요','warn');return;}
-  var fee=Math.round(amt*0.025*100)/100;
-  _setEscrow(dealId,{status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:Math.round((amt-fee)*100)/100,requestedAt:new Date().toISOString()});
+  var _noDecimal=(cur==='KRW'||cur==='JPY');
+  var fee=_noDecimal?Math.round(amt*0.025):Math.round(amt*0.025*100)/100;
+  var net=_noDecimal?Math.round(amt-fee):Math.round((amt-fee)*100)/100;
+  _setEscrow(dealId,{status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:net,requestedAt:new Date().toISOString()});
   closeModal('escrow-req');
   UI.toast('에스크로 결제 요청이 전송되었습니다. 바이어에게 결제 안내가 발송됩니다.','ok',4000);
   render();
@@ -8765,7 +8767,7 @@ function escrowMarkShipped(dealId){
 
 /* 바이어 수령 확인 → 정산 대기 (buyer.html 또는 이메일 링크에서) */
 function _escrowDeliveryConfirmed(dealId){
-  var esc=_getEscrowStatus(dealId);if(!esc)return;
+  var esc=_getEscrowStatus(dealId);if(!esc||esc.status!=='shipping')return;
   esc.status='delivered';esc.deliveredAt=new Date().toISOString();
   _setEscrow(dealId,esc);
 }
@@ -8776,6 +8778,7 @@ function requestEscrowRelease(dealId){
   if(!esc||esc.status!=='delivered'){
     UI.toast('바이어 수령 확인 후 정산 가능합니다','warn');return;
   }
+  if(esc.dispute&&esc.dispute.status==='open'){UI.toast('분쟁 진행 중에는 정산 요청이 불가합니다','warn');return;}
   esc.status='release_requested';esc.releaseRequestedAt=new Date().toISOString();
   _setEscrow(dealId,esc);
   UI.toast('정산 요청이 접수되었습니다. 영업일 1~2일 내 입금됩니다.','ok',4000);
@@ -8785,11 +8788,14 @@ function requestEscrowRelease(dealId){
 /* 관리자/시스템: 실제 정산 완료 */
 function releaseEscrow(dealId){
   var esc=_getEscrowStatus(dealId);
-  if(!esc)return;
-  if(!confirm('에스크로 대금 $'+Number(esc.netAmount||esc.amount).toLocaleString()+' (수수료 $'+Number(esc.fee||0).toLocaleString()+' 차감)을 정산하시겠습니까?'))return;
+  if(!esc||(esc.status!=='delivered'&&esc.status!=='release_requested'))return;
+  if(esc.dispute&&esc.dispute.status==='open'){UI.toast('분쟁 진행 중에는 정산할 수 없습니다','warn');return;}
+  var sym=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
+  if(!confirm('에스크로 대금 '+sym+Number(esc.netAmount||esc.amount).toLocaleString()+' (수수료 '+sym+Number(esc.fee||0).toLocaleString()+' 차감)을 정산하시겠습니까?'))return;
   esc.status='released';esc.releasedAt=new Date().toISOString();
   _setEscrow(dealId,esc);
-  UI.toast('에스크로 대금 $'+Number(esc.netAmount||esc.amount).toLocaleString()+'이 정산되었습니다','ok',5000);
+  var _sym2=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
+  UI.toast('에스크로 대금 '+_sym2+Number(esc.netAmount||esc.amount).toLocaleString()+'이 정산되었습니다','ok',5000);
   render();
 }
 
