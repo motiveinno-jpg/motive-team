@@ -7323,6 +7323,37 @@ function loadMyProposals(){
   });
 }
 
+function respondInquiry(iqId){
+  var iq=(S._directInquiries||[]).find(function(x){return x.id===iqId;});
+  if(!iq){UI.toast('문의를 찾을 수 없습니다.','err');return;}
+  /* 1) contact_requests 상태 업데이트 */
+  sb.from('contact_requests').update({status:'responded',responded_at:new Date().toISOString()}).eq('id',iqId).then(function(r){
+    if(r.error){UI.toast('상태 업데이트 실패','err');return;}
+    /* 2) buyers 레코드 생성 (중복 방지: email 기준) */
+    var buyerEmail=iq.contact_email||iq.email||'';
+    var buyerData={user_id:S.user.id,company_name:iq.company_name||iq.contact_name||'Unknown',contact_email:buyerEmail,country:iq.country||'',status:'active',source:'direct_inquiry',notes:'제품 문의에서 전환 - '+UI.esc((iq.product_query||iq.message||'').slice(0,100)),created_at:new Date().toISOString()};
+    sb.from('buyers').insert(buyerData).select().single().then(function(br){
+      if(br.error){UI.toast('바이어 생성 실패: '+br.error.message,'err');return;}
+      var buyerId=br.data.id;
+      /* 3) matchings 레코드 생성 → 딜 자동 생성 */
+      var matchData={buyer_id:buyerId,user_id:S.user.id,product_id:iq.product_id||null,status:'negotiation',stage:'initial_contact',match_score:85,source:'direct_inquiry',created_at:new Date().toISOString()};
+      sb.from('matchings').insert(matchData).select().single().then(function(mr){
+        if(mr.error){UI.toast('딜 생성 실패','err');return;}
+        /* 4) 바이어에게 알림 (buyer_user_id가 있으면) */
+        if(iq.buyer_user_id){
+          sb.from('notifications').insert({user_id:iq.buyer_user_id,type:'deal',title:'Your inquiry got a response!',body:(S.company?S.company.name_en||S.company.name_ko:'Manufacturer')+' responded to your product inquiry.',link_page:'deals',link_id:mr.data.id,is_read:false}).then(function(){});
+        }
+        /* 5) 시스템 메시지 전송 */
+        sb.from('messages').insert({buyer_id:buyerId,user_id:S.user.id,sender_type:'seller',body:'[문의 응답] 제품 문의에 대해 응답드립니다. 딜이 생성되었습니다!',message_type:'system',channel:'platform',direction:'outbound'}).then(function(){});
+        UI.toast('딜이 생성되었습니다! 딜 관리에서 확인하세요.','ok');
+        /* 로컬 상태 업데이트 */
+        iq.status='responded';
+        loadMatchings();render();
+      });
+    });
+  });
+}
+
 function pgMarketplace(){
   if(S._viewMarketRequest)return pgMarketRequestDetail();
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div>';
@@ -7343,7 +7374,9 @@ function pgMarketplace(){
       h+='<div style="font-size:11px;color:var(--w40);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(iq.product_query||iq.message||'').slice(0,80)+'</div></div>';
       h+='<div style="font-size:10px;color:var(--w30)">'+new Date(iq.created_at).toLocaleDateString()+'</div>';
       var _badge=iq.status==='pending'?'badge-acc':'badge-ok';
-      h+='<span class="badge '+_badge+'" style="font-size:9px">'+UI.esc(iq.status)+'</span></div>';
+      h+='<span class="badge '+_badge+'" style="font-size:9px">'+UI.esc(iq.status)+'</span>';
+      if(iq.status==='pending'){h+='<button class="btn btn-sm btn-pri" style="font-size:10px;padding:3px 10px;white-space:nowrap" onclick="event.stopPropagation();App.respondInquiry(\''+iq.id+'\')">응답 · 딜 생성</button>';}
+      h+='</div>';
     });
     h+='</div></div>';
   }
@@ -9368,6 +9401,14 @@ function advanceDealOrder(newOrderStatus){
 
 function completeDeal(){
   var deal=S._currentDeal;if(!deal)return;
+  /* 결제/에스크로 검증 */
+  var esc=_getEscrowStatus(deal.id);
+  if(esc&&esc.status&&esc.status!=='released'&&esc.status!=='delivered'){
+    UI.toast('에스크로 결제가 완료되지 않았습니다. (현재: '+esc.status+')','err');return;
+  }
+  if(deal.order&&deal.order.payment_status&&deal.order.payment_status!=='paid'){
+    UI.toast('주문 결제가 완료되지 않았습니다. 결제 상태를 확인해주세요.','err');return;
+  }
   sb.from('matchings').update({status:'completed'}).eq('id',deal.id).then(function(){
     if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){});
     if(deal.shipment)sb.from('shipments').update({status:'delivered'}).eq('id',deal.shipment.id).then(function(){});
@@ -10193,7 +10234,7 @@ function renderNotifPanel(){
       var ago=_timeAgo(n.created_at);
       var bg=n.is_read?'transparent':'rgba(0,212,255,.04)';
       var dot=n.is_read?'':'<div style="width:6px;height:6px;border-radius:3px;background:var(--pri);flex-shrink:0;margin-top:6px"></div>';
-      h+='<div onclick="App.clickNotif(\''+n.id+'\',\''+U.esc(n.link_page||'')+'\')" style="padding:10px 16px;border-bottom:1px solid var(--w08);background:'+bg+';cursor:pointer;display:flex;gap:10px;align-items:flex-start;transition:background .15s" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\''+bg+'\'">';
+      h+='<div onclick="App.clickNotif(\''+n.id+'\',\''+U.esc(n.link_page||'')+'\',\''+U.esc(n.link_id||'')+'\')" style="padding:10px 16px;border-bottom:1px solid var(--w08);background:'+bg+';cursor:pointer;display:flex;gap:10px;align-items:flex-start;transition:background .15s" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\''+bg+'\'">';
       h+='<span style="font-size:18px;flex-shrink:0;margin-top:1px">'+(ICONS[n.type]||'🔔')+'</span>';
       h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:'+(n.is_read?'400':'600')+';color:'+(n.is_read?'var(--w70)':'var(--w90)')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(n.title)+'</div>';
       if(n.body)h+='<div style="font-size:11px;color:var(--w40);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(n.body)+'</div>';
@@ -10220,13 +10261,21 @@ function toggleNotif(e){
   }
 }
 
-function clickNotif(id,page){
+function clickNotif(id,page,linkId){
   sb.from('notifications').update({is_read:true}).eq('id',id).then(function(){
     var n=S.notifications.find(function(x){return x.id===id;});if(n)n.is_read=true;
   });
   S.notifOpen=false;
   if(page)S.page=page;
   render();
+  /* Deep link: 딜/주문/채팅 등 구체적 항목으로 자동 이동 */
+  if(linkId){
+    setTimeout(function(){
+      if(page==='deals'||page==='deal'){openDeal(linkId);}
+      else if(page==='orders'){var ord=S.orders&&S.orders.find(function(o){return o.id===linkId;});if(ord){S._selectedOrder=ord;render();}}
+      else if(page==='chat'){/* 채팅방 자동 열기 */var ch=(S._chatRooms||[]).find(function(c){return c.buyer_id===linkId||c.id===linkId;});if(ch){S._activeChatRoom=ch;render();}}
+    },100);
+  }
 }
 
 function markAllRead(){

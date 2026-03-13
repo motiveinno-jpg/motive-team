@@ -822,7 +822,7 @@ function renderNotifDropdown(){
   h+='</div>';
   if(!S.notifications.length){h+='<div style="padding:30px;text-align:center;color:var(--w40);font-size:12px">No notifications</div>';}
   else{S.notifications.slice(0,20).forEach(function(n){
-    h+='<div class="notif-item'+(n.is_read?'':' unread')+'" onclick="B.clickNotif(\''+n.id+'\',\''+esc(n.link_page||'dashboard')+'\')">';
+    h+='<div class="notif-item'+(n.is_read?'':' unread')+'" onclick="B.clickNotif(\''+n.id+'\',\''+esc(n.link_page||'dashboard')+'\',\''+esc(n.link_id||'')+'\')">';
     h+='<div style="font-weight:600">'+esc(n.title)+'</div>';
     if(n.body)h+='<div style="color:var(--w40);margin-top:2px">'+esc(n.body).substring(0,80)+'</div>';
     h+='<div style="color:var(--w20);margin-top:4px;font-size:10px">'+timeAgo(n.created_at)+'</div></div>';
@@ -3539,6 +3539,10 @@ function confirmReadyToOrder(matchingId){
 function confirmDelivery(matchingId){
   var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
   if(!deal)return;
+  /* Payment validation before completion */
+  if(deal.order&&deal.order.payment_status&&deal.order.payment_status!=='paid'){
+    toast('Payment is not completed yet. Please complete payment before confirming delivery.','err');return;
+  }
   sb.from('matchings').update({status:'completed'}).eq('id',matchingId).then(function(){
     if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){});
     sb.from('messages').insert({
@@ -3972,10 +3976,17 @@ function loadNotifications(){
 
 function toggleNotif(){S.notifOpen=!S.notifOpen;render();}
 
-function clickNotif(id,page){
+function clickNotif(id,page,linkId){
   sb.from('notifications').update({is_read:true}).eq('id',id).then(function(){loadNotifications();});
   S.notifOpen=false;
   if(page)nav(page);
+  /* Deep link: auto-open specific deal/order */
+  if(linkId){
+    setTimeout(function(){
+      if(page==='deals'||page==='deal'){openDeal(linkId);}
+      else if(page==='orders'){var ord=(S.orders||[]).find(function(o){return o.id===linkId;});if(ord){S._selectedOrder=ord;render();}}
+    },100);
+  }
 }
 
 function markAllNotifRead(){
