@@ -1067,6 +1067,11 @@ function App() {
 
   const nav = (p, hash) => { setPage(p); setMobileMenu(false); if (hash) setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" }), 100); };
   const openLogin = () => { setShowLogin(true); setLoginError(""); setLoginForm({ email: "", pw: "" }); };
+  const [showResetPw, setShowResetPw] = useState(false);
+  const [resetPwEmail, setResetPwEmail] = useState("");
+  const [resetPwSent, setResetPwSent] = useState(false);
+  const [resetPwError, setResetPwError] = useState("");
+  const [resetPwLoading, setResetPwLoading] = useState(false);
   const openSignup = () => { setShowSignup(true); setSignupDone(false); setSignupForm({ company: "", name: "", email: "", pw: "", country: "", interest: "", agreeTerms: false }); };
 
   /* Origin classification */
@@ -1128,8 +1133,14 @@ function App() {
     }
 
     const startIdx = append ? (currentPage * BATCH_SIZE + 1) : 1;
+    if (!RELAY) {
+      /* RELAY 서버 미연결 시 — 검색 불가 안내 */
+      if (!append) { setDemoResults([]); setDemoError(lang === "ko" ? "검색 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요." : "Search server is temporarily unavailable. Please try again later."); }
+      setDemoLoading(false); setLoadingMore(false);
+      return;
+    }
     fetch(RELAY + "/api/naver/search?q=" + encodeURIComponent(finalQuery) + "&display=" + BATCH_SIZE + "&start=" + startIdx + "&sort=" + useSort, {headers:{"ngrok-skip-browser-warning":"1"}})
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); const ct = r.headers.get("content-type") || ""; if (!ct.includes("json")) throw new Error("Invalid response"); return r.json(); })
       .then(d => {
         if (d.ok && d.items) {
           const items = d.items.map(it => ({ ...it, origin: classifyOrigin(it.maker, it.brand) }));
@@ -1148,7 +1159,7 @@ function App() {
         setLoadingMore(false);
         if (!append) blurTimer.current = setTimeout(() => setDemoBlurred(true), 15000);
       })
-      .catch(e => { if (!append) { setDemoResults([]); setDemoError(t.serverError(e.message)); } setDemoLoading(false); setLoadingMore(false); });
+      .catch(e => { if (!append) { setDemoResults([]); setDemoError(lang === "ko" ? "검색 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요." : "Search server temporarily unavailable. Please try again."); } setDemoLoading(false); setLoadingMore(false); });
   };
 
   const changeSort = (s) => { setSortMode(s); if (demoQuery) runDemoSearch(demoQuery, s); };
@@ -1189,10 +1200,20 @@ function App() {
     setLoginLoading(true); setLoginError("");
     try {
       const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
-      if (error) { setLoginError(error.message === "Invalid login credentials" ? t.loginErrInvalid : error.message); setLoginLoading(false); return; }
+      if (error) {
+        const msg = error.message === "Invalid login credentials" ? t.loginErrInvalid
+          : error.message.includes("Email not confirmed") ? (lang === "ko" ? "이메일 인증이 필요합니다." : "Please verify your email first.")
+          : error.message.includes("rate limit") ? (lang === "ko" ? "잠시 후 다시 시도해주세요." : "Please wait a moment and try again.")
+          : error.message;
+        setLoginError(msg); setLoginLoading(false); return;
+      }
       const uid = data.user.id;
-      const { data: u } = await sb.from("users").select("role").eq("id", uid).single();
-      const role = u?.role || data.user.user_metadata?.role || "buyer";
+      let role = data.user.user_metadata?.role || "buyer";
+      try {
+        const { data: u } = await sb.from("users").select("role").eq("id", uid).single();
+        if (u?.role) role = u.role;
+      } catch(e) {}
+      await new Promise(r => setTimeout(r, 300));
       if (role === "client" || role === "seller") { window.location.href = "whistle.html"; }
       else { window.location.href = "buyer.html"; }
     } catch(e) { setLoginError(t.loginErrServer); setLoginLoading(false); }
@@ -1202,14 +1223,21 @@ function App() {
   const handleSignup = async () => {
     const { company, name, email, pw, country, interest } = signupForm;
     if (!company || !name || !email || !pw) { alert(t.signupErrRequired); return; }
-    if (pw.length < 6) { alert(t.signupErrPassword); return; }
+    if (pw.length < 8) { alert(lang === "ko" ? "비밀번호는 8자 이상이어야 합니다." : "Password must be at least 8 characters."); return; }
+    if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) { alert(lang === "ko" ? "비밀번호에 영문과 숫자를 모두 포함해주세요." : "Password must include letters and numbers."); return; }
+    if (!/[^A-Za-z0-9]/.test(pw)) { alert(lang === "ko" ? "비밀번호에 특수문자를 1개 이상 포함해주세요." : "Password must include at least one special character."); return; }
     if (!signupForm.agreeTerms) { alert(lang === "ko" ? "이용약관 및 개인정보처리방침에 동의해주세요." : "Please agree to the Terms of Service and Privacy Policy."); return; }
     setSignupLoading(true);
     try {
-      const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { role: "buyer", company_name: company, display_name: name } } });
-      if (error) { alert(error.message.includes("already registered") ? t.signupErrEmail : error.message); setSignupLoading(false); return; }
+      const { data, error } = await sb.auth.signUp({ email, password: pw, options: { data: { role: "buyer", company_name: company, display_name: name, full_name: name } } });
+      if (error) {
+        const msg = error.message.includes("already registered") ? t.signupErrEmail
+          : error.message.includes("rate limit") ? (lang === "ko" ? "잠시 후 다시 시도해주세요." : "Please wait and try again.")
+          : error.message;
+        alert(msg); setSignupLoading(false); return;
+      }
       if (data.user) {
-        try { await sb.from("users").upsert({ id: data.user.id, email, role: "buyer", company_name: company, display_name: name, country: country || null }, { onConflict: "id" }); } catch(e) {}
+        try { await sb.from("users").update({ company_name: company, display_name: name, country: country || null, analysis_credits: 1 }).eq("id", data.user.id); } catch(e) {}
       }
       setSignupDone(true);
     } catch(e) { alert(t.signupErrServer); }
@@ -1306,9 +1334,48 @@ function App() {
             <button onClick={handleLogin} disabled={loginLoading} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: loginLoading ? 0.6 : 1 }}>{loginLoading ? t.loginLoading : t.loginBtn}</button>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 12 }}>
-            <span style={{ color: T.w40, cursor: "pointer" }} onClick={async () => { const email = loginForm.email.trim(); if (!email) { setLoginError(t.loginEmailFirst); return; } const { error } = await sb.auth.resetPasswordForEmail(email); if (error) setLoginError(error.message); else { setLoginError(""); alert(t.loginResetSent); } }}>{t.loginForgot}</span>
+            <span style={{ color: T.w40, cursor: "pointer" }} onClick={() => { setShowLogin(false); setShowResetPw(true); setResetPwEmail(loginForm.email || ""); setResetPwSent(false); setResetPwError(""); }}>{t.loginForgot}</span>
             <span style={{ color: T.pri, cursor: "pointer", fontWeight: 600 }} onClick={() => { setShowLogin(false); openSignup(); }}>{t.loginSignupLink}</span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ═══ RESET PASSWORD MODAL ═══ */
+  const resetPwModal = showResetPw && (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div onClick={() => setShowResetPw(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.7)", backdropFilter: "blur(8px)" }} />
+      <div style={{ position: "relative", width: "100%", maxWidth: 400, background: T.bgCard, borderRadius: 20, border: `1px solid ${T.borderL}`, boxShadow: "0 24px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div onClick={() => setShowResetPw(false)} style={{ position: "absolute", top: 16, right: 16, width: 32, height: 32, borderRadius: 16, background: T.w08, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 16, color: T.w40, zIndex: 1 }}>✕</div>
+        <div style={{ padding: "32px 28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: T.accG, display: "flex", alignItems: "center", justifyContent: "center" }}><span style={{ fontSize: 18 }}>🔑</span></div>
+            <div><div style={{ fontSize: 20, fontWeight: 800, color: T.w }}>{lang === "ko" ? "비밀번호 찾기" : "Reset Password"}</div><div style={{ fontSize: 11, color: T.w40 }}>{lang === "ko" ? "가입한 이메일로 재설정 링크를 보내드립니다" : "We'll send a reset link to your email"}</div></div>
+          </div>
+          {resetPwSent ? (
+            <div style={{ textAlign: "center", padding: "24px 0" }}>
+              <div style={{ width: 56, height: 56, borderRadius: 28, background: `${T.ok}15`, border: `2px solid ${T.ok}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 24 }}>✓</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.w, marginBottom: 8 }}>{lang === "ko" ? "이메일이 발송되었습니다" : "Email sent!"}</div>
+              <div style={{ fontSize: 13, color: T.w40, lineHeight: 1.6, marginBottom: 20 }}><span style={{ color: T.pri }}>{resetPwEmail}</span></div>
+              <button onClick={() => { setShowResetPw(false); openLogin(); }} style={{ ...s.btn("pri"), padding: "14px 32px", fontSize: 14 }}>{lang === "ko" ? "로그인으로 돌아가기" : "Back to Sign In"}</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {resetPwError && <div style={{ background: `${T.err}12`, border: `1px solid ${T.err}30`, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: T.err, fontWeight: 600 }}>{resetPwError}</div>}
+              <div><label style={{ fontSize: 11, fontWeight: 600, color: T.w40, marginBottom: 4, display: "block" }}>{lang === "ko" ? "가입한 이메일" : "Your email"}</label><input type="email" value={resetPwEmail} onChange={e => setResetPwEmail(e.target.value)} onKeyDown={e => { if (e.key === "Enter") document.getElementById("resetPwBtnBuyer")?.click(); }} placeholder="your@email.com" autoComplete="email" style={s.input} autoFocus /></div>
+              <button id="resetPwBtnBuyer" disabled={resetPwLoading} onClick={async () => {
+                const email = resetPwEmail.trim();
+                if (!email) { setResetPwError(lang === "ko" ? "이메일을 입력해주세요." : "Please enter your email."); return; }
+                setResetPwLoading(true); setResetPwError("");
+                const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + "/buyer-landing.html" });
+                setResetPwLoading(false);
+                if (error) { setResetPwError(lang === "ko" ? "이메일 발송에 실패했습니다." : "Failed to send email."); }
+                else { setResetPwSent(true); }
+              }} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: resetPwLoading ? 0.6 : 1 }}>{resetPwLoading ? "..." : (lang === "ko" ? "재설정 링크 보내기" : "Send Reset Link")}</button>
+              <div style={{ textAlign: "center", marginTop: 8, fontSize: 12 }}><span style={{ color: T.w40, cursor: "pointer" }} onClick={() => { setShowResetPw(false); openLogin(); }}>{lang === "ko" ? "← 로그인으로 돌아가기" : "← Back to Sign In"}</span></div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1343,7 +1410,7 @@ function App() {
                   </select>
                 </div>
               </div>
-              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 4, cursor: "pointer" }}><input type="checkbox" checked={signupForm.agreeTerms} onChange={e => setSignupForm({...signupForm, agreeTerms: e.target.checked})} style={{ marginTop: 3, accentColor: T.pri }} /><span style={{ fontSize: 11, color: T.w40, lineHeight: 1.5 }}>{lang === "ko" ? <>이용약관 및 <span style={{ color: T.pri, textDecoration: "underline" }}>개인정보처리방침</span>에 동의합니다 (필수)</> : <>I agree to the <span style={{ color: T.pri, textDecoration: "underline" }}>Terms of Service & Privacy Policy</span> (Required)</>}</span></label>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 4, cursor: "pointer" }}><input type="checkbox" checked={signupForm.agreeTerms} onChange={e => setSignupForm({...signupForm, agreeTerms: e.target.checked})} style={{ marginTop: 3, accentColor: T.pri }} /><span style={{ fontSize: 11, color: T.w40, lineHeight: 1.5 }}>{lang === "ko" ? <>이용약관 및 <a href="privacy.html" target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ color: T.pri, textDecoration: "underline" }}>개인정보처리방침</a>에 동의합니다 (필수)</> : <>I agree to the <a href="privacy.html" target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ color: T.pri, textDecoration: "underline" }}>Terms of Service & Privacy Policy</a> (Required)</>}</span></label>
               <button onClick={handleSignup} disabled={signupLoading} style={{ ...s.btn("pri"), width: "100%", padding: "16px", fontSize: 16, marginTop: 4, opacity: signupLoading ? 0.6 : 1 }}>{signupLoading ? t.signupLoading : t.signupBtn}</button>
               <div style={{ textAlign: "center", marginTop: 8, fontSize: 12, color: T.w40 }}>{t.signupHaveAccount}<span style={{ color: T.pri, cursor: "pointer", fontWeight: 600 }} onClick={() => { setShowSignup(false); openLogin(); }}>{t.signIn}</span></div>
             </div>
@@ -2146,6 +2213,7 @@ function App() {
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.bg}}::-webkit-scrollbar-thumb{background:${T.w12};border-radius:3px}
       `}</style>
       {loginModal}
+      {resetPwModal}
       {signupModal}
       {productDetailModal}
       {header}
