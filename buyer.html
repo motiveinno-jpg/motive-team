@@ -645,7 +645,7 @@ function submitSourcingReq(){
   var msgText=desc.value.trim();
   var trackingId='WH-INQ-'+Date.now();
   sb.from('contact_requests').insert({
-    email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
+    buyer_id:S.user.id,email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
     inquiry_type:'sourcing',message:msgText,status:'pending',source:'buyer-sourcing',tracking_id:trackingId
   }).select().single().then(function(r){
     if(r.error){toast('Failed: '+r.error.message,'err');return;}
@@ -705,7 +705,7 @@ function submitCatSourcing(catId){
   var msg='[Category: '+catId+']\nProduct: '+product.value.trim()+'\nMOQ: '+(moq||'N/A')+'\nTarget Price: '+(price||'N/A')+'\nDestination: '+(country||'N/A')+'\n\n'+notes;
   var trackingId='WH-INQ-'+Date.now();
   sb.from('contact_requests').insert({
-    email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
+    buyer_id:S.user.id,email:S.user.email,contact_name:S.user.display_name||'',company_name:S.user.company_name||'',
     inquiry_type:'sourcing',message:msg,status:'pending',source:'buyer-sourcing-'+catId.toLowerCase(),tracking_id:trackingId
   }).select().single().then(function(r){
     if(r.error){toast('Failed: '+r.error.message,'err');return;}
@@ -1636,7 +1636,7 @@ function pdRequestSample(source,id){
 }
 
 function loadWhistleProducts(query,cb){
-  var q=sb.from('products').select('*,seller:users!products_seller_id_fkey(company_name,display_name)').eq('is_public',true).eq('status','active');
+  var q=sb.from('products').select('*,seller:users!products_user_id_fkey(company_name,display_name)').eq('is_public',true).eq('status','active');
   if(query){var sq=query.replace(/[%_(),.*\\]/g,'');if(sq)q=q.or('name_en.ilike.%'+sq+'%,name_ko.ilike.%'+sq+'%,category.ilike.%'+sq+'%,description_en.ilike.%'+sq+'%');}
   q.order('created_at',{ascending:false}).limit(40).then(function(r){
     var data=r.data||[];
@@ -2973,8 +2973,20 @@ function submitDocSignature(docId){
   if(c){var ctx=c.getContext('2d');var imgData=ctx.getImageData(0,0,c.width,c.height);var hasDrawing=false;for(var i=3;i<imgData.data.length;i+=4){if(imgData.data[i]>0){hasDrawing=true;break;}}
     if(!hasDrawing){toast('Please draw your signature first','warn');return;}}
   var sigs=_getDocSignatures();
-  sigs[docId]=Object.assign(sigs[docId]||{},{status:'signed',signedAt:new Date().toISOString(),signatureData:c?c.toDataURL():null});
+  var sigData=c?c.toDataURL():null;
+  sigs[docId]=Object.assign(sigs[docId]||{},{status:'signed',signedAt:new Date().toISOString(),signatureData:sigData});
   localStorage.setItem('doc_signatures',JSON.stringify(sigs));
+  /* Sync signature to Supabase so seller can see it */
+  if(S.user&&docId){
+    sb.from('documents').update({
+      status:'signed',
+      signed_at:new Date().toISOString(),
+      signed_by:S.user.id,
+      signature_data:sigData
+    }).eq('id',docId).then(function(r){
+      if(r.error)console.warn('Signature DB sync failed:',r.error.message);
+    }).catch(function(){});
+  }
   S.modal=null;S.modalData=null;
   toast('Document signed successfully!','ok');
   render();

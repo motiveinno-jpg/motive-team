@@ -639,7 +639,10 @@ function loadUser(){
     var session=res.data.session;
     if(!session)return set({loading:false});
     sb.from('users').select('*').eq('id',session.user.id).single().then(function(r){
-      if(r.error||!r.data||(r.data.role!=='client'&&r.data.role!=='buyer'&&r.data.role!=='admin')){sb.auth.signOut();return set({loading:false});}
+      if(r.error||!r.data||(r.data.role!=='client'&&r.data.role!=='admin'&&r.data.role!=='seller')){
+        if(r.data&&r.data.role==='buyer'){window.location.href='buyer.html';return;}
+        sb.auth.signOut();return set({loading:false});
+      }
       S.user=r.data;
       if(r.data.preferred_currency)S.currency=r.data.preferred_currency;
       if(r.data.role==='buyer'&&!r.data.preferred_currency)S.currency='USD';
@@ -4785,9 +4788,8 @@ function loadReceivedReviews(){
   return sb.from('reviews').select('*').eq('target_type','matching').order('created_at',{ascending:false}).limit(50).then(function(r){
     var all=r.data||[];
     var myMatchIds={};
-    (S.buyers||[]).forEach(function(b){
-      (b.matchings||[]).forEach(function(m){myMatchIds[m.id]=true;});
-    });
+    (S.matchings||[]).forEach(function(m){myMatchIds[m.id]=true;});
+    (S.buyers||[]).forEach(function(b){if(b.matchings)(b.matchings||[]).forEach(function(m){myMatchIds[m.id]=true;});});
     S.receivedReviews=all.filter(function(rv){return myMatchIds[rv.target_id];});
   });
 }
@@ -4893,7 +4895,7 @@ function openChatRoom(buyerId){
     S._chatMessages=r.data||[];
     /* Mark as read */
     var unreadIds=(r.data||[]).filter(function(m){return m.sender_type==='buyer'&&!m.read_at;}).map(function(m){return m.id;});
-    if(unreadIds.length){sb.from('messages').update({read_at:new Date().toISOString()}).in('id',unreadIds).then(function(){S._chatUnread[buyerId]=0;});}
+    if(unreadIds.length){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unreadIds).then(function(){S._chatUnread[buyerId]=0;});}
     render();
     setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},50);
   });
@@ -8587,7 +8589,7 @@ function renderDealSidebar(deal,stIdx){
     h+='<div class="deal-sb-section-title">📄 서류 ('+deal.documents.length+')</div>';
     var _sigs=_getDocSignatures();
     deal.documents.forEach(function(doc){
-      var _ds=_sigs[doc.id];
+      var _ds=_sigs[doc.id]||(doc.status==='signed'?{status:'signed',signedAt:doc.signed_at}:null);
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px">';
       h+='<span class="badge badge-acc" style="font-size:9px;padding:1px 6px">'+UI.esc(doc.doc_type||'').toUpperCase()+'</span>';
       h+='<span style="flex:1;color:var(--w60);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+UI.esc(doc.doc_number||'')+'</span>';
