@@ -8525,6 +8525,7 @@ function restartOnboarding(){
 /* === DEAL PIPELINE (SELLER SIDE) === */
 /* ================================================== */
 var DEAL_STAGES=[
+  {id:'inquiry',label:'문의',icon:'📋'},
   {id:'matched',label:'매칭',icon:'🤝'},
   {id:'quotation',label:'견적',icon:'💰'},
   {id:'sample',label:'샘플',icon:'📦'},
@@ -9240,7 +9241,13 @@ function _getEscrowStatus(dealId){
 function _setEscrow(dealId,data){
   localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
-  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_'+dealId,status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays}},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] DB upsert fail:',e);});
+  var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays,method:data.method};
+  if(S.user){
+    sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] DB upsert fail:',e);});
+    // Sync to buyer's record so buyer can read updated status
+    var _deal=S._currentDeal;var _buyerUserId=_deal&&_deal.buyer&&_deal.buyer.buyer_user_id;
+    if(_buyerUserId)sb.from('service_requests').upsert({user_id:_buyerUserId,type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(){});
+  }
 }
 function _loadEscrowFromDB(dealId){
   if(!S.user)return Promise.resolve();
@@ -9295,8 +9302,10 @@ function submitEscrowRequest(dealId){
     UI.toast('거래 정보를 찾을 수 없습니다. 거래 상세에서 다시 시도해주세요.','warn');
     return;
   }
-  sb.from('service_requests').upsert({user_id:deal.buyerId,type:'escrow_'+dealId,status:escData.status,details:Object.assign({deal_id:dealId},escData)},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer record upsert fail:',e);});
-  sb.from('notifications').insert({user_id:deal.buyerId,type:'deal',title:'에스크로 결제 요청',body:amt.toLocaleString()+' '+cur+' 결제가 요청되었습니다.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(e){console.error('[escrow] buyer notification fail:',e);});
+  // Use buyer_user_id (auth ID) not buyerId (buyers table ID) for notifications
+  var _buyerAuthId=(deal.buyer&&deal.buyer.buyer_user_id)||deal.buyerId;
+  sb.from('service_requests').upsert({user_id:_buyerAuthId,type:'escrow_buyer_'+dealId,status:escData.status,details:Object.assign({deal_id:dealId},escData)},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer record upsert fail:',e);});
+  sb.from('notifications').insert({user_id:_buyerAuthId,type:'deal',title:'Escrow Payment Requested',body:'$'+amt.toLocaleString()+' '+cur+' escrow payment requested for your deal.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(e){console.error('[escrow] buyer notification fail:',e);});
   closeModal('escrow-req');
   UI.toast('에스크로 결제 요청이 전송되었습니다.','ok',4000);
   render();

@@ -1634,7 +1634,7 @@ function pgProductDetail(){
     }
 
     // Public Buyer Reviews
-    var _pubReviews=(S._productReviews||[]).filter(function(rv){return rv.product_id===p.id||rv.target_company===p.company_id;});
+    var _pubReviews=(S._productReviews||[]).filter(function(rv){return rv.product_id===p.id||rv.target_company===p.company_id||(rv.reviewer_id!==S.user.id&&rv.target_company&&p.company_id&&rv.target_company===p.company_id);});
     if(!_pubReviews.length){
       h+='<div style="margin-top:16px;padding:14px;background:var(--w08);border-radius:var(--r-s);border:1px solid var(--bd);text-align:center"><div style="font-size:12px;font-weight:700;margin-bottom:6px">&#x2B50; Buyer Reviews</div><div style="font-size:11px;color:var(--w40)">No reviews yet — be the first buyer to review this manufacturer after your order.</div></div>';
     }
@@ -2729,6 +2729,21 @@ function initDealChatRealtime(buyerLinkId,sellerId){
   }).subscribe();
 }
 
+function sendQuickMsg(deal,text){
+  if(!deal||!deal.sellerId||!deal.buyerLinkId)return;
+  var msg={user_id:deal.sellerId,buyer_id:deal.buyerLinkId,body:text,sender_type:'buyer',message_type:'text',channel:'platform',direction:'inbound'};
+  S.dealMessages.push(Object.assign({id:'tmp_'+Date.now(),created_at:new Date().toISOString()},msg));
+  render();
+  sb.from('messages').insert(msg).select().single().then(function(r){
+    if(r.error){toast('Failed to send','err');return;}
+    var tmpId=S.dealMessages.findIndex(function(m){return String(m.id).startsWith('tmp_')&&m.body===r.data.body;});
+    if(tmpId>-1)S.dealMessages.splice(tmpId,1);
+    if(!S.dealMessages.find(function(m){return m.id===r.data.id;}))S.dealMessages.push(r.data);
+    render();
+  });
+  toast('Message sent!','ok');
+}
+
 function sendDealMessage(){
   var inp=document.getElementById('dealChatInput');if(!inp||!inp.value.trim()||!S.currentDeal)return;
   var deal=S.currentDeal;if(!deal.sellerId||!deal.buyerLinkId){toast('Not matched yet','warn');return;}
@@ -2890,7 +2905,11 @@ function renderDealActionChips(deal,stageIdx){
       }
       break;
     case'negotiation':
-      if(deal.matching&&deal.matching.id)h+='<div class="chat-action-chip ok" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</div>';
+      if(deal.matching&&deal.matching.id){
+        var _orSent=S._orderReadySent&&S._orderReadySent[deal.matching.id];
+        if(_orSent)h+='<div class="chat-action-chip" style="cursor:default;opacity:.6">&#x23F3; Waiting for seller to create order...</div>';
+        else h+='<div class="chat-action-chip ok" onclick="B.confirmReadyToOrder(\''+deal.matching.id+'\')">&#x2705; Ready to Order</div>';
+      }
       h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Discuss Terms</div>';
       var _escN=_getEscrowStatus(deal.id);
       if(_escN&&_escN.status==='requested')h+='<div class="chat-action-chip ok" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F512; Pay via Escrow</div>';
@@ -2903,7 +2922,9 @@ function renderDealActionChips(deal,stageIdx){
       else h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Discuss Payment</div>';
       break;
     case'production':
-      h+='<div class="chat-action-chip" onclick="document.getElementById(\'dealChatInput\').focus()">&#x1F4AC; Check Progress</div>';
+      h+='<div class="chat-action-chip" onclick="B.sendQuickMsg(deal,\'Could you please share a production progress update?\')">&#x1F4AC; Request Update</div>';
+      h+='<div class="chat-action-chip" onclick="B.sendQuickMsg(deal,\'When is the estimated shipment date?\')">&#x1F6A2; Ask ETA</div>';
+      h+='<div class="chat-action-chip" onclick="B.sendQuickMsg(deal,\'Can I arrange a factory inspection before shipment?\')">&#x1F50D; Request Inspection</div>';
       break;
     case'shipping':
       var _escS=_getEscrowStatus(deal.id);
@@ -3102,7 +3123,14 @@ function _getEscrowStatus(dealId){
 function _setEscrow(dealId,data){
   localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
-  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_buyer_'+dealId,status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt}},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer DB upsert fail:',e);});
+  var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt,method:data.method};
+  if(S.user){
+    sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer DB upsert fail:',e);});
+    // Sync to seller's record so seller can read buyer's payment status
+    var deal=S.currentDeal||S.deals.find(function(d){return d.id===dealId;});
+    var _sellerUserId=deal&&deal.sellerId;
+    if(_sellerUserId)sb.from('service_requests').upsert({user_id:_sellerUserId,type:'escrow_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(){});
+  }
 }
 function _loadEscrowFromDB(){
   if(!S.user)return Promise.resolve();
@@ -3546,7 +3574,7 @@ function loadReviews(){
 }
 
 function loadProductReviews(){
-  sb.from('reviews').select('*').eq('review_type','product').order('created_at',{ascending:false}).limit(50).then(function(r){
+  sb.from('reviews').select('*').order('created_at',{ascending:false}).limit(100).then(function(r){
     S._productReviews=r.data||[];
   }).catch(function(){S._productReviews=[];});
 }
@@ -3643,6 +3671,8 @@ function confirmSampleOk(matchingId){
 function confirmReadyToOrder(matchingId){
   var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
   if(!deal)return;
+  if(!S._orderReadySent)S._orderReadySent={};
+  S._orderReadySent[matchingId]=true;
   sb.from('messages').insert({
     buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
     body:'[Ready to Order] We\'re ready to proceed with the order. Please create the purchase order with the agreed terms.',
@@ -4470,7 +4500,7 @@ window.B={
   saveProfile:saveProfile,changePassword:changePassword,
   openBuyerCheckout:openBuyerCheckout,initBuyerStripe:initBuyerStripe,closeStripeModal:closeStripeModal,openBillingPortal:openBillingPortal,
   // Deals
-  openDeal:openDeal,closeDeal:closeDeal,sendDealMessage:sendDealMessage,
+  openDeal:openDeal,closeDeal:closeDeal,sendDealMessage:sendDealMessage,sendQuickMsg:sendQuickMsg,
   // Chat
   openChat:openChat,closeChat:closeChat,sendChat:sendChat,chatAttachFile:chatAttachFile,
   // Orders
