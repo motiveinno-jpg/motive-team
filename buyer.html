@@ -2852,8 +2852,20 @@ function renderDealSidebar(deal,stageIdx){
 }
 
 /* === ESCROW PAYMENT (localStorage simulation — shared with whistle.html) === */
-function _getEscrowStatus(dealId){var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
-function _setEscrow(dealId,data){localStorage.setItem('escrow_'+dealId,JSON.stringify(data));}
+function _getEscrowStatus(dealId){
+  var cached=S._escrowCache&&S._escrowCache[dealId];if(cached)return cached;
+  var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}
+}
+function _setEscrow(dealId,data){
+  localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
+  if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
+  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_buyer',status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt}},{onConflict:'user_id,type'}).catch(function(){});
+}
+function _loadEscrowFromDB(){
+  return sb.from('service_requests').select('*').eq('type','escrow').then(function(r){
+    if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
+  }).catch(function(){});
+}
 function _escrowBuyerLabel(st){return{none:'None',requested:'Payment Requested',buyer_paid:'Paid',pending:'Pending',secured:'Funds Secured (Whistle Holding)',shipping:'Shipped — Awaiting Delivery',delivered:'Delivery Confirmed',release_requested:'Settlement Processing',released:'Settled'}[st]||st;}
 function _escrowBuyerColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
 
@@ -2905,7 +2917,7 @@ function confirmEscrowPay(dealId){
 /* Buyer confirms delivery → triggers seller settlement (escrow flow) */
 function confirmEscrowDelivery(dealId){
   var esc=_getEscrowStatus(dealId);
-  if(!esc||(esc.status!=='shipping'&&esc.status!=='secured')){toast('No active escrow to confirm','warn');return;}
+  if(!esc||esc.status!=='shipping'){toast('Goods must be shipped before confirming delivery','warn');return;}
   if(!confirm('Confirm that you have received the goods? This will release payment to the seller.'))return;
   esc.status='delivered';esc.deliveredAt=new Date().toISOString();
   _setEscrow(dealId,esc);
@@ -3390,7 +3402,7 @@ function submitSampleReq(matchingId){
       user_id:deal.sellerId,
       sender_type:'buyer',
       body:'[Sample Request] Qty: '+qty+' | Shipping: '+method+(notes?' | Notes: '+notes:''),
-      message_type:'system'
+      message_type:'system',channel:'platform',direction:'inbound'
     }).then(function(){});
   });
 }
@@ -3596,8 +3608,9 @@ function renderOrderDetailModal(){
   // Notes
   if(o.notes&&o.notes.length){
     h+='<div style="font-weight:700;font-size:13px;margin:16px 0 8px">Notes</div>';
-    o.notes.forEach(function(n){
-      h+='<div style="padding:8px 12px;background:var(--w08);border-radius:var(--r-xs);margin-bottom:4px;font-size:12px"><span style="color:var(--w40)">'+formatDate(n.date)+':</span> '+esc(n.text)+'</div>';
+    var noteArr=Array.isArray(o.notes)?o.notes:[{text:String(o.notes),date:o.created_at}];
+    noteArr.forEach(function(n){
+      h+='<div style="padding:8px 12px;background:var(--w08);border-radius:var(--r-xs);margin-bottom:4px;font-size:12px"><span style="color:var(--w40)">'+formatDate(n.date)+':</span> '+esc(n.text||String(n))+'</div>';
     });
   }
   h+='</div></div></div>';return h;

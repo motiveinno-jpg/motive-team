@@ -4753,7 +4753,7 @@ function buildSellerDeals(){
       buyer:(S.buyers||[]).find(function(b){return b.id===m.buyer_id;}),
       order:null,shipment:null,documents:[],dealSamples:[],
       title:m.match_reason||'Deal',created_at:m.created_at};
-    d.order=(S.orders||[]).find(function(o){return o.buyer_id===m.buyer_id;});
+    d.order=(S.orders||[]).find(function(o){return o.buyer_id===m.buyer_id&&o.user_id===S.user.id;});
     if(d.order)d.shipment=(S.shipments||[]).find(function(s){return s.order_id===d.order.id;});
     d.documents=(S._sharedDocs||[]).filter(function(doc){return doc.buyer_id===m.buyer_id;});
     d.dealSamples=(S.samples||[]).filter(function(s){return s.buyer_id===m.buyer_id;});
@@ -8691,10 +8691,20 @@ function renderDealActions(deal,stIdx){
  * Flow: 제조사 요청 → 바이어 결제 → Whistle 보관 → 바이어 수령확인 → 제조사 정산
  * Statuses: requested → buyer_paid → secured → shipping → delivered → release_requested → released
  */
-function _getEscrowStatus(dealId){var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
-function _setEscrow(dealId,data){localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
-  /* DB에도 기록 (실결제 연동 시 필요) */
-  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow',status:data.status,details:{deal_id:dealId,...data}},{onConflict:'user_id,type'}).catch(function(){});
+function _getEscrowStatus(dealId){
+  /* DB 우선, localStorage 폴백 */
+  var cached=S._escrowCache&&S._escrowCache[dealId];if(cached)return cached;
+  var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}
+}
+function _setEscrow(dealId,data){
+  localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
+  if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
+  if(S.user)sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow',status:data.status,details:{deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays}},{onConflict:'user_id,type'}).catch(function(){});
+}
+function _loadEscrowFromDB(dealId){
+  return sb.from('service_requests').select('*').eq('type','escrow').then(function(r){
+    if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
+  }).catch(function(){});
 }
 function _escrowLabel(st){return{none:'없음',requested:'요청됨',buyer_paid:'바이어 결제완료',secured:'에스크로 확보 (Whistle 보관중)',shipping:'배송중',delivered:'수령 확인됨',release_requested:'정산 요청됨',released:'정산 완료'}[st]||st;}
 function _escrowColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
@@ -8761,7 +8771,7 @@ function _escrowDeliveryConfirmed(dealId){
 /* 제조사: 정산 요청 */
 function requestEscrowRelease(dealId){
   var esc=_getEscrowStatus(dealId);
-  if(!esc||(esc.status!=='delivered'&&esc.status!=='shipping')){
+  if(!esc||esc.status!=='delivered'){
     UI.toast('바이어 수령 확인 후 정산 가능합니다','warn');return;
   }
   esc.status='release_requested';esc.releaseRequestedAt=new Date().toISOString();
@@ -8781,9 +8791,13 @@ function releaseEscrow(dealId){
   render();
 }
 
-/* === ELECTRONIC SIGNATURE (localStorage simulation) === */
-function _getDocSignatures(){try{return JSON.parse(localStorage.getItem('doc_signatures')||'{}');}catch(e){return {};}}
-function _setDocSignature(docId,data){var all=_getDocSignatures();all[docId]=data;localStorage.setItem('doc_signatures',JSON.stringify(all));}
+/* === ELECTRONIC SIGNATURE (DB-backed) === */
+function _getDocSignatures(){try{return Object.assign({},JSON.parse(localStorage.getItem('doc_signatures')||'{}'),S._sigCache||{});}catch(e){return S._sigCache||{};}}
+function _setDocSignature(docId,data){
+  var all=_getDocSignatures();all[docId]=data;localStorage.setItem('doc_signatures',JSON.stringify(all));
+  if(!S._sigCache)S._sigCache={};S._sigCache[docId]=data;
+  if(S.user&&docId)sb.from('documents').update({signature_status:data.status,signature_data:data,updated_at:new Date().toISOString()}).eq('id',docId).catch(function(){});
+}
 function _sigStatusLabel(st){return{none:'없음',sent:'서명 요청됨',viewed:'확인됨',signed:'서명 완료'}[st]||st;}
 
 function openSignatureModal(docId){
@@ -8964,18 +8978,18 @@ function createDealOrder(){
     user_id:S.user.id,buyer_id:deal.buyerId,
     order_number:num,total_amount:amt,
     payment_terms:terms,status:'confirmed',payment_status:'unpaid',
-    delivery_date:deadline||null,notes:notes||null
+    delivery_date:deadline||null,notes:notes?[{text:notes,date:new Date().toISOString(),by:S.user.email}]:null
   }).select().single().then(function(r){
     if(r.error){UI.toast('주문 생성 실패: '+r.error.message,'err');return;}
     UI.toast('주문이 생성되었습니다!','ok');
     S._dealOrderForm=false;
     // Update matching status
-    sb.from('matchings').update({status:'order'}).eq('id',deal.id);
+    sb.from('matchings').update({status:'order'}).eq('id',deal.id).then(function(mr){if(mr.error)console.error('matchings update:',mr.error);});
     deal.matching.status='order';
     // System message
     sb.from('messages').insert({buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
       body:'[주문 확정] '+num+' — $'+amt.toLocaleString()+' ('+terms+')',
-      message_type:'system',channel:'platform',direction:'outbound'});
+      message_type:'system',channel:'platform',direction:'outbound'}).then(function(mr){if(mr.error)console.error('msg insert:',mr.error);});
     // Create payment milestones
     var dep30=Math.round(amt*0.3*100)/100;
     var bal70=Math.round(amt*0.7*100)/100;
