@@ -9379,8 +9379,16 @@ function submitSignatureRequest(docId){
   var buyerReq=document.getElementById('sig-buyer-req')?document.getElementById('sig-buyer-req').checked:true;
   var sellerReq=document.getElementById('sig-seller-req')?document.getElementById('sig-seller-req').checked:true;
   _setDocSignature(docId,{status:'sent',buyer:buyer,buyerRequired:buyerReq,sellerRequired:sellerReq,sentAt:new Date().toISOString()});
+  // Notify buyer about signature request
+  if(S.user&&S.currentDeal){
+    var _dealMatch=S.currentDeal.matching||{};
+    var _buyerId=_dealMatch.buyer_id;
+    if(_buyerId){
+      sb.from('notifications').insert({user_id:_buyerId,title:'Signature Required',body:'A document requires your signature for deal: '+(S.currentDeal.product_name||'Deal'),link_page:'deals',link_id:S.currentDeal.id,is_read:false}).then(function(){}).catch(function(e){console.error('[sig] notify buyer fail:',e);});
+    }
+  }
   closeModal('sig-req');
-  UI.toast('서명 요청이 기록되었습니다 (이메일 알림 곧 추가 예정)','ok');
+  UI.toast('서명 요청이 전송되었습니다 ✅','ok');
 }
 
 function openSignatureModalFromDoc(){
@@ -9390,7 +9398,14 @@ function openSignatureModalFromDoc(){
 
 /* === INLINE DOCUMENT GENERATION (DEAL) === */
 function openDealDocForm(docType){
-  S._dealDocForm={type:docType,items:[{name:'',qty:1,unit_price:0,unit:'PCS'}],payment_terms:'T/T 30% deposit, 70% before shipment',incoterms:'FOB Busan',validity:'30 days',notes:''};
+  var _prodName='';var _fob=0;
+  var deal=S._currentDeal;
+  if(deal){
+    _prodName=deal.product_name||deal.product||'';
+    if(deal.product_info){_fob=deal.product_info.fob_price||deal.product_info.price||0;}
+    if(!_prodName&&deal.matching)_prodName=deal.matching.match_reason||'';
+  }
+  S._dealDocForm={type:docType,items:[{name:_prodName,qty:1,unit_price:_fob,unit:'PCS'}],payment_terms:'T/T 30% deposit, 70% before shipment',incoterms:'FOB Busan',validity:'30 days',notes:''};
   render();
 }
 function closeDealDocForm(){S._dealDocForm=null;render();}
@@ -9505,22 +9520,37 @@ function showDealOrderForm(){S._dealOrderForm=true;render();}
 function hideDealOrderForm(){S._dealOrderForm=false;render();}
 
 function renderDealOrderForm(deal){
+  // Auto-extract from PI document if available
+  var _piDoc=(deal.documents||[]).find(function(d){return d.doc_type==='pi';});
+  var _piAmt='';var _piTerms='';var _piNotes='';
+  if(_piDoc){
+    if(_piDoc.content){
+      var _c=typeof _piDoc.content==='string'?JSON.parse(_piDoc.content):_piDoc.content;
+      _piAmt=_c.total_amount||_c.totalAmount||_c.amount||'';
+      _piTerms=_c.payment_terms||_c.paymentTerms||'';
+      _piNotes=_c.remarks||_c.notes||'';
+    }
+    if(!_piAmt&&_piDoc.total_amount)_piAmt=_piDoc.total_amount;
+  }
   var h='<div style="margin-top:12px;padding:16px;background:var(--w04);border-radius:var(--r);border:1px solid var(--bd)">';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
   h+='<div style="font-size:14px;font-weight:700">✅ 주문 생성</div>';
   h+='<button class="btn btn-ghost btn-sm" onclick="App.hideDealOrderForm()">✕</button></div>';
+  if(_piDoc){h+='<div style="padding:6px 10px;margin-bottom:10px;border-radius:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);font-size:10px;color:var(--pri)">💡 PI 서류('+esc(_piDoc.doc_number||'PI')+')에서 자동 입력됨</div>';}
   var orderNum='WO-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6);
   h+='<div style="display:grid;gap:8px">';
   h+='<div class="grid-2" style="gap:8px">';
   h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">주문 번호</label><input id="do-num" value="'+orderNum+'" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none"></div>';
-  h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">총 금액 ($)</label><input id="do-amt" type="number" step="0.01" placeholder="10000" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none"></div>';
+  h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">총 금액 ($)</label><input id="do-amt" type="number" step="0.01" placeholder="10000" value="'+(_piAmt||'')+'" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none"></div>';
   h+='</div>';
   h+='<div class="grid-2" style="gap:8px">';
   h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">결제 조건</label><select id="do-terms" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none">';
-  h+='<option value="T/T">T/T (전신환)</option><option value="L/C">L/C (신용장)</option><option value="D/P">D/P (추심)</option><option value="Escrow">에스크로</option></select></div>';
+  var _termOpts=['T/T','L/C','D/P','Escrow'];
+  _termOpts.forEach(function(t){var _sel=(_piTerms&&_piTerms.toUpperCase().indexOf(t.replace('/',''))>=0)?' selected':'';h+='<option value="'+t+'"'+_sel+'>'+t+(t==='T/T'?' (전신환)':t==='L/C'?' (신용장)':t==='D/P'?' (추심)':' (에스크로)')+'</option>';});
+  h+='</select></div>';
   h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">납기일</label><input id="do-deadline" type="date" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none"></div>';
   h+='</div>';
-  h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">비고</label><input id="do-notes" placeholder="특이사항..." style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none"></div>';
+  h+='<div><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:2px">비고</label><input id="do-notes" placeholder="특이사항..." value="'+esc(_piNotes||'')+'" style="width:100%;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none"></div>';
   h+='</div>';
   h+='<div style="display:flex;gap:8px;margin-top:10px">';
   h+='<button class="btn btn-pri" onclick="App.createDealOrder()">✅ 주문 확정</button>';

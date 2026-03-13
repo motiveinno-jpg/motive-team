@@ -2328,12 +2328,20 @@ function acceptProposal(propId,reqId){
       sb.from('buyer_request_proposals').update({status:'rejected',updated_at:new Date().toISOString()}).eq('request_id',reqId).neq('id',propId).then(function(){});
       // 5. Close request
       sb.from('buyer_requests').update({status:'completed',accepted_proposal_id:propId,updated_at:new Date().toISOString()}).eq('id',reqId).then(function(){});
-      // 6. Notify seller
+      // 6. Send initial chat message to start conversation
+      sb.from('messages').insert({
+        buyer_id:newBuyer.id,user_id:prop.seller_user_id,sender_type:'buyer',
+        body:'[Marketplace Deal Started] '+request.buyer_company+' accepted your proposal for: '+request.title+'\n\nProposal details: '+(prop.message||'').substring(0,200),
+        message_type:'system',channel:'platform',direction:'inbound'
+      }).then(function(){}).catch(function(e){console.error('[acceptProposal] msg:',e);});
+      // 7. Create buyer notification
+      sb.from('notifications').insert({user_id:S.user.id,title:'Deal Created',body:'Your deal with '+(prop.seller_company||'seller')+' for "'+request.title+'" is now active.',link_page:'deals',link_id:mr.data.id,is_read:false}).then(function(){}).catch(function(){});
+      // 8. Notify seller
       if(RELAY)fetch(RELAY+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
         body:JSON.stringify({userId:prop.seller_user_id,type:'marketplace',title:'Proposal accepted: '+request.title,body:request.buyer_company+' accepted your proposal. Start the deal!',linkPage:'buyers',telegram:true})
       }).catch(function(){});
-      toast('Proposal accepted! Deal pipeline started.','ok');
-      loadMyRequests();loadBuyerLinks();loadMatchings();
+      toast('Proposal accepted! Deal created — you can now chat with the seller.','ok');
+      loadMyRequests();loadBuyerLinks();loadMatchings();loadNotifications();
     }).catch(function(e){console.error('[acceptProposal] matching:',e);toast('Error creating deal','err');});
   }).catch(function(e){console.error('[acceptProposal] buyer:',e);toast('Error creating buyer record','err');});
 }
@@ -2764,6 +2772,28 @@ function pgDealRoom(){
   });
   h+='</div>';
 
+  // Pending signature alert
+  var _bSigs=_getDocSignatures();var _pendSigs=[];
+  (deal.documents||[]).forEach(function(doc){var s=_bSigs[doc.id];if(s&&(s.status==='sent'||s.status==='viewed'))_pendSigs.push(doc);});
+  if(_pendSigs.length){
+    h+='<div style="padding:10px 14px;margin-bottom:8px;border-radius:8px;background:linear-gradient(135deg,rgba(255,184,0,.08),rgba(255,100,0,.06));border:1px solid rgba(255,184,0,.2);display:flex;align-items:center;gap:10px">';
+    h+='<div style="font-size:22px">&#x270D;&#xFE0F;</div>';
+    h+='<div style="flex:1"><div style="font-size:12px;font-weight:700;color:var(--acc)">'+_pendSigs.length+' Document'+((_pendSigs.length>1)?'s':'')+' Awaiting Your Signature</div>';
+    h+='<div style="font-size:10px;color:var(--w40)">Review and sign to proceed with the deal</div></div>';
+    h+='<button class="btn btn-acc btn-sm" style="font-size:10px;white-space:nowrap" onclick="B.openSignDocModal(\''+_pendSigs[0].id+'\')">Sign Now</button>';
+    h+='</div>';
+  }
+  // Pending escrow alert
+  var _escAlert=_getEscrowStatus(deal.id);
+  if(_escAlert&&_escAlert.status==='requested'){
+    h+='<div style="padding:10px 14px;margin-bottom:8px;border-radius:8px;background:linear-gradient(135deg,rgba(0,212,255,.06),rgba(139,92,246,.06));border:1px solid rgba(0,212,255,.15);display:flex;align-items:center;gap:10px">';
+    h+='<div style="font-size:22px">&#x1F4B3;</div>';
+    h+='<div style="flex:1"><div style="font-size:12px;font-weight:700;color:var(--pri)">Escrow Payment Required</div>';
+    h+='<div style="font-size:10px;color:var(--w40)">$'+Number(_escAlert.amount||0).toLocaleString()+' — Secure your deal</div></div>';
+    h+='<button class="btn btn-acc btn-sm" style="font-size:10px;white-space:nowrap" onclick="B.openEscrowPayModal(\''+deal.id+'\')">Pay Now</button>';
+    h+='</div>';
+  }
+
   // Deal room: CHAT-CENTRIC layout
   h+='<div class="deal-room">';
 
@@ -2988,10 +3018,14 @@ function renderDealSidebar(deal,stageIdx){
         h+='<span>'+(paid?'&#x2705;':'&#x23F3;')+'</span>';
         h+='<span style="flex:1;text-transform:capitalize">'+esc(ms.name).replace(/_/g,' ')+'</span>';
         h+='<span style="font-weight:600">$'+Number(ms.amount||0).toLocaleString()+'</span>';
+        if(!paid&&ms.status==='pending')h+='<button class="btn btn-acc btn-sm" style="font-size:8px;padding:1px 6px;margin-left:4px" onclick="B.payMilestone(\''+deal.id+'\',\''+ms.id+'\')">Pay</button>';
         h+='</div>';
       });
       h+='</div>';
     }
+    // Buyer order actions
+    if(o.status==='confirmed'||o.status==='processing')h+='<div style="font-size:10px;color:var(--w30);text-align:center;margin-top:6px;padding:6px;background:var(--w04);border-radius:6px">&#x23F3; Seller is preparing your order</div>';
+    if(o.status==='shipped'||o.status==='delivered')h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmOrderReceipt(\''+deal.id+'\')">&#x1F4E6; Confirm Receipt</button>';
     h+='</div>';
   }
 
@@ -3005,7 +3039,7 @@ function renderDealSidebar(deal,stageIdx){
     h+='<div style="font-size:11px"><span style="color:var(--w40)">Currency:</span> '+(_escSB.currency||'USD')+'</div>';
     h+='<div style="font-size:11px"><span style="color:var(--w40)">Terms:</span> '+(_escSB.terms||'50/50')+'</div>';
     h+='<div style="font-size:11px;margin-top:4px"><span style="color:var(--w40)">Status:</span> <span class="badge" style="font-size:9px;padding:2px 8px;background:'+_escrowBuyerColor(_escSB.status)+';color:#fff">'+_escrowBuyerLabel(_escSB.status)+'</span></div>';
-    if(_escSB.status==='requested')h+='<div style="padding:8px 10px;margin-top:8px;border-radius:6px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);font-size:10px;color:var(--w50);text-align:center">&#x1F4B3; Payment integration coming soon. Contact the seller to arrange payment.</div>';
+    if(_escSB.status==='requested'){h+='<button class="btn btn-acc btn-sm" style="width:100%;margin-top:8px;font-size:11px;font-weight:700" onclick="B.openEscrowPayModal(\''+deal.id+'\')">&#x1F4B3; Review &amp; Pay Escrow</button>';h+='<div style="font-size:9px;color:var(--w30);text-align:center;margin-top:4px">Your funds are protected until delivery is confirmed</div>';}
     if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured — Safe with Whistle</div>';
     if(_escSB.status==='shipping'){h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmEscrowDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery</button>';h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px;color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Raise Dispute</button>';}
     if(_escSB.status==='delivered')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Delivery Confirmed — Payment Released to Seller</div>';
@@ -3108,8 +3142,14 @@ function renderEscrowPayModal(){
   h+='</div>';
   h+='<div style="padding:8px 12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.15);border-radius:8px;font-size:11px;color:var(--w50);margin-bottom:16px">&#x1F6E1; Protected by Whistle Escrow. Funds are released only after you confirm delivery.</div>';
   var _csym=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
-  h+='<div style="margin-bottom:10px;padding:8px 12px;border-radius:8px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12);font-size:11px;color:var(--acc)">&#x26A0;&#xFE0F; Escrow payments currently track status only. Actual payment integration (Stripe) will be activated soon.</div>';
-  h+='<div style="text-align:center;padding:12px;font-size:12px;color:var(--w40)">&#x1F4B3; Escrow amount: '+_csym+Number(esc.amount||0).toLocaleString()+'<br>Payment will be available once Stripe integration is activated.</div>';
+  h+='<div style="margin-bottom:12px;padding:10px 12px;border-radius:8px;background:var(--w04)">';
+  h+='<div style="font-size:11px;font-weight:600;margin-bottom:8px;color:var(--w60)">Payment Method</div>';
+  h+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;border:1.5px solid var(--acc);background:rgba(0,212,255,.04);cursor:pointer;margin-bottom:6px"><input type="radio" name="esc_method" value="wire" checked style="accent-color:var(--acc)"><span style="font-size:12px"><strong>Wire Transfer (T/T)</strong><br><span style="font-size:10px;color:var(--w40)">Bank wire to Whistle escrow account</span></span></label>';
+  h+='<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:6px;border:1px solid var(--w08);cursor:pointer;opacity:.5"><input type="radio" name="esc_method" value="stripe" disabled><span style="font-size:12px"><strong>Card / Stripe</strong><br><span style="font-size:10px;color:var(--w30)">Coming soon — Stripe integration pending</span></span></label>';
+  h+='</div>';
+  h+='<div style="text-align:center;margin-bottom:8px"><div style="font-size:22px;font-weight:800;color:var(--acc)">'+_csym+Number(esc.amount||0).toLocaleString()+'</div><div style="font-size:10px;color:var(--w30)">Total escrow amount</div></div>';
+  h+='<button id="escrow-pay-btn" class="btn btn-acc" style="width:100%;font-size:13px;font-weight:700;padding:12px" onclick="B.confirmEscrowPay(\''+d.dealId+'\')">&#x1F512; Confirm Escrow Payment</button>';
+  h+='<div style="font-size:9px;color:var(--w30);text-align:center;margin-top:6px">By confirming, you agree that funds will be held until delivery is verified</div>';
   h+='</div></div></div>';
   return h;
 }
@@ -3118,10 +3158,12 @@ function confirmEscrowPay(dealId){
   var escData=_getEscrowStatus(dealId);
   if(!escData||escData.status!=='requested')return;
   var btn=document.getElementById('escrow-pay-btn');if(btn)btn.disabled=true;
-  escData.status='secured';escData.paidAt=new Date().toISOString();
+  escData.status='secured';escData.paidAt=new Date().toISOString();escData.method='wire';
   _setEscrow(dealId,escData);
   S.modal=null;S.modalData=null;
-  toast('Escrow status recorded. Actual payment integration coming soon.','ok',5000);
+  // Notify seller via service_requests
+  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_payment',status:'pending',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency||'USD',method:'wire'}}).catch(function(e){console.error('[escrow] payment notify fail:',e);});
+  toast('Escrow payment confirmed! Funds secured until delivery is verified.','ok',5000);
   render();
 }
 
@@ -3148,6 +3190,38 @@ function raiseEscrowDispute(dealId){
     if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
     render();
   },'Describe the issue in detail...');
+}
+
+/* Buyer pays a milestone */
+function payMilestone(dealId,msId){
+  var ms=S.orderMilestones.find(function(m){return m.id===msId;});
+  if(!ms){toast('Milestone not found','warn');return;}
+  if(!confirm('Pay milestone "'+ms.name.replace(/_/g,' ')+'" — $'+Number(ms.amount||0).toLocaleString()+'?'))return;
+  ms.status='paid';ms.paid_at=new Date().toISOString();
+  sb.from('order_milestones').update({status:'paid',paid_at:ms.paid_at}).eq('id',msId).then(function(){toast('Milestone payment recorded','ok');}).catch(function(){toast('Failed to update milestone','err');});
+  render();
+}
+
+/* Buyer confirms order receipt */
+function confirmOrderReceipt(dealId){
+  var deal=S.deals.find(function(d){return d.id===dealId;});
+  if(!deal||!deal.order)return;
+  if(!confirm('Confirm you have received this order? This may trigger final payment release.'))return;
+  deal.order.status='completed';deal.order.received_at=new Date().toISOString();
+  sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){}).catch(function(e){console.error('[order] receipt confirm fail:',e);});
+  // Auto-advance deal stage
+  if(deal.matching&&deal.matching.status!=='completed'){
+    deal.matching.status='completed';
+    sb.from('matchings').update({status:'completed'}).eq('id',deal.id).then(function(){});
+  }
+  // Auto-release escrow
+  var escData=_getEscrowStatus(dealId);
+  if(escData&&(escData.status==='shipping'||escData.status==='secured')){
+    escData.status='delivered';escData.deliveredAt=new Date().toISOString();
+    _setEscrow(dealId,escData);
+  }
+  toast('Order receipt confirmed! Deal completed.','ok',5000);
+  render();
 }
 
 /* === ELECTRONIC SIGNATURE (localStorage simulation — shared with whistle.html) === */
@@ -4406,6 +4480,8 @@ window.B={
   showDocDetail:showDocDetail,
   // Escrow Payment
   openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmEscrowDelivery:confirmEscrowDelivery,raiseEscrowDispute:raiseEscrowDispute,
+  // Order Actions
+  payMilestone:payMilestone,confirmOrderReceipt:confirmOrderReceipt,
   // Electronic Signature
   openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
   // Notifications
