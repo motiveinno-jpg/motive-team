@@ -86,7 +86,7 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.modal-overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.7);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:1000;opacity:0;visibility:hidden;transition:all .2s}
+.modal-overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.7);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:10000;opacity:0;visibility:hidden;transition:all .2s}
 .modal-overlay.show{opacity:1;visibility:visible}
 .modal{background:var(--card);border:1px solid var(--bd-l);border-radius:var(--r);width:90%;max-width:520px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
 .modal-h{padding:16px 20px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
@@ -7032,6 +7032,7 @@ function pgCostLogistics(){
   UI.sel('hs_preset','HS코드 선택',HS_PRESETS,{onchange:'document.getElementById("hs_code").value=this.value'})+
   UI.inp('hs_code','HS코드 직접입력',{placeholder:'3304.99'})+'<div></div></div>'+
   '<div class="grid-3">'+UI.sel('origin_port','출발항',[{value:'KRPUS',label:'🇰🇷 부산 (KRPUS)'},{value:'KRICN',label:'🇰🇷 인천 (KRICN)'},{value:'KRKWG',label:'🇰🇷 광양 (KRKWG)'},{value:'KRPTK',label:'🇰🇷 평택 (KRPTK)'}])+UI.sel('dest','도착지',DESTS)+UI.sel('ship','운송 방식',SHIPS)+'</div>'+
+  '<div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:var(--w04);border:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:8px"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--w50);cursor:pointer;white-space:nowrap"><input type="checkbox" name="use_custom_freight" style="accent-color:var(--pri)" onchange="var el=document.getElementById(\'custom-freight-row\');if(el)el.style.display=this.checked?\'flex\':\'none\'"> 운임 직접 입력 <span style="font-size:9px;color:var(--w30)">(기존 포워더 견적이 있는 경우)</span></label></div><div id="custom-freight-row" style="display:none;gap:10px;margin-top:8px">'+UI.inp('custom_freight','운임 (USD)',{type:'number',step:'0.01',placeholder:'포워더 견적 금액',prefix:'$'})+UI.inp('custom_transit','운송일수 (일)',{type:'number',placeholder:'예: 20'})+'</div></div>'+
   '<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-pri" type="submit" style="flex:1">Landed Cost 계산</button><button class="btn btn-ghost" type="button" onclick="App.calcCCompare()" style="flex:1">전체 노선 비교</button></div>'+
   '</form><div id="cr">'+(S._costLogisticsResultHTML||'')+'</div></div></div>';
 }
@@ -7084,13 +7085,20 @@ function calcC(){
 
   /* 운임 계산 */
   var freight=0;var transitMin=0;var transitMax=0;
-  if(rate){
+  var useCustom=d.use_custom_freight&&parseFloat(d.custom_freight)>0;
+  if(useCustom){
+    freight=parseFloat(d.custom_freight);
+    var ct=parseInt(d.custom_transit)||0;if(ct){transitMin=ct;transitMax=ct;}
+  }else if(rate){
     transitMin=rate.transit_days_min||0;transitMax=rate.transit_days_max||0;
     if(rate.unit==='kg')freight=Math.max(rate.rate*wt,rate.min_charge||0);
     else if(rate.unit==='cbm')freight=Math.max(rate.rate*cbm,rate.min_charge||0);
     else freight=rate.rate;
   }else{
-    freight=ship==='air'?wt*5:ship==='express'?wt*8.5:Math.max(cbm*55,180);
+    /* 해상: Revenue Ton = max(CBM, 중량톤) × 요율. 항공/특송: 중량 기반 */
+    if(ship==='air')freight=wt*5;
+    else if(ship==='express')freight=wt*8.5;
+    else{var revTon=Math.max(cbm,wt/1000);freight=Math.max(revTon*55,180);}
   }
 
   /* 보험료 (CIF의 0.3%) */
@@ -7128,7 +7136,7 @@ function calcC(){
   h+='<div style="padding:16px;border-radius:0 0 12px 12px;background:var(--sf);border:1px solid var(--bd);border-top:0">';
   var rows=[
     ['FOB 총액 ('+U.fmtUSD(fobUnit)+' × '+U.n(qty)+')',fobTotal,''],
-    ['운임 ('+(rate?rate.notes:ship)+')'+((transitMin||transitMax)?' · '+transitMin+'-'+transitMax+'일':''),freight,''],
+    ['운임 ('+(useCustom?'직접입력':rate?rate.notes:ship)+')'+((transitMin||transitMax)?' · '+(transitMin===transitMax?transitMin:transitMin+'-'+transitMax)+'일':''),freight,''],
     ['적하보험 (0.3%)',insurance,''],
     ['<b>CIF 총액</b>',cifTotal,'pri'],
   ];
