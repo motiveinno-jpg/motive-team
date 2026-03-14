@@ -4563,6 +4563,95 @@ window.addEventListener('popstate',function(){var hp=location.hash.replace('#','
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifOpen){S.notifOpen=false;render();return;}var modal=document.querySelector('.modal-overlay');if(modal){B.closeModal();return;}if(S.modal){B.closeModal();return;}}});
 loadUser();
 
+/* === SHARED TRACKING VIEW (from manufacturer) === */
+(function(){
+  var params=new URLSearchParams(location.search);
+  var trackId=params.get('track');
+  var token=params.get('token');
+  if(!trackId||!token)return;
+  /* 배송 정보 조회 (토큰 검증) */
+  sb.from('shipments').select('*').eq('id',trackId).eq('share_token',token).eq('buyer_visible',true).single().then(function(r){
+    if(r.error||!r.data){document.getElementById('main').innerHTML='<div style="text-align:center;padding:60px 20px"><div style="font-size:48px;margin-bottom:16px">🔒</div><div style="font-size:18px;font-weight:700;margin-bottom:8px">Invalid or expired tracking link</div><div style="font-size:13px;color:var(--w40)">This tracking link is no longer valid. Please contact the manufacturer for an updated link.</div></div>';return;}
+    var ship=r.data;
+    var TRACKING_STAGES=[
+      {id:'production_complete',label:'Production',icon:'🏭',color:'#FFB800'},
+      {id:'warehouse',label:'Warehouse',icon:'📦',color:'#FF8C00'},
+      {id:'customs_export',label:'Export Customs',icon:'📋',color:'#A855F7'},
+      {id:'loaded',label:'Loaded',icon:'🚢',color:'#3B82F6'},
+      {id:'in_transit',label:'In Transit',icon:'🌊',color:'#0088FF'},
+      {id:'customs_import',label:'Import Customs',icon:'🛃',color:'#10B981'},
+      {id:'delivered',label:'Delivered',icon:'✅',color:'#00E676'}
+    ];
+    var CARRIER_TRACK={
+      'dhl':'https://www.dhl.com/kr-ko/home/tracking/tracking-express.html?submit=1&tracking-id=',
+      'fedex':'https://www.fedex.com/fedextrack/?trknbr=',
+      'ems':'https://service.epost.go.kr/trace.RetrieveEmsRi498TraceList.comm?POST_CODE=',
+      'ups':'https://www.ups.com/track?tracknum=',
+      'maersk':'https://www.maersk.com/tracking/',
+      'msc':'https://www.msc.com/track-a-shipment?trackingNumber=',
+      'hmm':'https://www.hmm21.com/cms/business/ebiz/trackTrace/trackTrace/index.jsp?type=1&number=',
+      'cj':'https://www.cjlogistics.com/ko/tool/parcel/tracking?gnbInvcNo=',
+      'default':'https://www.17track.net/ko#nums='
+    };
+    var curStatus=ship.tracking_status||'production_complete';
+    var curIdx=TRACKING_STAGES.findIndex(function(s){return s.id===curStatus;});
+    var shipIcon=ship.type==='air'?'✈️':ship.type==='express'?'📦':'🚢';
+    var h='<div style="max-width:640px;margin:0 auto;padding:24px 16px">';
+    h+='<div style="text-align:center;margin-bottom:24px">';
+    h+='<div style="font-size:48px;margin-bottom:8px">'+shipIcon+'</div>';
+    h+='<div style="font-size:20px;font-weight:800">Shipment Tracking</div>';
+    h+='<div style="font-size:13px;color:var(--w40);margin-top:4px">'+(ship.port_of_loading||'')+(ship.port_of_discharge?' → '+ship.port_of_discharge:'')+'</div>';
+    if(ship.eta)h+='<div style="margin-top:8px"><span style="padding:4px 12px;border-radius:20px;background:rgba(0,212,255,.1);color:var(--pri);font-size:12px;font-weight:600">ETA '+(new Date(ship.eta).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))+'</span></div>';
+    h+='</div>';
+    /* Timeline */
+    h+='<div class="card" style="margin-bottom:16px"><div class="card-b" style="padding:20px">';
+    h+='<div style="font-size:14px;font-weight:700;margin-bottom:16px">Tracking Status</div>';
+    TRACKING_STAGES.forEach(function(stg,i){
+      var isDone=i<=curIdx;var isCurrent=i===curIdx;
+      var history=ship.tracking_history||[];
+      var histEntry=history.find(function(he){return he.stage===stg.id;});
+      h+='<div style="display:flex;gap:14px;margin-bottom:0">';
+      h+='<div style="display:flex;flex-direction:column;align-items:center">';
+      h+='<div style="width:28px;height:28px;border-radius:14px;border:2px solid '+(isDone?stg.color:'var(--bd-l)')+';background:'+(isDone?stg.color:'transparent')+';display:flex;align-items:center;justify-content:center;font-size:12px;color:'+(isDone?'#fff':'var(--w30)')+';'+(isCurrent?'box-shadow:0 0 0 4px '+stg.color+'30':'')+'">'+stg.icon+'</div>';
+      if(i<TRACKING_STAGES.length-1)h+='<div style="width:2px;height:28px;background:'+(isDone?stg.color:'var(--bd)')+'"></div>';
+      h+='</div>';
+      h+='<div style="padding-bottom:10px;flex:1"><div style="font-weight:'+(isCurrent?'700':'400')+';font-size:13px;color:'+(isDone?'var(--w90)':'var(--w30)')+'">'+stg.label+'</div>';
+      if(histEntry)h+='<div style="font-size:10px;color:var(--w40);margin-top:2px">'+(new Date(histEntry.timestamp).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))+(histEntry.details?' — '+histEntry.details:'')+'</div>';
+      h+='</div></div>';
+    });
+    h+='</div></div>';
+    /* Shipment Details */
+    h+='<div class="card" style="margin-bottom:16px"><div class="card-b" style="padding:20px">';
+    h+='<div style="font-size:14px;font-weight:700;margin-bottom:12px">Shipment Details</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">';
+    if(ship.type)h+='<div><span style="color:var(--w40)">Type:</span> <b style="text-transform:capitalize">'+ship.type+'</b></div>';
+    if(ship.bl_number)h+='<div><span style="color:var(--w40)">'+(ship.type==='air'?'AWB':'B/L')+':</span> <b style="font-family:JetBrains Mono">'+ship.bl_number+'</b></div>';
+    if(ship.vessel_name)h+='<div><span style="color:var(--w40)">'+(ship.type==='air'?'Flight':'Vessel')+':</span> <b>'+ship.vessel_name+'</b></div>';
+    if(ship.container_number)h+='<div><span style="color:var(--w40)">Container:</span> <b>'+ship.container_number+'</b></div>';
+    if(ship.carrier)h+='<div><span style="color:var(--w40)">Carrier:</span> <b>'+ship.carrier+'</b></div>';
+    if(ship.etd)h+='<div><span style="color:var(--w40)">Departure:</span> <b>'+(new Date(ship.etd).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))+'</b></div>';
+    if(ship.eta)h+='<div><span style="color:var(--w40)">ETA:</span> <b>'+(new Date(ship.eta).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))+'</b></div>';
+    if(ship.forwarder_name)h+='<div><span style="color:var(--w40)">Forwarder:</span> <b>'+ship.forwarder_name+'</b></div>';
+    h+='</div>';
+    /* Real-time tracking button */
+    if(ship.bl_number){
+      var cKey=(ship.carrier||'default').toLowerCase().replace(/\s+/g,'');
+      var alias={'대한통운':'cj','cj대한통운':'cj','dhl express':'dhl'};
+      if(alias[cKey])cKey=alias[cKey];
+      var tUrl=(CARRIER_TRACK[cKey]||CARRIER_TRACK['default'])+encodeURIComponent(ship.bl_number);
+      h+='<a href="'+tUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:10px 20px;border-radius:10px;background:var(--pri-g);color:#060B18;font-size:13px;font-weight:700;text-decoration:none">📍 Track in Real-Time</a>';
+    }
+    h+='</div></div>';
+    h+='<div style="text-align:center;font-size:10px;color:var(--w20);margin-top:20px">Powered by Whistle AI — whistle-ai.com</div>';
+    h+='</div>';
+    /* 전체 앱 UI 숨기고 트래킹만 표시 */
+    var sidebar=document.querySelector('.sidebar');if(sidebar)sidebar.style.display='none';
+    var mobOv=document.querySelector('.mob-overlay');if(mobOv)mobOv.style.display='none';
+    var main=document.querySelector('.main-content');
+    if(main){main.style.marginLeft='0';main.innerHTML='<div style="min-height:100vh;display:flex;align-items:center;justify-content:center">'+h+'</div>';}
+  });
+})();
+
 /* === STRIPE CHECKOUT (Buyer) === */
 function openBuyerCheckout(planId){
   var prices={starter:{m:'$29',s:'$156.60',a:'$278.40',dm:'$29/mo',ds:'$26.10/mo (10% off)',da:'$23.20/mo (20% off)'},pro:{m:'$89',s:'$480.60',a:'$854.40',dm:'$89/mo',ds:'$80.10/mo',da:'$71.20/mo'}};
