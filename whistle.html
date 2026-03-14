@@ -870,7 +870,7 @@ function loadUser(){
 }
 function loadA(){if(!S.user)return Promise.resolve();return sb.from('analyses').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(50).then(function(r){S.analyses=r.data||[];}).catch(function(e){console.error('[loadA]',e);S.analyses=[];});}
 function loadP(){if(!S.user)return Promise.resolve();return sb.from('products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){S.products=r.data||[];}).catch(function(e){console.error('[loadP]',e);S.products=[];});}
-function loadPr(){if(!S.user)return Promise.resolve();return sb.from('projects').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(100).then(function(r){S.projects=r.data||[];}).catch(function(e){console.error('[loadPr]',e);S.projects=[];});}
+function loadPr(){if(!S.user)return Promise.resolve();return sb.from('projects').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(100).then(function(r){S.projects=r.data||[];S.projects.forEach(_ensureStageProgress);}).catch(function(e){console.error('[loadPr]',e);S.projects=[];});}
 function loadSR(){if(!S.user)return Promise.resolve();return sb.from('service_requests').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(100).then(function(r){S.serviceRequests=r.data||[];}).catch(function(e){console.error('[loadSR]',e);S.serviceRequests=[];});}
 function loadB(){if(!S.user)return Promise.resolve();return sb.from('buyers').select('*').eq('registered_by',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){S.buyers=r.data||[];}).catch(function(e){console.error('[loadB]',e);S.buyers=[];});}
 
@@ -2440,6 +2440,18 @@ function getProjectStages(p){
   var base=['planning','certification','buyer_search','sample','negotiation','production','documents','shipping','customs','completed'];
   if(p&&p.alibaba_customer)base.splice(2,0,'alibaba_listing');
   return base;
+}
+/* 기존 프로젝트에 빠진 단계 체크리스트 자동 보충 */
+function _ensureStageProgress(p){
+  if(!p)return;var sp=p.stage_progress||{};var changed=false;
+  var stages=getProjectStages(p);
+  stages.forEach(function(s){
+    if(!sp[s]||!sp[s].length){
+      sp[s]=JSON.parse(JSON.stringify(STAGE_DEFAULTS[s]||[]));
+      if(sp[s].length)changed=true;
+    }
+  });
+  if(changed){p.stage_progress=sp;sb.from('projects').update({stage_progress:sp}).eq('id',p.id).then(function(){});}
 }
 /* ── 프로젝트 준비 vs 바이어 딜 단계 분리 ── */
 function getProjectPrepStages(p){
