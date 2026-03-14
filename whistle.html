@@ -189,10 +189,11 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .deal-action-chip{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--bd-l);background:var(--w08);color:var(--w70);transition:all .15s;white-space:nowrap}
 .deal-action-chip:hover{background:rgba(0,212,255,.1);border-color:var(--pri);color:var(--pri)}
 .deal-action-chip.primary{background:rgba(0,212,255,.12);border-color:rgba(0,212,255,.3);color:var(--pri)}
-/* 말풍선 툴팁 */
-[data-tip]{position:relative}
-[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);padding:8px 12px;border-radius:8px;background:var(--card);color:var(--w90);font-size:11px;font-weight:500;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.3);border:1px solid var(--bd);z-index:999;pointer-events:none;line-height:1.4;max-width:260px;white-space:normal;text-align:center}
-[data-tip]:hover::before{content:'';position:absolute;bottom:calc(100% + 3px);left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--bd);z-index:999;pointer-events:none}
+/* 말풍선 툴팁 (JS로 body에 붙임 — overflow 무관) */
+.tip-bubble{position:fixed;padding:8px 14px;border-radius:8px;background:var(--card);color:var(--w90);font-size:11px;font-weight:500;box-shadow:0 4px 16px rgba(0,0,0,.3);border:1px solid var(--bd);z-index:99999;pointer-events:none;line-height:1.5;max-width:260px;text-align:center;white-space:normal;opacity:0;transition:opacity .15s}
+.tip-bubble.show{opacity:1}
+.tip-arrow{position:fixed;width:0;height:0;border:5px solid transparent;border-bottom-color:var(--bd);z-index:99999;pointer-events:none;opacity:0;transition:opacity .15s}
+.tip-arrow.show{opacity:1}
 .chat-rich-card{background:var(--w04);border:1px solid var(--bd);border-radius:12px;padding:14px;max-width:380px}
 .chat-rich-card .card-title{font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .chat-rich-card .card-row{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--w60)}
@@ -290,6 +291,34 @@ var GP={
   done:function(){GP._count=Math.max(0,GP._count-1);if(GP._count===0&&GP._el)GP._el.classList.remove('active');},
   wrap:function(promise,ctx){GP.start();return promise.then(function(r){GP.done();if(r&&r.error){var msg=(r.error.message||r.error.details||String(r.error));console.error('['+ctx+']',msg);return r;}return r;}).catch(function(err){GP.done();console.error('['+ctx+']',err);throw err;});}
 };
+
+/* === 말풍선 툴팁 (body에 fixed로 붙여 overflow 무관) === */
+var TIP={_b:null,_a:null};
+document.addEventListener('mouseover',function(e){
+  var el=e.target.closest('[data-tip]');
+  if(!el||!el.getAttribute('data-tip'))return;
+  if(!TIP._b){TIP._b=document.createElement('div');TIP._b.className='tip-bubble';document.body.appendChild(TIP._b);TIP._a=document.createElement('div');TIP._a.className='tip-arrow';document.body.appendChild(TIP._a);}
+  TIP._b.textContent=el.getAttribute('data-tip');
+  var r=el.getBoundingClientRect();
+  /* 아래 방향으로 표시 */
+  TIP._b.style.left='0';TIP._b.style.top='0';TIP._b.classList.add('show');
+  var bw=TIP._b.offsetWidth,bh=TIP._b.offsetHeight;
+  var tx=r.left+r.width/2-bw/2,ty=r.bottom+8;
+  /* 화면 밖 보정 */
+  if(tx<4)tx=4;if(tx+bw>window.innerWidth-4)tx=window.innerWidth-4-bw;
+  if(ty+bh>window.innerHeight-4){ty=r.top-bh-8;TIP._a.style.borderBottomColor='transparent';TIP._a.style.borderTopColor='var(--bd)';TIP._a.style.top=(r.top-10)+'px';}
+  else{TIP._a.style.borderTopColor='transparent';TIP._a.style.borderBottomColor='var(--bd)';TIP._a.style.top=(r.bottom+3)+'px';}
+  TIP._b.style.left=tx+'px';TIP._b.style.top=ty+'px';
+  TIP._a.style.left=(r.left+r.width/2-5)+'px';TIP._a.classList.add('show');
+  el._tipOn=true;
+});
+document.addEventListener('mouseout',function(e){
+  var el=e.target.closest('[data-tip]');
+  if(!el||!el._tipOn)return;
+  el._tipOn=false;
+  if(TIP._b)TIP._b.classList.remove('show');
+  if(TIP._a)TIP._a.classList.remove('show');
+});
 
 /* === BUTTON LOADING STATE === */
 function btnLoad(btn,loading){
