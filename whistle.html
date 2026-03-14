@@ -3842,8 +3842,11 @@ function _renderStageTools(p,stage,a,rm){
     var _sampleTrack=p.stage_progress&&p.stage_progress._sample_tracking;
     if(_sampleTrack&&_sampleTrack.tracking_no){
       h+='<div style="margin-top:8px;padding:8px;border-radius:6px;background:rgba(255,152,0,.06);border:1px solid rgba(255,152,0,.1);font-size:11px">';
-      h+='<div style="display:flex;align-items:center;gap:6px"><span style="color:var(--acc);font-weight:700">🏷️ '+U.esc(_sampleTrack.carrier||'')+' '+U.esc(_sampleTrack.tracking_no)+'</span>';
+      h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">';
+      h+='<span style="color:var(--acc);font-weight:700;cursor:pointer;text-decoration:underline" onclick="App.trackSample()" data-tip="클릭하면 '+U.esc(_sampleTrack.carrier||'')+' 실시간 추적 페이지가 열립니다">🏷️ '+U.esc(_sampleTrack.carrier||'')+' '+U.esc(_sampleTrack.tracking_no)+'</span>';
       if(_sampleTrack.sent_date)h+='<span style="color:var(--w30);font-size:10px">'+_sampleTrack.sent_date+'</span>';
+      if(_sampleTrack.sample_desc)h+='<span style="color:var(--w40);font-size:10px">'+U.esc(_sampleTrack.sample_desc)+'</span>';
+      h+='<button class="btn btn-ghost" style="font-size:9px;padding:2px 6px;margin-left:auto" onclick="App.trackSample()">📍 실시간 추적</button>';
       h+='</div></div>';
     }
     h+='<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.5"><b>특송:</b> DHL · FedEx · EMS | 식품/화장품 샘플도 통관규정 확인</div>';
@@ -8211,7 +8214,7 @@ function pgTracking(){
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
       h+='<button class="btn btn-ghost btn-sm" onclick="App.viewTrackingDetail(\''+ship.id+'\')">📋 상세</button>';
       h+='<button class="btn btn-ghost btn-sm" onclick="App.updateTrackingStatus(\''+ship.id+'\')">🔄 상태 업데이트</button>';
-      if(ship.bl_number)h+='<button class="btn btn-ghost btn-sm" onclick="App.trackBL(\''+ship.bl_number+'\',\''+(ship.carrier||'default')+'\')">🔍 B/L 추적</button>';
+      if(ship.bl_number)h+='<button class="btn btn-pri btn-sm" onclick="App.trackBL(\''+ship.bl_number+'\',\''+(ship.carrier||'default')+'\')">📍 실시간 추적 ('+(ship.carrier||ship.type||'').toUpperCase()+')</button>';
       h+='<button class="btn btn-ghost btn-sm" onclick="App.generateShareLink(\''+ship.id+'\')">🔗 바이어 공유</button>';
       h+='</div>';
 
@@ -8327,26 +8330,63 @@ function generateShareLink(shipId){
   });
 }
 
-function trackBL(bl,carrier){
-  var urls={
-    'evergreen':'https://www.shipmentlink.com/tvs2/servlet/TDB1_CargoTracking.do?BLNo=',
-    'maersk':'https://www.maersk.com/tracking/',
-    'msc':'https://www.msc.com/track-a-shipment?trackingNumber=',
-    'hmm':'https://www.hmm21.com/cms/business/ebiz/trackTrace/trackTrace/index.jsp?type=1&number=',
-    'default':'https://www.track-trace.com/container?number='
-  };
-  var url=(urls[carrier.toLowerCase()]||urls.default)+bl;
+/* ── 물류사 추적 URL 통합 맵 (특송 + 해운 + 택배) ── */
+var CARRIER_TRACK={
+  /* 특송/택배 — 송장번호 기반 */
+  'dhl':'https://www.dhl.com/kr-ko/home/tracking/tracking-express.html?submit=1&tracking-id=',
+  'fedex':'https://www.fedex.com/fedextrack/?trknbr=',
+  'ems':'https://service.epost.go.kr/trace.RetrieveEmsRi498TraceList.comm?POST_CODE=',
+  'ups':'https://www.ups.com/track?tracknum=',
+  'sf':'https://www.sf-express.com/kr/ko/dynamic_function/waybill/#search/bill-number/',
+  'cj':'https://www.cjlogistics.com/ko/tool/parcel/tracking?gnbInvcNo=',
+  'lotte':'https://www.lotteglogis.com/home/reservation/tracking/link498View?InvNo=',
+  'hanjin':'https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mession-open=&wblnum=',
+  'logen':'https://www.ilogen.com/web/personal/trace/',
+  'kdexp':'https://kdexp.com/trackInfo?gnbInvcNo=',
+  /* 해운선사 — B/L 기반 */
+  'evergreen':'https://www.shipmentlink.com/tvs2/servlet/TDB1_CargoTracking.do?BLNo=',
+  'maersk':'https://www.maersk.com/tracking/',
+  'msc':'https://www.msc.com/track-a-shipment?trackingNumber=',
+  'hmm':'https://www.hmm21.com/cms/business/ebiz/trackTrace/trackTrace/index.jsp?type=1&number=',
+  'cosco':'https://elines.coscoshipping.com/ebtracking/public/containers/',
+  'one':'https://ecomm.one-line.com/ecom/CUP_HOM_3301GS.do?ression-open=Y&f_cmd=121&cust_ref_no=',
+  'yangming':'https://www.yangming.com/e-service/track-trace/track-trace_cargo_tracking.aspx?BillOfLading=',
+  /* 항공화물 */
+  'korean_air':'https://cargo.koreanair.com/tracking?awbPrefix=180&awbNumber=',
+  'asiana_cargo':'https://cargo.flyasiana.com/tracking.do?awbNo=',
+  /* 통합 추적 (fallback) */
+  'default':'https://www.17track.net/ko#nums='
+};
+
+function trackBL(trackNo,carrier){
+  if(!trackNo){UI.toast('추적번호가 없습니다','warn');return;}
+  var key=(carrier||'default').toLowerCase().replace(/\s+/g,'');
+  /* 별칭 매핑 */
+  var alias={'대한통운':'cj','cj대한통운':'cj','우체국':'ems','한진':'hanjin','롯데':'lotte','로젠':'logen','경동':'kdexp','dhl express':'dhl'};
+  if(alias[key])key=alias[key];
+  var url=(CARRIER_TRACK[key]||CARRIER_TRACK['default'])+encodeURIComponent(trackNo);
   window.open(url,'_blank');
+}
+
+/* 샘플 송장 추적 바로가기 */
+function trackSample(){
+  var p=S.currentProject;if(!p)return;
+  var st=p.stage_progress&&p.stage_progress._sample_tracking;
+  if(!st||!st.tracking_no){UI.toast('송장번호가 없습니다. 먼저 입력하세요.','warn');return;}
+  trackBL(st.tracking_no,st.carrier||'default');
 }
 
 /* 자동 배송 동기화 — B/L 기반 물류사 API 연동 */
 function syncShipment(shipId){
   var ship=(S.shipments||[]).find(function(s){return s.id===shipId;});
   if(!ship){UI.toast('배송 정보를 찾을 수 없습니다','warn');return;}
-  if(!ship.bl_number){UI.toast('B/L 번호가 없어 자동 추적이 불가합니다. B/L을 먼저 입력하세요.','warn');return;}
-  UI.toast('🔄 물류사 API 동기화 중...','pri');
-  /* 물류사별 자동 상태 매핑 */
-  var carrier=(ship.carrier||'default').toLowerCase();
+  var trackNo=ship.bl_number||ship.tracking_number;
+  if(!trackNo){UI.toast('추적번호(B/L 또는 송장번호)가 없습니다','warn');return;}
+  UI.toast('🔄 물류사 추적 동기화 중...','pri');
+  var carrier=(ship.carrier||ship.type||'default').toLowerCase();
+  /* 실제 물류사 추적 페이지 열기 + 상태 자동 업데이트 */
+  trackBL(trackNo,carrier);
+  /* 상태 자동 진행 (물류사 API 미연동 시 수동 확인 기반) */
   var autoStages={
     'production_complete':'container_loaded',
     'container_loaded':'departed',
@@ -8356,31 +8396,29 @@ function syncShipment(shipId){
   };
   var curStatus=ship.tracking_status||'production_complete';
   var nextStatus=autoStages[curStatus];
-  if(!nextStatus){UI.toast('현재 단계('+curStatus+')는 수동 업데이트가 필요합니다','warn');return;}
-  /* 시뮬레이션: 실제 연동 시 fetch로 교체 */
-  setTimeout(function(){
-    sb.from('shipments').update({
-      tracking_status:nextStatus,
-      tracking_history:JSON.stringify((function(){try{return JSON.parse(ship.tracking_history||'[]');}catch(e){return [];}}()).concat({status:nextStatus,timestamp:new Date().toISOString(),source:'auto_sync',carrier:carrier})),
-      updated_at:new Date().toISOString()
-    }).eq('id',shipId).then(function(r){
-      if(r.error){_toastE(r.error);return;}
-      var stL={container_loaded:'컨테이너 적입',departed:'출항',in_transit:'운송중',arrived:'도착',customs_cleared:'통관완료',delivered:'인도완료'};
-      UI.toast('✅ 자동 업데이트: '+(stL[nextStatus]||nextStatus),'ok');
-      /* 자동 채팅 알림 */
-      var order=(S.orders||[]).find(function(o){return o.id===ship.order_id;});
-      if(order&&order.buyer_id){
-        sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[자동 물류 알림] 배송 상태: '+(stL[nextStatus]||nextStatus)+' (B/L: '+ship.bl_number+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(){});
-      }
-      loadShipments().then(function(){render();});
-    });
-  },1200);
+  if(!nextStatus){UI.toast('현재 단계('+curStatus+') — 물류사 페이지에서 확인 후 수동 업데이트하세요','info');return;}
+  /* 확인 후 상태 업데이트 */
+  if(!confirm('물류사 페이지에서 확인한 결과, "'+({container_loaded:'컨테이너 적입',departed:'출항',in_transit:'운송중',arrived:'도착',customs_cleared:'통관완료'}[nextStatus]||nextStatus)+'" 상태로 업데이트할까요?'))return;
+  sb.from('shipments').update({
+    tracking_status:nextStatus,
+    tracking_history:JSON.stringify((function(){try{return JSON.parse(ship.tracking_history||'[]');}catch(e){return[];}}()).concat({status:nextStatus,timestamp:new Date().toISOString(),source:'manual_confirm',carrier:carrier})),
+    updated_at:new Date().toISOString()
+  }).eq('id',shipId).then(function(r){
+    if(r.error){_toastE(r.error);return;}
+    var stL={container_loaded:'컨테이너 적입',departed:'출항',in_transit:'운송중',arrived:'도착',customs_cleared:'통관완료',delivered:'인도완료'};
+    UI.toast('✅ 상태 업데이트: '+(stL[nextStatus]||nextStatus),'ok');
+    var order=(S.orders||[]).find(function(o){return o.id===ship.order_id;});
+    if(order&&order.buyer_id){
+      sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[물류 알림] 배송 상태: '+(stL[nextStatus]||nextStatus)+' ('+trackNo+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(){});
+    }
+    loadShipments().then(function(){render();});
+  });
 }
 function syncAllShipments(){
-  var ships=(S.shipments||[]).filter(function(s){return s.bl_number&&s.carrier;});
-  if(!ships.length){UI.toast('자동 추적 가능한 배송이 없습니다','warn');return;}
-  UI.toast('🔄 '+ships.length+'건 동기화 시작...','pri');
-  ships.forEach(function(s,i){setTimeout(function(){syncShipment(s.id);},i*1500);});
+  var ships=(S.shipments||[]).filter(function(s){return s.bl_number||s.tracking_number;});
+  if(!ships.length){UI.toast('추적 가능한 배송이 없습니다','warn');return;}
+  UI.toast('🔄 '+ships.length+'건 — 각 물류사 추적 페이지를 확인하세요','pri');
+  ships.forEach(function(s,i){setTimeout(function(){trackBL(s.bl_number||s.tracking_number,s.carrier||s.type||'default');},i*800);});
 }
 
 /* === MARKETPLACE (바이어 장터) === */
@@ -8966,13 +9004,13 @@ function showShipmentForm(orderId){
   if(!orderId&&S.currentProject){var pjOrders=S.orders.filter(function(x){return x.project_id===S.currentProject.id;});if(pjOrders.length===1){orderId=pjOrders[0].id;}else if(pjOrders.length>1){var pickBody='<div style="font-size:13px;color:var(--w60);margin-bottom:12px">선적할 주문을 선택하세요</div>';pjOrders.forEach(function(po){pickBody+='<div style="padding:10px 14px;border:1px solid var(--bd);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor=\'var(--pri)\'" onmouseout="this.style.borderColor=\'var(--bd)\'" onclick="App.closeModal(\'shpick\');App.showShipmentForm(\''+po.id+'\')"><div style="font-weight:700;font-size:14px">'+U.esc(po.order_number||po.id)+'</div><div style="font-size:12px;color:var(--w40);margin-top:2px">'+U.esc(po.buyer_name||'')+' · $'+(po.total_amount||0).toLocaleString()+'</div></div>';});document.body.insertAdjacentHTML('beforeend',UI.modal({id:'shpick',title:'📋 주문 선택',body:pickBody,width:'400px'}));UI.showModal('shpick');return;}else{UI.toast('먼저 주문을 등록하세요','warn');return;}}
   var o=S.orders.find(function(x){return x.id===orderId;});if(!o){UI.toast('주문을 찾을 수 없습니다','warn');return;}
   var body='<form id="shf">'+
-    '<div class="grid-2">'+UI.sel('type','운송방식',[{value:'ocean',label:'🚢 해상'},{value:'air',label:'✈️ 항공'},{value:'express',label:'📦 특급'},{value:'rail',label:'🚂 철도'}])+
-    UI.inp('bl_number','B/L 또는 AWB',{placeholder:'운송장 번호'})+'</div>'+
-    '<div class="grid-2">'+UI.inp('vessel_name','선박/항공편명',{placeholder:'선택'})+UI.inp('container_number','컨테이너번호',{placeholder:'선택'})+'</div>'+
+    '<div class="grid-2">'+UI.sel('type','운송방식',[{value:'ocean',label:'🚢 해상'},{value:'air',label:'✈️ 항공'},{value:'express',label:'📦 특급 (DHL/FedEx/EMS)'},{value:'rail',label:'🚂 철도'}])+
+    UI.sel('carrier','선사/택배사',[{value:'',label:'선택'},{value:'maersk',label:'Maersk'},{value:'msc',label:'MSC'},{value:'hmm',label:'HMM'},{value:'evergreen',label:'Evergreen'},{value:'cosco',label:'COSCO'},{value:'one',label:'ONE'},{value:'yangming',label:'Yang Ming'},{value:'DHL',label:'DHL Express'},{value:'FedEx',label:'FedEx'},{value:'EMS',label:'EMS/우체국'},{value:'UPS',label:'UPS'},{value:'CJ',label:'CJ대한통운'},{value:'korean_air',label:'대한항공 화물'},{value:'asiana_cargo',label:'아시아나 화물'},{value:'other',label:'기타'}])+'</div>'+
+    '<div class="grid-2">'+UI.inp('bl_number','B/L / AWB / 송장번호',{placeholder:'운송장 또는 B/L 번호'})+UI.inp('vessel_name','선박/항공편명',{placeholder:'선택'})+'</div>'+
+    '<div class="grid-2">'+UI.inp('container_number','컨테이너번호',{placeholder:'해상 운송 시'})+UI.inp('freight_cost','운임(USD)',{type:'number',step:'0.01'})+'</div>'+
     '<div class="grid-2">'+UI.inp('port_of_loading','출발항',{value:'Busan, KR'})+UI.inp('port_of_discharge','도착항',{placeholder:'Los Angeles, US'})+'</div>'+
     '<div class="grid-2">'+UI.inp('etd','출발예정(ETD)',{type:'date'})+UI.inp('eta','도착예정(ETA)',{type:'date'})+'</div>'+
     '<div class="grid-2">'+UI.inp('forwarder_name','포워더명',{placeholder:'포워더 회사명'})+UI.inp('forwarder_contact','포워더 연락처',{placeholder:'전화/이메일'})+'</div>'+
-    UI.inp('freight_cost','운임(USD)',{type:'number',step:'0.01'})+
   '</form>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'shm',title:'🚢 선적 등록 — '+o.order_number,body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'shm\')">취소</button><button class="btn btn-pri" onclick="App.saveShipment(\''+orderId+'\')">등록</button>',width:'520px'}));UI.showModal('shm');
 }
@@ -8980,7 +9018,7 @@ function showShipmentForm(orderId){
 function saveShipment(orderId){
   if(!orderId){UI.toast('주문 ID 필수','warn');return;}
   var d=UI.fd('#shf');
-  var data={order_id:orderId,user_id:S.user.id,type:d.type||'ocean',bl_number:d.bl_number||null,
+  var data={order_id:orderId,user_id:S.user.id,type:d.type||'ocean',carrier:d.carrier||null,bl_number:d.bl_number||null,
     vessel_name:d.vessel_name||null,container_number:d.container_number||null,
     port_of_loading:d.port_of_loading||'Busan, KR',port_of_discharge:d.port_of_discharge||null,
     etd:d.etd||null,eta:d.eta||null,forwarder_name:d.forwarder_name||null,
@@ -11983,7 +12021,7 @@ document.addEventListener('keydown',function(e){
   }else if(k==='g'||k==='n'){_pendingKey=k;setTimeout(function(){_pendingKey=null;},600);}
 });
 
-window.App={set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,saveSampleTracking:saveSampleTracking,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_docValContinue:null,respondInquiry:respondInquiry,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,UI:UI};
+window.App={set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,saveSampleTracking:saveSampleTracking,trackSample:trackSample,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_docValContinue:null,respondInquiry:respondInquiry,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,UI:UI};
 _handleTossCallback();
 _checkTossOneCallback();
 loadUser();
