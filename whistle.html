@@ -397,7 +397,7 @@ function openPageAsPopup(pageId,title,tab,opts){
   openFloatPanel(panelId,title,function(body){
     if(tab)S._costTab=tab;
     var fn=_pgFns[pageId];
-    if(fn){body.innerHTML=fn();}
+    if(fn){body.innerHTML=fn();if(pageId==='costsim')restoreCostInputs();}
     else{body.innerHTML='<div style="padding:20px;text-align:center;color:var(--w40)">페이지를 불러올 수 없습니다</div>';}
   },opts);
 }
@@ -789,7 +789,8 @@ function refreshExRate(){
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;S._exRateTime=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});UI.toast('환율 업데이트: 1 USD = ₩'+d.rates.KRW.toLocaleString(),'ok');}
     render();
     /* 플로팅 패널도 갱신 */
-    Object.keys(FP._panels).forEach(function(pid){if(pid.indexOf('costsim')===0){var body=document.getElementById('fpb-'+pid);if(body&&_pgFns.costsim){body.innerHTML=_pgFns.costsim();}}});
+    saveCostInputs();
+    Object.keys(FP._panels).forEach(function(pid){if(pid.indexOf('costsim')===0){var body=document.getElementById('fpb-'+pid);if(body&&_pgFns.costsim){body.innerHTML=_pgFns.costsim();restoreCostInputs();}}});
   }).catch(function(){S._exRateLoading=false;UI.toast('환율 조회 실패','err');render();});
 }
 /* 국가 정보 로딩 (REST Countries API — 완전 무료) */
@@ -6411,17 +6412,52 @@ function pgCost(){
   tabContent+='<div style="margin-top:14px;padding:8px 10px;border-radius:var(--r-xs);background:rgba(255,82,82,.05);border:1px solid rgba(255,82,82,.1);font-size:9px;color:var(--w30);line-height:1.5">⚠️ 본 비용·관세 정보는 참고용이며 법적 효력이 없습니다. 실제 수출 시 관세사·포워더와 확인하세요. | 실시간 환율: <b style="color:var(--acc)">1 USD = ₩'+(S.exchangeRate||1400).toLocaleString()+'</b> (Frankfurter API)</div>';
   return h+tabContent;
 }
+/* ── 비용 도구 입력값 영속화 ── */
+function saveCostInputs(){
+  if(!S._costInputs)S._costInputs={};
+  /* 모든 비용 도구 폼에서 input/select 값 수집 */
+  ['ftaf','cpf','cf','msf'].forEach(function(fid){
+    var form=document.getElementById(fid);
+    if(form){var fd=UI.fd(form);Object.keys(fd).forEach(function(k){if(fd[k])S._costInputs[k]=fd[k];});}
+  });
+  /* HS 분류기 필드 (폼 바깥) */
+  ['hs_product','hs_category','hs_ingredients','hs_usage','hs_material','hs_process','hs_weight','hs_desc'].forEach(function(n){
+    var el=document.querySelector('[name="'+n+'"]');if(el&&el.value)S._costInputs[n]=el.value;
+  });
+  /* FTA 멀티체크 */
+  _allCountryCodes.forEach(function(c){
+    var cb=document.querySelector('[name="fta_multi_'+c+'"]');
+    if(cb)S._costInputs['fta_multi_'+c]=cb.checked;
+  });
+}
+function restoreCostInputs(){
+  if(!S._costInputs)return;
+  setTimeout(function(){
+    Object.keys(S._costInputs).forEach(function(k){
+      var v=S._costInputs[k];if(!v&&v!==0)return;
+      /* 체크박스 */
+      if(k.indexOf('fta_multi_')===0){
+        var cb=document.querySelector('[name="'+k+'"]');
+        if(cb)cb.checked=!!v;return;
+      }
+      var el=document.querySelector('[name="'+k+'"]');
+      if(el&&!el.value)el.value=v;
+    });
+  },0);
+}
+
 function setCostTab(t){
+  saveCostInputs();
   S._costTab=t;
   /* 플로팅 패널이 열려있으면 패널 내용도 갱신 */
   var _updated=false;
   Object.keys(FP._panels).forEach(function(pid){
     if(pid.indexOf('costsim')===0){
       var body=document.getElementById('fpb-'+pid);
-      if(body&&_pgFns.costsim){body.innerHTML=_pgFns.costsim();_updated=true;}
+      if(body&&_pgFns.costsim){body.innerHTML=_pgFns.costsim();restoreCostInputs();_updated=true;}
     }
   });
-  if(!_updated)render();
+  if(!_updated){render();restoreCostInputs();}
 }
 
 /* === ANALYSIS CONTEXT → ACTION BRIDGE === */
@@ -6520,7 +6556,7 @@ function pgCostHS(){
   h+=UI.ta('hs_description','추가 설명 (선택)',{placeholder:'기타 분류에 도움이 될 정보 (예: 소매용 세트 구성, 의약외품 여부, 유기농 인증 등)',rows:2});
   h+='<button class="btn btn-pri" type="submit" style="width:100%;margin-top:8px" id="hs-submit-btn">📋 HS코드 AI 분류</button>';
   h+='</form>';
-  h+='<div id="hs-result"></div></div></div>';
+  h+='<div id="hs-result">'+(S._costHSResultHTML||'')+'</div></div></div>';
   /* 최근 분석 결과에서 HS코드 자동 연결 */
   var _hsAnalyses=S.analyses.filter(function(a){return a.ai_result&&a.ai_result.hs_code;});
   if(_hsAnalyses.length){
@@ -6594,6 +6630,7 @@ function classifyHS(){
     h+='<button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(\''+UI.esc(r.primary.code)+'\');UI.toast(\'HS코드 복사됨\',\'ok\')">📋 코드 복사</button>';
     h+='<button class="btn btn-ghost btn-sm" onclick="App.reqExpertReview(\'hs_code\',\''+UI.esc(r.primary.code)+'\')">👨‍💼 관세사 검증 요청</button>';
     h+='</div></div>';
+    S._costHSResultHTML=h;
     if(el)el.innerHTML=h;
   }).catch(function(err){
     if(btn){btn.disabled=false;btn.innerHTML='📋 HS코드 AI 분류';}
@@ -6602,13 +6639,17 @@ function classifyHS(){
 }
 function hsToFTA(){
   var r=S._lastHSResult;if(!r||!r.primary)return;
-  S._costTab='fta';render();
-  setTimeout(function(){var i=document.querySelector('[name=fta_hs_code]');if(i)i.value=r.primary.code;},100);
+  saveCostInputs();
+  if(!S._costInputs)S._costInputs={};
+  S._costInputs.fta_hs_code=r.primary.code;
+  setCostTab('fta');
 }
 function hsToCost(){
   var r=S._lastHSResult;if(!r||!r.primary)return;
-  S._costTab='logistics';render();
-  setTimeout(function(){var i=document.getElementById('hs_code');if(i)i.value=r.primary.code;},100);
+  saveCostInputs();
+  if(!S._costInputs)S._costInputs={};
+  S._costInputs.hs_code=r.primary.code;
+  setCostTab('logistics');
 }
 
 /* === FTA SIMULATOR UI (calls fta-simulator EF) === */
@@ -6630,7 +6671,7 @@ function pgCostFTA(){
   h+='</div></div>';
   h+='<div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-pri" type="submit" style="flex:1" id="fta-submit-btn">🌐 FTA 시뮬레이션</button><button class="btn btn-ghost" type="button" onclick="App.simulateFTAMulti()" style="flex:1">📊 복수시장 비교</button></div>';
   h+='</form>';
-  h+='<div id="fta-result"></div></div></div>';
+  h+='<div id="fta-result">'+(S._costFTAResultHTML||'')+'</div></div></div>';
   /* FTA 안내 카드 */
   h+='<div class="card" style="margin-top:14px"><div class="card-b" style="padding:14px"><div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--w90)">🇰🇷 한국 FTA 현황 (21개)</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
   var ftas=['한-미 (KORUS)','한-EU','한-영','한-중','한-일 (RCEP)','한-ASEAN','한-베트남','한-인도 CEPA','한-호주','한-캐나다','한-뉴질랜드','한-싱가포르','한-EFTA','한-터키','한-칠레','한-페루','한-콜롬비아','한-이스라엘','한-캄보디아','한-인니 CEPA','RCEP'];
@@ -6676,7 +6717,7 @@ function simulateFTA(){
 function simulateFTAMulti(){
   var d=UI.fd('#ftaf');if(!d.fta_hs_code){UI.toast('HS코드를 입력하세요','warn');return;}
   var dests=[];
-  ['US','JP','CN','DE','VN','SG','AU','IN'].forEach(function(c){if(d['fta_multi_'+c])dests.push(c);});
+  document.querySelectorAll('[name^="fta_multi_"]').forEach(function(cb){if(cb.checked)dests.push(cb.value);});
   if(!dests.length){UI.toast('비교할 시장을 1개 이상 체크하세요','warn');return;}
   var el=document.getElementById('fta-result');
   if(el)el.innerHTML='<div style="text-align:center;padding:20px"><div class="spinner" style="width:24px;height:24px;border-width:3px;margin:0 auto 10px"></div><div style="font-size:12px;color:var(--w40)">'+dests.length+'개 시장 FTA 비교 중...</div></div>';
@@ -6740,6 +6781,7 @@ function _renderFTAResult(el,r,hsDisplay,value){
   h+='<button class="btn btn-pri btn-sm" onclick="App.ftaToCost()">💰 물류비 계산에 적용</button>';
   h+='<button class="btn btn-ghost btn-sm" onclick="App.reqExpertReview(\'fta\',\''+UI.esc(hsDisplay)+'\')">👨‍💼 관세사 상담</button>';
   h+='</div></div></div>';
+  S._costFTAResultHTML=h;
   el.innerHTML=h;
   S._lastFTAResult=r;
 }
@@ -6766,12 +6808,13 @@ function _renderFTAMultiResult(el,results,hsDisplay,value){
   h+='</tbody></table></div>';
   if(results.length>0&&results[0].best_fta)h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.1);font-size:12px;color:var(--ok)">🏆 최적 시장: <b>'+UI.esc(results[0].destination||'')+'</b> — '+UI.esc(results[0].best_fta||'')+' ('+(results[0].best_rate||0)+'%)</div>';
   h+='</div>';
+  S._costFTAResultHTML=h;
   el.innerHTML=h;
 }
 
 function ftaToCost(){
   var r=S._lastFTAResult;if(!r)return;
-  S._costTab='logistics';render();
+  saveCostInputs();setCostTab('logistics');
 }
 
 function pgCostProduct(){
