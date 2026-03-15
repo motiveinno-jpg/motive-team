@@ -3899,7 +3899,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='<div style="width:28px;height:28px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--bg)">'+U.esc(buyerName.charAt(0))+'</div>';
     h+='<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+U.esc(buyerName)+'</div><div style="font-size:9px;color:var(--w30)">채팅 가능</div></div>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.setPjTab(\'docs\')">📄 서류 보기</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.startVideoMeeting()">📞 화상미팅</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.startVideoMeeting()">🖥️ 화상미팅</button>';
     h+='</div>';
     /* Messages area with drag-drop */
     h+='<div id="pj-chat-scroll" class="pj-chat-messages" style="border:2px dashed transparent;transition:border-color .2s,background .2s" ondragover="event.preventDefault();this.style.borderColor=\'var(--pri)\';this.style.background=\'rgba(0,212,255,.03)\'" ondragleave="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'" ondrop="App.pjChatDrop(event)">';
@@ -4145,10 +4145,11 @@ function pjChatDrop(e){
   if(file.size>MAX_CHAT_FILE_MB*1024*1024){UI.toast('파일 크기 '+sizeMB+'MB — 최대 '+MAX_CHAT_FILE_MB+'MB까지 업로드 가능합니다','warn');return;}
   var ALLOWED=/\.(pdf|jpe?g|png|gif|webp|doc|docx|xls|xlsx|csv|ppt|pptx)$/i;
   if(!ALLOWED.test(file.name)){UI.toast('지원 형식: PDF, 이미지, 문서, 엑셀, PPT','warn');return;}
-  var path='chat/'+S.user.id+'/'+buyerId+'/'+Date.now()+'_'+file.name;
-  UI.toast('업로드 중...','info');
-  sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
-    if(r.error){UI.toast('업로드 실패','err');return;}
+  var safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  var path='chat/'+S.user.id+'/'+buyerId+'/'+Date.now()+'_'+safeName;
+  UI.toast('📎 업로드 중... ('+sizeMB+'MB)','info');
+  sb.storage.from('whistle-uploads').upload(path,file,{upsert:true}).then(function(r){
+    if(r.error){console.error('[chat-drop upload]',r.error);UI.toast('업로드 실패: '+(r.error.message||'스토리지 오류'),'err');return;}
     var url=sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;
     sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:file.name,sender_type:'seller',message_type:'file',file_url:url,channel:'platform',direction:'outbound'}).select().single().then(function(r2){
       if(r2.error){UI.toast('전송 실패','err');return;}
@@ -5111,7 +5112,8 @@ function savePjDocDraft(){
 }
 /* 화상미팅 — 플랫폼 선택형 허브 */
 function startVideoMeeting(){
-  var p=S.currentProject;if(!p){UI.toast('프로젝트를 선택해주세요','warn');return;}if(!S.user)return;
+  try{
+  var p=S.currentProject;if(!p){UI.toast('프로젝트를 선택해주세요','warn');return;}if(!S.user){UI.toast('로그인이 필요합니다','warn');return;}
   var _ubs=_getPjBuyerIds(p);
   var buyerId=S._pjChatBuyer||(p.buyer_id)||(_ubs.length?_ubs[0]:'')||'';
   if(!buyerId){UI.toast('먼저 바이어를 연결하세요','warn');return;}
@@ -5139,7 +5141,7 @@ function startVideoMeeting(){
       +'</label>';
   });
   m.innerHTML='<div style="background:var(--card);border-radius:var(--r);border:1px solid var(--bd-l);max-width:500px;width:95%;box-shadow:var(--shadow-lg);overflow:hidden">'
-    +'<div style="padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:15px">📞 화상미팅</span><span style="cursor:pointer;font-size:18px;color:var(--w40)" onclick="this.closest(\'.modal-overlay\').remove()">✕</span></div>'
+    +'<div style="padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:15px">🖥️ 화상미팅</span><span style="cursor:pointer;font-size:18px;color:var(--w40)" onclick="this.closest(\'.modal-overlay\').remove()">✕</span></div>'
     +'<div style="padding:20px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 12px;background:var(--w04);border-radius:8px"><div style="width:32px;height:32px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+UI.esc(buyerName.charAt(0))+'</div><div><div style="font-size:13px;font-weight:700">'+UI.esc(buyerName)+'</div><div style="font-size:11px;color:var(--w40)">바이어와 화상미팅</div></div></div>'
     /* 플랫폼 선택 */
@@ -5161,6 +5163,7 @@ function startVideoMeeting(){
     +'</div></div>';
   m.onclick=function(e){if(e.target===m)m.remove();};
   document.body.appendChild(m);
+  }catch(err){console.error('[startVideoMeeting]',err);UI.toast('화상미팅 열기 실패: '+err.message,'err');}
 }
 function _getVideoMeetUrl(roomId){
   var sel=document.querySelector('input[name=vm-platform]:checked');
@@ -7150,7 +7153,10 @@ function translateChatMsg(msgId,targetLang,batchAll){
   /* 전체 번역 모드 */
   if(batchAll&&!msgId){
     var msgs=S._pjChatMsgs||[];
-    msgs.forEach(function(m){if(m.sender_type==='buyer'&&m.id&&!String(m.id).startsWith('tmp_')&&m.message_type!=='system'){translateChatMsg(m.id,targetLang);}});
+    var buyerMsgs=msgs.filter(function(m){return m.sender_type==='buyer'&&m.id&&!String(m.id).startsWith('tmp_')&&m.message_type!=='system';});
+    if(!buyerMsgs.length){UI.toast('번역할 바이어 메시지가 없습니다','info');return;}
+    UI.toast('🌐 '+buyerMsgs.length+'건 번역 중...','info');
+    buyerMsgs.forEach(function(m){translateChatMsg(m.id,targetLang);});
     return;
   }
   var key=msgId+'_'+(targetLang||'en');
