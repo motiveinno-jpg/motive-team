@@ -434,7 +434,8 @@ function btnLoad(btn,loading){
 }
 
 var SB_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
-var sb=window.supabase.createClient('https://lylktgxngrlxmsldxdqj.supabase.co',SB_ANON_KEY);
+var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
+var sb=window.supabase.createClient(SB_URL,SB_ANON_KEY);
 var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'';window.RELAY_URL=RELAY_URL;
 var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://')){RELAY_URL=t;window.RELAY_URL=t;}}}).catch(function(){})})();
 function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetry(url,opts,retries,delay);});}
@@ -470,7 +471,10 @@ var U={
   fmtUSD:function(usd){if(usd==null)return'\u2014';var n=Number(usd);if(S.currency==='KRW'){var krw=n*(S.exchangeRate||1400);return Math.round(krw).toLocaleString('ko-KR')+'\uC6D0';}return'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});},
   toUSD:function(krw){return Number(krw)/(S.exchangeRate||1400);},
   toKRW:function(usd){return Number(usd)*(S.exchangeRate||1400);},
-  n:function(v){if(v==null)return'0';return Number(v).toLocaleString();}
+  n:function(v){if(v==null)return'0';return Number(v).toLocaleString();},
+  $:function(v,d){if(v==null)return'—';d=d!=null?d:2;var n=Number(v);return'$'+n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});},
+  W:function(v){if(v==null)return'—';return'₩'+Math.round(Number(v)).toLocaleString('ko-KR');},
+  fc:function(v,d){if(v==null)return'0';d=d!=null?d:2;var p=Number(v).toFixed(d).split('.');p[0]=Number(p[0]).toLocaleString();return p.join('.');}
 };
 
 /* === SEARCH/FILTER === */
@@ -1444,7 +1448,7 @@ function pgAForm(){
   var body='';
 
   if(step===1){
-    var usdShow=d.price_krw?'≈ $'+(Number(d.price_krw)/(S.exchangeRate||1400)).toFixed(2)+' USD':'';
+    var usdShow=d.price_krw?'≈ '+U.$(Number(d.price_krw)/(S.exchangeRate||1400))+' USD':'';
     body='<div class="card" style="margin-bottom:10px"><div class="card-h">📦 제품 정보</div><div class="card-b"><form id="af1">'+
       UI.inp('product_name','제품명',{placeholder:'예: 닥터지 레드 블레미쉬 수딩크림',value:d.product_name||'',required:true})+
       UI.sel('category','카테고리',['','K-Beauty','K-Food','K-Health','K-Fashion','K-Electronics','K-Living','Other'],d.category||'')+
@@ -1498,7 +1502,7 @@ function pgAForm(){
   return hdr+bar+body;
 }
 
-function updateUSD(v){var el=document.getElementById('usdCalc');if(el)el.textContent=v?'≈ $'+(Number(v)/(S.exchangeRate||1400)).toFixed(2)+' USD':'';S.analysisData.price_krw=v;}
+function updateUSD(v){var el=document.getElementById('usdCalc');if(el)el.textContent=v?'≈ '+U.$(Number(v)/(S.exchangeRate||1400))+' USD':'';S.analysisData.price_krw=v;}
 
 function aStep(n){
   var d=S.analysisData;
@@ -1655,7 +1659,7 @@ function _calcAlibabaSuitability(cat,price,sc,existCerts,needCerts,cd,mkts,d){
   /* 2. 가격대 적합도 (0~20) — 알리바바 B2B 적정 FOB */
   var priceScore=0;
   if(price>=1&&price<=50)priceScore=18;else if(price>50&&price<=200)priceScore=15;else if(price>200&&price<=500)priceScore=10;else if(price>500)priceScore=6;else priceScore=12;
-  score+=priceScore;factors.push({label:'가격 경쟁력',score:priceScore,max:20,detail:'FOB $'+Number(price||0).toFixed(1)+' → '+(priceScore>=15?'B2B 적정 가격대':'고가 제품 (MOQ 조정 필요)')});
+  score+=priceScore;factors.push({label:'가격 경쟁력',score:priceScore,max:20,detail:'FOB '+U.$(price||0,1)+' → '+(priceScore>=15?'B2B 적정 가격대':'고가 제품 (MOQ 조정 필요)')});
   if(priceScore<12)tips.push('알리바바는 B2B 중심이므로 FOB $1~$50 범위가 가장 반응이 좋습니다');
   /* 3. MOQ 적합도 (0~15) */
   var moq=d.moq||100;var moqScore=moq>=50&&moq<=5000?14:(moq<50?10:8);score+=moqScore;
@@ -1731,10 +1735,10 @@ function genReport(d){
   var existCerts=(d.existing_certs||[]);var needCerts=cd.certs.filter(function(c){var base=c.split(' ')[0];return existCerts.indexOf(base)<0&&existCerts.indexOf(c)<0;});
   return {
     overall_score:sc.overall,market_fit:sc.market_fit,competition:sc.competition,regulatory:sc.regulatory,price_competitiveness:sc.price_comp,brand_power:sc.brand_power,logistics_score:sc.logistics,
-    estimated_fob:price?'$'+price.toFixed(1)+'~$'+(price*1.4).toFixed(1):'$3.0~$8.0',hs_code:cd.hs,
+    estimated_fob:price?U.$(price,1)+'~'+U.$(price*1.4,1):'$3.0~$8.0',hs_code:cd.hs,
     hs_code_detail:hsDetail,
     fta_tariff_table:ftaTariffs,
-    duty_savings_estimate:ftaTariffs.length&&price?{annual_volume:'1,000 units',fob_per_unit:'$'+Number(price).toFixed(2),avg_mfn:ftaTariffs[0]?ftaTariffs[0].mfn:'6%',avg_fta:ftaTariffs[0]?ftaTariffs[0].pref:'0%',estimated_annual_saving:'$'+Math.round(Number(price)*1000*0.05).toLocaleString()}:null,
+    duty_savings_estimate:ftaTariffs.length&&price?{annual_volume:'1,000 units',fob_per_unit:U.$(price),avg_mfn:ftaTariffs[0]?ftaTariffs[0].mfn:'6%',avg_fta:ftaTariffs[0]?ftaTariffs[0].pref:'0%',estimated_annual_saving:'$'+Math.round(Number(price)*1000*0.05).toLocaleString()}:null,
     required_certs:needCerts,existing_certs:existCerts,
     recommended_markets:mkts,market_analysis:mktAnalysis,
     industry_trend:cd.trend,recommended_channels:cd.channels,
@@ -2807,7 +2811,7 @@ function showDirectProjectForm(){
   body+='<div class="form-group"><label class="form-label">카테고리</label><select class="form-input" name="category"><option value="">선택</option>'+catOpts+'</select></div>';
   body+='</div>';
   body+='<div class="grid-2" style="gap:10px">';
-  var _dpC=_dpCur||'USD';body+='<div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:6px">FOB 단가 <span id="dpCurLabel" style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:700;cursor:pointer" onclick="App.toggleDirectPjCur()" data-tip="통화 전환 : 클릭하면 $/₩ 전환됩니다">'+(_dpC==='USD'?'$ USD':'₩ KRW')+'</span></label><div style="position:relative"><span id="dpPfx" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:800;color:var(--pri);pointer-events:none;opacity:.7">'+(_dpC==='USD'?'$':'₩')+'</span><input class="form-input" type="number" step="0.01" name="fob_price" id="dpFobPrice" placeholder="'+(_dpC==='USD'?'예: 8.50':'예: 11,900')+'" style="padding-left:28px" oninput="App.showDirectPjConvert()"><div id="dpConvert" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--w30);pointer-events:none"></div></div></div>';
+  var _dpC=_dpCur||'USD';body+='<div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:6px">FOB 단가 <span id="dpCurLabel" style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:700;cursor:pointer" onclick="App.toggleDirectPjCur()" data-tip="통화 전환 : 클릭하면 $/₩ 전환됩니다">'+(_dpC==='USD'?'<b>$ USD</b> ↔ ₩ KRW':'$ USD ↔ <b>₩ KRW</b>')+'</span></label><div style="position:relative"><span id="dpPfx" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:800;color:var(--pri);pointer-events:none;opacity:.7">'+(_dpC==='USD'?'$':'₩')+'</span><input class="form-input" type="number" step="0.01" name="fob_price" id="dpFobPrice" placeholder="'+(_dpC==='USD'?'예: 8.50':'예: 11,900')+'" style="padding-left:28px" oninput="App.showDirectPjConvert()"><div id="dpConvert" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--w30);pointer-events:none"></div></div></div>';
   body+=UI.inp('moq','최소주문수량 (MOQ)',{type:'number',placeholder:'예: 500'});
   body+='</div>';
   body+='<div class="form-group"><label class="form-label">타겟 시장 (복수 선택 가능)</label>';
@@ -2823,16 +2827,16 @@ function toggleDirectPjCur(){
   var inp=document.getElementById('dpFobPrice');var lbl=document.getElementById('dpCurLabel');if(!inp||!lbl)return;
   var v=parseFloat(inp.value)||0;var rate=S.exchangeRate||1400;
   var pfx=document.getElementById('dpPfx');
-  if(_dpCur==='USD'){_dpCur='KRW';lbl.textContent='₩ KRW';inp.step='100';inp.placeholder='예: 12,000';if(pfx)pfx.textContent='₩';if(v)inp.value=Math.round(v*rate);}
-  else{_dpCur='USD';lbl.textContent='$ USD';inp.step='0.01';inp.placeholder='예: 8.50';if(pfx)pfx.textContent='$';if(v)inp.value=(v/rate).toFixed(2);}
+  if(_dpCur==='USD'){_dpCur='KRW';lbl.innerHTML='$ USD ↔ <b>₩ KRW</b>';inp.step='100';inp.placeholder='예: 12,000';if(pfx)pfx.textContent='₩';if(v)inp.value=Math.round(v*rate);}
+  else{_dpCur='USD';lbl.innerHTML='<b>$ USD</b> ↔ ₩ KRW';inp.step='0.01';inp.placeholder='예: 8.50';if(pfx)pfx.textContent='$';if(v)inp.value=(v/rate).toFixed(2);}
   showDirectPjConvert();
 }
 function showDirectPjConvert(){
   var inp=document.getElementById('dpFobPrice');var cv=document.getElementById('dpConvert');if(!inp||!cv)return;
   var v=parseFloat(inp.value)||0;if(!v){cv.textContent='';return;}
   var rate=S.exchangeRate||1400;
-  if(_dpCur==='USD')cv.textContent='≈ ₩'+Math.round(v*rate).toLocaleString();
-  else cv.textContent='≈ $'+(v/rate).toFixed(2);
+  if(_dpCur==='USD')cv.textContent='≈ '+U.W(v*rate);
+  else cv.textContent='≈ '+U.$(v/rate);
 }
 function submitDirectProject(){
   var d=UI.fd('#directPjForm');
@@ -2973,7 +2977,7 @@ function pgProducts(){
       left+='<div style="width:40px;height:40px;border-radius:8px;background:var(--w08);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center">'+(p.images&&p.images[0]?'<img src="'+U.esc(p.images[0])+'" style="width:100%;height:100%;object-fit:cover">':'<span style="font-size:18px">📦</span>')+'</div>';
       left+='<div style="flex:1;min-width:0">';
       left+='<div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(p.name_ko||p.name_en||'')+'</div>';
-      left+='<div style="font-size:11px;color:var(--w40);margin-top:2px">'+(p.category||'미설정')+' · '+(p.fob_price?'$'+p.fob_price:'FOB 미설정')+'</div>';
+      left+='<div style="font-size:11px;color:var(--w40);margin-top:2px">'+(p.category||'미설정')+' · '+(p.fob_price?U.$(p.fob_price):'FOB 미설정')+'</div>';
       left+='</div>';
       if(_pub)left+='<div style="width:6px;height:6px;border-radius:50%;background:var(--ok);flex-shrink:0" title="공개 중"></div>';
       left+='</div></div>';
@@ -3006,7 +3010,7 @@ function _pgProdDetail(p){
   /* Product info grid */
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px">';
   h+='<div class="card" style="margin:0"><div class="card-b" style="padding:10px;text-align:center"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">카테고리</div><div style="font-size:14px;font-weight:700">'+(p.category||'미설정')+'</div></div></div>';
-  h+='<div class="card" style="margin:0"><div class="card-b" style="padding:10px;text-align:center"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">FOB 가격</div><div style="font-size:14px;font-weight:700;color:var(--pri)">'+(p.fob_price?'$'+p.fob_price:'미설정')+'</div></div></div>';
+  h+='<div class="card" style="margin:0"><div class="card-b" style="padding:10px;text-align:center"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">FOB 가격</div><div style="font-size:14px;font-weight:700;color:var(--pri)">'+(p.fob_price?U.$(p.fob_price):'미설정')+'</div></div></div>';
   h+='<div class="card" style="margin:0"><div class="card-b" style="padding:10px;text-align:center"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">MOQ</div><div style="font-size:14px;font-weight:700">'+(p.moq||'—')+'</div></div></div>';
   h+='<div class="card" style="margin:0"><div class="card-b" style="padding:10px;text-align:center"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">HS 코드</div><div style="font-size:14px;font-weight:700">'+(p.hs_code||'미설정')+'</div></div></div>';
   h+='<div class="card" style="margin:0"><div class="card-b" style="padding:10px;text-align:center"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">리드타임</div><div style="font-size:14px;font-weight:700">'+(p.lead_time||'미설정')+'</div></div></div>';
@@ -3067,7 +3071,7 @@ function showPF(p){
   p=p||{};var body='<form id="pf">'+
     '<div style="margin-bottom:10px"><label class="form-label">대표 이미지</label><div style="display:flex;gap:12px;align-items:start"><div style="width:100px;height:100px;border-radius:10px;border:2px dashed var(--bd-l);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;flex-shrink:0;background:var(--sf)" onclick="document.getElementById(\'prodImg\').click()" id="prodImgBox">'+(p.images&&p.images[0]?'<img src="'+p.images[0]+'" style="width:100%;height:100%;object-fit:cover">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:24px">📷</div><div style="font-size:10px">클릭</div></div>')+'</div><div style="flex:1"><input class="form-input" name="image_url" placeholder="이미지 URL 직접 입력" value="'+(p.images&&p.images[0]||'')+'" oninput="App.prevImg(this.value)"><div style="font-size:10px;color:var(--w20);margin-top:4px">이미지 파일 선택 또는 URL 입력</div><input type="file" id="prodImg" accept="image/*" style="display:none" onchange="App.prodImgFile(this.files[0])"></div></div></div>'+
     '<div class="grid-2">'+UI.inp('name_ko','제품명(한글)*',{value:p.name_ko||'',required:true})+UI.inp('name_en','제품명(영문)',{value:p.name_en||''})+'</div>'+UI.ta('description_en','설명(영문)',{value:p.description_en||''})+(p.id?'<div style="margin:-8px 0 14px"><button class="btn btn-acc btn-sm" onclick="App.genCatalogEN(\''+p.id+'\')">AI 영문 카탈로그 생성</button></div>':'')+'<div class="grid-2">'+UI.sel('category','카테고리',U.CAT,p.category||'')+UI.inp('hs_code','HS Code',{value:p.hs_code||''})+'</div>'+
-    '<div class="form-group"><label class="form-label">단가 (₩ 원화 → USD 자동 환산)</label><div style="display:flex;gap:10px;align-items:center"><div style="flex:1;position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--w40);font-size:13px">₩</span><input class="form-input" name="price_krw" type="number" value="'+(p.fob_price?Math.round(p.fob_price*(S.exchangeRate||1400)):'')+'" placeholder="7,000" style="padding-left:28px" oninput="var u=document.querySelector(\'[name=fob_price]\');if(u)u.value=(this.value/(window._exRate||1400)).toFixed(2);var s=document.getElementById(\'pusd\');if(s)s.textContent=this.value?\'≈ $\'+(this.value/(window._exRate||1400)).toFixed(2):\'\';"></div><span style="font-size:13px;color:var(--pri);font-weight:600;font-family:JetBrains Mono;min-width:80px" id="pusd">'+(p.fob_price?'≈ $'+p.fob_price:'')+'</span><input type="hidden" name="fob_price" value="'+(p.fob_price||'')+'"></div></div>'+
+    '<div class="form-group"><label class="form-label">단가 (₩ 원화 → USD 자동 환산)</label><div style="display:flex;gap:10px;align-items:center"><div style="flex:1;position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--w40);font-size:13px">₩</span><input class="form-input" name="price_krw" type="number" value="'+(p.fob_price?Math.round(p.fob_price*(S.exchangeRate||1400)):'')+'" placeholder="7,000" style="padding-left:28px" oninput="var u=document.querySelector(\'[name=fob_price]\');if(u)u.value=(this.value/(window._exRate||1400)).toFixed(2);var s=document.getElementById(\'pusd\');if(s)s.textContent=this.value?\'≈ \'+U.$(this.value/(window._exRate||1400)):\'\';"></div><span style="font-size:13px;color:var(--pri);font-weight:600;font-family:JetBrains Mono;min-width:80px" id="pusd">'+(p.fob_price?'≈ $'+p.fob_price:'')+'</span><input type="hidden" name="fob_price" value="'+(p.fob_price||'')+'"></div></div>'+
     '<div class="grid-2">'+UI.inp('moq','MOQ',{type:'number',value:p.moq||''})+UI.inp('lead_time','리드타임',{value:p.lead_time||''})+'</div></form>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'pm',title:p.id?'제품 수정':'제품 등록',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'pm\')">취소</button><button class="btn btn-pri" onclick="App.saveP(\''+(p.id||'')+'\')">저장</button>',width:'640px'}));UI.showModal('pm');
 }
@@ -3261,7 +3265,7 @@ function pgPjDetail(){
       h+='<div style="margin-top:8px;padding:8px 12px;background:var(--w04);border-radius:var(--r-s);display:flex;align-items:center;gap:10px">';
       h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(_lbn.charAt(0))+'</div>';
       h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">'+U.esc(_lbn)+'</div><div style="font-size:11px;color:var(--w40)">'+(_lb.country?U.cl(_lb.country):'')+'</div></div>';
-      h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openBuyerDrawer(\''+p.buyer_id+'\')">💬 채팅</button></div>';
+      h+='</div>';
     }
   }
   h+='</div>';
@@ -3375,6 +3379,24 @@ function renderPjChat(p,viewStage,uniqueBuyers,stRM){
     var isSystem=m.message_type==='system';
     if(isSystem){
       h+='<div style="text-align:center;padding:4px 0"><div style="display:inline-block;padding:4px 12px;border-radius:12px;background:var(--w04);font-size:11px;color:var(--w40)">'+UI.esc(body)+'</div></div>';
+    }else if(m.message_type==='document'){
+      /* 문서 카드 렌더링 */
+      var docData={};try{docData=JSON.parse(body);}catch(e){}
+      h+='<div style="display:flex;justify-content:flex-end;align-items:flex-end;gap:4px">';
+      h+='<div style="max-width:280px;border-radius:12px;overflow:hidden;border:1px solid rgba(0,212,255,.2);background:var(--w04)">';
+      h+='<div style="padding:12px 14px;background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(255,184,0,.05))">';
+      h+='<div style="font-size:14px;font-weight:700;margin-bottom:2px">'+(docData.title||'📄 Document')+'</div>';
+      h+='<div style="font-size:11px;color:var(--w40)">'+(docData.subtitle||'')+'</div>';
+      h+='</div>';
+      h+='<div style="padding:10px 14px">';
+      if(docData.items_summary)h+='<div style="font-size:11px;color:var(--w60);margin-bottom:6px">📦 '+UI.esc(docData.items_summary)+'</div>';
+      if(docData.total)h+='<div style="font-size:13px;font-weight:700;color:var(--acc);margin-bottom:4px">총액: '+U.$(docData.total)+'</div>';
+      if(docData.payment_terms)h+='<div style="font-size:10px;color:var(--w40)">💳 '+UI.esc(docData.payment_terms)+'</div>';
+      if(docData.incoterms)h+='<div style="font-size:10px;color:var(--w40)">🚢 '+UI.esc(docData.incoterms)+'</div>';
+      h+='<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-pri btn-sm" style="font-size:10px;flex:1" onclick="App.setPjTab(\'docs\')">서류 보기</button><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.genDocPDF(\''+UI.esc(docData.doc_number||'')+'\')">PDF</button></div>';
+      h+='</div>';
+      h+='<div style="font-size:9px;color:var(--w20);padding:0 14px 6px;text-align:right">'+new Date(m.created_at).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})+'</div>';
+      h+='</div></div>';
     }else{
       h+='<div style="display:flex;justify-content:'+(isSeller?'flex-end':'flex-start')+';align-items:flex-end;gap:4px">';
       if(!isSeller)h+='<div style="width:26px;height:26px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(buyerName.charAt(0))+'</div>';
@@ -3453,7 +3475,7 @@ function renderPjStageContent(p,viewStage,vi,ci,stages,sp,rm,a,notes){
       h+='<div class="card" style="margin-bottom:10px"><div class="card-h"><span>📦 등록 제품</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'products\')">관리 →</button></div><div class="card-b">';
       h+='<div style="display:flex;gap:12px"><div style="flex:1"><div style="font-size:14px;font-weight:700">'+U.esc(prod.name_en||prod.name_ko||'')+'</div>';
       if(prod.hs_code)h+='<div style="font-size:12px;color:var(--w40);margin-top:4px">HS코드: <strong>'+U.esc(prod.hs_code)+'</strong></div>';
-      if(prod.fob_price)h+='<div style="font-size:12px;color:var(--acc);margin-top:2px">FOB: $'+prod.fob_price+'</div>';
+      if(prod.fob_price)h+='<div style="font-size:12px;color:var(--acc);margin-top:2px">FOB: '+U.$(prod.fob_price)+'</div>';
       var _pRvs=(S.receivedReviews||[]).filter(function(rv){return rv.product_id===prod.id;});
       if(_pRvs.length){var _pAvg=(_pRvs.reduce(function(s,r){return s+r.rating;},0)/_pRvs.length).toFixed(1);h+='<div style="font-size:12px;color:var(--acc);margin-top:4px;font-weight:600">\u2B50 '+_pAvg+' ('+_pRvs.length+')</div>';}
       h+='</div></div></div></div>';
@@ -3481,11 +3503,7 @@ function renderPjStageContent(p,viewStage,vi,ci,stages,sp,rm,a,notes){
   else if(viewStage==='certification'){
     h+=pgCertTracker(p);
     /* 인라인 도구: 인증 비용 + 가이드 */
-    h+='<div class="card" style="margin-top:14px;border-color:rgba(255,184,0,.15)"><div class="card-h"><span>💡 인증 도구</span></div><div class="card-b">';
-    h+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-    h+='<button class="btn btn-ghost btn-sm" onclick="App.setCostTab(\'product\');App.nav(\'costsim\')">💰 인증비용 포함 원가계산</button>';
-    h+='<button class="btn btn-ghost btn-sm" onclick="App.getCertGuide(\''+p.id+'\',0)">📖 인증 가이드</button>';
-    h+='</div></div></div>';
+    h+=pgCertCostSummary(p);
   }
 
   /* ===== ALIBABA LISTING ===== */
@@ -3880,7 +3898,7 @@ function _renderStageTools(p,stage,a,rm){
     h+='<div class="card" style="border-color:rgba(255,184,0,.15)"><div class="card-h"><span>🏅 인증 준비</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'💰 인증 비용 확인\',\'product\')" data-tip="인증 비용 : 해당 국가 인증 취득에 필요한 예상 비용">💰 인증 비용 확인</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.getCertGuide()" data-tip="인증 절차 : 수출국에 필요한 인증 종류와 진행 절차 안내">📖 인증 절차 안내</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.setPjTab(\'certification\')" data-tip="인증 절차 : 인증 추적 탭에서 AI 분석을 실행하세요">📖 인증 절차 안내</button>';
     h+='</div></div></div>';
   }else if(stage==='buyer_search'){
     h+='<div class="card" style="border-color:rgba(0,212,255,.12)"><div class="card-h"><span>🔍 바이어 찾기</span></div><div class="card-b" style="padding:10px">';
@@ -3995,7 +4013,7 @@ function _renderStageToolsInline(stage,a){
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'💰 수출가 계산\',\'product\')" data-tip="FOB 수출가 : 제품 원가 기반 수출 가격을 계산합니다">💰 수출가 계산</button>';
   }else if(stage==='certification'){
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'💰 인증 비용 확인\',\'product\')" data-tip="인증 비용 : 해당 국가 인증 취득에 필요한 예상 비용">💰 인증 비용 확인</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.getCertGuide()" data-tip="인증 절차 : 수출국에 필요한 인증 종류와 진행 절차 안내">📖 인증 절차 안내</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.setPjTab(\'certification\')" data-tip="인증 절차 : 인증 추적 탭에서 AI 분석을 실행하세요">📖 인증 절차 안내</button>';
   }else if(stage==='buyer_search'){
     h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'marketplace\',\'🤖 AI 바이어 찾기\',null,{width:680,height:520})" data-tip="AI 바이어 매칭 : 제품에 맞는 해외 바이어를 AI가 찾아줍니다">🤖 바이어 찾기</button>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.showBF()" data-tip="바이어 등록 : 이미 알고 있는 바이어 정보를 직접 입력합니다">+ 바이어 등록</button>';
@@ -4261,11 +4279,11 @@ function _pjTabCost(p){
 
   /* 개당 단가 요약 */
   h+='<div style="margin-top:12px;padding:10px;border-radius:var(--r-xs);background:var(--bg);display:flex;gap:20px;flex-wrap:wrap">';
-  h+='<div><div style="font-size:9px;color:var(--w30)">FOB 단가</div><div style="font-size:16px;font-weight:800;color:var(--pri)">$'+_fob.toFixed(2)+'</div><div style="font-size:9px;color:var(--w20)">₩'+(Math.round(_fob*rate)).toLocaleString()+'</div></div>';
+  h+='<div><div style="font-size:9px;color:var(--w30)">FOB 단가</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+U.$(_fob)+'</div><div style="font-size:9px;color:var(--w20)">'+U.W(_fob*rate)+'</div></div>';
   h+='<div style="color:var(--w20);font-size:20px;display:flex;align-items:center">→</div>';
-  h+='<div><div style="font-size:9px;color:var(--w30)">CIF 단가</div><div style="font-size:16px;font-weight:800;color:var(--w90)">$'+(cifTotal/_qty).toFixed(2)+'</div><div style="font-size:9px;color:var(--w20)">₩'+Math.round((cifTotal/_qty)*rate).toLocaleString()+'</div></div>';
+  h+='<div><div style="font-size:9px;color:var(--w30)">CIF 단가</div><div style="font-size:16px;font-weight:800;color:var(--w90)">'+U.$(cifTotal/_qty)+'</div><div style="font-size:9px;color:var(--w20)">'+U.W((cifTotal/_qty)*rate)+'</div></div>';
   h+='<div style="color:var(--w20);font-size:20px;display:flex;align-items:center">→</div>';
-  h+='<div><div style="font-size:9px;color:var(--w30)">최종 단가 (DDP)</div><div style="font-size:16px;font-weight:800;color:var(--acc)">$'+landedPerUnit.toFixed(2)+'</div><div style="font-size:9px;color:var(--w20)">₩'+Math.round(landedPerUnit*rate).toLocaleString()+'</div></div>';
+  h+='<div><div style="font-size:9px;color:var(--w30)">최종 단가 (DDP)</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+U.$(landedPerUnit)+'</div><div style="font-size:9px;color:var(--w20)">'+U.W(landedPerUnit*rate)+'</div></div>';
   h+='</div>';
   h+='</div>';
 
@@ -4454,7 +4472,7 @@ function _pjTabAI(p){
     h+='<div class="card" style="margin-bottom:12px"><div class="card-h"><span>📦 제품 정보</span><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.nav(\'products\')">관리 →</button></div><div class="card-b" style="padding:10px 14px">';
     h+='<div style="display:flex;align-items:center;gap:12px"><div style="font-size:13px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+U.esc(prod.name_en||prod.name_ko||'')+'</div>';
     if(prod.hs_code)h+='<span style="font-size:11px;color:var(--w40)">HS: <b style="color:var(--w70)">'+U.esc(prod.hs_code)+'</b></span>';
-    if(prod.fob_price)h+='<span style="font-size:11px;color:var(--acc)">FOB: $'+prod.fob_price+'</span>';
+    if(prod.fob_price)h+='<span style="font-size:11px;color:var(--acc)">FOB: '+U.$(prod.fob_price)+'</span>';
     h+='</div></div></div>';
   }
   /* Notes */
@@ -4517,7 +4535,7 @@ function _pjTabDocs(p){
     var stColor=d.status==='approved'?'var(--ok)':d.status==='sent'?'var(--pri)':'var(--acc)';
     var stLabel=d.status==='approved'?'승인':d.status==='sent'?'발송':'초안';
     var buyerName='';if(d.buyer_id){var bb=S.buyers.find(function(b){return b.id===d.buyer_id;});if(bb)buyerName=bb.company_name||bb.contact_name||'';}
-    h+='<div class="card" style="margin-bottom:8px"><div style="display:flex;align-items:center;gap:12px;padding:14px"><span style="font-size:22px">'+icon+'</span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">'+U.esc(d.doc_number||label)+'</div><div style="font-size:12px;color:var(--w40)">'+label+(buyerName?' · '+U.esc(buyerName):'')+' · '+new Date(d.created_at).toLocaleDateString()+'</div></div><span style="font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(0,212,255,.1);color:'+stColor+';font-weight:600">'+stLabel+'</span></div></div>';
+    h+='<div class="card" style="margin-bottom:8px"><div style="display:flex;align-items:center;gap:12px;padding:14px"><span style="font-size:22px">'+icon+'</span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">'+U.esc(d.doc_number||label)+'</div><div style="font-size:12px;color:var(--w40)">'+label+(buyerName?' · '+U.esc(buyerName):'')+' · '+new Date(d.created_at).toLocaleString('ko',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</div></div><span style="font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(0,212,255,.1);color:'+stColor+';font-weight:600">'+stLabel+'</span></div></div>';
   });
   return h;
 }
@@ -4569,23 +4587,45 @@ function openPjDocModal(docType){
   body+='<div style="flex:1;min-width:130px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">판매단가 (₩)</label><input class="form-input" id="pjDocPriceKRW" type="number" step="1" placeholder="예: 12,000" oninput="App.calcDocMargin()" style="font-size:13px"></div>';
   body+='</div>';
   body+='<div id="pjDocMarginResult" style="margin-top:10px;padding:10px 12px;border-radius:6px;background:var(--w08);font-size:12px;color:var(--w60)">원가와 판매가를 입력하면 마진율이 표시됩니다</div>';
-  body+='<button type="button" class="btn btn-pri btn-sm" style="font-size:11px;margin-top:8px;display:none" id="pjDocApplyMargin" onclick="App.applyMarginToItems()">📥 첫 번째 품목에 반영</button>';
+  body+='<div id="pjDocApplyMargin" style="display:none;margin-top:8px"><select class="form-input" id="pjDocApplyTarget" style="width:auto;display:inline-block;font-size:11px;padding:4px 8px;margin-right:6px"></select><button type="button" class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.applyMarginToItems()">📥 선택 품목에 반영</button></div>';
   body+='</div>';
   /* 결제 조건 — 선금/잔금 % */
   body+='<div style="margin-bottom:10px">';
   body+='<label style="font-size:11px;font-weight:700;color:var(--w70);display:block;margin-bottom:6px">결제 조건</label>';
   body+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-  body+='<select class="form-input" id="pjDocPayMethod" style="width:120px;font-size:12px" onchange="App.updatePaymentTerms()"><option value="TT">T/T 송금</option><option value="LC">L/C 신용장</option><option value="DP">D/P 추심</option><option value="DA">D/A 인수</option></select>';
-  body+='<div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--w50)">선금</span><input class="form-input" id="pjDocDeposit" type="number" min="0" max="100" value="30" style="width:56px;text-align:center;font-size:12px" onchange="App.updatePaymentTerms()"><span style="font-size:11px;color:var(--w50)">%</span></div>';
-  body+='<div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--w50)">잔금</span><input class="form-input" id="pjDocBalance" type="number" min="0" max="100" value="70" style="width:56px;text-align:center;font-size:12px" onchange="App.updatePaymentTerms()"><span style="font-size:11px;color:var(--w50)">%</span></div>';
-  body+='<select class="form-input" id="pjDocBalanceTiming" style="width:140px;font-size:11px" onchange="App.updatePaymentTerms()"><option value="before_shipment">선적 전 지급</option><option value="after_bl">B/L 수취 후</option><option value="after_arrival">도착 후 지급</option><option value="after_inspection">검수 완료 후</option></select>';
+  body+='<select class="form-input" id="pjDocPayMethod" style="width:auto;min-width:140px;font-size:11px" onchange="App.updatePaymentTerms()"><option value="TT">T/T 송금 (전신환)</option><option value="LC">L/C 신용장 (은행보증)</option><option value="DP">D/P 추심 (서류상환)</option><option value="DA">D/A 인수 (기한부)</option></select>';
+  body+='<div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--w50)">선금</span><input class="form-input" id="pjDocDeposit" type="number" min="0" max="100" value="30" style="width:72px;text-align:center;font-size:12px;padding:6px 4px" onchange="App.updatePaymentTerms()"><span style="font-size:11px;color:var(--w50)">%</span></div>';
+  body+='<div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--w50)">잔금</span><input class="form-input" id="pjDocBalance" type="number" min="0" max="100" value="70" style="width:72px;text-align:center;font-size:12px;padding:6px 4px" onchange="App.updatePaymentTerms()"><span style="font-size:11px;color:var(--w50)">%</span></div>';
+  body+='<select class="form-input" id="pjDocBalanceTiming" style="width:auto;min-width:140px;font-size:11px" onchange="App.updatePaymentTerms()"><option value="before_shipment">선적 전 지급</option><option value="after_bl">B/L 수취 후 (선하증권)</option><option value="after_arrival">도착 후 지급</option><option value="after_inspection">검수 완료 후</option></select>';
   body+='</div>';
   body+='<input type="hidden" id="payment_terms" value="T/T 30% deposit, 70% before shipment">';
+  body+='<div style="margin-top:6px;padding:8px 10px;border-radius:6px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.6">';
+  body+='<b style="color:var(--w60)">결제 용어 설명</b><br>';
+  body+='• <b>T/T 송금</b>: 은행 전신환 송금. 가장 일반적. 선금+잔금 분리 지급<br>';
+  body+='• <b>L/C 신용장</b>: 은행이 지급을 보증. 신규 거래처에 안전하지만 수수료 발생<br>';
+  body+='• <b>D/P 추심</b>: 서류와 상환으로 대금 수취. 신용장보다 저렴하나 위험 있음<br>';
+  body+='• <b>D/A 인수</b>: 기한부 지급. 수입자가 인수 후 만기에 지급 (외상 위험)<br>';
+  body+='• <b>B/L (선하증권)</b>: 선사가 발행하는 화물 수령증. 소유권 증빙 서류';
   body+='</div>';
-  body+='<div class="grid-2" style="gap:10px">';
-  body+=UI.inp('incoterms','인코텀즈',{value:'FOB Busan'});
-  body+='<div></div>';
   body+='</div>';
+  body+='<div style="margin-bottom:10px">';
+  body+='<label style="font-size:11px;font-weight:700;color:var(--w70);display:block;margin-bottom:6px">인코텀즈 <span style="font-size:10px;font-weight:400;color:var(--w30)">(가격 조건 — 위험·비용 부담 범위)</span></label>';
+  body+='<select class="form-input" name="incoterms" style="font-size:12px">';
+  body+='<option value="FOB Busan" selected>FOB — 본선인도 (수출항까지 비용 부담, 선적 후 위험은 바이어)</option>';
+  body+='<option value="EXW Factory">EXW — 공장인도 (공장 출고 후 모든 비용·위험 바이어 부담)</option>';
+  body+='<option value="CIF">CIF — 운임·보험료포함 (목적항까지 운임+보험 셀러 부담)</option>';
+  body+='<option value="CFR">CFR — 운임포함 (목적항까지 운임만 셀러 부담, 보험 바이어)</option>';
+  body+='<option value="DDP">DDP — 관세지급인도 (바이어 문앞까지 모든 비용 셀러 부담)</option>';
+  body+='<option value="DAP">DAP — 도착장소인도 (목적지까지 셀러 부담, 관세는 바이어)</option>';
+  body+='<option value="FCA">FCA — 운송인인도 (지정장소에서 운송인에게 인도)</option>';
+  body+='</select>';
+  body+='<div style="margin-top:6px;padding:8px 10px;border-radius:6px;background:rgba(255,184,0,.04);border:1px solid rgba(255,184,0,.1);font-size:10px;color:var(--w50);line-height:1.6">';
+  body+='<b style="color:var(--acc)">💡 인코텀즈별 판매가 구성 가이드</b><br>';
+  body+='• <b>FOB</b>: 제조원가 + 포장비 + 국내운송 + 통관비 + 수출항 부두비 + 마진<br>';
+  body+='• <b>CIF</b>: FOB 가격 + 해상운임 + 적하보험료<br>';
+  body+='• <b>EXW</b>: 제조원가 + 포장비 + 마진 (가장 단순, 나머지 바이어 부담)<br>';
+  body+='• <b>DDP</b>: CIF + 수입관세 + 목적지 내륙운송 (셀러 부담 최대, 위험 주의)';
+  body+='</div></div>';
   body+=UI.ta('notes','비고',{placeholder:'추가 사항을 입력하세요',rows:3});
   /* SC 계약서 전문 조항 */
   if(docType==='sc'){
@@ -4607,7 +4647,7 @@ function openPjDocModal(docType){
     body+='</div>';
   }
   body+='</form>';
-  var footerBtns='<button class="btn btn-ghost" onclick="App.closeModal(\'pjdm\')">취소</button><button class="btn btn-pri" onclick="App.submitPjDoc()">📤 서류 생성 & 전송</button>';
+  var footerBtns='<button class="btn btn-ghost" onclick="App.closeModal(\'pjdm\')">취소</button><button class="btn btn-ghost" onclick="App.savePjDocDraft()" style="color:var(--acc)">💾 임시 저장</button><button class="btn btn-pri" onclick="App.submitPjDoc()">📤 서류 생성 & 전송</button>';
   /* 기존 모달 제거 */
   var _oldPjdm=document.getElementById('pjdm');if(_oldPjdm)_oldPjdm.remove();
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'pjdm',title:'📄 '+(typeNames[docType]||docType.toUpperCase())+' 작성',body:body,footer:footerBtns,width:docType==='sc'?'720px':'640px'}));
@@ -4631,6 +4671,7 @@ function addPjDocItem(){
   var el=document.getElementById('pjDocItems');if(!el)return;
   el.insertAdjacentHTML('beforeend',_pjDocItemRow(c,'','','',true));
   S._pjDocItemCount=c+1;
+  _updateApplyTargetDropdown();
 }
 function toggleItemCur(span){
   var cur=span.getAttribute('data-cur');
@@ -4660,7 +4701,7 @@ function showPriceConvert(input){
   var krwPerUsd=_fxRate>0?1/_fxRate:1350;
   var cur=curSpan.getAttribute('data-cur');
   if(cur==='USD'){span.textContent='≈ ₩'+Math.round(val*krwPerUsd).toLocaleString();}
-  else{span.textContent='≈ $'+(val/krwPerUsd).toFixed(2);}
+  else{span.textContent='≈ '+U.$(val/krwPerUsd);}
 }
 function calcDocMargin(){
   var costEl=document.getElementById('pjDocCostKRW');
@@ -4680,23 +4721,26 @@ function calcDocMargin(){
   var color=parseFloat(marginPct)>=30?'var(--ok)':parseFloat(marginPct)>=15?'var(--acc)':'var(--err)';
   resEl.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">'+
     '<div><span style="color:var(--w40)">마진:</span> <b style="color:'+color+'">₩'+margin.toLocaleString()+' ('+marginPct+'%)</b></div>'+
-    '<div style="border-left:1px solid var(--bd);padding-left:14px"><span style="color:var(--w40)">달러 환산:</span> <span style="color:var(--w60)">원가 <b>$'+costUSD+'</b> → 판매 <b>$'+priceUSD+'</b> (마진 <b style="color:'+color+'">$'+marginUSD+'</b>)</span></div>'+
+    '<div style="border-left:1px solid var(--bd);padding-left:14px"><span style="color:var(--w40)">달러 환산:</span> <span style="color:var(--w60)">원가 <b>$'+U.fc(costUSD)+'</b> → 판매 <b>$'+U.fc(priceUSD)+'</b> (마진 <b style="color:'+color+'">$'+U.fc(marginUSD)+'</b>)</span></div>'+
     '</div>'+
     '<div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap">'+
-    '<div><span style="color:var(--w40)">100개 수익:</span> <b style="color:'+color+'">₩'+(margin*100).toLocaleString()+' ($'+(parseFloat(marginUSD)*100).toFixed(0)+')</b></div>'+
-    '<div><span style="color:var(--w40)">1,000개 수익:</span> <b style="color:'+color+'">₩'+(margin*1000).toLocaleString()+' ($'+(parseFloat(marginUSD)*1000).toFixed(0)+')</b></div>'+
+    '<div><span style="color:var(--w40)">100개 수익:</span> <b style="color:'+color+'">₩'+(margin*100).toLocaleString()+' ('+U.$(parseFloat(marginUSD)*100,0)+')</b></div>'+
+    '<div><span style="color:var(--w40)">1,000개 수익:</span> <b style="color:'+color+'">₩'+(margin*1000).toLocaleString()+' ('+U.$(parseFloat(marginUSD)*1000,0)+')</b></div>'+
     '</div>';
   var applyBtn=document.getElementById('pjDocApplyMargin');
-  if(applyBtn)applyBtn.style.display='inline-flex';
+  if(applyBtn)applyBtn.style.display='flex';
+  _updateApplyTargetDropdown();
 }
 function applyMarginToItems(){
   var priceEl=document.getElementById('pjDocPriceKRW');
   if(!priceEl||!priceEl.value){UI.toast('판매가를 먼저 입력하세요','warn');return;}
   var priceKRW=parseFloat(priceEl.value)||0;
-  /* 첫 번째 품목 행에 반영 — 현재 통화에 맞게 */
-  var priceIn=document.querySelector('[name="item_price_0"]');
-  var curSpan=document.querySelector('.pj-price-cur');
-  if(!priceIn)return;
+  var sel=document.getElementById('pjDocApplyTarget');
+  var idx=sel?parseInt(sel.value)||0:0;
+  var priceIn=document.querySelector('[name="item_price_'+idx+'"]');
+  var curSpans=document.querySelectorAll('.pj-price-cur');
+  var curSpan=curSpans[idx];
+  if(!priceIn){UI.toast('품목을 찾을 수 없습니다','warn');return;}
   var _fxRate=window._fxRates&&window._fxRates.USD?window._fxRates.USD:0.00075;
   var krwPerUsd=_fxRate>0?1/_fxRate:1350;
   if(curSpan&&curSpan.getAttribute('data-cur')==='USD'){
@@ -4705,7 +4749,18 @@ function applyMarginToItems(){
     priceIn.value=priceKRW;
   }
   showPriceConvert(priceIn);
-  UI.toast('첫 번째 품목에 반영되었습니다','ok');
+  var itemName=document.querySelector('[name="item_name_'+idx+'"]');
+  UI.toast((itemName?itemName.value:'품목 '+(idx+1))+' 에 반영됨','ok');
+}
+function _updateApplyTargetDropdown(){
+  var sel=document.getElementById('pjDocApplyTarget');if(!sel)return;
+  var h='';
+  for(var i=0;i<(S._pjDocItemCount||1);i++){
+    var nameEl=document.querySelector('[name="item_name_'+i+'"]');
+    var nm=nameEl?nameEl.value:'품목 '+(i+1);
+    h+='<option value="'+i+'">'+(i+1)+'. '+(nm||'품목 '+(i+1))+'</option>';
+  }
+  sel.innerHTML=h;
 }
 function updatePaymentTerms(){
   var method=document.getElementById('pjDocPayMethod');
@@ -4806,13 +4861,50 @@ function submitPjDoc(){
     if(r.error){_toastE(r.error);return;}
     closeModal('pjdm');
     UI.toast('서류 생성 완료! ('+docNum+')','ok');
-    loadDocs().then(function(){render();});
-    /* Auto-send chat message if buyer selected */
+    /* Auto-send doc card to buyer chat */
     if(d.buyer_id){
-      var typeN={pi:'견적송장(PI)',ci:'상업송장(CI)',pl:'패킹리스트(PL)',co:'원산지증명(CO)',sc:'계약서(SC)'};
-      sb.from('messages').insert({buyer_id:d.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[서류 생성] '+(typeN[docType]||docType)+' - '+docNum+' (총액: $'+total.toFixed(2)+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(e){console.error('[doc] buyer message fail:',e);});
+      var typeN={pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract',bl:'B/L Instructions',ic:'Insurance Certificate',cd:'Customs Declaration',lc:'L/C Checklist'};
+      var typeK={pi:'견적송장',ci:'상업송장',pl:'패킹리스트',co:'원산지증명서',sc:'수출계약서',bl:'선적지시서',ic:'적하보험증권',cd:'수출신고참고',lc:'LC체크리스트'};
+      var typeIcon={pi:'📋',ci:'📄',pl:'📦',co:'🏛️',sc:'📝',bl:'🚢',ic:'🛡️',cd:'🏦',lc:'💳'};
+      var itemsSummary=items.slice(0,3).map(function(it){return it.name+' x'+it.qty;}).join(', ');
+      if(items.length>3)itemsSummary+=' 외 '+(items.length-3)+'건';
+      var docCard=JSON.stringify({
+        type:'document',
+        doc_type:docType,
+        doc_number:docNum,
+        title:(typeIcon[docType]||'📄')+' '+(typeN[docType]||docType),
+        subtitle:(typeK[docType]||docType)+' — '+docNum,
+        items_summary:itemsSummary,
+        total:total,
+        payment_terms:d.payment_terms||'',
+        incoterms:d.incoterms||'',
+        status:'draft'
+      });
+      sb.from('messages').insert({
+        buyer_id:d.buyer_id,user_id:S.user.id,sender_type:'seller',
+        body:docCard,
+        message_type:'document',channel:'platform',direction:'outbound'
+      }).catch(function(e){console.error('[doc] buyer message fail:',e);});
+      /* 채팅 탭으로 이동 + 바이어 채팅 열기 */
+      S._pjTab='chat';
+      if(!S._pjChatBuyer)S._pjChatBuyer=d.buyer_id;
     }
+    loadDocs().then(function(){render();});
   });
+}
+
+/* 임시 저장 — localStorage에 폼 데이터 보존 */
+function savePjDocDraft(){
+  var p=S.currentProject;if(!p)return;
+  var d=UI.fd('#pjDocForm');
+  var items=[];
+  for(var i=0;i<(S._pjDocItemCount||1);i++){
+    var nm=d['item_name_'+i];if(!nm)continue;
+    items.push({name:nm,qty:d['item_qty_'+i]||'',unit:d['item_unit_'+i]||'',price:d['item_price_'+i]||''});
+  }
+  var draft={doc_type:d.doc_type,buyer_id:d.buyer_id||'',items:items,payment_terms:d.payment_terms||'',incoterms:d.incoterms||'',notes:d.notes||'',costKRW:(document.getElementById('pjDocCostKRW')||{}).value||'',priceKRW:(document.getElementById('pjDocPriceKRW')||{}).value||'',saved_at:new Date().toISOString()};
+  localStorage.setItem('whistle_doc_draft_'+p.id,JSON.stringify(draft));
+  UI.toast('임시 저장 완료','ok');
 }
 
 /* 서류 삭제 */
@@ -5046,25 +5138,90 @@ function _updateCheckboxUI(stage,idx,done,items){
 }
 
 var CERT_DB={
-  'FDA':{full:'FDA Cosmetic Registration (MoCRA)',cc:'US',url:'https://www.fda.gov/cosmetics/cosmetic-product-listing',costMin:0,costMax:500,timeline:'1-3개월',docs:['시설 등록(Facility Registration)','제품 리스팅(Product Listing)','INCI 성분 목록','제품 라벨(영문)']},
-  'CPNP':{full:'EU Cosmetic Products Notification Portal',cc:'EU',url:'https://ec.europa.eu/growth/tools-databases/cosing/',costMin:2000,costMax:8000,timeline:'2-4개월',docs:['화장품 안전성 보고서(CPSR)','GMP 인증서(ISO 22716)','제품 정보 파일(PIF)','성분 목록(INCI)','라벨링(EU 공식언어)']},
-  'PMDA':{full:'일본 의약품의료기기종합기구 화장품 신고',cc:'JP',url:'https://www.pmda.go.jp/',costMin:300,costMax:1500,timeline:'1-2개월',docs:['화장품 수입 신고서','성분 목록(일본어)','제조판매업 허가증(현지 파트너)','제품 라벨(일본어)']},
-  'NMPA':{full:'중국 국가약품감독관리국',cc:'CN',url:'https://www.nmpa.gov.cn/',costMin:5000,costMax:20000,timeline:'6-12개월',docs:['위생허가 신청서','안전성 시험 보고서','제품 기술 문서','중문 라벨','GMP 인증서']},
-  'CE':{full:'CE Marking (EU)',cc:'EU',url:'https://ec.europa.eu/growth/single-market/ce-marking_en',costMin:1000,costMax:5000,timeline:'2-6개월',docs:['적합성 선언서(DoC)','기술 문서(TD)','시험 보고서','사용설명서(EU 공식언어)']},
-  'KFDA':{full:'한국 식약처 수출용 자유판매증명서',cc:'KR',url:'https://nedrug.mfds.go.kr',costMin:0,costMax:50,timeline:'1-2주',docs:['자유판매증명서 신청서','제조업 등록증','제품 품목보고 확인서']},
-  'HSA':{full:'싱가포르 보건과학청',cc:'SG',url:'https://www.hsa.gov.sg/cosmetic-products',costMin:200,costMax:800,timeline:'1-2개월',docs:['ASEAN Cosmetic Notification','안전성 데이터','제품 라벨(영문)']},
-  'TGA':{full:'호주 치료용품청',cc:'AU',url:'https://www.tga.gov.au/cosmetics',costMin:300,costMax:1500,timeline:'1-3개월',docs:['AICIS 등록','제품 라벨(영문)','안전성 데이터','성분 목록']},
-  'GCC':{full:'걸프 표준화기구',cc:'AE',url:'https://www.gso.org.sa/',costMin:500,costMax:2000,timeline:'2-4개월',docs:['적합성 인증서','아랍어 라벨','할랄 인증(해당시)','시험 보고서']},
-  'MOH_VN':{full:'베트남 보건부 화장품 등록',cc:'VN',url:'https://dichvucong.moh.gov.vn/',costMin:300,costMax:1200,timeline:'1-3개월',docs:['화장품 신고서','자유판매증명서','성분 분석서','베트남어 라벨']},
-  'FCC':{full:'미국 연방통신위원회 전자기기 인증',cc:'US',url:'https://www.fcc.gov/engineering-technology/laboratory-division/general/equipment-authorization',costMin:3000,costMax:15000,timeline:'2-4개월',docs:['FCC ID 신청서','EMC 시험 보고서','SAR 시험 보고서(해당시)','회로도/블록다이어그램','사용설명서(영문)']},
-  'UL':{full:'UL 안전인증 (미국)',cc:'US',url:'https://www.ul.com/',costMin:5000,costMax:25000,timeline:'3-6개월',docs:['제품 사양서','안전성 시험 보고서','공장 심사 보고서','라벨링 계획서']},
-  'CPSIA':{full:'미국 소비자제품안전개선법 (섬유/의류/아동)',cc:'US',url:'https://www.cpsc.gov/Regulations-Laws--Standards/Statutes/The-Consumer-Product-Safety-Improvement-Act',costMin:500,costMax:3000,timeline:'1-3개월',docs:['섬유 성분 표시(Fiber Content)','원산지 표시','케어 라벨(ASTM D5489)','납/프탈레이트 시험(아동용)','추적 라벨(Tracking Label)']},
-  'FTC_TEXTILE':{full:'미국 FTC 섬유제품 표시규정',cc:'US',url:'https://www.ftc.gov/legal-library/browse/rules/textile-fiber-products-identification-act',costMin:100,costMax:500,timeline:'2-4주',docs:['섬유 성분 라벨(영문)','원산지 표시','관리법 표시(Care Label)','제조사/수입자 표시']},
-  'ACCC':{full:'호주 소비자경쟁위원회 제품안전',cc:'AU',url:'https://www.productsafety.gov.au/',costMin:500,costMax:3000,timeline:'1-3개월',docs:['안전성 시험 보고서','영문 라벨','적합성 선언서','제품 사양서']},
-  'SFA':{full:'싱가포르 식품청',cc:'SG',url:'https://www.sfa.gov.sg/food-import-export',costMin:200,costMax:1000,timeline:'2-4주',docs:['식품 수입허가 신청서','위생증명서(Health Certificate)','성분표','영양표시(영문)','유통기한 표시']},
-  'MHLW':{full:'일본 후생노동성 식품위생법',cc:'JP',url:'https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/shokuhin/',costMin:300,costMax:2000,timeline:'2-6주',docs:['식품등 수입신고서','위생증명서','성분표(일본어)','영양표시(일본 양식)','알레르기 표시(28품목)']},
-  'ECAS':{full:'UAE 적합성평가체계 (Emirates Conformity Assessment Scheme)',cc:'AE',url:'https://www.moiat.gov.ae/en/services/ecas',costMin:1000,costMax:5000,timeline:'2-4개월',docs:['적합성 인증서','시험 보고서','기술 문서','아랍어 라벨','할랄 인증(식품)']}
+  /* ── 수출 대상국(dest) 인증 ── */
+  'FDA':{full:'FDA Cosmetic Registration (MoCRA)',cc:'US',side:'dest',agency:'FDA (U.S. Food & Drug Administration)',url:'https://www.fda.gov/cosmetics/cosmetic-product-listing',costMin:0,costMax:500,timeline:'1-3개월',cats:['Beauty','Health'],docs:['시설 등록(Facility Registration)','제품 리스팅(Product Listing)','INCI 성분 목록','제품 라벨(영문)']},
+  'FDA_FOOD':{full:'FDA 식품시설등록 (FFR/FSVP)',cc:'US',side:'dest',agency:'FDA (U.S. Food & Drug Administration)',url:'https://www.fda.gov/food/food-facility-registration',costMin:0,costMax:1000,timeline:'2-4주',cats:['Food'],docs:['시설 등록(FFR)','Nutrition Facts 라벨','FSVP 대리인 선정','Prior Notice']},
+  'CPNP':{full:'EU Cosmetic Products Notification Portal',cc:'EU',side:'dest',agency:'European Commission (CPNP 포털)',url:'https://ec.europa.eu/growth/tools-databases/cosing/',costMin:2000,costMax:8000,timeline:'2-4개월',cats:['Beauty'],docs:['화장품 안전성 보고서(CPSR)','GMP 인증서(ISO 22716)','제품 정보 파일(PIF)','성분 목록(INCI)','라벨링(EU 공식언어)']},
+  'PMDA':{full:'일본 의약품의료기기종합기구 화장품 신고',cc:'JP',side:'dest',agency:'PMDA (독립행정법인 의약품의료기기종합기구)',url:'https://www.pmda.go.jp/',costMin:300,costMax:1500,timeline:'1-2개월',cats:['Beauty'],docs:['화장품 수입 신고서','성분 목록(일본어)','제조판매업 허가증(현지 파트너)','제품 라벨(일본어)']},
+  'NMPA':{full:'중국 국가약품감독관리국',cc:'CN',side:'dest',agency:'NMPA (国家药品监督管理局)',url:'https://www.nmpa.gov.cn/',costMin:5000,costMax:20000,timeline:'6-12개월',cats:['Beauty'],docs:['위생허가 신청서','안전성 시험 보고서','제품 기술 문서','중문 라벨','GMP 인증서']},
+  'CE':{full:'CE Marking (EU)',cc:'EU',side:'dest',agency:'EU 공인기관 (Notified Body)',url:'https://ec.europa.eu/growth/single-market/ce-marking_en',costMin:1000,costMax:5000,timeline:'2-6개월',cats:['Electronics'],docs:['적합성 선언서(DoC)','기술 문서(TD)','시험 보고서','사용설명서(EU 공식언어)']},
+  'HSA':{full:'싱가포르 보건과학청 (화장품 수입)',cc:'SG',side:'dest',agency:'HSA (Health Sciences Authority)',url:'https://www.hsa.gov.sg/cosmetic-products',costMin:200,costMax:800,timeline:'1-2개월',cats:['Beauty'],docs:['ASEAN Cosmetic Notification','안전성 데이터','제품 라벨(영문)']},
+  'TGA':{full:'호주 치료용품청 (화장품 수입)',cc:'AU',side:'dest',agency:'TGA (Therapeutic Goods Administration)',url:'https://www.tga.gov.au/cosmetics',costMin:300,costMax:1500,timeline:'1-3개월',cats:['Beauty'],docs:['AICIS 등록','제품 라벨(영문)','안전성 데이터','성분 목록']},
+  'GCC':{full:'걸프 표준화기구 (화장품)',cc:'AE',side:'dest',agency:'GSO (GCC Standardization Organization)',url:'https://www.gso.org.sa/',costMin:500,costMax:2000,timeline:'2-4개월',cats:['Beauty'],docs:['적합성 인증서','아랍어 라벨','할랄 인증(해당시)','시험 보고서']},
+  'MOH_VN':{full:'베트남 보건부 화장품 등록',cc:'VN',side:'dest',agency:'베트남 보건부 (MOH)',url:'https://dichvucong.moh.gov.vn/',costMin:300,costMax:1200,timeline:'1-3개월',cats:['Beauty'],docs:['화장품 신고서','자유판매증명서','성분 분석서','베트남어 라벨']},
+  'FCC':{full:'미국 연방통신위원회 전자기기 인증',cc:'US',side:'dest',agency:'FCC (Federal Communications Commission)',url:'https://www.fcc.gov/engineering-technology/laboratory-division/general/equipment-authorization',costMin:3000,costMax:15000,timeline:'2-4개월',cats:['Electronics'],docs:['FCC ID 신청서','EMC 시험 보고서','SAR 시험 보고서(해당시)','회로도/블록다이어그램','사용설명서(영문)']},
+  'UL':{full:'UL 안전인증 (미국)',cc:'US',side:'dest',agency:'UL Solutions',url:'https://www.ul.com/',costMin:5000,costMax:25000,timeline:'3-6개월',cats:['Electronics'],docs:['제품 사양서','안전성 시험 보고서','공장 심사 보고서','라벨링 계획서']},
+  'CPSIA':{full:'미국 소비자제품안전개선법 (섬유/의류/아동)',cc:'US',side:'dest',agency:'CPSC (Consumer Product Safety Commission)',url:'https://www.cpsc.gov/Regulations-Laws--Standards/Statutes/The-Consumer-Product-Safety-Improvement-Act',costMin:500,costMax:3000,timeline:'1-3개월',cats:['Fashion','Living'],docs:['섬유 성분 표시(Fiber Content)','원산지 표시','케어 라벨(ASTM D5489)','납/프탈레이트 시험(아동용)','추적 라벨(Tracking Label)']},
+  'FTC_TEXTILE':{full:'미국 FTC 섬유제품 표시규정',cc:'US',side:'dest',agency:'FTC (Federal Trade Commission)',url:'https://www.ftc.gov/legal-library/browse/rules/textile-fiber-products-identification-act',costMin:100,costMax:500,timeline:'2-4주',cats:['Fashion'],docs:['섬유 성분 라벨(영문)','원산지 표시','관리법 표시(Care Label)','제조사/수입자 표시']},
+  'ACCC':{full:'호주 소비자경쟁위원회 제품안전',cc:'AU',side:'dest',agency:'ACCC (Australian Competition & Consumer Commission)',url:'https://www.productsafety.gov.au/',costMin:500,costMax:3000,timeline:'1-3개월',cats:['Living','Fashion'],docs:['안전성 시험 보고서','영문 라벨','적합성 선언서','제품 사양서']},
+  'SFA':{full:'싱가포르 식품청',cc:'SG',side:'dest',agency:'SFA (Singapore Food Agency)',url:'https://www.sfa.gov.sg/food-import-export',costMin:200,costMax:1000,timeline:'2-4주',cats:['Food'],docs:['식품 수입허가 신청서','위생증명서(Health Certificate)','성분표','영양표시(영문)','유통기한 표시']},
+  'MHLW':{full:'일본 후생노동성 식품위생법',cc:'JP',side:'dest',agency:'후생노동성 (MHLW)',url:'https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/kenkou_iryou/shokuhin/',costMin:300,costMax:2000,timeline:'2-6주',cats:['Food'],docs:['식품등 수입신고서','위생증명서','성분표(일본어)','영양표시(일본 양식)','알레르기 표시(28품목)']},
+  'ECAS':{full:'UAE 적합성평가체계 (Emirates Conformity Assessment Scheme)',cc:'AE',side:'dest',agency:'MoIAT (Ministry of Industry & Advanced Technology)',url:'https://www.moiat.gov.ae/en/services/ecas',costMin:1000,costMax:5000,timeline:'2-4개월',cats:['Electronics'],docs:['적합성 인증서','시험 보고서','기술 문서','아랍어 라벨','할랄 인증(식품)']},
+  'EU_FOOD':{full:'EU 식품안전규정 (EC 178/2002)',cc:'EU',side:'dest',agency:'EFSA (European Food Safety Authority)',url:'https://food.ec.europa.eu/',costMin:2000,costMax:4000,timeline:'6-10주',cats:['Food'],docs:['HACCP 인증','EU 영양표시 라벨','알레르기 14종 표시','잔류농약/중금속 검사']},
+  'HALAL':{full:'할랄 인증',cc:'AE',side:'dest',agency:'국가별 할랄 인증기관 (UAE: ESMA)',url:'https://www.halal.or.kr/',costMin:500,costMax:3000,timeline:'1-3개월',cats:['Food','Beauty'],docs:['할랄 신청서','성분 증빙','공정 확인서','현장 심사']},
+  /* ── 제조국(출발지) 수출 허가 인증 ── */
+  'KFDA_EXP':{full:'한국 식약처 수출용 자유판매증명서 (FPCP)',cc:'KR',side:'origin',agency:'식품의약품안전처 (MFDS)',url:'https://nedrug.mfds.go.kr',costMin:0,costMax:50,timeline:'1-2주',cats:['Beauty','Food','Health'],docs:['자유판매증명서 신청서','제조업 등록증','제품 품목보고 확인서']},
+  'KC':{full:'한국 적합인증 (KC마크)',cc:'KR',side:'origin',agency:'국가기술표준원 (KATS)',url:'https://www.kats.go.kr/',costMin:200,costMax:2000,timeline:'2-4주',cats:['Electronics','Living'],docs:['적합성 시험 보고서','기술 문서','제품 사양서']},
+  'BfArM':{full:'독일 연방의약품·의료기기 기관 (수출 자유판매증명서)',cc:'DE',side:'origin',agency:'BfArM (Bundesinstitut für Arzneimittel)',url:'https://www.bfarm.de/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Health'],docs:['Free Sale Certificate 신청서','제조업 등록 증빙','GMP 인증서']},
+  'ANSM':{full:'프랑스 의약품안전청 수출 증명',cc:'FR',side:'origin',agency:'ANSM (Agence nationale de sécurité du médicament)',url:'https://ansm.sante.fr/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Health'],docs:['Free Sale Certificate','CPNP 등록 확인','GMP 인증서']},
+  'AIFA':{full:'이탈리아 의약청 수출 인증',cc:'IT',side:'origin',agency:'AIFA (Agenzia Italiana del Farmaco)',url:'https://www.aifa.gov.it/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Health'],docs:['Free Sale Certificate','제조업 인가서']},
+  'FDA_EXP':{full:'미국 FDA 수출 증명서 (Certificate of Free Sale)',cc:'US',side:'origin',agency:'FDA (U.S. Food & Drug Administration)',url:'https://www.fda.gov/industry/export-certificates',costMin:0,costMax:200,timeline:'2-4주',cats:['Beauty','Food','Health'],docs:['Export Certificate 신청서','시설 등록 확인','제품 리스팅']},
+  'CFDA_EXP':{full:'중국 수출 자유판매증명서',cc:'CN',side:'origin',agency:'NMPA / 지방 약감국',url:'https://www.nmpa.gov.cn/',costMin:100,costMax:500,timeline:'2-6주',cats:['Beauty','Food','Health'],docs:['자유판매증명서','제조허가증','GMP 인증서']},
+  'PMDA_EXP':{full:'일본 수출 자유판매증명서',cc:'JP',side:'origin',agency:'PMDA / 후생노동성',url:'https://www.pmda.go.jp/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Food','Health'],docs:['Free Sale Certificate','제조판매업 허가증','GMP 인증서']},
+  'TGA_EXP':{full:'호주 TGA 수출 인증서',cc:'AU',side:'origin',agency:'TGA (Therapeutic Goods Administration)',url:'https://www.tga.gov.au/',costMin:100,costMax:500,timeline:'2-4주',cats:['Beauty','Health'],docs:['Certificate of Free Sale','TGA 등록 확인','GMP 인증서']},
+  'HSA_EXP':{full:'싱가포르 HSA 수출 증명',cc:'SG',side:'origin',agency:'HSA (Health Sciences Authority)',url:'https://www.hsa.gov.sg/',costMin:50,costMax:200,timeline:'1-2주',cats:['Beauty','Health'],docs:['Free Sale Certificate','HSA 등록 확인']},
+  'NAFDAC':{full:'나이지리아 식약청 등록/수출 인증',cc:'NG',side:'origin',agency:'NAFDAC (National Agency for Food and Drug Administration)',url:'https://www.nafdac.gov.ng/',costMin:200,costMax:1000,timeline:'4-8주',cats:['Beauty','Food','Health'],docs:['NAFDAC 등록 인증서','GMP 인증서','성분 분석서']},
+  'SAHPRA':{full:'남아공 보건제품규제청',cc:'ZA',side:'origin',agency:'SAHPRA (South African Health Products Regulatory Authority)',url:'https://www.sahpra.org.za/',costMin:200,costMax:800,timeline:'4-8주',cats:['Beauty','Health'],docs:['Free Sale Certificate','GMP 인증서','제품 등록 확인']},
+  'CDSCO':{full:'인도 중앙의약품표준관리기구',cc:'IN',side:'origin',agency:'CDSCO (Central Drugs Standard Control Organisation)',url:'https://cdsco.gov.in/',costMin:100,costMax:500,timeline:'4-6주',cats:['Beauty','Health'],docs:['Free Sale Certificate','GMP 인증서','제조허가증']},
+  'ANVISA_EXP':{full:'브라질 위생감시청 수출 인증',cc:'BR',side:'origin',agency:'ANVISA (Agência Nacional de Vigilância Sanitária)',url:'https://www.gov.br/anvisa/',costMin:100,costMax:600,timeline:'4-8주',cats:['Beauty','Food','Health'],docs:['Free Sale Certificate','GMP 인증서','ANVISA 등록']},
+  'COFEPRIS':{full:'멕시코 연방 보건위험 방지위원회',cc:'MX',side:'origin',agency:'COFEPRIS',url:'https://www.gob.mx/cofepris',costMin:100,costMax:500,timeline:'4-6주',cats:['Beauty','Food','Health'],docs:['Free Sale Certificate','위생 허가서','GMP 인증서']},
+  'ISP_CL':{full:'칠레 공중보건기구',cc:'CL',side:'origin',agency:'ISP (Instituto de Salud Pública)',url:'https://www.ispch.cl/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Health'],docs:['Free Sale Certificate','GMP 인증서']},
+  'TFDA':{full:'태국 FDA 수출 증명',cc:'TH',side:'origin',agency:'Thai FDA (อย.)',url:'https://www.fda.moph.go.th/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Food','Health'],docs:['Free Sale Certificate','FDA 등록 확인','GMP 인증서']},
+  'BPOM':{full:'인도네시아 식약청 (BPOM)',cc:'ID',side:'origin',agency:'BPOM (Badan Pengawas Obat dan Makanan)',url:'https://www.pom.go.id/',costMin:100,costMax:500,timeline:'4-8주',cats:['Beauty','Food','Health'],docs:['BPOM 등록 인증서','GMP 인증서','Free Sale Certificate']},
+  'DVS_MY':{full:'말레이시아 수의국 / 보건부',cc:'MY',side:'origin',agency:'MOH Malaysia / NPRA',url:'https://www.pharmacy.gov.my/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Food','Health'],docs:['Free Sale Certificate','GMP 인증서','NPRA 등록']},
+  'MOH_PH':{full:'필리핀 FDA 수출 증명',cc:'PH',side:'origin',agency:'FDA Philippines',url:'https://www.fda.gov.ph/',costMin:50,costMax:300,timeline:'2-4주',cats:['Beauty','Food','Health'],docs:['Certificate of Free Sale','FDA 등록','GMP 인증서']},
+  'GB_SCPN':{full:'영국 화장품 등록 (SCPN)',cc:'GB',side:'origin',agency:'OPSS (Office for Product Safety & Standards)',url:'https://submit-cosmetic-product-notifications.service.gov.uk/',costMin:0,costMax:200,timeline:'1-2주',cats:['Beauty'],docs:['SCPN 등록','Responsible Person 지정','안전성 보고서']},
+  'ANVISA':{full:'브라질 위생감시청 (수입 인증)',cc:'BR',side:'dest',agency:'ANVISA',url:'https://www.gov.br/anvisa/',costMin:500,costMax:3000,timeline:'2-6개월',cats:['Beauty','Food','Health'],docs:['ANVISA 등록','Portuguese 라벨','GMP 인증서','안전성 데이터']},
+  'COFEPRIS_IMP':{full:'멕시코 수입 위생허가',cc:'MX',side:'dest',agency:'COFEPRIS',url:'https://www.gob.mx/cofepris',costMin:500,costMax:2000,timeline:'2-4개월',cats:['Beauty','Food','Health'],docs:['위생등록','Spanish 라벨','Free Sale Certificate','GMP 인증서']},
+  'NAFDAC_IMP':{full:'나이지리아 NAFDAC 수입등록',cc:'NG',side:'dest',agency:'NAFDAC',url:'https://www.nafdac.gov.ng/',costMin:500,costMax:2000,timeline:'2-6개월',cats:['Beauty','Food','Health'],docs:['NAFDAC 수입등록','영문 라벨','Free Sale Certificate','성분 분석서']},
+  'CDSCO_IMP':{full:'인도 수입 화장품/식품 등록',cc:'IN',side:'dest',agency:'CDSCO / FSSAI',url:'https://cdsco.gov.in/',costMin:300,costMax:1500,timeline:'2-4개월',cats:['Beauty','Food','Health'],docs:['수입등록','BIS 인증(해당시)','Free Sale Certificate','Hindi/English 라벨']},
+  'BPOM_IMP':{full:'인도네시아 BPOM 수입등록',cc:'ID',side:'dest',agency:'BPOM',url:'https://www.pom.go.id/',costMin:500,costMax:2000,timeline:'3-6개월',cats:['Beauty','Food','Health'],docs:['BPOM 등록','Indonesian 라벨','Free Sale Certificate','GMP 인증서','할랄 인증(해당시)']},
+  'KFDA_IMP':{full:'한국 식약처 수입 화장품/식품 신고',cc:'KR',side:'dest',agency:'식품의약품안전처 (MFDS)',url:'https://nedrug.mfds.go.kr',costMin:100,costMax:500,timeline:'2-4주',cats:['Beauty','Food','Health'],docs:['수입신고서','Free Sale Certificate','성분표','한글 라벨']}
 };
+
+/* 인증 자동 매칭: 제조국 + 수출국 + 카테고리 → 필요 인증 목록 */
+var _EU_CODES=['DE','FR','IT','NL','ES','BE','PT','AT','SE','DK','FI','IE','PL','CZ','HU','RO','BG','HR','SK','SI','LT','LV','EE','LU','MT','CY','GR'];
+var _ME_CODES=['AE','SA','QA','KW','BH','OM'];
+var _ASEAN_CODES=['VN','SG','TH','MY','PH','ID','KH','MM','LA','BN'];
+/* K- 접두어 제거: 카테고리 정규화 */
+function _normCat(c){return (c||'').replace(/^K-/,'');}
+function _normCC(cc){
+  if(_EU_CODES.indexOf(cc)>=0)return 'EU';
+  if(_ME_CODES.indexOf(cc)>=0)return 'AE';
+  return cc;
+}
+function matchCerts(category,destCC,originCC){
+  var cat=_normCat(category);
+  var normDest=_normCC(destCC);
+  var normOrig=_normCC(originCC||'');
+  var matched=[];
+  Object.keys(CERT_DB).forEach(function(k){
+    var db=CERT_DB[k];
+    /* 카테고리 필터 */
+    if(db.cats&&db.cats.indexOf(cat)<0)return;
+    var side=db.side||'dest';
+    if(side==='dest'){
+      /* 수출 대상국 인증 */
+      if(db.cc===normDest)matched.push(k);
+    }else if(side==='origin'){
+      /* 제조국 수출 허가 인증 */
+      if(originCC&&db.cc===normOrig)matched.push(k);
+      /* originCC 미지정이고 KFDA_EXP 같은 한국 기본이면 포함 */
+      if(!originCC&&db.cc==='KR')matched.push(k);
+    }
+  });
+  return matched;
+}
 
 function pgCertTracker(p){
   var sp=p.stage_progress||{};var certs=sp.certs||[];
@@ -5086,15 +5243,15 @@ function pgCertTracker(p){
     var costHtml='';
     if(c.cost_min||c.cost_max||db.costMin){
       var cMin=c.cost_min||db.costMin||0;var cMax=c.cost_max||db.costMax||0;
-      costHtml='<span style="font-size:10px;color:var(--w40)">$'+cMin+'~$'+cMax+'</span>';
+      costHtml='<span style="font-size:10px;color:var(--w40)">'+U.$(cMin,0)+'~'+U.$(cMax,0)+'</span>';
     }
-    /* 공식 링크 */
-    var linkHtml=db.url?'<a href="'+db.url+'" target="_blank" style="font-size:10px;color:var(--pri);text-decoration:none" title="공식 사이트">🔗 신청</a>':'';
+    /* 공식 링크 + 신청기관 */
+    var agencyHtml=db.agency?'<div style="font-size:10px;color:var(--w60);margin-top:2px">🏛 '+UI.esc(db.agency)+(db.url?' · <a href="'+db.url+'" target="_blank" style="color:var(--pri);text-decoration:none">공식 사이트 →</a>':'')+(db.timeline?' · ⏱ '+db.timeline:'')+'</div>':'';
 
     return '<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:8px;border-left:3px solid '+stCol[c.status||'pending']+'">'+
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
       '<span style="font-size:13px;font-weight:700;flex:1;min-width:100px">'+c.name+(db.full?' <span style="font-size:10px;color:var(--w40);font-weight:400">'+db.full+'</span>':'')+'</span>'+
-      deadlineHtml+costHtml+linkHtml+
+      deadlineHtml+costHtml+
       '<select class="form-select" style="width:110px;padding:4px 8px;font-size:11px" onchange="App.setCertStatus(\''+p.id+'\','+idx+',this.value)">'+
       '<option value="pending"'+(c.status==='pending'?' selected':'')+'>대기</option>'+
       '<option value="in_progress"'+(c.status==='in_progress'?' selected':'')+'>진행중</option>'+
@@ -5102,6 +5259,7 @@ function pgCertTracker(p){
       '<option value="approved"'+(c.status==='approved'?' selected':'')+'>취득</option>'+
       '<option value="rejected"'+(c.status==='rejected'?' selected':'')+'>반려</option></select>'+
       '</div>'+
+      agencyHtml+
       /* 서류 체크리스트 */
       (db.docs?'<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">'+db.docs.map(function(doc){
         var uploaded=(c.docs_done||[]).indexOf(doc)>=0;
@@ -5119,15 +5277,233 @@ function pgCertTracker(p){
     '</div>';
   }).join('');
 
-  var addBtn='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'+
+  /* 자동 추천: 프로젝트의 카테고리+타겟시장 기반 */
+  var product=(S.products||[]).find(function(pr){return p.product_ids&&p.product_ids.indexOf(pr.id)>=0;});
+  var pCat=(product||{}).category||'';
+  var pDest=((p.target_countries||[])[0])||p.target_market||'';
+  var pOrigin=(product||{}).origin_country||S._costOriginCountry||'KR';
+  var recommended=pDest?matchCerts(pCat,pDest,pOrigin):[];
+  var recBtns=recommended.filter(function(k){return !certs.some(function(c){return c.name===k;});}).map(function(k){
+    var db=CERT_DB[k];
+    return '<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.7;border-color:rgba(0,230,118,.2)" onclick="App.addCertPreset(\''+p.id+'\',\''+k+'\')" title="'+UI.esc(db.full)+'">+ '+k+'</button>';
+  }).join('');
+
+  var addBtn='<div style="margin-top:10px">';
+  if(recBtns){addBtn+='<div style="font-size:11px;color:var(--ok);font-weight:600;margin-bottom:6px">🎯 추천 인증 ('+UI.esc(pCat)+' → '+UI.esc(_countryNames[pDest]||pDest)+')</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+recBtns+'</div>';}
+  addBtn+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+
     '<button class="btn btn-ghost btn-sm" onclick="App.addCertItem(\''+p.id+'\')">+ 직접 추가</button>'+
-    Object.keys(CERT_DB).slice(0,6).map(function(k){
-      var exists=certs.some(function(c){return c.name===k;});
-      return exists?'':'<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.7" onclick="App.addCertPreset(\''+p.id+'\',\''+k+'\')">+ '+k+'</button>';
-    }).join('')+'</div>';
+    Object.keys(CERT_DB).slice(0,8).filter(function(k){return !certs.some(function(c){return c.name===k;})&&recommended.indexOf(k)<0;}).map(function(k){
+      return '<button class="btn btn-ghost btn-sm" style="font-size:10px;opacity:.5" onclick="App.addCertPreset(\''+p.id+'\',\''+k+'\')">+ '+k+'</button>';
+    }).join('')+'</div></div>';
 
   var checklist=renderStageChecklist(p,'certification');
-  return '<div class="card" style="margin-bottom:10px"><div class="card-h"><span>🏅 인증 추적</span>'+UI.badge(done+'/'+certs.length+' 취득','acc')+'</div><div class="card-b">'+(certs.length?bar+list:'<div style="text-align:center;padding:16px;color:var(--w40)">등록된 인증 없음. 아래 버튼으로 추가하세요.</div>')+addBtn+'</div></div>'+checklist;
+
+  /* 무역 요건 분석 버튼 + 결과 */
+  var tradeReqBtn='<div style="margin-top:14px;text-align:center">';
+  if(S._tradeReqLoading){
+    tradeReqBtn+='<div style="padding:20px"><div class="loading-spinner" style="margin:0 auto"></div><div style="font-size:12px;color:var(--w40);margin-top:8px">AI가 무역 요건을 분석하고 있습니다... (약 30초)</div></div>';
+  }else{
+    tradeReqBtn+='<button class="btn btn-pri" style="padding:10px 24px;font-size:13px;width:100%" onclick="App.fetchTradeReqs(\''+p.id+'\')">🌍 AI 무역 요건 분석</button>';
+    tradeReqBtn+='<div style="font-size:10px;color:var(--w40);margin-top:4px">출발국 × 도착국 × 카테고리 기반 인증·관세·물류·서류 자동 분석</div>';
+  }
+  tradeReqBtn+='</div>';
+  var tradeReqResult=pgTradeReqPanel(p);
+
+  return '<div class="card" style="margin-bottom:10px"><div class="card-h"><span>🏅 인증 추적</span>'+UI.badge(done+'/'+certs.length+' 취득','acc')+'</div><div class="card-b">'+(certs.length?bar+list:'<div style="text-align:center;padding:16px;color:var(--w40)">등록된 인증 없음. 아래 버튼으로 추가하세요.</div>')+addBtn+'</div></div>'+tradeReqBtn+tradeReqResult+checklist;
+}
+
+/* 인증 비용 요약 카드 (인라인 — 페이지 이동 없음) */
+function pgCertCostSummary(p){
+  var sp=p.stage_progress||{};var certs=sp.certs||[];
+  if(!certs.length)return '';
+  var totalMin=0,totalMax=0,obtainedCount=0;
+  var rows=certs.map(function(c){
+    var db=CERT_DB[c.name]||{};
+    var isObtained=c.status==='approved';
+    if(isObtained)obtainedCount++;
+    var cMin=c.cost_min||db.costMin||0;var cMax=c.cost_max||db.costMax||0;
+    if(!isObtained){totalMin+=cMin;totalMax+=cMax;}
+    var stColor=isObtained?'var(--ok)':'var(--acc)';
+    var stText=isObtained?'✅ 보유':'⏳ 미보유';
+    var sideTag=db.side==='origin'?'<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(0,212,255,.1);color:var(--pri);margin-left:4px">출발</span>':'<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(255,184,0,.1);color:var(--acc);margin-left:4px">도착</span>';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--w08)">'+
+      '<span style="font-size:12px;font-weight:700;flex:1;min-width:80px">'+c.name+sideTag+'</span>'+
+      '<span style="font-size:11px;color:var(--w40);flex:2">'+UI.esc(db.agency||db.full||'')+'</span>'+
+      '<span style="font-size:11px;color:var(--w60)">'+U.$(cMin,0)+'~'+U.$(cMax,0)+'</span>'+
+      (db.url?'<a href="'+db.url+'" target="_blank" style="font-size:10px;color:var(--pri);text-decoration:none;white-space:nowrap">🔗 신청</a>':'')+
+      '<span style="font-size:10px;color:'+stColor+';white-space:nowrap">'+stText+'</span>'+
+    '</div>';
+  }).join('');
+
+  var h='<div class="card" style="margin-top:14px;border-color:rgba(255,184,0,.15)"><div class="card-h"><span>💰 인증비용 요약</span>'+UI.badge(obtainedCount+'/'+certs.length+' 보유','pri')+'</div><div class="card-b">';
+  h+=rows;
+  h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:var(--w08);display:flex;justify-content:space-between;align-items:center">';
+  h+='<div><div style="font-size:11px;color:var(--w40)">미보유 인증 예상 비용</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+U.$(totalMin,0)+' ~ '+U.$(totalMax,0)+'</div></div>';
+  h+='<button class="btn btn-ghost btn-sm" onclick="App.setCostTab(\'product\');App.nav(\'costsim\')" style="font-size:11px">📊 원가에 반영 →</button>';
+  h+='</div></div></div>';
+  return h;
+}
+
+/* 무역 요건 AI 분석 — trade-requirements Edge Function 연동 */
+function pgTradeReqPanel(p){
+  var data=S._tradeReqData;
+  if(!data)return '';
+  var r=data.result;if(!r)return '';
+  var tr=r.trade_route||{};
+  var or=r.origin_reqs||{};
+  var dr=r.dest_reqs||{};
+  var feasColor={'easy':'var(--ok)','moderate':'var(--acc)','complex':'var(--err)','very_complex':'var(--err)'};
+  var feasLabel={'easy':'쉬움','moderate':'보통','complex':'복잡','very_complex':'매우 복잡'};
+
+  var h='<div class="card" style="margin-top:14px;border-color:rgba(0,212,255,.15)"><div class="card-h"><span>🌍 무역 요건 분석</span>'+
+    UI.badge((_countryNames[tr.origin]||tr.origin)+' → '+(_countryNames[tr.dest]||tr.dest),'pri')+
+    '<span style="font-size:11px;padding:3px 8px;border-radius:10px;background:'+feasColor[tr.feasibility]+';color:#fff;margin-left:6px">'+
+    (feasLabel[tr.feasibility]||tr.feasibility)+'</span>'+
+    '<span style="font-size:11px;color:var(--w40);margin-left:auto">⏱ '+UI.esc(tr.timeline||'')+'</span>'+
+    '</div><div class="card-b">';
+
+  /* 출발국 요건 */
+  h+='<details open style="margin-bottom:12px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--pri)">📤 출발국 요건 ('+UI.esc(_countryNames[tr.origin]||tr.origin)+')</summary>';
+  if(or.export_license){
+    var el=or.export_license;
+    h+='<div style="padding:8px;border-radius:8px;background:var(--w08);margin:6px 0"><div style="font-size:12px;font-weight:600">수출 허가 — '+(el.required?'<span style="color:var(--err)">필수</span>':'<span style="color:var(--ok)">불필요</span>')+'</div>';
+    if(el.agency)h+='<div style="font-size:11px;color:var(--w60);margin-top:4px">🏛 '+UI.esc(el.agency)+(el.url?' · <a href="'+el.url+'" target="_blank" style="color:var(--pri)">공식사이트→</a>':'')+(el.cost?' · 💵 '+UI.esc(el.cost):'')+'</div>';
+    h+='</div>';
+  }
+  if(or.certificates&&or.certificates.length){
+    h+='<div style="font-size:12px;font-weight:600;margin:8px 0 4px">필요 인증</div>';
+    or.certificates.forEach(function(cert){
+      h+='<div style="padding:8px;border-radius:8px;background:var(--w08);margin-bottom:4px;border-left:3px solid '+(cert.mandatory?'var(--acc)':'var(--w20)')+'">'+
+        '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;font-weight:600">'+UI.esc(cert.name)+'</span>'+
+        (cert.mandatory?'<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(255,184,0,.1);color:var(--acc)">필수</span>':'')+
+        '<span style="font-size:10px;color:var(--w40);margin-left:auto">'+UI.esc(cert.cost||'')+'</span></div>'+
+        '<div style="font-size:11px;color:var(--w60);margin-top:2px">🏛 '+UI.esc(cert.agency||'')+(cert.url?' · <a href="'+cert.url+'" target="_blank" style="color:var(--pri)">신청→</a>':'')+(cert.timeline?' · ⏱ '+UI.esc(cert.timeline):'')+'</div></div>';
+    });
+  }
+  h+='</details>';
+
+  /* 도착국 요건 */
+  h+='<details open style="margin-bottom:12px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--acc)">📥 도착국 요건 ('+UI.esc(_countryNames[tr.dest]||tr.dest)+')</summary>';
+  if(dr.certifications&&dr.certifications.length){
+    h+='<div style="font-size:12px;font-weight:600;margin:4px 0 4px">필요 인증</div>';
+    dr.certifications.forEach(function(cert){
+      h+='<div style="padding:8px;border-radius:8px;background:var(--w08);margin-bottom:4px;border-left:3px solid '+(cert.mandatory?'var(--err)':'var(--w20)')+'">'+
+        '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;font-weight:600">'+UI.esc(cert.name)+'</span>'+
+        (cert.mandatory?'<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(239,83,80,.1);color:var(--err)">필수</span>':'')+
+        '<span style="font-size:10px;color:var(--w40);margin-left:auto">'+UI.esc(cert.cost||'')+'</span></div>'+
+        '<div style="font-size:11px;color:var(--w60);margin-top:2px">🏛 '+UI.esc(cert.agency||'')+(cert.url?' · <a href="'+cert.url+'" target="_blank" style="color:var(--pri)">신청→</a>':'')+(cert.timeline?' · ⏱ '+UI.esc(cert.timeline):'')+'</div></div>';
+    });
+  }
+  /* 관세/세금 */
+  if(dr.customs){
+    var cu=dr.customs;
+    h+='<div style="padding:10px;border-radius:8px;background:var(--w08);margin:8px 0"><div style="font-size:12px;font-weight:600;margin-bottom:6px">🏦 관세·세금</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px">'+
+      '<div>관세율: <b>'+UI.esc(cu.duty_rate||'N/A')+'</b></div>'+
+      '<div>부가세: <b>'+UI.esc(cu.vat||'N/A')+'</b></div>'+
+      (cu.other_tax?'<div style="grid-column:span 2">기타: '+UI.esc(cu.other_tax)+'</div>':'')+
+      (cu.fta?'<div style="grid-column:span 2;color:var(--ok)">🤝 FTA: '+UI.esc(cu.fta)+' → '+UI.esc(cu.fta_rate||'')+'</div>':'')+
+      '</div></div>';
+  }
+  /* 라벨링 */
+  if(dr.labeling){
+    var lb=dr.labeling;
+    h+='<div style="padding:10px;border-radius:8px;background:var(--w08);margin:4px 0"><div style="font-size:12px;font-weight:600">🏷️ 라벨링 요건</div>'+
+      '<div style="font-size:11px;color:var(--w60);margin-top:4px">언어: <b>'+UI.esc(lb.language||'')+'</b></div>'+
+      (lb.items?'<div style="font-size:11px;color:var(--w60);margin-top:2px">'+lb.items.map(function(it){return '• '+UI.esc(it);}).join('<br>')+'</div>':'')+
+      '</div>';
+  }
+  h+='</details>';
+
+  /* 필요 서류 */
+  if(r.documents&&r.documents.length){
+    h+='<details style="margin-bottom:12px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--fg)">📋 필요 서류 ('+r.documents.length+')</summary>';
+    r.documents.forEach(function(doc){
+      h+='<div style="padding:6px 8px;border-radius:6px;background:var(--w08);margin-bottom:3px;display:flex;gap:8px;align-items:center;font-size:11px">'+
+        '<span style="font-weight:600;flex:1">'+UI.esc(doc.name)+'</span>'+
+        '<span style="color:var(--w40);white-space:nowrap">'+UI.esc(doc.by||'')+'</span></div>';
+    });
+    h+='</details>';
+  }
+
+  /* 물류 */
+  if(r.logistics){
+    var lg=r.logistics;
+    h+='<details style="margin-bottom:12px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--fg)">🚢 물류</summary>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;padding:6px 0">'+
+      '<div style="padding:8px;border-radius:8px;background:var(--w08)">🚢 해상 <b>'+UI.esc(lg.sea_days||'N/A')+'일</b><br><span style="color:var(--w40)">'+UI.esc(lg.freight_sea_20ft||'')+'</span></div>'+
+      '<div style="padding:8px;border-radius:8px;background:var(--w08)">✈️ 항공 <b>'+UI.esc(lg.air_days||'N/A')+'일</b><br><span style="color:var(--w40)">'+UI.esc(lg.freight_air_kg||'')+'/kg</span></div>'+
+      '</div>';
+    if(lg.ports){
+      h+='<div style="font-size:10px;color:var(--w40);padding:4px 0">출발: '+((lg.ports.origin||[]).join(', '))+' → 도착: '+((lg.ports.dest||[]).join(', '))+'</div>';
+    }
+    h+='</details>';
+  }
+
+  /* 위험 & 경고 */
+  if(r.risks&&r.risks.length){
+    var riskColor={critical:'var(--err)',warning:'var(--acc)',info:'var(--pri)'};
+    var riskIcon={critical:'🔴',warning:'🟡',info:'ℹ️'};
+    h+='<details style="margin-bottom:12px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--fg)">⚠️ 위험 & 주의사항 ('+r.risks.length+')</summary>';
+    r.risks.forEach(function(risk){
+      h+='<div style="padding:8px;border-radius:8px;background:var(--w08);margin-bottom:4px;border-left:3px solid '+(riskColor[risk.level]||'var(--w20)')+'">'+
+        '<div style="font-size:12px;font-weight:600">'+(riskIcon[risk.level]||'')+ ' '+UI.esc(risk.title)+'</div>'+
+        '<div style="font-size:11px;color:var(--w60);margin-top:4px">'+UI.esc(risk.detail)+'</div></div>';
+    });
+    h+='</details>';
+  }
+
+  /* 비용 요약 */
+  if(r.cost_summary){
+    var cs=r.cost_summary;
+    h+='<div style="padding:12px;border-radius:10px;background:linear-gradient(135deg,rgba(0,212,255,.06),rgba(255,184,0,.06));margin:8px 0"><div style="font-size:13px;font-weight:700;margin-bottom:8px">💰 비용 요약</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">'+
+      '<div>인증 비용: <b style="color:var(--acc)">'+UI.esc(cs.cert_total||'')+'</b></div>'+
+      '<div>관세: <b>'+UI.esc(cs.duty_pct||'')+'</b></div>'+
+      '<div>세금: <b>'+UI.esc(cs.tax_pct||'')+'</b></div>'+
+      '<div>물류: <b>'+UI.esc(cs.freight||'')+'</b></div>'+
+      '</div>'+
+      (cs.total_extra_pct?'<div style="margin-top:8px;font-size:12px;font-weight:700;color:var(--pri)">FOB 대비 추가비용: '+UI.esc(cs.total_extra_pct)+'</div>':'')+
+      '</div>';
+  }
+
+  /* 액션 체크리스트 */
+  if(r.action_checklist&&r.action_checklist.length){
+    h+='<details style="margin-bottom:8px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--fg)">✅ 액션 체크리스트 ('+r.action_checklist.length+'단계)</summary>';
+    r.action_checklist.forEach(function(ac){
+      h+='<div style="padding:8px;border-radius:8px;background:var(--w08);margin-bottom:3px;display:flex;gap:8px;align-items:flex-start;font-size:11px">'+
+        '<span style="font-weight:800;color:var(--pri);min-width:22px">'+ac.step+'</span>'+
+        '<div style="flex:1"><div style="font-weight:600">'+UI.esc(ac.action)+'</div>'+
+        '<div style="color:var(--w40);margin-top:2px">⏱ '+UI.esc(ac.timeline||'')+' · 담당: '+UI.esc(ac.by||'')+'</div></div></div>';
+    });
+    h+='</details>';
+  }
+
+  h+='<div style="text-align:right;font-size:10px;color:var(--w20);margin-top:8px">AI 분석 결과 — 실무 참고용, 정확한 내용은 관세사 확인 권장</div>';
+  h+='</div></div>';
+  return h;
+}
+
+function fetchTradeReqs(pjId){
+  var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
+  var product=(S.products||[]).find(function(pr){return p.product_ids&&p.product_ids.indexOf(pr.id)>=0;});
+  var pCat=(product||{}).category||'General';
+  var pDest=((p.target_countries||[])[0])||p.target_market||'';
+  var pOrigin=(product||{}).origin_country||S._costOriginCountry||'KR';
+  var hsCode=(product||{}).hs_code||'';
+  var prodName=(product||{}).name||p.name||'';
+  if(!pDest){_toast('도착국을 먼저 설정하세요','warn');return;}
+  S._tradeReqLoading=true;render();
+  fetch(SB_URL+'/functions/v1/trade-requirements',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({origin_country:pOrigin,dest_country:pDest,category:pCat,hs_code:hsCode,product_name:prodName})
+  }).then(function(r){return r.json();}).then(function(d){
+    S._tradeReqLoading=false;
+    if(d.ok){S._tradeReqData=d;_toast('무역 요건 분석 완료','ok');}
+    else{_toast('분석 실패: '+(d.error||'알 수 없는 오류'),'err');}
+    render();
+  }).catch(function(e){S._tradeReqLoading=false;_toast('네트워크 오류: '+e.message,'err');render();});
 }
 
 function setCertStatus(pjId,idx,status){
@@ -5420,7 +5796,7 @@ function calcCostModal(){
   var r='<div style="margin-top:14px;padding:14px;border-radius:10px;background:var(--w08);border:1px solid var(--bd)">';
   r+='<div style="font-size:13px;font-weight:800;margin-bottom:10px;color:var(--pri)">📊 분석 결과</div>';
   r+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">';
-  r+='<div>FOB 단가: <b style="color:var(--acc)">$'+fobUSD.toFixed(2)+'</b> ('+U.krw(fobKRW)+')</div>';
+  r+='<div>FOB 단가: <b style="color:var(--acc)">'+U.$(fobUSD)+'</b> ('+U.krw(fobKRW)+')</div>';
   r+='<div>총 FOB: <b style="color:var(--acc)">$'+Number(totalUSD).toLocaleString('en-US',{maximumFractionDigits:0})+'</b></div>';
   r+='<div>내 마진: <b style="color:var(--ok)">'+U.krw(myProfit)+'</b> ('+margin+'%)</div>';
   if(bp>0)r+='<div>바이어 마진: <b style="color:'+(buyerMargin>=20?'var(--ok)':'var(--err)')+'">'+buyerMargin.toFixed(1)+'%</b></div>';
@@ -5442,7 +5818,7 @@ function pgDocgen(){
   var _recentTypes=[];
   if(S.savedDocs.length){var _seen={};S.savedDocs.forEach(function(d){if(!_seen[d.doc_type]&&_recentTypes.length<4){_seen[d.doc_type]=true;_recentTypes.push(d.doc_type);}});}
   var recentQuickSec=_recentTypes.length?'<div class="card" style="margin-bottom:16px;border-color:rgba(0,212,255,.1)"><div class="card-h">⚡ 최근 사용한 서류</div><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap">'+_recentTypes.map(function(t){var d=docs.find(function(x){return x.t===t;});if(!d)return '';var onclick=blocked?'App.previewDocSample(\''+d.t+'\')':'App.startDoc(\''+d.t+'\')';return '<button class="btn btn-ghost" style="font-size:12px;padding:8px 14px;border-color:'+d.c+'" onclick="'+onclick+'">'+d.i+' '+d.n+'</button>';}).join('')+'</div></div>':'';
-  var savedSec=S.savedDocs.length?'<div class="card" style="margin-top:20px"><div class="card-h"><span>📂 생성된 서류</span>'+UI.badge(S.savedDocs.length+'건','pri')+'</div><div class="card-b" style="padding:0"><table class="tbl tbl-r"><thead><tr><th>유형</th><th>번호</th><th>바이어</th><th>금액</th><th>날짜</th><th>액션</th></tr></thead><tbody>'+S.savedDocs.slice(0,20).map(function(d){var amt=d.content&&d.content.total;return '<tr><td data-label="유형">'+(docTypeMap[d.doc_type]||d.doc_type)+'</td><td data-label="번호" style="font-family:JetBrains Mono;font-size:11px">'+(d.doc_number||'-')+'</td><td data-label="바이어">'+U.tr((d.content&&d.content.buyer&&d.content.buyer.buyer_company)||'-',20)+'</td><td data-label="금액" style="font-size:11px;font-weight:600;color:var(--pri)">'+(amt?'$'+Number(amt).toFixed(2):'-')+'</td><td data-label="날짜" style="font-size:11px;color:var(--w40)">'+U.fd(d.created_at)+'</td><td data-label=""><div style="display:flex;gap:4px"><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.cloneDoc(\''+d.id+'\')" title="이 서류를 복제하여 새로 만들기">복제</button></div></td></tr>';}).join('')+'</tbody></table></div></div>':'';
+  var savedSec=S.savedDocs.length?'<div class="card" style="margin-top:20px"><div class="card-h"><span>📂 생성된 서류</span>'+UI.badge(S.savedDocs.length+'건','pri')+'</div><div class="card-b" style="padding:0"><table class="tbl tbl-r"><thead><tr><th>유형</th><th>번호</th><th>바이어</th><th>금액</th><th>날짜</th><th>액션</th></tr></thead><tbody>'+S.savedDocs.slice(0,20).map(function(d){var amt=d.content&&d.content.total;return '<tr><td data-label="유형">'+(docTypeMap[d.doc_type]||d.doc_type)+'</td><td data-label="번호" style="font-family:JetBrains Mono;font-size:11px">'+(d.doc_number||'-')+'</td><td data-label="바이어">'+U.tr((d.content&&d.content.buyer&&d.content.buyer.buyer_company)||'-',20)+'</td><td data-label="금액" style="font-size:11px;font-weight:600;color:var(--pri)">'+(amt?U.$(amt):'-')+'</td><td data-label="날짜" style="font-size:11px;color:var(--w40)">'+U.fd(d.created_at)+'</td><td data-label=""><div style="display:flex;gap:4px"><button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.cloneDoc(\''+d.id+'\')" title="이 서류를 복제하여 새로 만들기">복제</button></div></td></tr>';}).join('')+'</tbody></table></div></div>':'';
   var upgradeBanner=blocked?'<div class="card" style="border-color:rgba(0,212,255,.3);margin-bottom:16px;background:rgba(0,212,255,.04)"><div class="card-b" style="display:flex;align-items:center;gap:14px"><span style="font-size:28px">📋</span><div style="flex:1"><div style="font-weight:700;font-size:14px">서류 자동생성 미리보기</div><div style="font-size:12px;color:var(--w50);margin-top:4px">서류 종류를 클릭해 미리보기를 확인하세요. 다운로드/저장은 STARTER 플랜부터 가능합니다.</div></div><button class="btn btn-pri btn-sm" onclick="App.nav(\'subscription\')">업그레이드 →</button></div></div>':'';
   var content='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">📄 서류 자동생성</h2><p style="font-size:13px;color:var(--w40);margin-top:4px">14종 수출 서류를 회사 정보 기반으로 자동 생성합니다</p></div>'+_disclaimerBanner()+upgradeBanner+warn+recentQuickSec+'<div class="svc-grid">'+docs.map(function(d){var onclick=blocked?'App.previewDocSample(\''+d.t+'\')':'App.startDoc(\''+d.t+'\')';return '<div class="svc-card" style="cursor:pointer" onclick="'+onclick+'"><div class="svc-icon">'+d.i+(blocked?'<span style="position:absolute;top:4px;right:4px;font-size:10px;padding:2px 6px;border-radius:4px;background:var(--w08);color:var(--w40)">미리보기</span>':'')+'</div><div class="svc-name" style="color:'+d.c+'">'+d.n+'</div><div class="svc-desc">'+d.d+'</div><div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="border-color:'+d.c+';color:'+d.c+'">'+(blocked?'미리보기 →':'생성 →')+'</button></div></div>';}).join('')+'</div>'+savedSec;
   return content;
@@ -5553,7 +5929,7 @@ r+='<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bd)">'
 r+='<div style="display:flex;gap:16px;flex-wrap:wrap">';
 r+='<div><span style="color:var(--w40)">원가합계:</span> <b>'+U.krw(Math.round(totalKRW))+'</b></div>';
 r+='<div><span style="color:var(--acc)">마진 '+margin+'%:</span> <b>'+U.krw(Math.round(fobKRW))+'</b></div>';
-r+='<div style="font-size:14px"><span style="color:var(--pri)">FOB 단가:</span> <b style="color:var(--pri);font-size:16px">$'+fobUSD.toFixed(2)+'</b></div>';
+r+='<div style="font-size:14px"><span style="color:var(--pri)">FOB 단가:</span> <b style="color:var(--pri);font-size:16px">'+U.$(fobUSD)+'</b></div>';
 r+='</div></div>';
 S._calcFOB=fobUSD;
 r+='</div>';
@@ -5566,7 +5942,7 @@ items.forEach(function(it,idx){
 var el=document.querySelector('[name=itp_'+idx+']');
 if(el)el.value=S._calcFOB.toFixed(2);
 });
-UI.toast('FOB $'+S._calcFOB.toFixed(2)+' 적용됨','ok');
+UI.toast('FOB '+U.$(S._calcFOB)+' 적용됨','ok');
 }
 function saveDocTemplate(type){
 var rd=UI.fd('#docR');
@@ -5641,7 +6017,7 @@ function rmDocItem(i){S.docItems.splice(i,1);render();setTimeout(function(){App.
 function _numToWords(n){var ones=['','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','TEN','ELEVEN','TWELVE','THIRTEEN','FOURTEEN','FIFTEEN','SIXTEEN','SEVENTEEN','EIGHTEEN','NINETEEN'];var tens=['','','TWENTY','THIRTY','FORTY','FIFTY','SIXTY','SEVENTY','EIGHTY','NINETY'];function _c(x){if(x===0)return '';if(x<20)return ones[x]+' ';if(x<100)return tens[Math.floor(x/10)]+' '+(x%10?ones[x%10]+' ':'');if(x<1000)return ones[Math.floor(x/100)]+' HUNDRED '+_c(x%100);if(x<1000000)return _c(Math.floor(x/1000))+'THOUSAND '+_c(x%1000);if(x<1000000000)return _c(Math.floor(x/1000000))+'MILLION '+_c(x%1000000);return _c(Math.floor(x/1000000000))+'BILLION '+_c(x%1000000000);}var intPart=Math.floor(Math.abs(n));var centPart=Math.round((Math.abs(n)-intPart)*100);var w=_c(intPart).trim();if(!w)w='ZERO';var centsW=centPart>0?' AND CENTS '+_c(centPart).trim():'';return w+centsW+' ONLY';}
 function _currencySymbol(code){var m={USD:'$',EUR:'\u20AC',JPY:'\u00A5',CNY:'\u00A5',GBP:'\u00A3',AED:'AED '};return m[code]||'$';}
 function _currencyName(code){var m={USD:'US DOLLARS',EUR:'EUROS',JPY:'JAPANESE YEN',CNY:'CHINESE YUAN',GBP:'BRITISH POUNDS',AED:'UAE DIRHAMS'};return m[code]||'US DOLLARS';}
-function _updateDocTotal(){var el=document.getElementById('doc-total-value');if(!el)return;var total=0;(S.docItems||[]).forEach(function(it,idx){var q=Number((document.querySelector('[name=itq_'+idx+']')||{}).value)||0;var p=Number((document.querySelector('[name=itp_'+idx+']')||{}).value)||0;total+=q*p;});var curSel=document.querySelector('[name=currency]');var sym=_currencySymbol(curSel?curSel.value:'USD');el.textContent=sym+total.toFixed(2);}
+function _updateDocTotal(){var el=document.getElementById('doc-total-value');if(!el)return;var total=0;(S.docItems||[]).forEach(function(it,idx){var q=Number((document.querySelector('[name=itq_'+idx+']')||{}).value)||0;var p=Number((document.querySelector('[name=itp_'+idx+']')||{}).value)||0;total+=q*p;});var curSel=document.querySelector('[name=currency]');var sym=_currencySymbol(curSel?curSel.value:'USD');el.textContent=sym+U.fc(total);}
 function _updateDocProgress(){var bar=document.getElementById('doc-progress-bar');var pct=document.getElementById('doc-progress-pct');if(!bar||!pct)return;var filled=0;var total=0;['#docB','#docR'].forEach(function(sel){var form=document.querySelector(sel);if(!form)return;var inputs=form.querySelectorAll('input,select,textarea');for(var i=0;i<inputs.length;i++){if(inputs[i].type==='hidden')continue;total++;if(inputs[i].value&&inputs[i].value.trim())filled++;}});(S.docItems||[]).forEach(function(it,idx){total+=2;var n=document.querySelector('[name=itn_'+idx+']');if(n&&n.value.trim())filled++;var q=document.querySelector('[name=itq_'+idx+']');if(q&&Number(q.value)>0)filled++;});var p=total>0?Math.round(filled/total*100):0;bar.style.width=p+'%';bar.style.background=p>=80?'var(--ok-g)':p>=40?'var(--acc-g)':'var(--pri-g)';pct.textContent=p+'%';pct.style.color=p>=80?'var(--ok)':p>=40?'var(--acc)':'var(--w40)';}
 function fillDocProd(idx,pid){if(!pid)return;var p=S.products.find(function(x){return x.id===pid;});if(!p)return;var el=document.getElementById('di'+idx);if(!el)return;var ni=el.querySelector('[name=itn_'+idx+']');if(ni)ni.value=p.name_en||p.name_ko||'';var di=el.querySelector('[name=itd_'+idx+']');if(di)di.value=p.description_en||'';var pi=el.querySelector('[name=itp_'+idx+']');if(pi&&p.fob_price)pi.value=p.fob_price;}
 function fillBuyerDoc(){var sel=document.querySelector('[name=buyer_from]');if(!sel||!sel.value)return;var b=S.buyers.find(function(x){return x.id===sel.value;});if(!b)return;var ci=document.querySelector('[name=buyer_company]');if(ci)ci.value=b.company_name||'';var cn=document.querySelector('[name=buyer_contact]');if(cn)cn.value=b.contact_name||'';var ca=document.querySelector('[name=buyer_address]');if(ca)ca.value=b.address||'';var cc=document.querySelector('[name=buyer_country]');if(cc)cc.value=b.country||'';}
@@ -5767,7 +6143,7 @@ function _genDocInner(items,bd,rd,c){
 
   _lastDoc={type:S.docType,buyer:bd,ref:rd,items:items,company:c,total:tA,totalQty:tQ,totalNW:tNW,totalGW:tGW,totalCBM:tCBM,totalC:tC,typeName:tN[S.docType],currency:_cur};window._lastDoc=_lastDoc;
 
-  var rows=items.map(function(x,i){var a=(Number(x.qty)||0)*(Number(x.price)||0);return (isPL||isBL)?'<tr><td>'+(i+1)+'</td><td><b>'+U.esc(x.name)+'</b><br><small>'+U.esc(x.desc)+'</small></td><td style="text-align:center">'+U.esc(x.qty)+' '+U.esc(x.unit)+'</td><td style="text-align:center">'+U.esc(x.ctn)+'</td><td style="text-align:right">'+(Number(x.nw)||0).toFixed(1)+'</td><td style="text-align:right">'+(Number(x.gw)||0).toFixed(1)+'</td><td>'+(Number(x.cbm)||0).toFixed(3)+'</td><td>'+U.esc(x.dims)+'</td></tr>':'<tr><td>'+(i+1)+'</td><td><b>'+U.esc(x.name)+'</b><br><small>'+U.esc(x.desc)+'</small></td><td style="text-align:center">'+U.esc(x.qty)+' '+U.esc(x.unit)+'</td><td style="text-align:right">'+_cs+(Number(x.price)||0).toFixed(2)+'</td><td style="text-align:right;font-weight:bold">'+_cs+a.toFixed(2)+'</td></tr>';}).join('');
+  var rows=items.map(function(x,i){var a=(Number(x.qty)||0)*(Number(x.price)||0);return (isPL||isBL)?'<tr><td>'+(i+1)+'</td><td><b>'+U.esc(x.name)+'</b><br><small>'+U.esc(x.desc)+'</small></td><td style="text-align:center">'+U.n(x.qty)+' '+U.esc(x.unit)+'</td><td style="text-align:center">'+U.esc(x.ctn)+'</td><td style="text-align:right">'+U.fc(Number(x.nw)||0,1)+'</td><td style="text-align:right">'+U.fc(Number(x.gw)||0,1)+'</td><td>'+U.fc(Number(x.cbm)||0,3)+'</td><td>'+U.esc(x.dims)+'</td></tr>':'<tr><td>'+(i+1)+'</td><td><b>'+U.esc(x.name)+'</b><br><small>'+U.esc(x.desc)+'</small></td><td style="text-align:center">'+U.n(x.qty)+' '+U.esc(x.unit)+'</td><td style="text-align:right">'+_cs+U.fc(Number(x.price)||0)+'</td><td style="text-align:right;font-weight:bold">'+_cs+U.fc(a)+'</td></tr>';}).join('');
   var h='<html><head><meta charset="UTF-8"><title>'+tN[S.docType]+'</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto;color:#222;font-size:13px}table{width:100%;border-collapse:collapse;margin:16px 0}th,td{border:1px solid #bbb;padding:8px;font-size:12px}th{background:#eee}small{color:#888}.ttl{font-size:22px;font-weight:bold;text-align:center;margin:20px 0;padding:12px;background:#003366;color:white}.sig{text-align:center;width:45%;border-top:1px solid #333;padding-top:10px;margin-top:60px;font-size:12px}@media print{body{margin:0}}</style></head><body>';
   h+='<div style="margin-top:20px">';
   h+='<div style="padding:10px 16px;background:#FFF8E1;border:1px solid #FFE082;margin-bottom:12px;font-size:11px;color:#6D4C00;line-height:1.6">\u2696\uFE0F '+DISCLAIMER.en+'</div>';
@@ -5795,9 +6171,9 @@ function _genDocInner(items,bd,rd,c){
   else h+='<b>Payment:</b> '+(rd.payment||'T/T')+'<br><b>Terms:</b> '+(rd.terms||'FOB')+' '+(rd.port||'Busan')+(rd.country_of_origin?'<br><b>Country of Origin:</b> '+U.esc(rd.country_of_origin):'')+(rd.hs_code?'<br><b>HS Code:</b> '+U.esc(rd.hs_code):'')+'<br><b>Currency:</b> '+_cur;
   h+='</td></tr></table>';
   if(isPL||isBL){h+='<table><thead><tr><th>No</th><th>Description</th><th>Qty</th><th>Ctns</th><th>N.W.</th><th>G.W.</th><th>CBM</th><th>Dims</th></tr></thead><tbody>'+rows+'<tr style="font-weight:bold;background:#f5f5f5"><td colspan="2" style="text-align:right">TOTAL</td><td>'+tQ+'</td><td>'+tC+'</td><td>'+tNW.toFixed(1)+'</td><td>'+tGW.toFixed(1)+'</td><td>'+tCBM.toFixed(3)+'</td><td></td></tr></tbody></table>';}
-  else if(isSC){h+='<table><thead><tr><th>No</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>'+rows+'<tr style="font-weight:bold;background:#f5f5f5"><td colspan="4" style="text-align:right">TOTAL CONTRACT VALUE</td><td style="font-size:14px">'+_cs+tA.toFixed(2)+'</td></tr></tbody></table>';
+  else if(isSC){h+='<table><thead><tr><th>No</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>'+rows+'<tr style="font-weight:bold;background:#f5f5f5"><td colspan="4" style="text-align:right">TOTAL CONTRACT VALUE</td><td style="font-size:14px">'+_cs+U.fc(tA)+'</td></tr></tbody></table>';
     h+='<div style="margin-top:20px;font-size:11px;line-height:1.8"><b style="font-size:13px">TERMS AND CONDITIONS</b><ol style="padding-left:18px"><li style="margin-bottom:10px"><b>Product Quality & Specifications.</b> All products supplied under this Contract shall strictly conform to the specifications, standards, and descriptions set forth herein. The Seller warrants that all goods shall be of merchantable quality, free from defects in material and workmanship, and fit for their intended purpose.</li><li style="margin-bottom:10px"><b>Quantity & Tolerance.</b> The quantity shall be as specified above. A tolerance of plus or minus five percent (&#177;5%) on the total quantity is acceptable at the Seller\'s option, subject to pro-rata price adjustment.</li><li style="margin-bottom:10px"><b>Price & Currency.</b> All prices are quoted in United States Dollars (USD) and shall remain firm and fixed for the duration of this Contract unless otherwise agreed in writing. Prices are based on '+(rd.terms||'FOB')+' '+(rd.port||'Busan, Korea')+' (Incoterms&#174; 2020).</li><li style="margin-bottom:10px"><b>Payment Terms.</b> '+(rd.payment||'T/T')+'. '+(rd.deposit_pct||'30')+'% deposit upon contract execution, balance due prior to shipment. Late payments shall incur interest at the rate of '+(rd.penalty_rate||'0.1')+'% per day on the outstanding amount. All bank charges outside Korea shall be borne by the Buyer.</li><li style="margin-bottom:10px"><b>Delivery & Shipment.</b> Delivery shall be made '+(rd.terms||'FOB')+' '+(rd.port||'Busan, Korea')+' by '+(rd.delivery_date||'TBD')+'. Partial shipments and transshipment are permitted unless otherwise stated. The Seller shall notify the Buyer of shipment details within 3 business days of dispatch, including vessel name, sailing date, and estimated arrival.</li><li style="margin-bottom:10px"><b>Packing & Marking.</b> The Seller shall pack the goods in a manner suitable for ocean/air transport and adequate to protect the goods during transit, storage, and handling. Each package shall be clearly marked with the contract number, destination, gross/net weight, and any special handling instructions as required by the Buyer.</li><li style="margin-bottom:10px"><b>Insurance.</b> Unless otherwise agreed, insurance shall be arranged as per the applicable Incoterms&#174; rule. For CIF/CIP terms, the Seller shall insure the goods for 110% of the CIF value under Institute Cargo Clauses (A) &#8212; All Risks.</li><li style="margin-bottom:10px"><b>Inspection.</b> The Buyer or its appointed agent shall have the right to inspect the goods at the Seller\'s premises prior to shipment. Any claims for quantity discrepancy or visible damage must be filed within 30 days of arrival at the destination port. Claims for latent defects must be filed within the warranty period.</li><li style="margin-bottom:10px"><b>Documents Required.</b> The Seller shall provide the following documents: (a) Commercial Invoice in triplicate; (b) Packing List in triplicate; (c) Full set of clean on-board Bills of Lading; (d) Certificate of Origin (for FTA preferential tariff if applicable); (e) Inspection Certificate (if required); (f) Any other documents as specified or required by the Buyer\'s country regulations.</li><li style="margin-bottom:10px"><b>Warranty.</b> The Seller warrants the goods for a period of '+(rd.warranty||'12 months from the date of Bill of Lading')+'. During the warranty period, the Seller shall, at its own expense, repair or replace any goods found to be defective due to faulty materials or workmanship. The Buyer must provide written notice of defect with supporting evidence within 14 days of discovery.</li><li style="margin-bottom:10px"><b>Intellectual Property.</b> The Seller warrants that the goods do not infringe upon any third-party intellectual property rights including patents, trademarks, copyrights, or trade secrets. The Seller shall indemnify and hold the Buyer harmless from any claims arising from such infringement.</li><li style="margin-bottom:10px"><b>Confidentiality.</b> Both parties agree to maintain the confidentiality of all commercial terms, pricing, technical information, and trade secrets disclosed in connection with this Contract for a period of three (3) years from the date of termination or expiration of this Contract.</li><li style="margin-bottom:10px"><b>Force Majeure.</b> Neither party shall be liable for failure or delay in performance due to causes beyond its reasonable control, including but not limited to: natural disasters, war, terrorism, epidemics or pandemics, government sanctions or embargoes, labor strikes, fire, flood, earthquake, or disruption of transportation or supply chains. The affected party shall notify the other party in writing within 7 days and shall use reasonable efforts to mitigate the impact. If the force majeure event continues for more than 90 days, either party may terminate this Contract without liability.</li><li style="margin-bottom:10px"><b>Dispute Resolution.</b> Any dispute arising out of or in connection with this Contract shall first be resolved through amicable negotiation within 30 days. If unresolved, the dispute shall be finally settled by arbitration under the Rules of '+(rd.dispute||'the International Chamber of Commerce (ICC)')+', and the language of arbitration shall be English. The arbitral award shall be final and binding upon both parties.</li><li style="margin-bottom:10px"><b>General Provisions.</b> (a) <b>Governing Law:</b> This Contract shall be governed by and construed in accordance with the laws of the Republic of Korea and the United Nations Convention on Contracts for the International Sale of Goods (CISG). (b) <b>Entire Agreement:</b> This Contract constitutes the entire agreement between the parties and supersedes all prior negotiations, representations, or agreements. (c) <b>Amendment:</b> No modification of this Contract shall be valid unless made in writing and signed by both parties. (d) <b>Assignment:</b> Neither party may assign or transfer this Contract without the prior written consent of the other party. (e) <b>Severability:</b> If any provision is held invalid, the remaining provisions shall continue in full force and effect. (f) <b>Language:</b> This Contract is executed in English, which shall prevail in case of any discrepancy with translations.</li></ol></div>';}
-  else{h+='<table><thead><tr><th>No</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>'+rows+'<tr style="font-weight:bold;background:#f5f5f5"><td colspan="4" style="text-align:right">TOTAL</td><td style="font-size:14px">'+_cs+tA.toFixed(2)+'</td></tr></tbody></table>';if(S.docType==='ci'){h+='<div style="margin-top:8px;padding:8px 12px;font-size:12px;font-style:italic;border:1px solid #ccc"><b>Amount in Words:</b> '+_cn+' '+_numToWords(tA)+'</div>';}}
+  else{h+='<table><thead><tr><th>No</th><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>'+rows+'<tr style="font-weight:bold;background:#f5f5f5"><td colspan="4" style="text-align:right">TOTAL</td><td style="font-size:14px">'+_cs+U.fc(tA)+'</td></tr></tbody></table>';if(S.docType==='ci'){h+='<div style="margin-top:8px;padding:8px 12px;font-size:12px;font-style:italic;border:1px solid #ccc"><b>Amount in Words:</b> '+_cn+' '+_numToWords(tA)+'</div>';}}
   if(isCO){h+='<div style="margin-top:16px;padding:12px;border:1px solid #003366;font-size:12px;line-height:1.8"><b>DECLARATION BY THE EXPORTER</b><br>The undersigned hereby declares that the above details and statements are correct, that all the goods were produced in <b>Republic of Korea</b> and that they comply with the origin requirements specified for those goods in the KORUS FTA / RCEP for the goods exported to <b>'+(rd.dest_port||'destination')+'</b>.<br><br><b>Place and Date:</b> Seoul, Korea / '+rd.doc_date+'</div><div style="margin-top:12px;padding:10px;background:#FFF8E1;border:1px solid #FFE082;font-size:11px;color:#6D4C00;line-height:1.6">\u26A0\uFE0F This is a reference document only. Official C/O must be obtained through KCCI (<a href="https://cert.korcham.net" style="color:#2563eb">cert.korcham.net</a>) or FTA-PASS (<a href="https://www.ftapass.or.kr" style="color:#2563eb">ftapass.or.kr</a>).<br>\u26A0\uFE0F 본 문서는 참고용입니다. 공식 원산지증명서: <a href="https://cert.korcham.net" style="color:#2563eb;font-weight:600">대한상공회의소(KCCI) →</a> | <a href="https://www.ftapass.or.kr" style="color:#2563eb;font-weight:600">FTA-PASS →</a></div>';}
   h+='<div style="display:flex;justify-content:space-between;margin-top:40px"><div class="sig">'+U.esc(c.name_en||'SELLER')+'<br>'+U.esc(c.ceo_name_en||'')+'</div><div class="sig">'+U.esc(bd.buyer_company)+'<br>'+U.esc(bd.buyer_contact||'')+'</div></div>';
   if(!isPL&&!isCO&&c.bank_name){h+='<div style="margin-top:30px;padding:12px;border:1px solid #ccc;font-size:12px;line-height:1.8"><b>BANK:</b> '+c.bank_name+' / A/C: '+(c.bank_account||'')+' / SWIFT: '+(c.swift_code||'')+'</div>';}
@@ -5852,11 +6228,11 @@ function genDocPDF(){
       tbRows+='<tr><td>'+(i+1)+'</td><td>'+xe(x.name)+(x.desc?'<br>'+xe(x.desc):'')+'</td><td>'+x.qty+' '+xe(x.unit)+'</td><td>'+(x.ctn||'')+'</td><td>'+(x.nw?x.nw.toFixed(1):'')+'</td><td>'+(x.gw?x.gw.toFixed(1):'')+'</td><td>'+(x.cbm?x.cbm.toFixed(3):'')+'</td></tr>';
     }else{
       var _pcs=_currencySymbol(d.currency||'USD');
-      tbRows+='<tr><td>'+(i+1)+'</td><td>'+xe(x.name)+(x.desc?'<br>'+xe(x.desc):'')+'</td><td>'+x.qty+' '+xe(x.unit)+'</td><td>'+_pcs+(Number(x.price)||0).toFixed(2)+'</td><td>'+_pcs+((Number(x.qty)||0)*(Number(x.price)||0)).toFixed(2)+'</td></tr>';
+      tbRows+='<tr><td>'+(i+1)+'</td><td>'+xe(x.name)+(x.desc?'<br>'+xe(x.desc):'')+'</td><td>'+U.n(x.qty)+' '+xe(x.unit)+'</td><td>'+_pcs+U.fc(Number(x.price)||0)+'</td><td>'+_pcs+U.fc((Number(x.qty)||0)*(Number(x.price)||0))+'</td></tr>';
     }
   });
   var _pcs2=_currencySymbol(d.currency||'USD');
-  var tfCols=isPL?'<td></td><td>TOTAL</td><td>'+d.totalQty+'</td><td>'+d.totalC+'</td><td>'+(Number(d.totalNW)||0).toFixed(1)+'</td><td>'+(Number(d.totalGW)||0).toFixed(1)+'</td><td>'+(Number(d.totalCBM)||0).toFixed(3)+'</td>':'<td></td><td></td><td></td><td>TOTAL</td><td>'+_pcs2+(Number(d.total)||0).toFixed(2)+'</td>';
+  var tfCols=isPL?'<td></td><td>TOTAL</td><td>'+U.n(d.totalQty)+'</td><td>'+U.n(d.totalC)+'</td><td>'+U.fc(Number(d.totalNW)||0,1)+'</td><td>'+U.fc(Number(d.totalGW)||0,1)+'</td><td>'+U.fc(Number(d.totalCBM)||0,3)+'</td>':'<td></td><td></td><td></td><td>TOTAL</td><td>'+_pcs2+U.fc(Number(d.total)||0)+'</td>';
   /* SC contract terms HTML */
   var scHTML='';
   if(d.type==='sc'){
@@ -6660,7 +7036,7 @@ function pgCostFTA(){
   var _ftaCur=S._ftaCurrency||'USD';
   h+='<div class="grid-3">'+UI.inp('fta_hs_code','HS코드 (4~10자리) *',{placeholder:'3304.99',required:true});
   h+='<div><label class="form-label">수출 대상국 * <span style="font-size:9px;color:var(--w30)">🤝=FTA 체결국</span></label><select class="form-input" name="fta_dest" required>'+countryOptions()+'</select></div>';
-  h+='<div><label class="form-label" style="display:flex;align-items:center;justify-content:space-between">상품가액 <span onclick="App.toggleFTACur()" style="cursor:pointer;padding:2px 8px;border-radius:4px;background:'+(_ftaCur==='USD'?'rgba(0,212,255,.12)':'rgba(255,184,0,.12)')+';color:'+(_ftaCur==='USD'?'var(--pri)':'var(--acc)')+';font-size:10px;font-weight:700">'+(_ftaCur==='USD'?'$ USD':'₩ KRW')+' ⇄</span></label>';
+  h+='<div><label class="form-label" style="display:flex;align-items:center;justify-content:space-between">상품가액 <span onclick="App.toggleFTACur()" style="cursor:pointer;padding:2px 8px;border-radius:4px;background:var(--w08);font-size:10px;font-weight:700;font-family:JetBrains Mono,monospace">'+(_ftaCur==='USD'?'<b style="color:var(--pri)">$ USD</b> <span style="color:var(--w30)">↔</span> <span style="color:var(--w40)">₩ KRW</span>':'<span style="color:var(--w40)">$ USD</span> <span style="color:var(--w30)">↔</span> <b style="color:var(--acc)">₩ KRW</b>')+'</span></label>';
   h+='<div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:800;color:var(--pri);pointer-events:none;opacity:.7">'+(_ftaCur==='USD'?'$':'₩')+'</span><input class="form-input" name="fta_value" type="number" step="0.01" style="padding-left:28px" placeholder="'+(_ftaCur==='USD'?'예: 10,000':'예: 14,000,000')+'"></div></div>';
   h+='</div>';
   h+='<div style="margin-top:8px"><label class="form-label" style="font-size:11px;color:var(--w30)">복수 시장 비교 (선택 — 최대 8개)</label>';
@@ -6692,7 +7068,7 @@ function toggleFTACur(){
   var labels=document.querySelectorAll('.form-label');
   labels.forEach(function(l){if(l.textContent.indexOf('상품가액')!==-1){
     var span=l.querySelector('span');
-    if(span){span.textContent=(S._ftaCurrency==='USD'?'$ USD':'₩ KRW')+' ⇄';span.style.background=S._ftaCurrency==='USD'?'rgba(0,212,255,.12)':'rgba(255,184,0,.12)';span.style.color=S._ftaCurrency==='USD'?'var(--pri)':'var(--acc)';}
+    if(span){span.innerHTML=S._ftaCurrency==='USD'?'<b style="color:var(--pri)">$ USD</b> <span style="color:var(--w30)">↔</span> <span style="color:var(--w40)">₩ KRW</span>':'<span style="color:var(--w40)">$ USD</span> <span style="color:var(--w30)">↔</span> <b style="color:var(--acc)">₩ KRW</b>';}
   }});
 }
 function simulateFTA(){
@@ -6819,11 +7195,20 @@ function ftaToCost(){
 
 function pgCostProduct(){
   var exr=S.exchangeRate||1400;
-  var h='<div class="card"><div class="card-h"><span>💰 원가산출기</span><span style="font-size:11px;color:var(--w40)">1 USD = '+U.krw(exr)+'</span></div><div class="card-b">';
+  var _cpCur=S._costProdCurrency||'KRW';
+  var h='<div class="card"><div class="card-h"><span>💰 원가산출기</span><button class="btn btn-ghost btn-sm" type="button" onclick="App.toggleCostProdCur()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px">'+(_cpCur==='KRW'?'$ USD ↔ <b>₩ KRW</b>':'<b>$ USD</b> ↔ ₩ KRW')+'</button></div><div class="card-b">';
   h+='<form id="cpf" onsubmit="event.preventDefault();App.calcProduct()">';
-  h+='<div class="grid-3">'+UI.inp('mfg_cost','제조원가 (개당)',{type:'number',placeholder:'3500',prefix:'₩'})+UI.inp('pkg_cost','포장비 (개당)',{type:'number',placeholder:'500',prefix:'₩'})+UI.inp('margin_pct','마진율',{type:'number',step:'0.1',placeholder:'30',prefix:'%'})+'</div>';
-  h+='<div class="grid-3">'+UI.inp('moq','MOQ (수량)',{type:'number',placeholder:'1000'})+UI.inp('buyer_price','바이어 판매가',{type:'number',step:'0.01',placeholder:'12.00',prefix:'$'})+'<div class="form-group"><label class="form-label">타겟 시장</label><select class="form-input" name="target_mkt">'+countryOptions()+'</select></div>'+'</div>';
-  h+='<div class="grid-2">'+UI.inp('cert_cost','인증비용 (선택)',{type:'number',placeholder:'0',prefix:'₩'})+UI.inp('other_cost','기타비용 (선택)',{type:'number',placeholder:'0',prefix:'₩'})+'</div>';
+  if(_cpCur==='KRW'){
+    h+='<div class="grid-3">'+UI.inp('mfg_cost','제조원가 (개당)',{type:'number',placeholder:'3500',prefix:'₩'})+UI.inp('pkg_cost','포장비 (개당)',{type:'number',placeholder:'500',prefix:'₩'})+UI.inp('margin_pct','마진율',{type:'number',step:'0.1',placeholder:'30',prefix:'%'})+'</div>';
+    h+='<div class="grid-3">'+UI.inp('moq','MOQ (수량)',{type:'number',placeholder:'1000'})+UI.inp('buyer_price','바이어 판매가',{type:'number',step:'0.01',placeholder:'12.00',prefix:'$'})+'<div class="form-group"><label class="form-label">타겟 시장</label><select class="form-input" name="target_mkt" onchange="App.updateCertPanel()">'+countryOptions()+'</select></div>'+'</div>';
+  }else{
+    h+='<div class="grid-3">'+UI.inp('mfg_cost','제조원가 (개당)',{type:'number',step:'0.01',placeholder:'2.50',prefix:'$'})+UI.inp('pkg_cost','포장비 (개당)',{type:'number',step:'0.01',placeholder:'0.35',prefix:'$'})+UI.inp('margin_pct','마진율',{type:'number',step:'0.1',placeholder:'30',prefix:'%'})+'</div>';
+    h+='<div class="grid-3">'+UI.inp('moq','MOQ (수량)',{type:'number',placeholder:'1000'})+UI.inp('buyer_price','바이어 판매가',{type:'number',step:'0.01',placeholder:'12.00',prefix:'$'})+'<div class="form-group"><label class="form-label">타겟 시장</label><select class="form-input" name="target_mkt" onchange="App.updateCertPanel()">'+countryOptions()+'</select></div>'+'</div>';
+  }
+  /* 인증비용 체크리스트 패널 */
+  h+=pgCostCertPanel(_cpCur);
+  /* 기타비용 */
+  h+='<div class="grid-2" style="margin-top:8px">'+UI.inp('other_cost','기타비용 (물류/마케팅 등)',{type:'number',placeholder:'0',prefix:_cpCur==='KRW'?'₩':'$',step:_cpCur==='KRW'?'1':'0.01'})+'<div></div></div>';
   /* FTA 관세 자동 연동 — 분석 리포트 HS코드 연결 */
   var _hsProducts=S.analyses.filter(function(a){return a.ai_result&&(a.ai_result.hs_code||a.ai_result.hs_code_detail);});
   if(_hsProducts.length){
@@ -6842,6 +7227,88 @@ function pgCostProduct(){
   /* 안내 카드 */
   h+='<div class="card" style="margin-top:14px"><div class="card-b" style="padding:14px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">💡</span><div><div style="font-size:13px;font-weight:700;color:var(--w90)">물류비까지 포함한 최종 비용을 보려면?</div><div style="font-size:12px;color:var(--w40);margin-top:2px">원가산출 후 "물류비 계산기로 이동" 버튼을 누르면 FOB 가격이 자동으로 연계됩니다.</div></div></div></div></div>';
   return h;
+}
+
+/* 원가산출기 인증비용 체크리스트 */
+function pgCostCertPanel(currency){
+  var selections=S._costCertSelections||{};
+  /* 타겟 시장 기준 추천 인증 목록 */
+  var mktSel=S._costInputs&&S._costInputs.target_mkt?S._costInputs.target_mkt:'US';
+  /* 현재 프로젝트의 카테고리 탐색 */
+  var pCat='';var pOriginCC=S._costOriginCountry||'KR';
+  if(S.currentProject){
+    var prod=(S.products||[]).find(function(pr){return S.currentProject.product_ids&&S.currentProject.product_ids.indexOf(pr.id)>=0;});
+    if(prod)pCat=prod.category||'';
+  }
+  var matched=pCat?matchCerts(pCat,mktSel,pOriginCC):matchCerts('',mktSel,pOriginCC);
+  /* 매칭이 없으면 목적지+출발지 국가 기반으로 표시 */
+  if(!matched.length){
+    var normDC=_normCC(mktSel);var normOC=_normCC(pOriginCC);
+    Object.keys(CERT_DB).forEach(function(k){var db=CERT_DB[k];if((db.side==='dest'&&db.cc===normDC)||(db.side==='origin'&&db.cc===normOC))matched.push(k);});
+  }
+  /* 사용자가 직접 추가한 것도 포함 */
+  Object.keys(selections).forEach(function(k){if(matched.indexOf(k)<0)matched.push(k);});
+
+  var exr=S.exchangeRate||1400;
+  var totalCost=0;
+  var h='<div style="margin-top:10px;padding:12px;border-radius:8px;border:1px solid var(--bd);background:var(--w08)">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--w90)">🏅 인증비용</span>';
+  h+='<span style="font-size:10px;color:var(--w40)">'+UI.esc(_countryNames[pOriginCC]||pOriginCC)+' → '+UI.esc(_countryNames[mktSel]||mktSel)+(pCat?' · '+UI.esc(pCat):'')+'</span></div>';
+
+  if(matched.length){
+    matched.forEach(function(k){
+      var db=CERT_DB[k];if(!db)return;
+      var sel=selections[k]||{checked:false,owned:false};
+      var isChecked=sel.checked;
+      var isOwned=sel.owned;
+      var costUSD=(db.costMin+db.costMax)/2;
+      if(isChecked&&!isOwned)totalCost+=costUSD;
+      var costDisplay=U.$(db.costMin,0)+'~'+U.$(db.costMax,0);
+
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--w08)">';
+      h+='<input type="checkbox" name="cert_sel_'+k+'" '+(isChecked?'checked':'')+' onchange="App.toggleCostCert(\''+k+'\')" style="accent-color:var(--acc)">';
+      var _sideLabel=db.side==='origin'?'<span style="font-size:8px;padding:0 3px;border-radius:2px;background:rgba(0,212,255,.1);color:var(--pri);margin-left:2px">출발</span>':'<span style="font-size:8px;padding:0 3px;border-radius:2px;background:rgba(255,184,0,.1);color:var(--acc);margin-left:2px">도착</span>';
+      h+='<span style="font-size:12px;font-weight:600;min-width:60px">'+k+_sideLabel+'</span>';
+      h+='<span style="font-size:10px;color:var(--w40);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+UI.esc(db.agency||db.full)+'">'+UI.esc(db.agency||db.full)+'</span>';
+      h+='<span style="font-size:11px;color:var(--w60);white-space:nowrap">'+costDisplay+'</span>';
+      if(isChecked){
+        h+='<button type="button" class="btn btn-ghost" style="font-size:9px;padding:2px 6px;color:'+(isOwned?'var(--ok)':'var(--acc)')+'" onclick="App.toggleCostCertOwned(\''+k+'\')">'+(isOwned?'✅ 보유':'⏳ 미보유')+'</button>';
+      }
+      h+='</div>';
+    });
+  }
+  h+='<input type="hidden" name="cert_cost" value="'+totalCost+'">';
+  /* 합계 */
+  h+='<div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center">';
+  h+='<span style="font-size:11px;color:var(--w40)">미보유 인증 예상 비용</span>';
+  var totalDisp=currency==='KRW'?U.W(Math.round(totalCost*exr)):U.$(totalCost,0);
+  h+='<span style="font-size:13px;font-weight:800;color:var(--acc)">'+totalDisp+'</span>';
+  h+='</div></div>';
+  return h;
+}
+
+function toggleCostCert(k){
+  if(!S._costCertSelections)S._costCertSelections={};
+  var sel=S._costCertSelections[k]||{checked:false,owned:false};
+  sel.checked=!sel.checked;
+  if(!sel.checked)sel.owned=false;
+  S._costCertSelections[k]=sel;
+  var panel=document.getElementById('cert-panel-container');
+  /* 전체 패널 리렌더 없이 hidden input 갱신 */
+  saveCostInputs();
+  setCostTab('product');
+}
+function toggleCostCertOwned(k){
+  if(!S._costCertSelections)S._costCertSelections={};
+  var sel=S._costCertSelections[k]||{checked:true,owned:false};
+  sel.owned=!sel.owned;
+  S._costCertSelections[k]=sel;
+  saveCostInputs();
+  setCostTab('product');
+}
+function updateCertPanel(){
+  saveCostInputs();
+  setCostTab('product');
 }
 
 function applyHSTariff(analysisId){
@@ -6872,11 +7339,15 @@ function calcProduct(){
   var mfgCost=parseFloat(d.mfg_cost)||0;var pkgCost=parseFloat(d.pkg_cost)||0;
   var marginPct=parseFloat(d.margin_pct)||30;var moq=parseInt(d.moq)||1000;
   var buyerPrice=parseFloat(d.buyer_price)||0;
-  var certCost=parseFloat(d.cert_cost)||0;var otherCost=parseFloat(d.other_cost)||0;
+  var certCostUSD=parseFloat(d.cert_cost)||0;var otherCost=parseFloat(d.other_cost)||0;
   var exr=S.exchangeRate||1400;
 
   if(!mfgCost){UI.toast('제조원가를 입력하세요','warn');return;}
 
+  /* 인증비용은 항상 USD 기준 → KRW 변환 */
+  var certCost=Math.round(certCostUSD*exr);
+  /* USD 입력시 KRW로 변환 */
+  if(S._costProdCurrency==='USD'){mfgCost=Math.round(mfgCost*exr);pkgCost=Math.round(pkgCost*exr);otherCost=Math.round(otherCost*exr);}
   var unitCostKRW=mfgCost+pkgCost;
   var totalFixedKRW=certCost+otherCost;
   var fixedPerUnit=moq>0?totalFixedKRW/moq:0;
@@ -6917,7 +7388,7 @@ function calcProduct(){
   h+='<div style="display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:13px">';
   costRows.forEach(function(r){
     var st=r[2]==='pri'?'font-weight:700;color:var(--pri);border-top:1px solid var(--bd);padding-top:6px;margin-top:4px':r[2]==='acc'?'color:var(--acc);font-weight:600':'color:var(--w60)';
-    h+='<div style="'+st+'">'+r[0]+'</div><div style="text-align:right;'+st+'">'+U.krw(r[1])+' <span style="font-size:10px;color:var(--w30)">($'+((r[1])/exr).toFixed(2)+')</span></div>';
+    h+='<div style="'+st+'">'+r[0]+'</div><div style="text-align:right;'+st+'">'+U.krw(r[1])+' <span style="font-size:10px;color:var(--w30)">('+U.$(r[1]/exr)+')</span></div>';
   });
   h+='</div>';
 
@@ -6968,7 +7439,7 @@ function calcProduct(){
   h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--w08)"><th style="padding:8px;text-align:left">마진율</th><th style="text-align:right">FOB 단가</th><th style="text-align:right">FOB (USD)</th><th style="text-align:right">총액 (×'+U.n(moq)+')</th><th style="text-align:right">내 이익</th></tr></thead><tbody>';
   mComp.forEach(function(mc){
     var isActive=mc.pct===Math.round(marginPct);
-    h+='<tr style="border-bottom:1px solid var(--bd);'+(isActive?'background:rgba(0,212,255,.06)':'')+'"><td style="padding:6px 8px;font-weight:'+(isActive?'700':'400')+'">'+(isActive?'👉 ':'')+mc.pct+'%</td><td style="text-align:right">'+U.krw(Math.round(mc.krw))+'</td><td style="text-align:right;color:var(--pri);font-weight:600">$'+mc.usd.toFixed(2)+'</td><td style="text-align:right">'+U.fmtUSD(mc.total)+'</td><td style="text-align:right;color:var(--ok);font-weight:600">'+U.krw(Math.round((mc.krw-totalUnitKRW)*moq))+'</td></tr>';
+    h+='<tr style="border-bottom:1px solid var(--bd);'+(isActive?'background:rgba(0,212,255,.06)':'')+'"><td style="padding:6px 8px;font-weight:'+(isActive?'700':'400')+'">'+(isActive?'👉 ':'')+mc.pct+'%</td><td style="text-align:right">'+U.krw(Math.round(mc.krw))+'</td><td style="text-align:right;color:var(--pri);font-weight:600">'+U.$(mc.usd)+'</td><td style="text-align:right">'+U.fmtUSD(mc.total)+'</td><td style="text-align:right;color:var(--ok);font-weight:600">'+U.krw(Math.round((mc.krw-totalUnitKRW)*moq))+'</td></tr>';
   });
   h+='</tbody></table></div>';
 
@@ -6984,18 +7455,11 @@ function calcProduct(){
 
 function copyFOBToChat(){
   var pc=window._lastProductCalc;if(!pc){UI.toast('먼저 원가 분석을 실행하세요','warn');return;}
-  var txt='FOB Price: $'+pc.fobUSD.toFixed(2)+'/unit ('+U.krw(Math.round(pc.fobKRW))+'), MOQ: '+U.n(pc.moq)+'pcs, Total: $'+(pc.fobUSD*pc.moq).toFixed(2);
+  var txt='FOB Price: '+U.$(pc.fobUSD)+'/unit ('+U.krw(Math.round(pc.fobKRW))+'), MOQ: '+U.n(pc.moq)+'pcs, Total: '+U.$(pc.fobUSD*pc.moq);
   navigator.clipboard.writeText(txt).then(function(){UI.toast('FOB 견적이 클립보드에 복사되었습니다','ok');});
 }
 
 function pgCostLogistics(){
-  var DESTS=[
-    {value:'US_LA',label:'🇺🇸 LA (미서부)',cc:'US'},{value:'US_NY',label:'🇺🇸 뉴욕 (미동부)',cc:'US'},
-    {value:'JP_TYO',label:'🇯🇵 도쿄',cc:'JP'},{value:'JP_OSA',label:'🇯🇵 오사카',cc:'JP'},
-    {value:'DE_HAM',label:'🇩🇪 함부르크 (EU)',cc:'DE'},{value:'CN_SHA',label:'🇨🇳 상해',cc:'CN'},
-    {value:'SG',label:'🇸🇬 싱가포르',cc:'SG'},{value:'VN_HCM',label:'🇻🇳 호치민',cc:'VN'},
-    {value:'AE_DXB',label:'🇦🇪 두바이',cc:'AE'},{value:'AU_SYD',label:'🇦🇺 시드니',cc:'AU'}
-  ];
   var SHIPS=[
     {value:'lcl',label:'🚢 해상 LCL (소량)'},{value:'fcl_20',label:'🚢 해상 FCL 20ft'},
     {value:'fcl_40',label:'🚢 해상 FCL 40ft'},{value:'air',label:'✈️ 항공'},
@@ -7021,36 +7485,208 @@ function pgCostLogistics(){
     {value:'2309.90',label:'2309.90 반려동물 사료'},{value:'8708.99',label:'8708.99 자동차부품'}
   ];
   var _cc=S._costCurrency||'USD';
+  var _otherCc=_cc==='USD'?'KRW':'USD';
+  var _mfgC=S._costOriginCountry||'KR';
+  var _selShip=S._costInputs&&S._costInputs.ship||'lcl';
   var _prefill=window._lastProductCalc||null;
-  var _prefillNote=_prefill?'<div style="padding:10px 14px;margin-bottom:12px;border-radius:8px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.15);font-size:12px;color:var(--pri)">💰 원가산출기 결과 연동: FOB $'+_prefill.fobUSD.toFixed(2)+' × '+U.n(_prefill.moq)+'개</div>':'';
+  var _prefillNote=_prefill?'<div style="padding:10px 14px;margin-bottom:12px;border-radius:8px;background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.15);font-size:12px;color:var(--pri)">💰 원가산출기 결과 연동: FOB '+U.$(_prefill.fobUSD)+' × '+U.n(_prefill.moq)+'개</div>':'';
+  /* 출발 국가 셀렉터 (한국 포함) */
+  var originCountryH='<div class="form-group"><label class="form-label">출발 국가</label><select class="form-input" name="origin_country" onchange="App.changeOriginCountry(this.value)">';
+  originCountryH+='<option value="KR"'+(_mfgC==='KR'?' selected':'')+'>🇰🇷 한국</option>';
+  _countryGroups.forEach(function(g){
+    originCountryH+='<optgroup label="'+g.label+'">';
+    g.codes.forEach(function(c){
+      if(c==='KR')return;
+      var f=_countryFlags[c]||'';var n=_countryNames[c]||c;
+      originCountryH+='<option value="'+c+'"'+(c===_mfgC?' selected':'')+'>'+f+' '+n+'</option>';
+    });
+    originCountryH+='</optgroup>';
+  });
+  originCountryH+='</select></div>';
   return _prefillNote+
-  '<div class="card"><div class="card-h"><span>제품 + 물류 정보</span><button class="btn btn-ghost btn-sm" type="button" onclick="App.toggleCostCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px">입력: '+_cc+' ↔</button></div><div class="card-b"><form id="cf" onsubmit="event.preventDefault();App.calcC()">'+
+  '<div class="card"><div class="card-h"><span>제품 + 물류 정보</span><button class="btn btn-ghost btn-sm" type="button" onclick="App.toggleCostCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px">'+(_cc==='USD'?'<b>$ USD</b> ↔ ₩ KRW':'$ USD ↔ <b>₩ KRW</b>')+'</button></div><div class="card-b"><form id="cf" onsubmit="event.preventDefault();App.calcC()">'+
   '<div class="grid-3">'+UI.inp('fob_price','FOB 단가',{type:'number',step:'0.01',placeholder:_cc==='KRW'?'6300':'4.50',prefix:_cc==='KRW'?'₩':'$'})+UI.inp('quantity','수량(pcs)',{type:'number',placeholder:'5000',extra:'oninput="App.autoCBM()"'})+UI.inp('weight_kg','총 중량(kg)',{type:'number',placeholder:'150'})+'</div>'+
   '<div class="grid-4"><div class="form-group"><label class="form-label">가로 W(cm)</label><input class="form-input" name="dim_w" type="number" step="0.1" placeholder="40" oninput="App.autoCBM()"></div><div class="form-group"><label class="form-label">세로 H(cm)</label><input class="form-input" name="dim_h" type="number" step="0.1" placeholder="30" oninput="App.autoCBM()"></div><div class="form-group"><label class="form-label">높이 D(cm)</label><input class="form-input" name="dim_d" type="number" step="0.1" placeholder="25" oninput="App.autoCBM()"></div>'+UI.inp('cbm','용적(CBM)',{type:'number',step:'0.001',placeholder:'자동계산'})+'</div>'+
   '<div style="font-size:10px;color:var(--w30);margin:-8px 0 8px 0">W × H × D × 수량 ÷ 1,000,000 = CBM (자동계산)</div>'+
   '<div class="grid-3">'+
   UI.sel('hs_preset','HS코드 선택',HS_PRESETS,{onchange:'document.getElementById("hs_code").value=this.value'})+
   UI.inp('hs_code','HS코드 직접입력',{placeholder:'3304.99'})+'<div></div></div>'+
-  '<div class="grid-3">'+UI.sel('origin_port','출발항',[{value:'KRPUS',label:'🇰🇷 부산 (KRPUS)'},{value:'KRICN',label:'🇰🇷 인천 (KRICN)'},{value:'KRKWG',label:'🇰🇷 광양 (KRKWG)'},{value:'KRPTK',label:'🇰🇷 평택 (KRPTK)'}])+UI.sel('dest','도착지',DESTS)+UI.sel('ship','운송 방식',SHIPS)+'</div>'+
+  '<div class="grid-3">'+originCountryH+'<div class="form-group"><label class="form-label">출발 항만/공항</label><select class="form-input" name="origin_port">'+originOptions(_mfgC,_selShip)+'</select></div><div class="form-group"><label class="form-label">도착지</label><select class="form-input" name="dest">'+costDestOptions(S._costInputs&&S._costInputs.dest||'US_LA')+'</select></div></div>'+
+  '<div class="grid-3">'+UI.sel('ship','운송 방식',SHIPS,{onchange:'App.changeShipType(this.value)'})+'<div></div><div></div></div>'+
   '<div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:var(--w04);border:1px solid var(--bd)"><div style="display:flex;align-items:center;gap:8px"><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--w50);cursor:pointer;white-space:nowrap"><input type="checkbox" name="use_custom_freight" style="accent-color:var(--pri)" onchange="var el=document.getElementById(\'custom-freight-row\');if(el)el.style.display=this.checked?\'flex\':\'none\'"> 운임 직접 입력 <span style="font-size:9px;color:var(--w30)">(기존 포워더 견적이 있는 경우)</span></label></div><div id="custom-freight-row" style="display:none;gap:10px;margin-top:8px">'+UI.inp('custom_freight','운임 (USD)',{type:'number',step:'0.01',placeholder:'포워더 견적 금액',prefix:'$'})+UI.inp('custom_transit','운송일수 (일)',{type:'number',placeholder:'예: 20'})+'</div></div>'+
   '<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-pri" type="submit" style="flex:1">Landed Cost 계산</button><button class="btn btn-ghost" type="button" onclick="App.calcCCompare()" style="flex:1">전체 노선 비교</button></div>'+
   '</form><div id="cr">'+(S._costLogisticsResultHTML||'')+'</div></div></div>';
 }
 
-var _COST_DESTS={US_LA:{n:'LA',cc:'US'},US_NY:{n:'뉴욕',cc:'US'},JP_TYO:{n:'도쿄',cc:'JP'},JP_OSA:{n:'오사카',cc:'JP'},DE_HAM:{n:'함부르크',cc:'DE'},CN_SHA:{n:'상해',cc:'CN'},SG:{n:'싱가포르',cc:'SG'},VN_HCM:{n:'호치민',cc:'VN'},AE_DXB:{n:'두바이',cc:'AE'},AU_SYD:{n:'시드니',cc:'AU'}};
-var _ORIGIN_PORTS={KRPUS:'부산',KRICN:'인천',KRKWG:'광양',KRPTK:'평택'};
+/* 도착지 — 100개국+ (주요국은 항구/공항 세분화) */
+var _COST_DESTS={};
+(function(){
+  /* 주요국: 복수 도시 */
+  var multi={
+    US:[{k:'US_LA',n:'LA (미서부)',p:'Los Angeles'},{k:'US_NY',n:'뉴욕 (미동부)',p:'New York'}],
+    JP:[{k:'JP_TYO',n:'도쿄',p:'Tokyo'},{k:'JP_OSA',n:'오사카',p:'Osaka'}],
+    CN:[{k:'CN_SHA',n:'상해',p:'Shanghai'},{k:'CN_SZX',n:'선전',p:'Shenzhen'}],
+    DE:[{k:'DE_HAM',n:'함부르크 (EU)',p:'Hamburg'}],
+    GB:[{k:'GB_FXT',n:'런던 (Felixstowe)',p:'London'}],
+    AU:[{k:'AU_SYD',n:'시드니',p:'Sydney'},{k:'AU_MEL',n:'멜버른',p:'Melbourne'}],
+    VN:[{k:'VN_HCM',n:'호치민',p:'Ho Chi Minh'},{k:'VN_HAN',n:'하노이',p:'Hanoi'}],
+    SG:[{k:'SG',n:'싱가포르',p:'Singapore'}],
+    AE:[{k:'AE_DXB',n:'두바이',p:'Dubai'}],
+    IN:[{k:'IN_BOM',n:'뭄바이',p:'Mumbai'},{k:'IN_MAA',n:'첸나이',p:'Chennai'}],
+    CA:[{k:'CA_YVR',n:'밴쿠버',p:'Vancouver'},{k:'CA_YYZ',n:'토론토',p:'Toronto'}],
+    TH:[{k:'TH_BKK',n:'방콕',p:'Bangkok'}],
+    MY:[{k:'MY_PKG',n:'포트클랑',p:'Port Klang'}],
+    ID:[{k:'ID_JKT',n:'자카르타',p:'Jakarta'}],
+    PH:[{k:'PH_MNL',n:'마닐라',p:'Manila'}],
+    BR:[{k:'BR_SSZ',n:'상파울루',p:'Santos'}],
+    MX:[{k:'MX_MZT',n:'만사니요',p:'Manzanillo'}],
+    TR:[{k:'TR_IST',n:'이스탄불',p:'Istanbul'}],
+    SA:[{k:'SA_JED',n:'제다',p:'Jeddah'}],
+    NL:[{k:'NL_RTM',n:'로테르담',p:'Rotterdam'}]
+  };
+  Object.keys(multi).forEach(function(cc){
+    multi[cc].forEach(function(d){_COST_DESTS[d.k]={n:d.n,cc:cc,port:d.p};});
+  });
+  /* 나머지 국가: 국가명=도착지 */
+  _allCountryCodes.forEach(function(cc){
+    if(multi[cc])return;
+    _COST_DESTS[cc]={n:_countryNames[cc]||cc,cc:cc,port:_countryNames[cc]||cc};
+  });
+})();
+/* 도착지 select 옵션 (지역 그룹별) */
+function costDestOptions(selected){
+  var h='';
+  var multi={US:['US_LA','US_NY'],JP:['JP_TYO','JP_OSA'],CN:['CN_SHA','CN_SZX'],AU:['AU_SYD','AU_MEL'],VN:['VN_HCM','VN_HAN'],CA:['CA_YVR','CA_YYZ'],IN:['IN_BOM','IN_MAA']};
+  var done={};
+  _countryGroups.forEach(function(g){
+    h+='<optgroup label="'+g.label+'">';
+    g.codes.forEach(function(cc){
+      if(cc==='KR'||done[cc])return;done[cc]=1;
+      var f=_countryFlags[cc]||'';
+      if(multi[cc]){
+        multi[cc].forEach(function(k){
+          var d=_COST_DESTS[k];if(!d)return;
+          h+='<option value="'+k+'"'+(k===selected?' selected':'')+'>'+f+' '+d.n+'</option>';
+        });
+      }else{
+        var k=_COST_DESTS[cc]?cc:null;
+        if(k)h+='<option value="'+k+'"'+(k===selected?' selected':'')+'>'+f+' '+(_countryNames[cc]||cc)+'</option>';
+      }
+    });
+    h+='</optgroup>';
+  });
+  return h;
+}
+/* 출발지 — 국가별 항만+공항 */
+var _ORIGINS={
+  KR:{ports:[{v:'KRPUS',l:'🇰🇷 부산항 (KRPUS)'},{v:'KRICN',l:'🇰🇷 인천항 (KRICN)'},{v:'KRKWG',l:'🇰🇷 광양항 (KRKWG)'},{v:'KRPTK',l:'🇰🇷 평택항 (KRPTK)'}],airports:[{v:'KRICN_AIR',l:'🇰🇷 인천공항 (ICN)'},{v:'KRGMP_AIR',l:'🇰🇷 김포공항 (GMP)'}]},
+  US:{ports:[{v:'USLAX',l:'🇺🇸 LA항 (USLAX)'},{v:'USNYC',l:'🇺🇸 뉴욕항 (USNYC)'},{v:'USSEA',l:'🇺🇸 시애틀항 (USSEA)'}],airports:[{v:'USLAX_AIR',l:'🇺🇸 LAX공항'},{v:'USJFK_AIR',l:'🇺🇸 JFK공항'}]},
+  CN:{ports:[{v:'CNSHA',l:'🇨🇳 상해항 (CNSHA)'},{v:'CNSZX',l:'🇨🇳 선전항 (CNSZX)'},{v:'CNNGB',l:'🇨🇳 닝보항 (CNNGB)'}],airports:[{v:'CNPVG_AIR',l:'🇨🇳 상해푸동공항 (PVG)'},{v:'CNSZX_AIR',l:'🇨🇳 선전공항 (SZX)'}]},
+  JP:{ports:[{v:'JPTYO',l:'🇯🇵 도쿄항 (JPTYO)'},{v:'JPOSA',l:'🇯🇵 오사카항 (JPOSA)'}],airports:[{v:'JPNRT_AIR',l:'🇯🇵 나리타공항 (NRT)'},{v:'JPKIX_AIR',l:'🇯🇵 간사이공항 (KIX)'}]},
+  DE:{ports:[{v:'DEHAM',l:'🇩🇪 함부르크항 (DEHAM)'}],airports:[{v:'DEFRA_AIR',l:'🇩🇪 프랑크푸르트공항 (FRA)'}]},
+  VN:{ports:[{v:'VNSGN',l:'🇻🇳 호치민항 (VNSGN)'},{v:'VNHAN',l:'🇻🇳 하이퐁항'}],airports:[{v:'VNSGN_AIR',l:'🇻🇳 떤선녓공항 (SGN)'}]},
+  SG:{ports:[{v:'SGSIN',l:'🇸🇬 싱가포르항 (SGSIN)'}],airports:[{v:'SGSIN_AIR',l:'🇸🇬 창이공항 (SIN)'}]},
+  TH:{ports:[{v:'THBKK',l:'🇹🇭 방콕항 (Laem Chabang)'}],airports:[{v:'THBKK_AIR',l:'🇹🇭 수완나품공항 (BKK)'}]},
+  GB:{ports:[{v:'GBFXT',l:'🇬🇧 펠릭스토우항'}],airports:[{v:'GBLHR_AIR',l:'🇬🇧 히드로공항 (LHR)'}]},
+  AU:{ports:[{v:'AUSYD',l:'🇦🇺 시드니항 (AUSYD)'}],airports:[{v:'AUSYD_AIR',l:'🇦🇺 시드니공항 (SYD)'}]},
+  IN:{ports:[{v:'INBOM',l:'🇮🇳 뭄바이항 (INBOM)'}],airports:[{v:'INBOM_AIR',l:'🇮🇳 뭄바이공항 (BOM)'}]},
+  AE:{ports:[{v:'AEJEA',l:'🇦🇪 제벨알리항 (Jebel Ali)'}],airports:[{v:'AEDXB_AIR',l:'🇦🇪 두바이공항 (DXB)'}]}
+};
+/* 제조사 국가 기반 출발지 옵션 생성 */
+function originOptions(mfgCountry,shipType){
+  var cc=mfgCountry||'KR';
+  var data=_ORIGINS[cc];
+  if(!data){
+    /* 데이터 없는 국가: 일반 옵션 */
+    var f=_countryFlags[cc]||'';var n=_countryNames[cc]||cc;
+    return '<option value="'+cc+'_PORT">'+f+' '+n+' 항만</option><option value="'+cc+'_AIR">'+f+' '+n+' 공항</option>';
+  }
+  var isAir=shipType==='air'||shipType==='express';
+  var h='<optgroup label="✈️ 공항">';
+  (data.airports||[]).forEach(function(a){h+='<option value="'+a.v+'"'+(isAir?' selected':'')+'>'+a.l+'</option>';});
+  h+='</optgroup><optgroup label="🚢 항만">';
+  (data.ports||[]).forEach(function(p){h+='<option value="'+p.v+'"'+(!isAir?' selected':'')+'>'+p.l+'</option>';});
+  h+='</optgroup>';
+  return h;
+}
+/* 출발지 이름 조회 */
+var _ORIGIN_NAMES={KRPUS:'부산',KRICN:'인천',KRKWG:'광양',KRPTK:'평택',KRICN_AIR:'인천(ICN)',KRGMP_AIR:'김포(GMP)',USLAX:'LA',USNYC:'뉴욕',USSEA:'시애틀',USLAX_AIR:'LAX',USJFK_AIR:'JFK',CNSHA:'상해',CNSZX:'선전',CNNGB:'닝보',CNPVG_AIR:'상해(PVG)',CNSZX_AIR:'선전(SZX)',JPTYO:'도쿄',JPOSA:'오사카',JPNRT_AIR:'나리타',JPKIX_AIR:'간사이',DEHAM:'함부르크',DEFRA_AIR:'프랑크푸르트',VNSGN:'호치민',VNHAN:'하이퐁',VNSGN_AIR:'떤선녓',SGSIN:'싱가포르',SGSIN_AIR:'창이',THBKK:'방콕',THBKK_AIR:'수완나품',GBFXT:'펠릭스토우',GBLHR_AIR:'히드로',AUSYD:'시드니',AUSYD_AIR:'시드니(SYD)',INBOM:'뭄바이',INBOM_AIR:'뭄바이(BOM)',AEJEA:'제벨알리',AEDXB_AIR:'두바이(DXB)'};
 function autoCBM(){var w=parseFloat((document.querySelector('[name=dim_w]')||{}).value)||0;var h=parseFloat((document.querySelector('[name=dim_h]')||{}).value)||0;var d2=parseFloat((document.querySelector('[name=dim_d]')||{}).value)||0;var qty=parseFloat((document.querySelector('[name=quantity]')||{}).value)||1;if(w&&h&&d2){var cbm=(w*h*d2*qty)/1000000;var el=document.querySelector('[name=cbm]');if(el)el.value=cbm.toFixed(3);}}
-function toggleCostCurrency(){S._costCurrency=(S._costCurrency||'USD')==='USD'?'KRW':'USD';render();}
+function toggleCostCurrency(){
+  saveCostInputs();
+  var oldCur=S._costCurrency||'USD';
+  var newCur=oldCur==='USD'?'KRW':'USD';
+  var exr=S.exchangeRate||1400;
+  var convertFields=['fob_price','custom_freight'];
+  if(S._costInputs){
+    convertFields.forEach(function(k){
+      var v=parseFloat(S._costInputs[k]);
+      if(!v)return;
+      if(oldCur==='USD'&&newCur==='KRW'){
+        S._costInputs[k]=String(Math.round(v*exr));
+      }else{
+        S._costInputs[k]=String(Math.round(v/exr*100)/100);
+      }
+    });
+  }
+  S._costCurrency=newCur;
+  render();
+}
+function toggleCostProdCur(){
+  saveCostInputs();
+  var oldCur=S._costProdCurrency||'KRW';
+  var newCur=oldCur==='KRW'?'USD':'KRW';
+  var exr=S.exchangeRate||1400;
+  /* 통화 변환: KRW↔USD 자동 환산 */
+  var convertFields=['mfg_cost','pkg_cost','other_cost'];
+  if(S._costInputs){
+    convertFields.forEach(function(k){
+      var v=parseFloat(S._costInputs[k]);
+      if(!v)return;
+      if(oldCur==='KRW'&&newCur==='USD'){
+        S._costInputs[k]=String(Math.round(v/exr*100)/100);
+      }else{
+        S._costInputs[k]=String(Math.round(v*exr));
+      }
+    });
+  }
+  S._costProdCurrency=newCur;
+  render();
+}
+function toggleCostMarginCur(){
+  saveCostInputs();
+  var oldCur=S._costMarginCurrency||'USD';
+  var newCur=oldCur==='USD'?'KRW':'USD';
+  var exr=S.exchangeRate||1400;
+  var convertFields=['ms_prod_cost','ms_ship_cost'];
+  if(S._costInputs){
+    convertFields.forEach(function(k){
+      var v=parseFloat(S._costInputs[k]);
+      if(!v)return;
+      if(oldCur==='USD'&&newCur==='KRW'){
+        S._costInputs[k]=String(Math.round(v*exr));
+      }else{
+        S._costInputs[k]=String(Math.round(v/exr*100)/100);
+      }
+    });
+  }
+  S._costMarginCurrency=newCur;
+  render();
+}
+function changeOriginCountry(cc){saveCostInputs();S._costOriginCountry=cc;render();}
+function changeShipType(v){saveCostInputs();S._costInputs=S._costInputs||{};S._costInputs.ship=v;var sel=document.querySelector('[name=origin_port]');if(sel){sel.innerHTML=originOptions(S._costOriginCountry||'KR',v);}}
 
 /* === #75 MARGIN SIMULATOR FORM UI === */
 function pgCostMarginSim(){
   var exr=S.exchangeRate||1400;
-  var h='<div class="card"><div class="card-h"><span>📊 비용/마진 시뮬레이터</span><span style="font-size:11px;color:var(--w40)">1 USD = '+U.krw(exr)+'</span></div><div class="card-b">';
+  var _msCur=S._costMarginCurrency||'USD';
+  var h='<div class="card"><div class="card-h"><span>📊 비용/마진 시뮬레이터</span><button class="btn btn-ghost btn-sm" type="button" onclick="App.toggleCostMarginCur()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px">'+(_msCur==='USD'?'<b>$ USD</b> ↔ ₩ KRW':'$ USD ↔ <b>₩ KRW</b>')+'</button></div><div class="card-b">';
   h+='<p style="font-size:12px;color:var(--w40);margin-bottom:10px">제품 원가, 물류비, 관세를 입력하면 FOB/CIF/소매가와 마진을 자동 계산합니다.</p>';
   h+='<form id="msf" onsubmit="event.preventDefault();App.calcMarginSim()">';
+  var _msPfx=_msCur==='USD'?'$':'₩';
   h+='<div class="grid-2">'+
-    UI.inp('ms_prod_cost','제품 원가 (개당)',{type:'number',step:'0.01',placeholder:'3.50',prefix:'$'})+
-    UI.inp('ms_ship_cost','물류비 (개당)',{type:'number',step:'0.01',placeholder:'0.80',prefix:'$'})+
+    UI.inp('ms_prod_cost','제품 원가 (개당)',{type:'number',step:_msCur==='USD'?'0.01':'100',placeholder:_msCur==='USD'?'3.50':'5,000',prefix:_msPfx})+
+    UI.inp('ms_ship_cost','물류비 (개당)',{type:'number',step:_msCur==='USD'?'0.01':'100',placeholder:_msCur==='USD'?'0.80':'1,200',prefix:_msPfx})+
   '</div>';
   h+='<div class="grid-3">'+
     UI.inp('ms_duty_cost','관세/세금',{type:'number',step:'0.1',placeholder:'8',prefix:'%'})+
@@ -7070,7 +7706,7 @@ function calcC(){
   var d=UI.fd('#cf');if(!d.fob_price||!d.quantity){UI.toast('FOB 단가와 수량을 입력하세요','warn');return;}
   var dest=d.dest||'US_LA';var ship=d.ship||'lcl';var hs=d.hs_code||d.hs_preset||'3304.99';
   var qty=parseFloat(d.quantity);var fobUnit=parseFloat(d.fob_price);var wt=parseFloat(d.weight_kg)||100;var cbm=parseFloat(d.cbm)||Math.max(wt/500,0.5);
-  var originPort=d.origin_port||'KRPUS';var originName=_ORIGIN_PORTS[originPort]||'부산';
+  var originPort=d.origin_port||'KRPUS';var originName=_ORIGIN_NAMES[originPort]||originPort;
   /* KRW 입력시 USD로 변환 */
   var exr=S.exchangeRate||1400;
   if(S._costCurrency==='KRW'){fobUnit=fobUnit/exr;}
@@ -8260,7 +8896,40 @@ function saveBuyer(){
   var d=UI.fd('#bf');if(!d.company_name){UI.toast('회사명을 입력해주세요','warn');return;}
   if(d.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)){UI.toast('올바른 이메일을 입력해주세요','warn');return;}
   d.registered_by=S.user.id;
-  sb.from('buyers').insert(d).then(function(r){if(r.error){_toastE(r.error);return;}closeModal('bm');loadB().then(function(){render();UI.toast('등록!','ok');});});
+  d.source='direct';
+  sb.from('buyers').insert(d).select().then(function(r){
+    if(r.error){_toastE(r.error);return;}
+    closeModal('bm');
+    var newBuyer=r.data&&r.data[0];
+    loadB().then(function(){render();});
+    /* 바이어 초대 결과 모달 — 링크 + 쿠폰 */
+    var refCode=S.user?(S.user.id||'').slice(0,8).toUpperCase():'';
+    var couponCode='FREE1-'+refCode+'-'+(Date.now()%10000);
+    var buyerLink=window.location.origin+'/buyer?ref='+refCode+'&type=buyer';
+    var invH='<div style="text-align:center;padding:8px 0"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">'+UI.esc(d.company_name)+' 등록 완료!</div><div style="font-size:12px;color:var(--w40)">바이어에게 아래 정보를 공유하세요</div></div>';
+    /* 바이어 페이지 링크 */
+    invH+='<div class="form-group" style="margin-top:16px"><label class="form-label">🔗 바이어 전용 페이지 링크</label><div style="display:flex;gap:6px"><input class="form-input" value="'+UI.esc(buyerLink)+'" readonly style="flex:1;font-size:11px" id="buyer-inv-link"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'buyer-inv-link\').value).then(function(){App.UI.toast(\'복사됨\',\'ok\')})">복사</button></div><div style="font-size:10px;color:var(--w40);margin-top:4px">바이어가 이 링크로 가입하면 자동으로 연결됩니다</div></div>';
+    /* 수수료 면제 쿠폰 */
+    invH+='<div class="form-group" style="margin-top:12px"><label class="form-label">🎟️ 첫 거래 수수료 면제 쿠폰</label><div style="display:flex;gap:6px"><input class="form-input" value="'+couponCode+'" readonly style="flex:1;font-family:JetBrains Mono;font-weight:700;text-align:center;letter-spacing:2px;font-size:14px;color:var(--acc)" id="buyer-coupon"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'buyer-coupon\').value).then(function(){App.UI.toast(\'복사됨\',\'ok\')})">복사</button></div><div style="font-size:10px;color:var(--ok);margin-top:4px">첫 거래 시 결제 수수료 1회 면제 (가입 후 30일 이내)</div></div>';
+    /* 이메일로 바로 보내기 */
+    if(d.email){
+      invH+='<div style="margin-top:16px;padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12)"><div style="font-size:12px;font-weight:600;color:var(--pri);margin-bottom:8px">📧 바이어에게 이메일로 초대</div>';
+      invH+='<button class="btn btn-pri" style="width:100%" onclick="App.sendBuyerInviteEmail(\''+UI.esc(d.email)+'\',\''+UI.esc(buyerLink)+'\',\''+couponCode+'\')">'+UI.esc(d.email)+'로 초대 메일 보내기</button></div>';
+    }
+    document.body.insertAdjacentHTML('beforeend',UI.modal({id:'buyer-inv',title:'🎉 바이어 초대',body:invH,footer:'<button class="btn btn-pri" onclick="App.closeModal(\'buyer-inv\')">확인</button>'}));
+    UI.showModal('buyer-inv');
+    /* 초대 기록 저장 */
+    if(!S._pendingInvites)S._pendingInvites=[];
+    S._pendingInvites.unshift({email:d.email||d.company_name,type:'buyer',coupon:couponCode,created_at:new Date().toISOString()});
+  });
+}
+
+function sendBuyerInviteEmail(email,link,coupon){
+  var mfgName=(S.settings||{}).company_name||'제조사';
+  sb.from('notifications').insert({user_id:S.user.id,type:'system',title:'바이어 초대: '+email,body:'초대 링크: '+link+' | 쿠폰: '+coupon,link_page:'invite',is_read:false}).then(function(r){
+    if(r.error){UI.toast('전송 실패','err');return;}
+    UI.toast(email+'에게 초대를 보냈습니다!','ok');
+  });
 }
 
 /* === MEETINGS === */
@@ -10875,14 +11544,14 @@ function renderDealDocForm(deal){
     h+='<input placeholder="단위" value="'+UI.esc(item.unit||'PCS')+'" oninput="App.updateDocItem('+i+',\'unit\',this.value)" style="width:50px;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none;text-align:center">';
     h+='<input type="number" step="0.01" placeholder="단가($)" value="'+(item.unit_price||'')+'" oninput="App.updateDocItem('+i+',\'unit_price\',this.value)" style="width:80px;padding:6px 8px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:11px;outline:none;text-align:right">';
     var lineTotal=((parseFloat(item.qty)||0)*(parseFloat(item.unit_price)||0));
-    h+='<span style="width:70px;font-size:11px;text-align:right;color:var(--acc);font-weight:600">$'+lineTotal.toFixed(2)+'</span>';
+    h+='<span style="width:70px;font-size:11px;text-align:right;color:var(--acc);font-weight:600">'+U.$(lineTotal)+'</span>';
     if(f.items.length>1)h+='<button onclick="App.rmDealDocItem('+i+')" style="background:none;border:none;color:var(--err);cursor:pointer;font-size:14px;padding:0 2px">✕</button>';
     h+='</div>';
   });
   var total=f.items.reduce(function(s,it){return s+((parseFloat(it.qty)||0)*(parseFloat(it.unit_price)||0));},0);
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">';
   h+='<button class="btn btn-ghost btn-sm" onclick="App.addDealDocItem()" style="font-size:10px">+ 품목 추가</button>';
-  h+='<div style="font-size:13px;font-weight:700;color:var(--acc)">합계: $'+total.toFixed(2)+'</div></div>';
+  h+='<div style="font-size:13px;font-weight:700;color:var(--acc)">합계: '+U.$(total)+'</div></div>';
 
   // Terms
   h+='<div class="grid-2" style="gap:8px;margin-top:12px">';
@@ -10938,7 +11607,7 @@ function _submitDealDocInner(){
     var typeNames={pi:'견적송장(PI)',ci:'상업송장(CI)',pl:'패킹리스트(PL)',co:'원산지증명(CO)',sc:'계약서(SC)'};
     sb.from('messages').insert({
       buyer_id:deal.buyerId,user_id:S.user.id,sender_type:'seller',
-      body:'[서류 전송] '+(typeNames[f.type]||f.type)+' - '+docNum+' (총액: $'+total.toFixed(2)+')',
+      body:'[서류 전송] '+(typeNames[f.type]||f.type)+' - '+docNum+' (총액: '+U.$(total)+')',
       message_type:'system',channel:'platform',direction:'outbound'
     }).then(function(){});
     S._dealDocForm=null;
@@ -11933,7 +12602,7 @@ function render(){
   if(!S.user){app.innerHTML=pgAuth();return;}
   try{
   var unreadN=(S.notifications||[]).filter(function(n){return !n.is_read;}).length;
-  app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div>'+_breadcrumb()+'</div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.openCmdPalette()" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--bd);color:var(--w40);display:flex;align-items:center;gap:6px" title="Cmd+K"><span>🔍</span><span style="font-size:11px">검색</span><kbd style="font-size:9px;background:var(--w10);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px">⌘K</kbd></button><button class="btn btn-ghost btn-sm" onclick="App.toggleTheme()" style="font-size:14px;padding:4px 8px;border-radius:6px" title="테마 변경">'+(document.documentElement.getAttribute("data-theme")==="light"?"\uD83C\uDF19":"\u2600\uFE0F")+'</button><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(S.currency==='KRW'?'\u20A9 KRW':'\u0024 USD')+' \u21C4</button><div style="position:relative;cursor:pointer" onclick="App.toggleNotif(event)" title="알림"><span style="font-size:16px">🔔</span>'+(unreadN>0?'<span class="notif-dot"></span><span style="position:absolute;top:-6px;right:-8px;font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 4px;font-weight:700;min-width:14px;text-align:center">'+unreadN+'</span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+U.esc(S.user.email)+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div>'+(S.notifOpen?renderNotifPanel():'')+'<div class="page-content">'+renderPage()+'</div></div></div>';
+  app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div>'+_breadcrumb()+'</div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.openCmdPalette()" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--bd);color:var(--w40);display:flex;align-items:center;gap:6px" title="Cmd+K"><span>🔍</span><span style="font-size:11px">검색</span><kbd style="font-size:9px;background:var(--w10);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px">⌘K</kbd></button><button class="btn btn-ghost btn-sm" onclick="App.toggleTheme()" style="font-size:14px;padding:4px 8px;border-radius:6px" title="테마 변경">'+(document.documentElement.getAttribute("data-theme")==="light"?"\uD83C\uDF19":"\u2600\uFE0F")+'</button><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(S.currency==='KRW'?'$ USD ↔ <b>₩ KRW</b>':'<b>$ USD</b> ↔ ₩ KRW')+'</button><div style="position:relative;cursor:pointer" onclick="App.toggleNotif(event)" title="알림"><span style="font-size:16px">🔔</span>'+(unreadN>0?'<span class="notif-dot"></span><span style="position:absolute;top:-6px;right:-8px;font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 4px;font-weight:700;min-width:14px;text-align:center">'+unreadN+'</span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+U.esc(S.user.email)+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div>'+(S.notifOpen?renderNotifPanel():'')+'<div class="page-content">'+renderPage()+'</div></div></div>';
   var _pc2=document.querySelector('.page-content');if(_pc2&&_scrollY>0&&!S._navScrollReset){_pc2.scrollTop=_scrollY;requestAnimationFrame(function(){_pc2.scrollTop=_scrollY;});}S._navScrollReset=false;
   _renderMobNav();
   /* Initialize live total for doc form */
@@ -12279,6 +12948,9 @@ function calcMarginSim(){
   var marginPct=parseFloat(d.ms_margin_pct)||30;
   var moq=parseInt(d.ms_moq)||1000;
   if(!prodCost){UI.toast('제품원가를 입력하세요','warn');return;}
+  /* KRW 입력시 USD로 변환 */
+  var _msExr=S.exchangeRate||1400;
+  if(S._costMarginCurrency==='KRW'){prodCost=prodCost/_msExr;shipCost=shipCost/_msExr;}
   var fobPrice=prodCost*(1+marginPct/100);
   var cifPrice=fobPrice+shipCost;
   var dutyAmt=cifPrice*(dutyCost/100);
@@ -12291,13 +12963,13 @@ function calcMarginSim(){
   var h='<div style="margin-top:16px">';
   /* Summary cards */
   h+='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px">';
-  h+='<div style="padding:14px;border-radius:10px;background:rgba(0,212,255,.08);text-align:center"><div style="font-size:10px;color:var(--w40)">FOB 단가</div><div style="font-size:20px;font-weight:800;color:var(--pri)">$'+fobPrice.toFixed(2)+'</div><div style="font-size:10px;color:var(--w30)">'+U.krw(Math.round(fobPrice*exr))+'</div></div>';
-  h+='<div style="padding:14px;border-radius:10px;background:rgba(0,230,118,.08);text-align:center"><div style="font-size:10px;color:var(--w40)">단위 이익</div><div style="font-size:20px;font-weight:800;color:var(--ok)">$'+profitPerUnit.toFixed(2)+'</div><div style="font-size:10px;color:var(--w30)">마진 '+marginPct+'%</div></div>';
+  h+='<div style="padding:14px;border-radius:10px;background:rgba(0,212,255,.08);text-align:center"><div style="font-size:10px;color:var(--w40)">FOB 단가</div><div style="font-size:20px;font-weight:800;color:var(--pri)">'+U.$(fobPrice)+'</div><div style="font-size:10px;color:var(--w30)">'+U.krw(Math.round(fobPrice*exr))+'</div></div>';
+  h+='<div style="padding:14px;border-radius:10px;background:rgba(0,230,118,.08);text-align:center"><div style="font-size:10px;color:var(--w40)">단위 이익</div><div style="font-size:20px;font-weight:800;color:var(--ok)">'+U.$(profitPerUnit)+'</div><div style="font-size:10px;color:var(--w30)">마진 '+marginPct+'%</div></div>';
   h+='</div>';
   h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">';
-  h+='<div style="padding:12px;border-radius:10px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">CIF</div><div style="font-size:15px;font-weight:700;color:var(--w80)">$'+cifPrice.toFixed(2)+'</div></div>';
-  h+='<div style="padding:12px;border-radius:10px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">Landed (관세 포함)</div><div style="font-size:15px;font-weight:700;color:var(--acc)">$'+landedUnit.toFixed(2)+'</div></div>';
-  h+='<div style="padding:12px;border-radius:10px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">소매가 추정</div><div style="font-size:15px;font-weight:700;color:var(--w80)">$'+retailPrice.toFixed(2)+'</div></div>';
+  h+='<div style="padding:12px;border-radius:10px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">CIF</div><div style="font-size:15px;font-weight:700;color:var(--w80)">'+U.$(cifPrice)+'</div></div>';
+  h+='<div style="padding:12px;border-radius:10px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">Landed (관세 포함)</div><div style="font-size:15px;font-weight:700;color:var(--acc)">'+U.$(landedUnit)+'</div></div>';
+  h+='<div style="padding:12px;border-radius:10px;background:var(--w08);text-align:center"><div style="font-size:10px;color:var(--w40)">소매가 추정</div><div style="font-size:15px;font-weight:700;color:var(--w80)">'+U.$(retailPrice)+'</div></div>';
   h+='</div>';
   /* Cost breakdown bar */
   var costParts=[{label:'제품원가',val:prodCost,color:'#FF5252'},{label:'마진',val:profitPerUnit,color:'#00E676'},{label:'운임',val:shipCost,color:'#FFB800'},{label:'관세',val:dutyAmt,color:'#FF9100'}];
@@ -12305,7 +12977,7 @@ function calcMarginSim(){
   if(totalBar>0){
     h+='<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--w40);margin-bottom:4px">비용 구조</div>';
     h+='<div style="display:flex;height:28px;border-radius:6px;overflow:hidden">';
-    costParts.forEach(function(p){if(p.val<=0)return;var pct=p.val/totalBar*100;h+='<div style="width:'+pct+'%;background:'+p.color+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;min-width:30px" title="'+p.label+': $'+p.val.toFixed(2)+'">'+p.label+' '+Math.round(pct)+'%</div>';});
+    costParts.forEach(function(p){if(p.val<=0)return;var pct=p.val/totalBar*100;h+='<div style="width:'+pct+'%;background:'+p.color+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#000;min-width:30px" title="'+p.label+': '+U.$(p.val)+'">'+p.label+' '+Math.round(pct)+'%</div>';});
     h+='</div></div>';
   }
   /* Total volume */
@@ -12323,8 +12995,8 @@ function calcMarginSim(){
     var active=m===Math.round(marginPct);
     h+='<div style="padding:8px 12px;border-radius:8px;background:'+(active?'rgba(0,212,255,.12)':'var(--w08)')+';border:1px solid '+(active?'var(--pri)':'var(--bd)')+';text-align:center;min-width:70px">';
     h+='<div style="font-size:10px;color:var(--w40)">'+m+'%</div>';
-    h+='<div style="font-size:13px;font-weight:700;color:'+(active?'var(--pri)':'var(--w70)')+'">$'+f.toFixed(2)+'</div>';
-    h+='<div style="font-size:9px;color:var(--ok)">+$'+pr.toFixed(2)+'</div>';
+    h+='<div style="font-size:13px;font-weight:700;color:'+(active?'var(--pri)':'var(--w70)')+'">'+U.$(f)+'</div>';
+    h+='<div style="font-size:9px;color:var(--ok)">+'+U.$(pr)+'</div>';
     h+='</div>';
   });
   h+='</div>';
@@ -12546,7 +13218,7 @@ document.addEventListener('keydown',function(e){
   }else if(k==='g'||k==='n'){_pendingKey=k;setTimeout(function(){_pendingKey=null;},600);}
 });
 
-window.App={set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,toggleSampleShipFields:toggleSampleShipFields,saveSampleTracking:saveSampleTracking,trackSample:trackSample,toggleShipFields:toggleShipFields,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,shareTrackingToBuyer:shareTrackingToBuyer,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,requestLogisticsPartner:requestLogisticsPartner,requestCustomsBroker:requestCustomsBroker,refreshExRate:refreshExRate,toggleFTACur:toggleFTACur,recalcCost:recalcCost,saveCostCalc:saveCostCalc,exportCostPDF:exportCostPDF,askCustomsAI:askCustomsAI,customsAIAction:customsAIAction,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_docValContinue:null,respondInquiry:respondInquiry,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,UI:UI};
+window.App={set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,sendBuyerInviteEmail:sendBuyerInviteEmail,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,toggleSampleShipFields:toggleSampleShipFields,saveSampleTracking:saveSampleTracking,trackSample:trackSample,toggleShipFields:toggleShipFields,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleCostProdCur:toggleCostProdCur,toggleCostMarginCur:toggleCostMarginCur,changeOriginCountry:changeOriginCountry,changeShipType:changeShipType,toggleCostCert:toggleCostCert,toggleCostCertOwned:toggleCostCertOwned,updateCertPanel:updateCertPanel,fetchTradeReqs:fetchTradeReqs,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,shareTrackingToBuyer:shareTrackingToBuyer,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,savePjDocDraft:savePjDocDraft,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,requestLogisticsPartner:requestLogisticsPartner,requestCustomsBroker:requestCustomsBroker,refreshExRate:refreshExRate,toggleFTACur:toggleFTACur,recalcCost:recalcCost,saveCostCalc:saveCostCalc,exportCostPDF:exportCostPDF,askCustomsAI:askCustomsAI,customsAIAction:customsAIAction,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_docValContinue:null,respondInquiry:respondInquiry,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,UI:UI};
 _handleTossCallback();
 _checkTossOneCallback();
 loadUser();
