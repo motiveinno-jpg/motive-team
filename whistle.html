@@ -3879,6 +3879,8 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;background:var(--w04);opacity:.6"><div style="text-align:center;color:var(--w30);padding:20px"><div style="font-size:32px;margin-bottom:8px;filter:grayscale(1)">💬</div><div style="font-size:13px;font-weight:600;margin-bottom:4px">채팅 비활성</div><div style="font-size:11px;color:var(--w20);line-height:1.5">바이어가 매칭되면<br>채팅이 활성화됩니다</div></div></div>';
   }else{
     var buyerId=S._pjChatBuyer||uniqueBuyers[0]||null;
+    /* 폴백으로 바이어가 선택된 경우 상태에도 반영 + 채팅 로드 */
+    if(buyerId&&!S._pjChatBuyer){S._pjChatBuyer=buyerId;if(!S._pjChatMsgs||!S._pjChatMsgs.length){setTimeout(function(){App.openPjChat(buyerId);},50);}}
     var buyer=buyerId?S.buyers.find(function(b){return b.id===buyerId;}):null;
     var buyerName=buyer?(buyer.company_name||buyer.contact_name||'Buyer'):'Buyer';
     var msgs=S._pjChatMsgs||[];
@@ -3897,8 +3899,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='<div style="width:28px;height:28px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--bg)">'+U.esc(buyerName.charAt(0))+'</div>';
     h+='<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+U.esc(buyerName)+'</div><div style="font-size:9px;color:var(--w30)">채팅 가능</div></div>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.setPjTab(\'docs\')">📄 서류 보기</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.startVideoMeeting()">🖥️ 화상미팅</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.translateChatMsg(null,\'ko\',true)" title="전체 번역">🌐</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.startVideoMeeting()">📞 화상미팅</button>';
     h+='</div>';
     /* Messages area with drag-drop */
     h+='<div id="pj-chat-scroll" class="pj-chat-messages" style="border:2px dashed transparent;transition:border-color .2s,background .2s" ondragover="event.preventDefault();this.style.borderColor=\'var(--pri)\';this.style.background=\'rgba(0,212,255,.03)\'" ondragleave="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'" ondrop="App.pjChatDrop(event)">';
@@ -3950,7 +3951,8 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='</div>';
     /* Input area */
     h+='<div style="padding:8px 10px;border-top:1px solid var(--bd);flex-shrink:0">';
-    h+='<div style="display:flex;gap:6px"><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.pjChatAttach()" title="파일 첨부">\ud83d\udcce</button><input id="pj-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:12px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:8px 14px;font-size:12px">전송</button></div>';
+    h+='<div style="display:flex;gap:6px;align-items:center"><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.pjChatAttach()" title="파일 첨부 (최대 5MB)">\ud83d\udcce</button><input id="pj-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:12px;outline:none"><button class="btn btn-ghost" onclick="App.translateChatMsg(null,\'ko\',true)" style="padding:6px 8px;font-size:14px" title="전체 번역">🌐</button><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:8px 14px;font-size:12px">전송</button></div>';
+    h+='<div style="font-size:9px;color:var(--w20);padding:2px 10px 0">파일 드래그&드롭 또는 📎 클릭 (최대 5MB · PDF, 이미지, 문서, 엑셀)</div>';
     h+='</div>';
   }
   h+='</div>';
@@ -4136,12 +4138,13 @@ function togglePjStageExpand(stage){
 /* 프로젝트 채팅 드래그앤드롭 파일 업로드 */
 function pjChatDrop(e){
   e.preventDefault();e.currentTarget.style.borderColor='transparent';e.currentTarget.style.background='transparent';
-  var buyerId=S._pjChatBuyer;if(!buyerId)return;
+  var buyerId=S._pjChatBuyer;if(!buyerId){UI.toast('바이어를 먼저 선택하세요','warn');return;}
   var files=e.dataTransfer.files;if(!files||!files.length)return;
   var file=files[0];
-  if(file.size>10*1024*1024){UI.toast('10MB 이하 파일만 가능','warn');return;}
-  var ALLOWED=/\.(pdf|jpe?g|png|gif|webp|doc|docx|xls|xlsx|csv)$/i;
-  if(!ALLOWED.test(file.name)){UI.toast('PDF, 이미지, 문서, 엑셀만 가능','warn');return;}
+  var sizeMB=(file.size/(1024*1024)).toFixed(1);
+  if(file.size>MAX_CHAT_FILE_MB*1024*1024){UI.toast('파일 크기 '+sizeMB+'MB — 최대 '+MAX_CHAT_FILE_MB+'MB까지 업로드 가능합니다','warn');return;}
+  var ALLOWED=/\.(pdf|jpe?g|png|gif|webp|doc|docx|xls|xlsx|csv|ppt|pptx)$/i;
+  if(!ALLOWED.test(file.name)){UI.toast('지원 형식: PDF, 이미지, 문서, 엑셀, PPT','warn');return;}
   var path='chat/'+S.user.id+'/'+buyerId+'/'+Date.now()+'_'+file.name;
   UI.toast('업로드 중...','info');
   sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
@@ -5136,7 +5139,7 @@ function startVideoMeeting(){
       +'</label>';
   });
   m.innerHTML='<div style="background:var(--card);border-radius:var(--r);border:1px solid var(--bd-l);max-width:500px;width:95%;box-shadow:var(--shadow-lg);overflow:hidden">'
-    +'<div style="padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:15px">🖥️ 화상미팅</span><span style="cursor:pointer;font-size:18px;color:var(--w40)" onclick="this.closest(\'.modal-overlay\').remove()">✕</span></div>'
+    +'<div style="padding:14px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:15px">📞 화상미팅</span><span style="cursor:pointer;font-size:18px;color:var(--w40)" onclick="this.closest(\'.modal-overlay\').remove()">✕</span></div>'
     +'<div style="padding:20px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:10px 12px;background:var(--w04);border-radius:8px"><div style="width:32px;height:32px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+UI.esc(buyerName.charAt(0))+'</div><div><div style="font-size:13px;font-weight:700">'+UI.esc(buyerName)+'</div><div style="font-size:11px;color:var(--w40)">바이어와 화상미팅</div></div></div>'
     /* 플랫폼 선택 */
@@ -6335,7 +6338,7 @@ function pgDocgen(){
   var content='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">📄 서류 자동생성</h2><p style="font-size:13px;color:var(--w40);margin-top:4px">14종 수출 서류를 회사 정보 기반으로 자동 생성합니다</p></div>'+_disclaimerBanner()+upgradeBanner+warn+recentQuickSec+'<div class="svc-grid">'+docs.map(function(d){var onclick=blocked?'App.previewDocSample(\''+d.t+'\')':'App.startDoc(\''+d.t+'\')';return '<div class="svc-card" style="cursor:pointer" onclick="'+onclick+'"><div class="svc-icon">'+d.i+(blocked?'<span style="position:absolute;top:4px;right:4px;font-size:10px;padding:2px 6px;border-radius:4px;background:var(--w08);color:var(--w40)">미리보기</span>':'')+'</div><div class="svc-name" style="color:'+d.c+'">'+d.n+'</div><div class="svc-desc">'+d.d+'</div><div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="border-color:'+d.c+';color:'+d.c+'">'+(blocked?'미리보기 →':'생성 →')+'</button></div></div>';}).join('')+'</div>'+savedSec;
   return content;
 }
-function showDocUpgradePrompt(){var id='docup';var exist=document.getElementById('modal-'+id);if(exist)exist.remove();var m=document.createElement('div');m.id='modal-'+id;m.className='modal-overlay';m.style.cssText='position:fixed;inset:0;z-index:999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(6px)';m.innerHTML='<div style="background:var(--card);border-radius:var(--r);border:1px solid var(--bd-l);max-width:420px;width:90%;box-shadow:var(--shadow-lg);overflow:hidden"><div style="padding:16px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:14px">서류 자동생성</span><span style="cursor:pointer;font-size:18px;color:var(--w40)" onclick="this.closest(\'.modal-overlay\').remove()">✕</span></div><div style="padding:24px;text-align:center"><div style="font-size:48px;margin-bottom:16px">🔒</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">유료 플랜에서 이용 가능합니다</div><div style="font-size:13px;color:var(--w50);line-height:1.6;margin-bottom:20px">STARTER 플랜에서 PI, CI, PL, CO 등<br>14종 수출서류를 자동생성할 수 있습니다.</div><div style="display:flex;gap:10px;justify-content:center"><button class="btn btn-pri" onclick="this.closest(\'.modal-overlay\').remove();App.nav(\'subscription\')">플랜 보기</button><button class="btn btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">닫기</button></div></div></div>';m.onclick=function(e){if(e.target===m)m.remove();};document.body.appendChild(m);}
+function showDocUpgradePrompt(){var id='docup';var exist=document.getElementById('modal-'+id);if(exist)exist.remove();var m=document.createElement('div');m.id='modal-'+id;m.className='modal-overlay show';m.style.cssText='position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(6px)';m.innerHTML='<div style="background:var(--card);border-radius:var(--r);border:1px solid var(--bd-l);max-width:420px;width:90%;box-shadow:var(--shadow-lg);overflow:hidden"><div style="padding:16px 20px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:14px">서류 자동생성</span><span style="cursor:pointer;font-size:18px;color:var(--w40)" onclick="this.closest(\'.modal-overlay\').remove()">✕</span></div><div style="padding:24px;text-align:center"><div style="font-size:48px;margin-bottom:16px">🔒</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">유료 플랜에서 이용 가능합니다</div><div style="font-size:13px;color:var(--w50);line-height:1.6;margin-bottom:20px">STARTER 플랜에서 PI, CI, PL, CO 등<br>14종 수출서류를 자동생성할 수 있습니다.</div><div style="display:flex;gap:10px;justify-content:center"><button class="btn btn-pri" onclick="this.closest(\'.modal-overlay\').remove();App.nav(\'subscription\')">플랜 보기</button><button class="btn btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">닫기</button></div></div></div>';m.onclick=function(e){if(e.target===m)m.remove();};document.body.appendChild(m);}
 function previewDocSample(type){
   var tN={pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',bl:'B/L Instructions to Forwarder',sc:'Sales Contract',ic:'Insurance Certificate',cd:'Customs Declaration',lc:'L/C Checklist',isc:'Inspection Certificate',hsc:'Health Certificate',cfs:'Certificate of Free Sale',fc:'Fumigation Certificate',msds:'Material Safety Data Sheet'};
   var sampleData={shipper:'ABC Trading Co., Ltd.',buyer:'Global Import Inc.',items:[{name:'Sample Product A',qty:1000,unit:'PCS',price:'$5.00',amount:'$5,000.00'},{name:'Sample Product B',qty:500,unit:'CTN',price:'$12.00',amount:'$6,000.00'}],total:'$11,000.00',terms:'FOB Busan, Korea',date:new Date().toISOString().slice(0,10),no:type.toUpperCase()+'-SAMPLE-001'};
