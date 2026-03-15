@@ -3490,9 +3490,18 @@ function confirmEscrowPay(dealId){
 function confirmEscrowDelivery(dealId){
   var escData=_getEscrowStatus(dealId);
   if(!escData||escData.status!=='shipping'){toast('Goods must be shipped before confirming delivery','warn');return;}
-  if(!confirm('Confirm that you have received the goods? This will release payment to the seller.'))return;
+  if(!confirm('Confirm that you have received the goods?\nThis will release payment to the seller within 7 days.'))return;
   escData.status='delivered';escData.deliveredAt=new Date().toISOString();
   _setEscrow(dealId,escData);
+  /* Send delivery confirmation message to chat */
+  var deal=S.currentDeal;
+  if(deal&&S.user){
+    var metadata={type:'delivery_confirmed',deal_id:dealId,amount:escData.amount,currency:escData.currency};
+    sb.from('messages').insert({user_id:S.user.id,buyer_id:S.user.id,body:'[Delivery Confirmed] Buyer has confirmed receipt of goods. Payment will be released.',sender_type:'buyer',message_type:'system',channel:'platform',direction:'inbound',metadata:metadata}).catch(function(){});
+    /* Notify seller */
+    var sellerId=deal.matching&&deal.matching.user_id;
+    if(sellerId){sb.from('notifications').insert({user_id:sellerId,type:'payment',title:'Delivery Confirmed',body:'Buyer confirmed receipt. Escrow payment of '+(escData.currency||'USD')+' '+(escData.amount||0)+' will be released.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(){});}
+  }
   toast('Delivery confirmed! Payment will be released to the seller.','ok');
   render();
 }
@@ -4054,6 +4063,8 @@ function confirmDelivery(matchingId){
     var _escDlv=_getEscrowStatus(deal.id);
     if(_escDlv&&(_escDlv.status==='shipping'||_escDlv.status==='secured'||_escDlv.status==='buyer_paid')){
       _escDlv.status='delivered';_escDlv.deliveredAt=new Date().toISOString();_setEscrow(deal.id,_escDlv);
+      /* Notify seller about escrow auto-release schedule */
+      if(deal.sellerId){sb.from('notifications').insert({user_id:deal.sellerId,type:'payment',title:'Escrow Auto-Release Scheduled',body:'Buyer confirmed delivery. Payment of '+(_escDlv.currency||'USD')+' '+(_escDlv.amount||0)+' will be released in '+(_escDlv.confirmDays||7)+' days.',link_page:'deals',link_id:deal.id,is_read:false}).catch(function(){});}
     }
     sb.from('messages').insert({
       buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
@@ -4615,6 +4626,15 @@ function renderSystemCard(m,body){
     h+='<div class="rc-body"><div style="font-size:16px;font-weight:800;color:var(--w90)">'+_pcs2+Number(_meta.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+esc(_meta.currency||'USD')+'</div>';
     h+='<div style="font-size:10px;color:var(--ok);margin-top:4px">Paid by '+esc(_meta.payer_name||'You')+'</div>';
     h+='<div style="font-size:10px;color:var(--w20)">'+ts+'</div></div></div></div>';
+    return h;
+  }
+
+  if(_meta.type==='delivery_confirmed'){
+    var h='<div style="display:flex;justify-content:center"><div class="chat-rich-card" style="min-width:260px;border-color:rgba(0,200,83,.2)">';
+    h+='<div class="rc-header" style="background:rgba(0,200,83,.06)">&#x1F4E6; Delivery Confirmed</div>';
+    h+='<div class="rc-body"><div style="font-size:13px;font-weight:700;color:var(--ok)">Goods received successfully</div>';
+    h+='<div style="font-size:11px;color:var(--w50);margin-top:4px">Payment of '+esc((_meta.currency||'USD')+' '+(_meta.amount||''))+' will be released to seller.</div>';
+    h+='<div style="font-size:10px;color:var(--w20);margin-top:4px">'+ts+'</div></div></div></div>';
     return h;
   }
 
