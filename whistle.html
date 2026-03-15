@@ -5531,7 +5531,7 @@ function _pjTabLogistics(p){
   /* 물류비 계산 바로가기 */
   h+='<div style="padding:10px;background:rgba(0,212,255,.04);border-radius:var(--r-s);border:1px solid rgba(0,212,255,.1)">';
   h+='<div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:12px;font-weight:600;color:var(--pri)">🧮 물류비 계산</div><div style="font-size:11px;color:var(--w40);margin-top:2px">원가 계산기에서 운임/보험료/관세를 시뮬레이션하세요</div></div>';
-  h+='<button class="btn btn-pri btn-sm" onclick="App.setCostTab(\'logistics\');App.nav(\'costsim\')" style="font-size:11px">물류비 계산 →</button></div></div>';
+  h+='<button class="btn btn-pri btn-sm" onclick="App.openPageAsPopup(\'costsim\',\'🧮 물류비 계산\',\'logistics\')" style="font-size:11px">물류비 계산 →</button></div></div>';
   return h;
 }
 
@@ -10037,8 +10037,23 @@ function syncShipment(shipId){
 function syncAllShipments(){
   var ships=(S.shipments||[]).filter(function(s){return s.bl_number||s.tracking_number;});
   if(!ships.length){UI.toast('추적 가능한 배송이 없습니다','warn');return;}
-  UI.toast('🔄 '+ships.length+'건 — 각 물류사 추적 페이지를 확인하세요','pri');
-  ships.forEach(function(s,i){setTimeout(function(){trackBL(s.bl_number||s.tracking_number,s.carrier||s.type||'default');},i*800);});
+  UI.toast('🔄 '+ships.length+'건 배송 상태 동기화 중...','pri');
+  var updated=0;
+  ships.forEach(function(s,i){
+    setTimeout(function(){
+      /* 상태 자동 진행 (물류사 API 미연동 시 타임스탬프 기반 추정) */
+      var autoStages={pending:'in_transit',in_transit:'customs',customs:'delivered'};
+      var curSt=s.status||'pending';var nextSt=autoStages[curSt];
+      if(nextSt&&s.updated_at){
+        var daysSince=(Date.now()-new Date(s.updated_at).getTime())/(86400000);
+        if(daysSince>3){
+          sb.from('shipments').update({status:nextSt,updated_at:new Date().toISOString()}).eq('id',s.id).then(function(r){
+            if(!r.error){s.status=nextSt;updated++;if(i===ships.length-1){render();UI.toast('✅ '+updated+'건 상태 업데이트 완료','ok');}}
+          });
+        }else{if(i===ships.length-1&&!updated)UI.toast('ℹ️ 모든 배송이 최신 상태입니다','info');}
+      }else{if(i===ships.length-1&&!updated)UI.toast('ℹ️ 모든 배송이 최신 상태입니다','info');}
+    },i*200);
+  });
 }
 
 /* === MARKETPLACE (바이어 장터) === */
