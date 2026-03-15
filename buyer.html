@@ -298,6 +298,51 @@ function closeStripeEscrow(){
   closeModal('stripe-esc-ck');
 }
 
+function payFromChat(msgId,amount,currency,payType){
+  if(!S.user){toast('Please log in first','warn');return;}
+  if(!_isStripeReady()){toast('Stripe payment is being configured. Please contact seller for wire transfer.','info',5000);return;}
+  var dealId=S.currentDeal&&S.currentDeal.id?S.currentDeal.id:'chat_'+msgId;
+  var stripe=_getStripe();if(!stripe){toast('Failed to init Stripe','warn');return;}
+  toast('Connecting to Stripe...','info');
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){toast('Please log in','warn');return;}
+    fetch(STRIPE_CFG.fn+'/create-checkout-session',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
+      body:JSON.stringify({deal_id:dealId,amount:amount,currency:currency||'USD',type:'escrow',success_url:location.origin+location.pathname+'?payment_success=1&msg_id='+msgId+'#deals',cancel_url:location.origin+location.pathname+'#deals'})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.error){toast(data.error,'err');return;}
+      if(data.url){
+        /* Store payment context for success callback */
+        localStorage.setItem('_pendingPayment',JSON.stringify({msgId:msgId,amount:amount,currency:currency,payType:payType}));
+        window.location.href=data.url;
+      }
+    }).catch(function(err){toast('Connection error: '+err.message,'err');});
+  });
+}
+
+function _handlePaymentSuccess(){
+  var params=new URLSearchParams(location.search);
+  if(!params.get('payment_success'))return;
+  /* Clean URL */
+  history.replaceState(null,'',location.pathname+location.hash);
+  var pending=null;
+  try{pending=JSON.parse(localStorage.getItem('_pendingPayment'));localStorage.removeItem('_pendingPayment');}catch(e){}
+  if(!pending)return;
+  toast('Payment successful! ✅','ok',5000);
+  /* Send confirmation message to chat */
+  setTimeout(function(){
+    if(!S.user)return;
+    var _bids=getBuyerIds();var _bid=_bids[0];if(!_bid)return;
+    sb.from('messages').insert({
+      user_id:S.user.id,buyer_id:_bid,
+      body:'[Payment Confirmed] '+(pending.currency||'USD')+' '+Number(pending.amount||0).toFixed(2)+' — Paid by '+(S.user.company_name||S.user.display_name||'Buyer'),
+      sender_type:'buyer',message_type:'system',channel:'platform',
+      metadata:{type:'payment_confirmed',amount:pending.amount,currency:pending.currency,pay_type:pending.payType,payer_name:S.user.company_name||S.user.display_name||'Buyer',original_msg_id:pending.msgId}
+    }).then(function(){}).catch(function(e){console.error('[payment confirm msg]',e);});
+  },2000);
+}
+
 /* === STATE === */
 var S={
   loading:true,page:'dashboard',user:null,authMode:'login',authError:'',_loginEmail:'',
@@ -4546,6 +4591,33 @@ function renderSystemCard(m,body){
     return h;
   }
 
+  // === PAYMENT REQUEST CARDS ===
+  if(_meta.type==='payment_request'){
+    var _pcs=_meta.currency==='EUR'?'&euro;':_meta.currency==='GBP'?'&pound;':_meta.currency==='JPY'?'&yen;':_meta.currency==='CNY'?'&yen;':'$';
+    var _ptL={sample:'Sample Payment',deposit:'Deposit',balance:'Balance Payment',full:'Full Payment'};
+    var h='<div style="display:flex;justify-content:center"><div class="chat-rich-card" style="min-width:280px;border-color:rgba(76,175,80,.25)">';
+    h+='<div class="rc-header" style="background:rgba(76,175,80,.06)">&#x1F4B3; Payment Request</div>';
+    h+='<div class="rc-body">';
+    h+='<div style="font-size:20px;font-weight:800;color:var(--w90);margin-bottom:4px">'+_pcs+Number(_meta.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'<span style="font-size:12px;font-weight:400;color:var(--w30);margin-left:4px">'+esc(_meta.currency||'USD')+'</span></div>';
+    h+='<div style="font-size:12px;color:var(--w60);margin-bottom:2px">'+esc(_ptL[_meta.pay_type]||'Payment')+'</div>';
+    if(_meta.description)h+='<div style="font-size:11px;color:var(--w30)">'+esc(_meta.description)+'</div>';
+    h+='<div style="font-size:10px;color:var(--w20);margin-top:4px">'+ts+' &middot; From seller</div>';
+    h+='</div><div class="rc-footer">';
+    h+='<button class="btn btn-pri btn-sm" onclick="B.payFromChat(\''+m.id+'\','+(_meta.amount||0)+',\''+esc(_meta.currency||'USD')+'\',\''+esc(_meta.pay_type||'payment')+'\')" style="font-size:11px;background:#4CAF50;border-color:#4CAF50">&#x1F4B3; Pay Now</button>';
+    h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()" style="font-size:10px">&#x1F4AC; Discuss</button>';
+    h+='</div></div></div>';
+    return h;
+  }
+  if(_meta.type==='payment_confirmed'){
+    var _pcs2=_meta.currency==='EUR'?'&euro;':_meta.currency==='GBP'?'&pound;':'$';
+    var h='<div style="display:flex;justify-content:center"><div class="chat-rich-card" style="min-width:260px;border-color:rgba(0,200,83,.2)">';
+    h+='<div class="rc-header" style="background:rgba(0,200,83,.06)">&#x2705; Payment Received</div>';
+    h+='<div class="rc-body"><div style="font-size:16px;font-weight:800;color:var(--w90)">'+_pcs2+Number(_meta.amount||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+' '+esc(_meta.currency||'USD')+'</div>';
+    h+='<div style="font-size:10px;color:var(--ok);margin-top:4px">Paid by '+esc(_meta.payer_name||'You')+'</div>';
+    h+='<div style="font-size:10px;color:var(--w20)">'+ts+'</div></div></div></div>';
+    return h;
+  }
+
   // === DOCUMENT CARDS ===
   if(body.indexOf('[서류 전송]')>-1||body.indexOf('Document')>-1||body.indexOf('PI-')>-1||body.indexOf('CI-')>-1){
     var docMatch=body.match(/(견적송장|상업송장|패킹리스트|원산지증명|계약서|PI|CI|PL|CO|SC)\(?([A-Z]*)?\)?[^$]*?(\$[\d,.]+)?/i);
@@ -4697,6 +4769,7 @@ window.addEventListener('hashchange',function(){var hp=location.hash.replace('#'
 window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;closeMob();render();window.scrollTo(0,0);}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifOpen){S.notifOpen=false;render();return;}var modal=document.querySelector('.modal-overlay');if(modal){B.closeModal();return;}if(S.modal){B.closeModal();return;}}});
 loadUser();
+_handlePaymentSuccess();
 
 /* === SHARED TRACKING VIEW (from manufacturer) === */
 (function(){
@@ -4944,7 +5017,7 @@ window.B={
   // Order Actions
   payMilestone:payMilestone,confirmOrderReceipt:confirmOrderReceipt,
   // Electronic Signature
-  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,clearBuyerSigCanvas:clearBuyerSigCanvas,saveBuyerSig:saveBuyerSig,uploadBuyerStamp:uploadBuyerStamp,deleteBuyerSig:deleteBuyerSig,
+  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,clearBuyerSigCanvas:clearBuyerSigCanvas,saveBuyerSig:saveBuyerSig,uploadBuyerStamp:uploadBuyerStamp,deleteBuyerSig:deleteBuyerSig,payFromChat:payFromChat,
   // Notifications
   toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,
   // Translation
