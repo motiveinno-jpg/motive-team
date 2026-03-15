@@ -3914,7 +3914,12 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
           h+='<a href="'+U.esc(_fUrl)+'" target="_blank" style="color:'+(isSeller?'#fff':'var(--pri)')+';text-decoration:underline">\ud83d\udcce '+UI.esc(m.metadata&&m.metadata.file_name||body)+'</a>';
         }
         else{h+=UI.esc(body);}
-        h+='<div style="font-size:8px;color:'+(isSeller?'rgba(255,255,255,.35)':'var(--w20)')+';margin-top:3px;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:6px">'+new Date(m.created_at).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'})+(isSeller&&m.id&&!String(m.id).startsWith('tmp_')?'<span onclick="event.stopPropagation();App.deletePjChatMsg(\''+m.id+'\')" style="cursor:pointer;opacity:.4;font-size:9px" title="삭제">✕</span>':'')+'</div>';
+        var _trKey=m.id+'_ko';var _trText=_chatTranslations[_trKey];
+        if(_trText&&_trText!=='loading')h+='<div style="margin-top:4px;padding-top:4px;border-top:1px solid '+(isSeller?'rgba(255,255,255,.15)':'var(--w08)')+';font-size:11px;color:'+(isSeller?'rgba(255,255,255,.6)':'var(--w50)')+';font-style:italic">'+UI.esc(_trText)+'</div>';
+        h+='<div style="font-size:8px;color:'+(isSeller?'rgba(255,255,255,.35)':'var(--w20)')+';margin-top:3px;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:6px">'+new Date(m.created_at).toLocaleTimeString('ko',{hour:'2-digit',minute:'2-digit'});
+        if(!isSeller&&m.id&&!String(m.id).startsWith('tmp_'))h+='<span onclick="event.stopPropagation();App.translateChatMsg(\''+m.id+'\',\'ko\')" style="cursor:pointer;opacity:.6;font-size:9px" title="번역">'+(_trText==='loading'?'⏳':'🌐')+'</span>';
+        if(isSeller&&m.id&&!String(m.id).startsWith('tmp_'))h+='<span onclick="event.stopPropagation();App.deletePjChatMsg(\''+m.id+'\')" style="cursor:pointer;opacity:.4;font-size:9px" title="삭제">✕</span>';
+        h+='</div>';
         h+='</div></div>';
       }
     });
@@ -3925,7 +3930,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='</div>';
     /* Input area */
     h+='<div style="padding:8px 10px;border-top:1px solid var(--bd);flex-shrink:0">';
-    h+='<div style="display:flex;gap:6px"><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.pjChatAttach()" title="파일 첨부">\ud83d\udcce</button><input id="pj-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:12px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:8px 14px;font-size:12px">전송</button></div>';
+    h+='<div style="display:flex;gap:6px"><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.pjChatAttach()" title="파일 첨부">\ud83d\udcce</button><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.startVideoMeeting()" title="화상미팅">📹</button><input id="pj-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:12px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:8px 14px;font-size:12px">전송</button></div>';
     h+='</div>';
   }
   h+='</div>';
@@ -5058,10 +5063,11 @@ function submitPjDoc(){
         buyer_id:d.buyer_id,user_id:S.user.id,sender_type:'seller',
         body:docCard,
         message_type:'document',channel:'platform',direction:'outbound'
+      }).select().single().then(function(mr){
+        if(mr.data&&S._pjChatBuyer===d.buyer_id){S._pjChatMsgs.push(mr.data);}
+        openPjChat(d.buyer_id);
       }).catch(function(e){console.error('[doc] buyer message fail:',e);});
-      /* 채팅 탭으로 이동 + 바이어 채팅 열기 */
-      S._pjTab='buyers';
-      if(!S._pjChatBuyer)S._pjChatBuyer=d.buyer_id;
+      S._pjChatBuyer=d.buyer_id;
     }
     loadDocs().then(function(){render();});
   });
@@ -7122,16 +7128,22 @@ function translateChatMsg(msgId,targetLang){
     delete _chatTranslations[key];render();return;
   }
   var text='';
-  var allMsgs=S._chatMessages.concat(S._dealChatMsgs||[]);
+  var allMsgs=S._chatMessages.concat(S._dealChatMsgs||[]).concat(S._pjChatMsgs||[]);
   for(var i=0;i<allMsgs.length;i++){if(String(allMsgs[i].id)===String(msgId)){text=allMsgs[i].body||allMsgs[i].message||'';break;}}
   if(!text)return;
   _chatTranslations[key]='loading';render();
-  _relayReady.then(function(){
-    if(!RELAY_URL){_chatTranslations[key]='(번역 서버 연결 필요)';render();return;}
-    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
+  var _doTranslate=function(){
+    fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON_KEY},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
       _chatTranslations[key]=d.ok?d.translated:text;render();
     }).catch(function(){_chatTranslations[key]=text;render();});
+  };
+  if(typeof RELAY_URL!=='undefined'&&RELAY_URL){
+  _relayReady.then(function(){
+    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
+      _chatTranslations[key]=d.ok?d.translated:text;render();
+    }).catch(function(){_doTranslate();});
   });
+  }else{_doTranslate();}
 }
 
 function chatFilterBuyer(q){S._chatBuyerFilter=q;render();}
@@ -10294,7 +10306,7 @@ function submitProposal(reqId){
   };
   /* 이미지 파일이 있으면 업로드 후 URL 전달, 없으면 제품 이미지 URL 사용 */
   if(S._proposalImgFile){
-    var fname='proposals/'+S.user.id+'_'+Date.now()+'.'+S._proposalImgFile.name.split('.').pop();
+    var fname='proposals/'+S.user.id+'/'+Date.now()+'.'+S._proposalImgFile.name.split('.').pop();
     sb.storage.from('whistle-uploads').upload(fname,S._proposalImgFile,{upsert:true}).then(function(upRes){
       if(upRes.error){console.error('img upload fail:',upRes.error);_doInsert(S._proposalImgUrl||null);return;}
       var pubUrl=SB_URL+'/storage/v1/object/public/whistle-uploads/'+fname;
