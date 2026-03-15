@@ -859,7 +859,7 @@ function toggleCurrency(){
   window.__trackError=function(opts){
     if(!opts||!opts.error_message)return;
     _errQueue.push({user_id:S.user?S.user.id:null,error_message:String(opts.error_message).slice(0,2000),error_stack:String(opts.error_stack||'').slice(0,5000),page:opts.page||location.hash,extra:opts.extra||{},user_agent:navigator.userAgent,url:location.href});
-    if(_errQueue.length>=5||!window._errTimer){window._errTimer=setTimeout(function(){var batch=_errQueue.splice(0,10);if(batch.length&&window.sb)sb.from('client_errors').insert(batch).then(function(){});window._errTimer=null;},2000);}
+    if(_errQueue.length>=5||!window._errTimer){window._errTimer=setTimeout(function(){var batch=_errQueue.splice(0,10);if(batch.length&&window.sb)sb.from('client_errors').insert(batch).then(function(){}).catch(function(){});window._errTimer=null;},2000);}
   };
   window.addEventListener('error',function(e){window.__trackError({error_message:e.message||'Unknown',error_stack:e.error?e.error.stack:e.filename+':'+e.lineno});});
   window.addEventListener('unhandledrejection',function(e){window.__trackError({error_message:e.reason?e.reason.message||String(e.reason):'Unhandled rejection',error_stack:e.reason?e.reason.stack:''});});
@@ -3479,12 +3479,11 @@ function renderPjChat(p,viewStage,uniqueBuyers,stRM){
   }else if(viewStage==='completed'){
     h+='<div class="deal-action-chip" style="opacity:.5;cursor:default">🎉 거래 완료</div>';
   }
-  /* 공통: 바이어 연결 시 화상미팅 버튼 */
-  var _hasBuyer=!!(S._pjChatBuyer||p.buyer_id);
-  if(_hasBuyer){h+='<div class="deal-action-chip" onclick="App.startVideoMeeting()" style="background:rgba(0,212,255,.1);border-color:var(--pri)">📹 화상미팅</div>';}
+  /* 공통: 화상미팅 버튼 (바이어 없어도 표시) */
+  h+='<div class="deal-action-chip" onclick="App.startVideoMeeting()" style="background:rgba(0,212,255,.1);border-color:var(--pri)">📹 화상미팅</div>';
   h+='</div>';
   h+='<div style="display:flex;gap:8px;align-items:center">';
-  if(_hasBuyer){h+='<button onclick="App.startVideoMeeting()" title="화상미팅" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);color:var(--pri);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">📹</button>';}
+  h+='<button onclick="App.startVideoMeeting()" title="화상미팅" style="width:40px;height:40px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);color:var(--pri);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">📹</button>';
   h+='<input id="pj-chat-input" placeholder="메시지를 입력하세요..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:13px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:10px 18px">전송</button></div>';
   h+='</div>';
   return h;
@@ -5061,7 +5060,7 @@ function submitPjDoc(){
         message_type:'document',channel:'platform',direction:'outbound'
       }).catch(function(e){console.error('[doc] buyer message fail:',e);});
       /* 채팅 탭으로 이동 + 바이어 채팅 열기 */
-      S._pjTab='chat';
+      S._pjTab='buyers';
       if(!S._pjChatBuyer)S._pjChatBuyer=d.buyer_id;
     }
     loadDocs().then(function(){render();});
@@ -11404,11 +11403,13 @@ function closeDealRoom(){
 function createAndOpenDealRoom(title){
   title=title||'New Deal';
   var companyId=S.company?S.company.id:null;
-  sb.from('deals').insert({seller_company_id:companyId,title:title,stage:'prospect',status:'active',currency:S.currency||'USD'}).select().single().then(function(r){
+  var projectId=S.currentProject?S.currentProject.id:(S.projects.length?S.projects[0].id:null);
+  if(!projectId){UI.toast('프로젝트를 먼저 생성해주세요.','warn');return;}
+  sb.from('deals').insert({seller_company_id:companyId,seller_id:S.user.id,project_id:projectId,title:title,stage:'prospect',status:'active',currency:S.currency||'USD'}).select().single().then(function(r){
     if(r.error){UI.toast('\uB51C\uB8F8 \uC0DD\uC131 \uC2E4\uD328: '+(r.error.message||r.error),'err');return;}
     var deal=r.data;
     if(deal&&S.user){
-      sb.from('deal_participants').insert({deal_id:deal.id,user_id:S.user.id,participant_role:'seller',company_id:companyId}).then(function(){});
+      sb.from('deal_participants').insert({deal_id:deal.id,user_id:S.user.id,participant_role:'seller',company_id:companyId}).then(function(pr){if(pr.error)console.error('[deal_participants]',pr.error);}).catch(function(e){console.error('[deal_participants]',e);});
     }
     S._dealRoomDealsLoaded=false;
     openDealRoom(deal.id);
@@ -11490,9 +11491,9 @@ function dealChatAttach(input){
   var ext=file.name.split('.').pop().toLowerCase();
   var path='chat/'+S.user.id+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
   UI.toast('파일 업로드 중...','info');
-  sb.storage.from('documents').upload(path,file).then(function(r){
+  sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
     if(r.error){UI.toast('업로드 실패: '+r.error.message,'err');return;}
-    var url=sb.storage.from('documents').getPublicUrl(path).data.publicUrl;
+    var url=sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;
     var isImg=/^(jpg|jpeg|png|gif|webp)$/i.test(ext);
     var body=isImg?'[이미지] '+file.name:'[파일] '+file.name;
     var tmp={id:'tmp_'+Date.now(),buyer_id:S._currentDeal.buyerId,user_id:S.user.id,sender_type:'seller',body:body,message_type:'file',metadata:{file_url:url,file_name:file.name,file_type:ext,is_image:isImg},created_at:new Date().toISOString()};
