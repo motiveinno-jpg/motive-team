@@ -4679,6 +4679,32 @@ function openPjDocModal(docType){
   body+='• <b>EXW</b>: 제조원가 + 포장비 + 마진 (가장 단순, 나머지 바이어 부담)<br>';
   body+='• <b>DDP</b>: CIF + 수입관세 + 목적지 내륙운송 (셀러 부담 최대, 위험 주의)';
   body+='</div></div>';
+  /* CI 상업송장 전용 필드 */
+  if(docType==='ci'){
+    var destCountry=(p.target_countries&&p.target_countries[0])||'';
+    var hsCode=prod?prod.hs_code||'':'';
+    body+='<div style="margin-bottom:10px;padding:12px;border-radius:10px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.12)">';
+    body+='<div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:10px">🚢 선적 정보 (Commercial Invoice 필수)</div>';
+    body+='<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
+    body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">B/L No. (선하증권번호)</label><input class="form-input" name="bl_number" placeholder="예: MSKU1234567" style="font-size:12px"></div>';
+    body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">선박명 / 항공편</label><input class="form-input" name="vessel_name" placeholder="예: EVER GIVEN V.123" style="font-size:12px"></div>';
+    body+='</div>';
+    body+='<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
+    body+='<div style="flex:1;min-width:120px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">출항일</label><input class="form-input" name="ship_date" type="date" style="font-size:12px"></div>';
+    body+='<div style="flex:1;min-width:120px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">출발항</label><input class="form-input" name="port_loading" value="Busan, Korea" style="font-size:12px"></div>';
+    body+='<div style="flex:1;min-width:120px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">도착항</label><input class="form-input" name="port_discharge" placeholder="예: Los Angeles, USA" style="font-size:12px"></div>';
+    body+='</div>';
+    body+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">HS Code (관세 분류)</label><input class="form-input" name="hs_code" value="'+U.esc(hsCode)+'" placeholder="예: 3304.99" style="font-size:12px"></div>';
+    body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">원산지</label><input class="form-input" name="country_origin" value="Republic of Korea" style="font-size:12px"></div>';
+    body+='</div>';
+    body+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">';
+    body+='<div style="flex:1;min-width:100px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">총 카톤수</label><input class="form-input" name="total_cartons" type="number" placeholder="예: 50" style="font-size:12px"></div>';
+    body+='<div style="flex:1;min-width:100px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">순중량 (kg)</label><input class="form-input" name="net_weight" type="number" step="0.1" placeholder="예: 450" style="font-size:12px"></div>';
+    body+='<div style="flex:1;min-width:100px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">총중량 (kg)</label><input class="form-input" name="gross_weight" type="number" step="0.1" placeholder="예: 520" style="font-size:12px"></div>';
+    body+='</div>';
+    body+='</div>';
+  }
   body+=UI.ta('notes','비고',{placeholder:'추가 사항을 입력하세요',rows:3});
   /* SC 계약서 전문 조항 */
   if(docType==='sc'){
@@ -4907,7 +4933,15 @@ function submitPjDoc(){
   var total=items.reduce(function(s,it){return s+(it.qty*it.unit_price);},0);
   var docNum=docType.toUpperCase()+'-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6);
   var scClauses='';if(docType==='sc'){var scEl=document.getElementById('scContractClauses');if(scEl)scClauses=scEl.value;}
-  var content=JSON.stringify({items:items,payment_terms:d.payment_terms||'',incoterms:d.incoterms||'',notes:d.notes||'',total:total,contract_clauses:scClauses||''});
+  var contentObj={items:items,payment_terms:d.payment_terms||'',incoterms:d.incoterms||'',notes:d.notes||'',total:total,contract_clauses:scClauses||''};
+  /* CI 전용 필드 */
+  if(docType==='ci'){
+    contentObj.bl_number=d.bl_number||'';contentObj.vessel_name=d.vessel_name||'';contentObj.ship_date=d.ship_date||'';
+    contentObj.port_loading=d.port_loading||'';contentObj.port_discharge=d.port_discharge||'';
+    contentObj.hs_code=d.hs_code||'';contentObj.country_origin=d.country_origin||'Republic of Korea';
+    contentObj.total_cartons=d.total_cartons||'';contentObj.net_weight=d.net_weight||'';contentObj.gross_weight=d.gross_weight||'';
+  }
+  var content=JSON.stringify(contentObj);
   var insertData={user_id:S.user.id,project_id:p.id,doc_type:docType,doc_number:docNum,content:content,status:'draft'};
   if(d.buyer_id)insertData.buyer_id=d.buyer_id;
   sb.from('documents').insert(insertData).then(function(r){
@@ -5115,6 +5149,28 @@ function viewPjDoc(docId){
   var termsLine='';
   if(content.payment_terms)termsLine+='Payment: '+xe(content.payment_terms);
   if(content.incoterms)termsLine+=(termsLine?' | ':'')+xe(content.incoterms);
+  /* CI 선적 정보 */
+  var ciHTML='';
+  if(doc.doc_type==='ci'){
+    ciHTML='<div style="margin:14px 0;padding:10px 14px;background:#f0f7ff;border-radius:6px;border:1px solid #cde">';
+    ciHTML+='<div style="font-size:10px;font-weight:700;color:#003366;margin-bottom:6px">SHIPPING DETAILS</div>';
+    ciHTML+='<table style="font-size:9px;width:100%;border-collapse:collapse">';
+    if(content.bl_number)ciHTML+='<tr><td style="padding:2px 8px 2px 0;color:#666;width:120px">B/L No.</td><td style="padding:2px 0">'+xe(content.bl_number)+'</td></tr>';
+    if(content.vessel_name)ciHTML+='<tr><td style="padding:2px 8px 2px 0;color:#666">Vessel / Flight</td><td style="padding:2px 0">'+xe(content.vessel_name)+'</td></tr>';
+    if(content.ship_date)ciHTML+='<tr><td style="padding:2px 8px 2px 0;color:#666">Shipment Date</td><td style="padding:2px 0">'+xe(content.ship_date)+'</td></tr>';
+    if(content.port_loading||content.port_discharge)ciHTML+='<tr><td style="padding:2px 8px 2px 0;color:#666">Port</td><td style="padding:2px 0">'+(content.port_loading?xe(content.port_loading):'')+' → '+(content.port_discharge?xe(content.port_discharge):'')+'</td></tr>';
+    if(content.hs_code)ciHTML+='<tr><td style="padding:2px 8px 2px 0;color:#666">HS Code</td><td style="padding:2px 0">'+xe(content.hs_code)+'</td></tr>';
+    if(content.country_origin)ciHTML+='<tr><td style="padding:2px 8px 2px 0;color:#666">Country of Origin</td><td style="padding:2px 0">'+xe(content.country_origin)+'</td></tr>';
+    ciHTML+='</table>';
+    if(content.total_cartons||content.net_weight||content.gross_weight){
+      ciHTML+='<div style="margin-top:6px;font-size:9px;color:#555">';
+      if(content.total_cartons)ciHTML+='Cartons: '+xe(content.total_cartons)+' ';
+      if(content.net_weight)ciHTML+='N.W.: '+xe(content.net_weight)+' kg ';
+      if(content.gross_weight)ciHTML+='G.W.: '+xe(content.gross_weight)+' kg';
+      ciHTML+='</div>';
+    }
+    ciHTML+='</div>';
+  }
   /* SC contract clauses */
   var scHTML='';
   if(doc.doc_type==='sc'&&content.contract_clauses){
@@ -5136,7 +5192,7 @@ function viewPjDoc(docId){
     +'<tbody>'+tbRows+'</tbody>'
     +'<tfoot><tr style="background:#f5f5f5;font-weight:700"><td colspan="4" style="border:1px solid #ddd;padding:7px 6px;text-align:right">TOTAL</td><td style="border:1px solid #ddd;padding:7px 6px;text-align:right">$'+Number(total).toFixed(2)+'</td></tr></tfoot>'
     +'</table>'
-    +scHTML+bankHTML
+    +ciHTML+scHTML+bankHTML
     +(content.notes?'<div style="margin-top:14px;font-size:10px;color:#555"><strong>Notes:</strong> '+xe(content.notes)+'</div>':'')
     +'<div style="margin-top:30px;display:flex;justify-content:space-between"><div style="width:40%;text-align:center"><div style="border-bottom:1px solid #333;height:40px"></div><div style="font-size:9px;font-weight:600;margin-top:4px">'+xe(c.name_en||c.name_ko||'Seller')+'</div></div><div style="width:40%;text-align:center"><div style="border-bottom:1px solid #333;height:40px"></div><div style="font-size:9px;font-weight:600;margin-top:4px">'+xe(buyerName||'Buyer')+'</div></div></div>'
     +'</div>';
