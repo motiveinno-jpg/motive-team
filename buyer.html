@@ -393,6 +393,7 @@ function _doRender(){
       if(focusSel&&el.setSelectionRange)try{el.setSelectionRange(focusSel.s,focusSel.e);}catch(e){}
     }
   }
+  if(S.page==='profile'||S.page==='profilehub'){setTimeout(function(){_initBuyerSigCanvas();},100);}
   }catch(renderErr){console.error('[buyer render error]',renderErr);root.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">Page Rendering Error</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+esc(renderErr.message)+'</div><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">Reload</button></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:(renderErr.stack||'').substring(0,500),url:location.href,page:S.page,portal:'buyer'}).then(function(){});}catch(e){}}
 }
 
@@ -2678,6 +2679,38 @@ function pgProfile(){
   h+='<div style="font-size:12px;color:var(--w40)">Role: '+esc(u.role||'buyer')+'</div>';
   h+='</div></div>';
 
+  /* Electronic Signature / Company Seal */
+  var _bSigData=S._buyerSigData||null;
+  if(!_bSigData){try{_bSigData=JSON.parse(localStorage.getItem('buyer_signature'));}catch(e){}}
+  var _bSigType=S._bSigType||((_bSigData&&_bSigData.type)||'draw');
+  var _bSigImg=_bSigData&&_bSigData.image||'';
+  h+='<div class="card"><div class="card-h"><span>&#x270D;&#xFE0F; Electronic Signature / Company Seal</span></div><div class="card-b">';
+  h+='<div style="font-size:11px;color:var(--w40);margin-bottom:10px">Register your signature or company stamp to use when signing documents.</div>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:14px">';
+  h+='<button class="btn '+(_bSigType==='draw'?'btn-pri':'btn-ghost')+'" onclick="S._bSigType=\'draw\';B.render()" style="font-size:11px;padding:6px 14px">&#x270F;&#xFE0F; Signature</button>';
+  h+='<button class="btn '+(_bSigType==='stamp'?'btn-pri':'btn-ghost')+'" onclick="S._bSigType=\'stamp\';B.render()" style="font-size:11px;padding:6px 14px">&#x1F534; Company Stamp</button>';
+  h+='</div>';
+  if(_bSigType==='draw'){
+    h+='<div style="margin-bottom:10px"><canvas id="buyer-sig-canvas" width="400" height="150" style="border:1px dashed var(--bd);border-radius:8px;background:#fff;cursor:crosshair;display:block;width:100%;max-width:400px;touch-action:none"></canvas></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center">';
+    h+='<button class="btn btn-ghost" onclick="B.clearBuyerSigCanvas()" style="font-size:11px">&#x1F504; Clear</button>';
+    h+='<button class="btn btn-pri" onclick="B.saveBuyerSig()" style="font-size:11px">&#x1F4BE; Save Signature</button>';
+    if(_bSigImg)h+='<button class="btn btn-ghost" onclick="B.deleteBuyerSig()" style="font-size:11px;color:var(--err)">&#x1F5D1;&#xFE0F; Delete</button>';
+    h+='</div>';
+  } else {
+    h+='<div style="display:flex;gap:14px;align-items:flex-start"><div id="buyer-stamp-preview" style="width:120px;height:120px;border:1px dashed var(--bd);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--w04);flex-shrink:0" onclick="document.getElementById(\'buyer-stamp-inp\').click()">';
+    h+=(_bSigImg&&_bSigType==='stamp'?'<img src="'+esc(_bSigImg)+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:32px">&#x1F534;</div><div style="font-size:10px">Upload</div></div>');
+    h+='</div><div><input type="file" id="buyer-stamp-inp" accept="image/*" style="display:none" onchange="B.uploadBuyerStamp(this)">';
+    h+='<div style="font-size:11px;color:var(--w40);margin-bottom:8px">PNG/JPG, max 2MB</div>';
+    h+='<div style="display:flex;gap:8px"><button class="btn btn-pri" onclick="B.saveBuyerSig()" style="font-size:11px">&#x1F4BE; Save Stamp</button>';
+    if(_bSigImg)h+='<button class="btn btn-ghost" onclick="B.deleteBuyerSig()" style="font-size:11px;color:var(--err)">&#x1F5D1;&#xFE0F; Delete</button>';
+    h+='</div></div></div>';
+  }
+  if(_bSigImg){
+    h+='<div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(0,200,83,.06);border:1px solid rgba(0,200,83,.12)"><div style="font-size:11px;color:var(--ok);font-weight:600;margin-bottom:6px">&#x2705; '+(_bSigType==='draw'?'Signature':'Company Stamp')+' Registered</div><img src="'+esc(_bSigImg)+'" style="max-width:200px;max-height:80px;border:1px solid var(--bd);border-radius:4px;background:#fff;padding:4px"></div>';
+  }
+  h+='</div></div>';
+
   h+='</div>';
   return h;
 }
@@ -3481,14 +3514,23 @@ function openSignDocModal(docId){
 
 function renderSignDocModal(){
   var d=S.modalData;if(!d)return '';
+  var _regSig=_getBuyerSig();
   var h='<div class="modal-overlay" onclick="B.closeModal()"><div class="modal" style="max-width:520px" onclick="event.stopPropagation()">';
   h+='<div class="modal-h"><span>&#x270D;&#xFE0F; Sign Document</span><button class="modal-close" onclick="B.closeModal()">&#x2715;</button></div>';
   h+='<div class="modal-b">';
   h+='<div style="font-size:13px;color:var(--w60);margin-bottom:12px">Please sign below to complete the document.</div>';
-  h+='<div style="font-size:12px;margin-bottom:8px"><span style="color:var(--w40)">Requested by:</span> <strong>'+(d.sig.buyer||'Seller')+'</strong></div>';
+  h+='<div style="font-size:12px;margin-bottom:12px"><span style="color:var(--w40)">Requested by:</span> <strong>'+(d.sig.buyer||'Seller')+'</strong></div>';
+  if(_regSig&&_regSig.image){
+    h+='<div style="padding:14px;border-radius:10px;background:rgba(0,200,83,.06);border:1px solid rgba(0,200,83,.12);margin-bottom:12px;text-align:center">';
+    h+='<div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:8px">&#x2705; Using your registered '+(_regSig.type==='stamp'?'company stamp':'signature')+'</div>';
+    h+='<img src="'+esc(_regSig.image)+'" style="max-width:200px;max-height:80px;border:1px solid var(--bd);border-radius:4px;background:#fff;padding:4px">';
+    h+='</div>';
+    h+='<button class="btn btn-pri btn-block btn-lg" onclick="B.submitDocSignature(\''+d.docId+'\')" style="margin-bottom:8px">&#x270D;&#xFE0F; Sign with registered '+(_regSig.type==='stamp'?'stamp':'signature')+'</button>';
+    h+='<div style="text-align:center;font-size:11px;color:var(--w30);margin-bottom:8px">— or draw a new signature —</div>';
+  }
   h+='<div style="margin-bottom:12px"><canvas id="sig-canvas" width="460" height="160" style="width:100%;height:160px;border:2px dashed var(--bd);border-radius:8px;background:var(--w04);cursor:crosshair"></canvas></div>';
   h+='<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn btn-ghost btn-sm" onclick="B.clearSigCanvas()">Clear</button><span style="flex:1"></span><span style="font-size:10px;color:var(--w30);align-self:center">Draw your signature above</span></div>';
-  h+='<button class="btn btn-pri btn-block btn-lg" onclick="B.submitDocSignature(\''+d.docId+'\')">&#x270D;&#xFE0F; Sign & Complete</button>';
+  if(!_regSig||!_regSig.image){h+='<button class="btn btn-pri btn-block btn-lg" onclick="B.submitDocSignature(\''+d.docId+'\')">&#x270D;&#xFE0F; Sign & Complete</button>';}
   h+='</div></div></div>';
   return h;
 }
@@ -3514,12 +3556,76 @@ function clearSigCanvas(){
   var ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
 }
 
+/* Buyer signature/stamp registration */
+function _initBuyerSigCanvas(){
+  var c=document.getElementById('buyer-sig-canvas');
+  if(!c||c._bound)return;c._bound=true;
+  var ctx=c.getContext('2d');var drawing=false;
+  ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.lineCap='round';ctx.lineJoin='round';
+  var _bs=_getBuyerSig();
+  if(_bs&&_bs.type==='draw'&&_bs.image){var img=new Image();img.onload=function(){ctx.drawImage(img,0,0);};img.src=_bs.image;}
+  c.addEventListener('mousedown',function(e){drawing=true;ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);});
+  c.addEventListener('mousemove',function(e){if(!drawing)return;ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();});
+  c.addEventListener('mouseup',function(){drawing=false;});
+  c.addEventListener('mouseleave',function(){drawing=false;});
+  c.addEventListener('touchstart',function(e){e.preventDefault();drawing=true;var r=c.getBoundingClientRect();var t=e.touches[0];ctx.beginPath();ctx.moveTo(t.clientX-r.left,t.clientY-r.top);},{passive:false});
+  c.addEventListener('touchmove',function(e){e.preventDefault();if(!drawing)return;var r=c.getBoundingClientRect();var t=e.touches[0];ctx.lineTo(t.clientX-r.left,t.clientY-r.top);ctx.stroke();},{passive:false});
+  c.addEventListener('touchend',function(){drawing=false;});
+}
+function clearBuyerSigCanvas(){var c=document.getElementById('buyer-sig-canvas');if(c){c.getContext('2d').clearRect(0,0,c.width,c.height);}}
+function saveBuyerSig(){
+  var type=S._bSigType||'draw';var image='';
+  if(type==='draw'){
+    var c=document.getElementById('buyer-sig-canvas');if(!c){toast('Canvas not found','warn');return;}
+    var data=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    var has=false;for(var i=3;i<data.length;i+=4){if(data[i]>0){has=true;break;}}
+    if(!has){toast('Please draw your signature','warn');return;}
+    image=c.toDataURL('image/png');
+  } else {
+    image=S._buyerStampPreview||(_getBuyerSig()||{}).image||'';
+    if(!image){toast('Please upload a stamp image','warn');return;}
+  }
+  var sigData={type:type,image:image,updatedAt:new Date().toISOString()};
+  S._buyerSigData=sigData;
+  localStorage.setItem('buyer_signature',JSON.stringify(sigData));
+  toast(type==='draw'?'Signature registered!':'Company stamp registered!','ok');
+  render();
+}
+function uploadBuyerStamp(inp){
+  var file=inp&&inp.files&&inp.files[0];if(!file)return;
+  if(!file.type.startsWith('image/')){toast('Image files only','warn');return;}
+  if(file.size>2*1024*1024){toast('Max 2MB','warn');return;}
+  var reader=new FileReader();reader.onload=function(e){
+    S._buyerStampPreview=e.target.result;
+    var box=document.getElementById('buyer-stamp-preview');
+    if(box)box.innerHTML='<img src="'+S._buyerStampPreview+'" style="max-width:100%;max-height:100%;object-fit:contain">';
+  };reader.readAsDataURL(file);
+}
+function deleteBuyerSig(){
+  if(!confirm('Delete registered signature/stamp?'))return;
+  S._buyerSigData=null;S._buyerStampPreview=null;
+  localStorage.removeItem('buyer_signature');
+  toast('Deleted','ok');render();
+}
+function _getBuyerSig(){
+  if(S._buyerSigData&&S._buyerSigData.image)return S._buyerSigData;
+  try{var ls=JSON.parse(localStorage.getItem('buyer_signature'));if(ls&&ls.image)return ls;}catch(e){}
+  return null;
+}
+
 function submitDocSignature(docId){
-  var c=document.getElementById('sig-canvas');
-  if(c){var ctx=c.getContext('2d');var imgData=ctx.getImageData(0,0,c.width,c.height);var hasDrawing=false;for(var i=3;i<imgData.data.length;i+=4){if(imgData.data[i]>0){hasDrawing=true;break;}}
-    if(!hasDrawing){toast('Please draw your signature first','warn');return;}}
+  /* Use registered signature if available, otherwise canvas drawing */
+  var sigData=null;
+  var _regSig=_getBuyerSig();
+  if(_regSig&&_regSig.image){
+    sigData=_regSig.image;
+  } else {
+    var c=document.getElementById('sig-canvas');
+    if(c){var ctx=c.getContext('2d');var imgData=ctx.getImageData(0,0,c.width,c.height);var hasDrawing=false;for(var i=3;i<imgData.data.length;i+=4){if(imgData.data[i]>0){hasDrawing=true;break;}}
+      if(!hasDrawing){toast('Please draw your signature or register one in Settings','warn');return;}}
+    sigData=c?c.toDataURL():null;
+  }
   var sigs=_getDocSignatures();
-  var sigData=c?c.toDataURL():null;
   sigs[docId]=Object.assign(sigs[docId]||{},{status:'signed',signedAt:new Date().toISOString(),signatureData:sigData});
   localStorage.setItem('doc_signatures',JSON.stringify(sigs));
   /* Sync signature to Supabase so seller can see it */
@@ -3533,6 +3639,14 @@ function submitDocSignature(docId){
     }).eq('id',docId).in('buyer_id',_bids.length?_bids:['__none__']).then(function(r){
       if(r.error){console.warn('Signature DB sync failed:',r.error.message);toast('Signature saved locally. Cloud sync will retry.','warn');}
     }).catch(function(){toast('Signature saved locally only. Check your connection.','warn');});
+    /* Send chat message: "Document Signed" */
+    var _sigDoc=S._sharedDocs&&S._sharedDocs.find(function(d){return d.id===docId;});
+    var _sigDocType=_sigDoc?(_sigDoc.doc_type||'').toUpperCase():'DOC';
+    var _sigDocNo=_sigDoc?(_sigDoc.doc_number||''):'';
+    var _sigBuyerId=_bids[0]||null;
+    if(_sigBuyerId&&_sigDoc){
+      sb.from('messages').insert({user_id:_sigDoc.user_id||S.user.id,buyer_id:_sigBuyerId,body:'[Document Signed] '+_sigDocType+' '+_sigDocNo+' — Signed by '+(S.user.company_name||S.user.display_name||'Buyer'),sender_type:'buyer',message_type:'system',channel:'platform',metadata:{type:'document_signed',doc_id:docId,doc_type:_sigDoc.doc_type,doc_number:_sigDocNo,signer_name:S.user.company_name||S.user.display_name||'Buyer'}}).then(function(){}).catch(function(e){console.error('[sig chat]',e);});
+    }
   }
   S.modal=null;S.modalData=null;
   toast('Document signed successfully!','ok');
@@ -4410,6 +4524,27 @@ function renderChatBubble(m,isMine){
 function renderSystemCard(m,body){
   var ts=new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   var deal=S.currentDeal;
+  var _meta=m.metadata||{};
+
+  // === SIGNATURE CARDS ===
+  if(_meta.type==='signature_request'){
+    var h='<div style="display:flex;justify-content:center"><div class="chat-rich-card" style="min-width:260px;border-color:rgba(124,77,255,.2)">';
+    h+='<div class="rc-header" style="background:rgba(124,77,255,.06)">&#x270D;&#xFE0F; Signature Requested</div>';
+    h+='<div class="rc-body"><div style="font-weight:600;color:var(--w80);margin-bottom:4px">'+esc((_meta.doc_type||'').toUpperCase()+' '+(_meta.doc_number||''))+'</div>';
+    h+='<div style="font-size:10px;color:var(--w30)">'+ts+'</div></div>';
+    if(_meta.doc_id){h+='<div class="rc-footer"><button class="btn btn-pri btn-sm" onclick="B.openSignDocModal(\''+_meta.doc_id+'\')" style="font-size:10px">&#x270D;&#xFE0F; Sign Now</button></div>';}
+    h+='</div></div>';
+    return h;
+  }
+  if(_meta.type==='document_signed'){
+    var h='<div style="display:flex;justify-content:center"><div class="chat-rich-card" style="min-width:260px;border-color:rgba(0,200,83,.2)">';
+    h+='<div class="rc-header" style="background:rgba(0,200,83,.06)">&#x2705; Document Signed</div>';
+    h+='<div class="rc-body"><div style="font-weight:600;color:var(--w80);margin-bottom:4px">'+esc((_meta.doc_type||'').toUpperCase()+' '+(_meta.doc_number||''))+'</div>';
+    h+='<div style="font-size:10px;color:var(--ok)">Signed by '+esc(_meta.signer_name||'')+'</div>';
+    h+='<div style="font-size:10px;color:var(--w30)">'+ts+'</div></div>';
+    h+='</div></div>';
+    return h;
+  }
 
   // === DOCUMENT CARDS ===
   if(body.indexOf('[서류 전송]')>-1||body.indexOf('Document')>-1||body.indexOf('PI-')>-1||body.indexOf('CI-')>-1){
@@ -4809,7 +4944,7 @@ window.B={
   // Order Actions
   payMilestone:payMilestone,confirmOrderReceipt:confirmOrderReceipt,
   // Electronic Signature
-  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
+  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,clearBuyerSigCanvas:clearBuyerSigCanvas,saveBuyerSig:saveBuyerSig,uploadBuyerStamp:uploadBuyerStamp,deleteBuyerSig:deleteBuyerSig,
   // Notifications
   toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,
   // Translation
