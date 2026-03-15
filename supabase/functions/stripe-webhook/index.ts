@@ -4,6 +4,61 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const PLATFORM_FEE_RATE = 0.025; // 2.5%
 
+// CEO 결제 알림 (모든 결제 이벤트 시 이메일 발송)
+const CEO_NOTIFY_EMAIL = "hee@motiveinno.com";
+
+async function notifyCEO(subject: string, body: string, supabase?: any) {
+  // DB 알림 (항상 실행 — 앱 내 알림)
+  if (supabase) {
+    try {
+      // CEO user를 찾아서 알림
+      const { data: ceo } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", CEO_NOTIFY_EMAIL)
+        .single();
+      if (ceo) {
+        await supabase.from("notifications").insert({
+          user_id: ceo.id,
+          type: "payment",
+          title: subject,
+          body: body.replace(/<[^>]*>/g, "").substring(0, 300),
+          is_read: false,
+        });
+      }
+    } catch (e) {
+      console.error("CEO DB notify failed:", e);
+    }
+  }
+
+  // 이메일 알림 (Resend 키가 있을 때만)
+  try {
+    const resendKey = Deno.env.get("RESEND_API_KEY");
+    if (!resendKey) return;
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({
+        from: "Whistle AI <noreply@whistle-ai.com>",
+        to: [CEO_NOTIFY_EMAIL],
+        subject: `[Whistle Payment] ${subject}`,
+        html: `<div style="font-family:sans-serif;padding:20px">
+          <h2 style="color:#4CAF50">💳 Whistle AI Payment Alert</h2>
+          <div style="padding:16px;background:#f5f5f5;border-radius:8px;margin:12px 0">
+            ${body}
+          </div>
+          <p style="color:#999;font-size:12px">This is an automated notification from Whistle AI Payment System.</p>
+        </div>`,
+      }),
+    });
+  } catch (e) {
+    console.error("CEO notify failed:", e);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200 });
@@ -44,6 +99,20 @@ serve(async (req) => {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
         const meta = session.metadata || {};
+
+        // CEO 결제 알림 (모든 checkout 완료 시)
+        const amt = ((session.amount_total || 0) / 100).toFixed(2);
+        const cur = session.currency?.toUpperCase() || "USD";
+        await notifyCEO(
+          `${cur} ${amt} — ${meta.type || "payment"}`,
+          `<p><strong>Type:</strong> ${meta.type || "unknown"}</p>
+           <p><strong>Amount:</strong> ${cur} ${amt}</p>
+           <p><strong>Deal ID:</strong> ${meta.deal_id || "N/A"}</p>
+           <p><strong>User:</strong> ${meta.user_id || "N/A"}</p>
+           <p><strong>Session:</strong> ${session.id}</p>
+           <p><strong>Time:</strong> ${new Date().toISOString()}</p>`,
+          supabase
+        );
 
         if (meta.type === "escrow") {
           await supabase.from("payments").insert({
@@ -131,6 +200,15 @@ serve(async (req) => {
       case "payment_intent.payment_failed": {
         const pi = event.data.object as Stripe.PaymentIntent;
         const meta = pi.metadata || {};
+
+        await notifyCEO(
+          `FAILED — ${pi.currency?.toUpperCase()} ${(pi.amount / 100).toFixed(2)}`,
+          `<p style="color:red"><strong>Payment FAILED</strong></p>
+           <p><strong>Amount:</strong> ${pi.currency?.toUpperCase()} ${(pi.amount / 100).toFixed(2)}</p>
+           <p><strong>Error:</strong> ${(pi as any).last_payment_error?.message || "Unknown"}</p>
+           <p><strong>User:</strong> ${meta.user_id || "N/A"}</p>`,
+          supabase
+        );
 
         await supabase
           .from("payments")
