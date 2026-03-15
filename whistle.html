@@ -3892,6 +3892,8 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='<div style="width:28px;height:28px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--bg)">'+U.esc(buyerName.charAt(0))+'</div>';
     h+='<div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">'+U.esc(buyerName)+'</div><div style="font-size:9px;color:var(--w30)">채팅 가능</div></div>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.setPjTab(\'docs\')">📄 서류 보기</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.startVideoMeeting()">📹 화상미팅</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.translateChatMsg(null,\'ko\',true)" title="전체 번역">🌐</button>';
     h+='</div>';
     /* Messages area with drag-drop */
     h+='<div id="pj-chat-scroll" class="pj-chat-messages" style="border:2px dashed transparent;transition:border-color .2s,background .2s" ondragover="event.preventDefault();this.style.borderColor=\'var(--pri)\';this.style.background=\'rgba(0,212,255,.03)\'" ondragleave="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'" ondrop="App.pjChatDrop(event)">';
@@ -3900,7 +3902,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     }
     msgs.forEach(function(m){
       var isSeller=m.sender_type==='seller'||m.sender_type==='client';
-      var body=m.body||m.message||'';var isSystem=m.message_type==='system';var isFile=m.message_type==='file';
+      var body=m.body||m.message||'';var isSystem=m.message_type==='system';var isFile=m.message_type==='file';var isDoc=m.message_type==='document';
       if(isSystem){
         h+='<div style="text-align:center;padding:3px 0"><div style="display:inline-block;padding:3px 10px;border-radius:10px;background:var(--w04);font-size:10px;color:var(--w40)">'+UI.esc(body)+'</div></div>';
       }else{
@@ -3908,7 +3910,20 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
         if(!isSeller)h+='<div style="width:22px;height:22px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(buyerName.charAt(0))+'</div>';
         h+='<div style="max-width:75%;padding:8px 12px;border-radius:'+(isSeller?'12px 12px 3px 12px':'12px 12px 12px 3px')+';background:'+(isSeller?'var(--pri)':'var(--w08)')+';color:'+(isSeller?'#fff':'var(--w90)')+';font-size:12px;line-height:1.5">';
         var _fUrl=m.file_url||(m.metadata&&m.metadata.file_url)||'';
-        if(isFile&&_fUrl){
+        if(isDoc){
+          var _dc;try{_dc=typeof body==='string'?JSON.parse(body):body;}catch(e){_dc=null;}
+          if(_dc&&_dc.doc_id){
+            var _typeIcon={pi:'📋',ci:'📄',pl:'📦',co:'🏛️',sc:'📝',bl:'🚢'};
+            h+='<div onclick="App.viewPjDoc(\''+_dc.doc_id+'\')" style="cursor:pointer;padding:8px;border-radius:8px;background:'+(isSeller?'rgba(255,255,255,.12)':'rgba(0,212,255,.06)')+';border:1px solid '+(isSeller?'rgba(255,255,255,.15)':'rgba(0,212,255,.12)')+'">';
+            h+='<div style="font-size:13px;font-weight:700;margin-bottom:4px">'+(_typeIcon[_dc.type]||'📄')+' '+U.esc(_dc.title||'서류')+'</div>';
+            if(_dc.subtitle)h+='<div style="font-size:10px;color:'+(isSeller?'rgba(255,255,255,.6)':'var(--w40)')+';margin-bottom:4px">'+U.esc(_dc.subtitle)+'</div>';
+            if(_dc.items_summary)h+='<div style="font-size:10px;color:'+(isSeller?'rgba(255,255,255,.5)':'var(--w30)')+'">'+U.esc(_dc.items_summary)+'</div>';
+            if(_dc.total)h+='<div style="font-size:11px;font-weight:700;margin-top:4px;color:'+(isSeller?'#fff':'var(--pri)')+'">'+U.esc(String(_dc.total))+'</div>';
+            h+='<div style="font-size:9px;margin-top:4px;color:'+(isSeller?'rgba(255,255,255,.4)':'var(--w20)')+'">클릭하여 서류 보기 →</div>';
+            h+='</div>';
+          }else{h+=UI.esc(body);}
+        }
+        else if(isFile&&_fUrl){
           var _isImg=m.metadata&&m.metadata.is_image;
           if(_isImg){h+='<img src="'+U.esc(_fUrl)+'" style="max-width:180px;border-radius:8px;margin-bottom:4px;display:block" onerror="this.style.display=\'none\'">';}
           h+='<a href="'+U.esc(_fUrl)+'" target="_blank" style="color:'+(isSeller?'#fff':'var(--pri)')+';text-decoration:underline">\ud83d\udcce '+UI.esc(m.metadata&&m.metadata.file_name||body)+'</a>';
@@ -3930,7 +3945,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     h+='</div>';
     /* Input area */
     h+='<div style="padding:8px 10px;border-top:1px solid var(--bd);flex-shrink:0">';
-    h+='<div style="display:flex;gap:6px"><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.pjChatAttach()" title="파일 첨부">\ud83d\udcce</button><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.startVideoMeeting()" title="화상미팅">📹</button><input id="pj-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:12px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:8px 14px;font-size:12px">전송</button></div>';
+    h+='<div style="display:flex;gap:6px"><button class="btn btn-ghost" style="padding:6px 8px;font-size:14px" onclick="App.pjChatAttach()" title="파일 첨부">\ud83d\udcce</button><input id="pj-chat-input" placeholder="메시지 입력..." onkeydown="if(event.key===\'Enter\')App.sendPjChat()" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--w04);color:var(--w);font-size:12px;outline:none"><button class="btn btn-pri" onclick="App.sendPjChat()" style="padding:8px 14px;font-size:12px">전송</button></div>';
     h+='</div>';
   }
   h+='</div>';
@@ -5088,8 +5103,9 @@ function savePjDocDraft(){
 }
 /* 화상미팅 — 플랫폼 선택형 허브 */
 function startVideoMeeting(){
-  var p=S.currentProject;if(!p||!S.user)return;
-  var buyerId=S._pjChatBuyer||(p.buyer_id)||'';
+  var p=S.currentProject;if(!p){UI.toast('프로젝트를 선택해주세요','warn');return;}if(!S.user)return;
+  var _ubs=_getPjBuyerIds(p);
+  var buyerId=S._pjChatBuyer||(p.buyer_id)||(_ubs.length?_ubs[0]:'')||'';
   if(!buyerId){UI.toast('먼저 바이어를 연결하세요','warn');return;}
   var buyer=S.buyers.find(function(b){return b.id===buyerId;});
   var buyerName=buyer?(buyer.company_name||buyer.contact_name||'Buyer'):'Buyer';
@@ -7122,13 +7138,19 @@ function _getUserLang(){
   var map={KR:'ko',JP:'ja',CN:'zh',TW:'zh',US:'en',GB:'en',AU:'en',CA:'en',DE:'de',FR:'fr',ES:'es',IT:'it',NL:'nl',PT:'pt',RU:'ru',TH:'th',VN:'vi',ID:'id',MY:'ms',PH:'en',IN:'en',AE:'ar',SA:'ar',TR:'tr',BR:'pt',MX:'es'};
   return map[c.toUpperCase()]||'en';
 }
-function translateChatMsg(msgId,targetLang){
+function translateChatMsg(msgId,targetLang,batchAll){
+  /* 전체 번역 모드 */
+  if(batchAll&&!msgId){
+    var msgs=S._pjChatMsgs||[];
+    msgs.forEach(function(m){if(m.sender_type==='buyer'&&m.id&&!String(m.id).startsWith('tmp_')&&m.message_type!=='system'){translateChatMsg(m.id,targetLang);}});
+    return;
+  }
   var key=msgId+'_'+(targetLang||'en');
   if(_chatTranslations[key]&&_chatTranslations[key]!=='loading'){
     delete _chatTranslations[key];render();return;
   }
   var text='';
-  var allMsgs=S._chatMessages.concat(S._dealChatMsgs||[]).concat(S._pjChatMsgs||[]);
+  var allMsgs=(S._chatMessages||[]).concat(S._dealChatMsgs||[]).concat(S._pjChatMsgs||[]);
   for(var i=0;i<allMsgs.length;i++){if(String(allMsgs[i].id)===String(msgId)){text=allMsgs[i].body||allMsgs[i].message||'';break;}}
   if(!text)return;
   _chatTranslations[key]='loading';render();
