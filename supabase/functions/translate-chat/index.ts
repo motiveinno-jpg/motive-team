@@ -42,13 +42,23 @@ serve(async (req: Request) => {
       return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } });
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) {
+    const sbUrl = Deno.env.get("SUPABASE_URL")!;
+    const sbServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sbAdmin = createClient(sbUrl, sbServiceRole);
+
+    // Extract and validate user from JWT
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: userErr } = await sbAdmin.auth.getUser(token);
+    if (!user || userErr) {
       return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    // Create user-scoped client for RLS operations
+    const sbAnon = Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
+    const sb = createClient(sbUrl, sbAnon, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     const { text, target } = await req.json();
 

@@ -37,18 +37,24 @@ serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const supabaseServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sbAdmin = createClient(supabaseUrl, supabaseServiceRole);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    // Extract and validate user from JWT
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: userErr } = await sbAdmin.auth.getUser(token);
+    if (!user || userErr) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Create user-scoped client for RLS operations
+    const supabaseKey = Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     const body = await req.json();
     const { action, event_type, details } = body;
