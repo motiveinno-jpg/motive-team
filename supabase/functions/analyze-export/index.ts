@@ -154,9 +154,11 @@ async function crawlUrls(urls: string[]): Promise<{
   let crawledText = "";
   for (const cr of crawlResults) {
     if (cr.success && cr.text) {
-      crawledText += `\n--- 크롤링 결과: ${cr.url} ---\n`;
+      crawledText += `\n--- 크롤링 성공: ${cr.url} ---\n`;
       if (cr.title) crawledText += `페이지 제목: ${cr.title}\n`;
       crawledText += cr.text + "\n";
+    } else {
+      crawledText += `\n--- 크롤링 실패: ${cr.url} (${cr.error}) ---\n`;
     }
   }
 
