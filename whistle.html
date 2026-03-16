@@ -16,10 +16,10 @@
 <meta name="twitter:title" content="Whistle AI — AI 수출 통합 관리 플랫폼">
 <meta name="twitter:description" content="한국 제조사를 위한 AI 수출 통합 관리 솔루션">
 <link rel="canonical" href="https://whistle-ai.com/app">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" integrity="sha384-nBSomYN4UWX4we7Pw5GsQDkjtwLh2Wde+3szWl5Lzf0zuN9XncHIZLNoucos4C7f" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="https://js.tosspayments.com/v2/standard"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -768,7 +768,7 @@ function reqExpertReview(docIdOrType,detail){
     });
     return;
   }
-  sb.from('documents').update({expert_review_requested:true,expert_review_status:'requested'}).eq('id',docIdOrType).then(function(r){
+  sb.from('documents').update({expert_review_requested:true,expert_review_status:'requested'}).eq('id',docIdOrType).eq('user_id',S.user.id).then(function(r){
     if(r.error){GP.done();_toastE(r.error,'검토 요청');return;}
     sb.from('service_requests').insert({user_id:S.user.id,service_type:'document_review',description:'서류 관세사 검토 요청 ('+docIdOrType+')',status:'pending'}).then(function(r2){
       GP.done();
@@ -1667,7 +1667,7 @@ function genCatalogEN(productId){
   fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){return r.json();}).then(function(data){
     if(!data.ok)throw new Error(data.error||'생성 실패');
     var res=data.result;
-    sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).then(function(r2){
+    sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).eq('user_id',S.user.id).then(function(r2){
       if(r2.error){UI.toast('저장 실패','err');return;}
       loadP().then(function(){UI.toast('영문 카탈로그 생성 완료!','ok');closeModal('pm');render();});
     });
@@ -2554,7 +2554,7 @@ function _ensureStageProgress(p){
       if(sp[s].length)changed=true;
     }
   });
-  if(changed){p.stage_progress=sp;sb.from('projects').update({stage_progress:sp}).eq('id',p.id).then(function(){});}
+  if(changed){p.stage_progress=sp;sb.from('projects').update({stage_progress:sp}).eq('id',p.id).eq('user_id',S.user.id).then(function(){});}
 }
 /* ── 프로젝트 준비 vs 바이어 딜 단계 분리 ── */
 function getProjectPrepStages(p){
@@ -3399,7 +3399,7 @@ function sendPjChat(){
       fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON_KEY},body:JSON.stringify({text:text,target:buyerLang})}).then(function(tr){return tr.json();}).then(function(td){
         if(td.ok&&td.translated){
           var meta=r.data.metadata||{};meta.translated=td.translated;meta.target_lang=buyerLang;
-          sb.from('messages').update({metadata:meta}).eq('id',r.data.id).then(function(){
+          sb.from('messages').update({metadata:meta}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){
             var mi=S._pjChatMsgs.findIndex(function(m){return m.id===r.data.id;});
             if(mi>=0){S._pjChatMsgs[mi].metadata=meta;}
             render();
@@ -4565,7 +4565,7 @@ function customsAIAction(action){
     /* 프로젝트 메모에 관세 AI 답변 저장 */
     var notes=p.notes||[];
     notes.push({text:'[AI 관세 분석] '+answer.substring(0,200)+(answer.length>200?'...':''),created_at:new Date().toISOString(),type:'customs_ai'});
-    sb.from('projects').update({notes:notes}).eq('id',p.id).then(function(r){
+    sb.from('projects').update({notes:notes}).eq('id',p.id).eq('user_id',S.user.id).then(function(r){
       if(r.error){_toastE(r.error);return;}
       p.notes=notes;
       UI.toast('💾 프로젝트 메모에 저장되었습니다','ok');
@@ -4604,7 +4604,7 @@ function saveCostCalc(){
   var d=UI.fd('#costCalcForm');
   var cc={fob_unit:parseFloat(d.fob_unit)||0,quantity:parseInt(d.quantity)||0,dest_country:d.dest_country||'US',hs_code:d.hs_code||'',ship_method:d.ship_method||'ocean',cbm:parseFloat(d.cbm)||0.5,weight_kg:parseFloat(d.weight_kg)||500};
   p.cost_calc=cc;
-  sb.from('projects').update({cost_calc:cc}).eq('id',p.id).then(function(r){
+  sb.from('projects').update({cost_calc:cc}).eq('id',p.id).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     UI.toast('비용 계산 저장 완료','ok');
   });
@@ -5709,7 +5709,7 @@ function viewPj(id){var p=S.projects.find(function(x){return x.id===id;});if(p){
 
 function setPjStage(stage){
   var p=S.currentProject;if(!p)return;
-  sb.from('projects').update({status:stage,updated_at:new Date().toISOString()}).eq('id',p.id).then(function(r){
+  sb.from('projects').update({status:stage,updated_at:new Date().toISOString()}).eq('id',p.id).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}p.status=stage;render();UI.toast('단계 변경','ok');
   });
 }
@@ -5717,13 +5717,13 @@ function setPjStage(stage){
 function addPjNote(){
   UI.prompt('메모',function(t){if(!t||!t.trim())return;var p=S.currentProject;if(!p)return;
   var n=p.notes||[];n.push({text:t.trim(),date:new Date().toISOString()});
-  sb.from('projects').update({notes:n}).eq('id',p.id).then(function(r){
+  sb.from('projects').update({notes:n}).eq('id',p.id).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}p.notes=n;render();UI.toast('추가','ok');
   }).catch(function(e){console.error('[addPjNote]',e);UI.toast('저장 실패','err');});
   },'메모를 입력하세요');
 }
 
-function rmPjNote(i){var p=S.currentProject;if(!p)return;var n=(p.notes||[]).slice();n.splice(i,1);sb.from('projects').update({notes:n}).eq('id',p.id).then(function(r){if(r.error){_toastE(r.error);return;}p.notes=n;render();}).catch(function(e){console.error('[rmPjNote]',e);});}
+function rmPjNote(i){var p=S.currentProject;if(!p)return;var n=(p.notes||[]).slice();n.splice(i,1);sb.from('projects').update({notes:n}).eq('id',p.id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error);return;}p.notes=n;render();}).catch(function(e){console.error('[rmPjNote]',e);});}
 
 function delPj(id){if(!confirm('이 프로젝트를 삭제하시겠습니까? 관련 데이터가 함께 삭제됩니다.'))return;sb.from('projects').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error);return;}S.currentProject=null;loadPr().then(function(){render();UI.toast('삭제','ok');});});}
 
@@ -5820,7 +5820,7 @@ function toggleStageItem(pjId,stage,idx){
   var sp=p.stage_progress||{};if(!sp[stage])sp[stage]=JSON.parse(JSON.stringify(STAGE_DEFAULTS[stage]||[]));
   sp[stage][idx].done=!sp[stage][idx].done;
   _updateCheckboxUI(stage,idx,sp[stage][idx].done,sp[stage]);
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');sp[stage][idx].done=!sp[stage][idx].done;_updateCheckboxUI(stage,idx,sp[stage][idx].done,sp[stage]);return;}
     p.stage_progress=sp;
     /* 완료 단계에서 "재주문 협의" 체크 시 자동으로 프로젝트 복사 모달 열기 */
@@ -6219,7 +6219,7 @@ function setCertStatus(pjId,idx,status){
   var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
   var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
   sp.certs[idx].status=status;
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}p.stage_progress=sp;render();
   });
 }
@@ -6227,7 +6227,7 @@ function setCertDeadline(pjId,idx,date){
   var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
   var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
   sp.certs[idx].deadline=date;
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}p.stage_progress=sp;render();
   });
 }
@@ -6237,7 +6237,7 @@ function toggleCertDoc(pjId,idx,docName){
   var c=sp.certs[idx];if(!c.docs_done)c.docs_done=[];
   var i=c.docs_done.indexOf(docName);
   if(i>=0)c.docs_done.splice(i,1);else c.docs_done.push(docName);
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}p.stage_progress=sp;render();
   });
 }
@@ -6248,7 +6248,7 @@ function addCertItem(pjId){
   var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
   var db=CERT_DB[name.toUpperCase()]||{};
   sp.certs.push({name:name.toUpperCase(),status:'pending',deadline:'',cost_min:db.costMin||0,cost_max:db.costMax||0,docs_done:[],ai_guide:null});
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}p.stage_progress=sp;render();UI.toast(name+' 인증 추가','ok');
   });
   },'예: FDA, CE, CPNP');
@@ -6258,7 +6258,7 @@ function addCertPreset(pjId,certKey){
   var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
   var db=CERT_DB[certKey]||{};
   sp.certs.push({name:certKey,status:'pending',deadline:'',cost_min:db.costMin||0,cost_max:db.costMax||0,docs_done:[],ai_guide:null});
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}p.stage_progress=sp;render();UI.toast(certKey+' 추가','ok');
   });
 }
@@ -6284,7 +6284,7 @@ function addCertsToProject(analysisId,certs){
     }
   });
   if(added===0){UI.toast('모든 인증이 이미 체크리스트에 있습니다','info');return;}
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pj.id).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pj.id).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}
     pj.stage_progress=sp;render();
     UI.toast(added+'건 인증이 체크리스트에 추가되었습니다','ok');
@@ -6295,7 +6295,7 @@ function rmCertItem(pjId,idx){
   var p=S.currentProject;if(!p||p.id!==pjId)p=S.projects.find(function(x){return x.id===pjId;});if(!p)return;
   var sp=p.stage_progress||{};if(!sp.certs)sp.certs=[];
   sp.certs.splice(idx,1);
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}p.stage_progress=sp;render();UI.toast('삭제됨','ok');
   });
 }
@@ -6311,7 +6311,7 @@ function getCertGuide(pjId,idx){
   .then(function(r){return r.json();}).then(function(data){
     if(data.ok&&data.guide){
       cert.ai_guide=data.guide;
-      sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).then(function(r){
+      sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
         if(!r.error){p.stage_progress=sp;render();}
       });
       UI.toast('AI 가이드 생성 완료','ok');
@@ -6597,7 +6597,7 @@ function pgDocForm(){
   var refSec='<div class="card" style="margin-bottom:10px"><div class="card-h">📋 서류 정보 <span style="font-size:11px;color:var(--w30);font-weight:400;margin-left:8px">번호와 날짜는 자동 생성됩니다</span></div><div class="card-b"><form id="docR"><div class="grid-3">'+UI.inp('doc_no','서류 번호',{value:_docNum})+UI.inp('doc_date','발행 날짜',{type:'date',value:new Date().toISOString().split('T')[0]})+UI.inp('validity','유효기간',{value:isSC?'Until contract completion':'30 days'})+'</div>'+refFields+'</form></div></div>';
   var items=S.docItems||[];
   var _isPriced=['pi','ci','sc'].indexOf(type)>=0;
-  var itemSec='<div class="card" style="margin-bottom:10px"><div class="card-h"><span>📦 품목</span><span style="font-size:11px;color:var(--w30);font-weight:400;margin-left:8px">'+items.length+'개</span><button class="btn btn-ghost btn-sm" onclick="App.addDocItem()" style="margin-left:auto">+ 품목 추가</button></div><div class="card-b">'+(S.products.length?'<div style="padding:8px 12px;border-radius:8px;background:rgba(0,212,255,.05);font-size:11px;color:var(--w40);margin-bottom:10px">💡 등록된 제품을 선택하면 품명, 규격, 단가가 자동 입력됩니다</div>':'')+items.map(function(it,idx){return '<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:8px" id="di'+idx+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--pri)">#'+(idx+1)+'</span>'+(items.length>1?'<button class="btn btn-danger btn-sm" onclick="App.rmDocItem('+idx+')" style="font-size:10px;padding:2px 6px" title="이 품목 삭제">✕</button>':'')+'</div>'+(S.products.length?'<div class="form-group"><label class="form-label">제품 선택 <span style="font-size:10px;color:var(--w30)">(선택 시 자동입력)</span></label><select class="form-select" onchange="App.fillDocProd('+idx+',this.value)" style="font-size:13px"><option value="">직접 입력</option>'+S.products.map(function(p){return '<option value="'+p.id+'">'+p.name_ko+(p.fob_price?' ($'+p.fob_price+')':'')+'</option>';}).join('')+'</select></div>':'')+'<div class="grid-2">'+UI.inp('itn_'+idx,'품명 *',{placeholder:'예: Organic Green Tea Extract'})+UI.inp('itd_'+idx,'규격/사양',{placeholder:'예: 50g x 100 boxes'})+'</div><div class="grid-'+((isPL||isBL)?'4':'3')+'">'+UI.inp('itq_'+idx,'수량',{type:'number',value:'1',min:'1'})+UI.inp('itu_'+idx,'단위',{value:'PCS',placeholder:'PCS/CTN/KG/SET'})+((isPL||isBL)?UI.inp('itnw_'+idx,'순중량(kg)',{type:'number',placeholder:'0.0'})+UI.inp('itgw_'+idx,'총중량(kg)',{type:'number',placeholder:'0.0'}):UI.inp('itp_'+idx,'단가(USD)',{type:'number',placeholder:'0.00'}))+'</div>'+((isPL||isBL)?'<div class="grid-3">'+UI.inp('itc_'+idx,'카톤 수',{type:'number',value:'1'})+UI.inp('itcbm_'+idx,'CBM',{type:'number',placeholder:'0.000',step:'0.001'})+UI.inp('itdm_'+idx,'치수(cm)',{placeholder:'40x30x20'})+'</div>':'')+'</div>';}).join('');
+  var itemSec='<div class="card" style="margin-bottom:10px"><div class="card-h"><span>📦 품목</span><span style="font-size:11px;color:var(--w30);font-weight:400;margin-left:8px">'+items.length+'개</span><button class="btn btn-ghost btn-sm" onclick="App.addDocItem()" style="margin-left:auto">+ 품목 추가</button></div><div class="card-b">'+(S.products.length?'<div style="padding:8px 12px;border-radius:8px;background:rgba(0,212,255,.05);font-size:11px;color:var(--w40);margin-bottom:10px">💡 등록된 제품을 선택하면 품명, 규격, 단가가 자동 입력됩니다</div>':'')+items.map(function(it,idx){return '<div style="padding:12px;border-radius:10px;background:var(--w08);margin-bottom:8px" id="di'+idx+'"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12px;font-weight:700;color:var(--pri)">#'+(idx+1)+'</span>'+(items.length>1?'<button class="btn btn-danger btn-sm" onclick="App.rmDocItem('+idx+')" style="font-size:10px;padding:2px 6px" title="이 품목 삭제">✕</button>':'')+'</div>'+(S.products.length?'<div class="form-group"><label class="form-label">제품 선택 <span style="font-size:10px;color:var(--w30)">(선택 시 자동입력)</span></label><select class="form-select" onchange="App.fillDocProd('+idx+',this.value)" style="font-size:13px"><option value="">직접 입력</option>'+S.products.map(function(p){return '<option value="'+p.id+'">'+p.name_ko+(p.fob_price?' ($'+p.fob_price+')':'')+'</option>';}).join('')+'</select></div>':'')+'<div class="grid-2">'+UI.inp('itn_'+idx,'품명 *',{placeholder:'예: Organic Green Tea Extract',value:it.name||''})+UI.inp('itd_'+idx,'규격/사양',{placeholder:'예: 50g x 100 boxes',value:it.desc||''})+'</div><div class="grid-'+((isPL||isBL)?'4':'3')+'">'+UI.inp('itq_'+idx,'수량',{type:'number',value:String(it.qty||1),min:'1'})+UI.inp('itu_'+idx,'단위',{value:it.unit||'PCS',placeholder:'PCS/CTN/KG/SET'})+((isPL||isBL)?UI.inp('itnw_'+idx,'순중량(kg)',{type:'number',placeholder:'0.0'})+UI.inp('itgw_'+idx,'총중량(kg)',{type:'number',placeholder:'0.0'}):UI.inp('itp_'+idx,'단가(USD)',{type:'number',placeholder:'0.00',value:it.unit_price||it.price||'',step:'0.01',extra:'oninput="App._syncDocItemPrice('+idx+',this.value)"'}))+'</div>'+((isPL||isBL)?'<div class="grid-3">'+UI.inp('itc_'+idx,'카톤 수',{type:'number',value:'1'})+UI.inp('itcbm_'+idx,'CBM',{type:'number',placeholder:'0.000',step:'0.001'})+UI.inp('itdm_'+idx,'치수(cm)',{placeholder:'40x30x20'})+'</div>':'')+'</div>';}).join('');
   /* Live total bar for priced documents */
   if(_isPriced){itemSec+='<div id="doc-live-total" style="margin-top:8px;padding:10px 14px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:var(--w40)">합계</span><span style="font-size:16px;font-weight:800;color:var(--pri)" id="doc-total-value">$0.00</span></div>';}
   itemSec+='</div></div>';
@@ -6721,14 +6721,16 @@ localStorage.setItem(key,JSON.stringify(tpls));
 UI.toast('양식 삭제됨','ok');
 loadDocTemplate(type);
 }
-function addDocItem(){S.docItems.push({name:'',qty:1,unit_price:0,desc:'',unit:'PCS'});render();setTimeout(function(){App._updateDocTotal&&App._updateDocTotal();},100);}
-function rmDocItem(i){S.docItems.splice(i,1);render();setTimeout(function(){App._updateDocTotal&&App._updateDocTotal();},100);}
+function _syncDocItemsFromDOM(){(S.docItems||[]).forEach(function(it,idx){var n=document.querySelector('[name=itn_'+idx+']');if(n)it.name=n.value;var d=document.querySelector('[name=itd_'+idx+']');if(d)it.desc=d.value;var q=document.querySelector('[name=itq_'+idx+']');if(q)it.qty=Number(q.value)||1;var u=document.querySelector('[name=itu_'+idx+']');if(u)it.unit=u.value||'PCS';var p=document.querySelector('[name=itp_'+idx+']');if(p){var pv=Number(p.value)||0;it.unit_price=pv;it.price=pv;}});}
+function _syncDocItemPrice(idx,val){if(S.docItems&&S.docItems[idx]){S.docItems[idx].unit_price=Number(val)||0;S.docItems[idx].price=Number(val)||0;}_updateDocTotal();}
+function addDocItem(){_syncDocItemsFromDOM();S.docItems.push({name:'',qty:1,unit_price:0,desc:'',unit:'PCS'});render();setTimeout(function(){App._updateDocTotal&&App._updateDocTotal();},100);}
+function rmDocItem(i){_syncDocItemsFromDOM();S.docItems.splice(i,1);render();setTimeout(function(){App._updateDocTotal&&App._updateDocTotal();},100);}
 function _numToWords(n){var ones=['','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','TEN','ELEVEN','TWELVE','THIRTEEN','FOURTEEN','FIFTEEN','SIXTEEN','SEVENTEEN','EIGHTEEN','NINETEEN'];var tens=['','','TWENTY','THIRTY','FORTY','FIFTY','SIXTY','SEVENTY','EIGHTY','NINETY'];function _c(x){if(x===0)return '';if(x<20)return ones[x]+' ';if(x<100)return tens[Math.floor(x/10)]+' '+(x%10?ones[x%10]+' ':'');if(x<1000)return ones[Math.floor(x/100)]+' HUNDRED '+_c(x%100);if(x<1000000)return _c(Math.floor(x/1000))+'THOUSAND '+_c(x%1000);if(x<1000000000)return _c(Math.floor(x/1000000))+'MILLION '+_c(x%1000000);return _c(Math.floor(x/1000000000))+'BILLION '+_c(x%1000000000);}var intPart=Math.floor(Math.abs(n));var centPart=Math.round((Math.abs(n)-intPart)*100);var w=_c(intPart).trim();if(!w)w='ZERO';var centsW=centPart>0?' AND CENTS '+_c(centPart).trim():'';return w+centsW+' ONLY';}
 function _currencySymbol(code){var m={USD:'$',EUR:'\u20AC',JPY:'\u00A5',CNY:'\u00A5',GBP:'\u00A3',AED:'AED '};return m[code]||'$';}
 function _currencyName(code){var m={USD:'US DOLLARS',EUR:'EUROS',JPY:'JAPANESE YEN',CNY:'CHINESE YUAN',GBP:'BRITISH POUNDS',AED:'UAE DIRHAMS'};return m[code]||'US DOLLARS';}
 function _updateDocTotal(){var el=document.getElementById('doc-total-value');if(!el)return;var total=0;(S.docItems||[]).forEach(function(it,idx){var q=Number((document.querySelector('[name=itq_'+idx+']')||{}).value)||0;var p=Number((document.querySelector('[name=itp_'+idx+']')||{}).value)||0;total+=q*p;});var curSel=document.querySelector('[name=currency]');var sym=_currencySymbol(curSel?curSel.value:'USD');el.textContent=sym+U.fc(total);}
 function _updateDocProgress(){var bar=document.getElementById('doc-progress-bar');var pct=document.getElementById('doc-progress-pct');if(!bar||!pct)return;var filled=0;var total=0;['#docB','#docR'].forEach(function(sel){var form=document.querySelector(sel);if(!form)return;var inputs=form.querySelectorAll('input,select,textarea');for(var i=0;i<inputs.length;i++){if(inputs[i].type==='hidden')continue;total++;if(inputs[i].value&&inputs[i].value.trim())filled++;}});(S.docItems||[]).forEach(function(it,idx){total+=2;var n=document.querySelector('[name=itn_'+idx+']');if(n&&n.value.trim())filled++;var q=document.querySelector('[name=itq_'+idx+']');if(q&&Number(q.value)>0)filled++;});var p=total>0?Math.round(filled/total*100):0;bar.style.width=p+'%';bar.style.background=p>=80?'var(--ok-g)':p>=40?'var(--acc-g)':'var(--pri-g)';pct.textContent=p+'%';pct.style.color=p>=80?'var(--ok)':p>=40?'var(--acc)':'var(--w40)';}
-function fillDocProd(idx,pid){if(!pid)return;var p=S.products.find(function(x){return x.id===pid;});if(!p)return;var el=document.getElementById('di'+idx);if(!el)return;var ni=el.querySelector('[name=itn_'+idx+']');if(ni)ni.value=p.name_en||p.name_ko||'';var di=el.querySelector('[name=itd_'+idx+']');if(di)di.value=p.description_en||'';var pi=el.querySelector('[name=itp_'+idx+']');if(pi&&p.fob_price)pi.value=p.fob_price;}
+function fillDocProd(idx,pid){if(!pid)return;var p=S.products.find(function(x){return x.id===pid;});if(!p)return;var el=document.getElementById('di'+idx);if(!el)return;var ni=el.querySelector('[name=itn_'+idx+']');if(ni)ni.value=p.name_en||p.name_ko||'';var di=el.querySelector('[name=itd_'+idx+']');if(di)di.value=p.description_en||'';var pi=el.querySelector('[name=itp_'+idx+']');if(pi&&p.fob_price)pi.value=p.fob_price;/* sync back to S.docItems */if(S.docItems&&S.docItems[idx]){S.docItems[idx].name=p.name_en||p.name_ko||'';S.docItems[idx].desc=p.description_en||'';if(p.fob_price){S.docItems[idx].unit_price=p.fob_price;S.docItems[idx].price=p.fob_price;}}_updateDocTotal();}
 function fillBuyerDoc(){var sel=document.querySelector('[name=buyer_from]');if(!sel||!sel.value)return;var b=S.buyers.find(function(x){return x.id===sel.value;});if(!b)return;var ci=document.querySelector('[name=buyer_company]');if(ci)ci.value=b.company_name||'';var cn=document.querySelector('[name=buyer_contact]');if(cn)cn.value=b.contact_name||'';var ca=document.querySelector('[name=buyer_address]');if(ca)ca.value=b.address||'';var cc=document.querySelector('[name=buyer_country]');if(cc)cc.value=b.country||'';}
 
 /* === DOCUMENT VALIDATION (P0-Doc) === */
@@ -6817,6 +6819,7 @@ function _showDocIssues(result){
 
 var _lastDoc=null;window._lastDoc=null;
 function genDoc(){
+  _syncDocItemsFromDOM();
   var _noItemTypes=['ic','cd','lc','hsc','cfs','fc','msds'];
   var _isNoItem=_noItemTypes.indexOf(S.docType)>=0;
   var bd=_isNoItem?{buyer_company:'',buyer_contact:'',buyer_address:''}:UI.fd('#docB');var rd=UI.fd('#docR');
@@ -7154,7 +7157,7 @@ function sendE(){
       if(data.method==='logged_only'){
         UI.toast('이메일 API 미설정 — 메일 앱에서 직접 발송해주세요','warn');
         window.open('mailto:'+d.to+'?subject='+encodeURIComponent(d.subject||'')+'&body='+encodeURIComponent(d.body||''));
-        if(data.logId)sb.from('email_logs').update({status:'draft'}).eq('id',data.logId);
+        if(data.logId)sb.from('email_logs').update({status:'draft'}).eq('id',data.logId).eq('user_id',S.user.id);
       }else{
         UI.toast('이메일 발송 완료!','ok');
       }
@@ -7384,7 +7387,7 @@ function openChatRoom(buyerId){
     S._chatMessages=r.data||[];
     /* Mark as read */
     var unreadIds=(r.data||[]).filter(function(m){return m.sender_type==='buyer'&&!m.read_at;}).map(function(m){return m.id;});
-    if(unreadIds.length){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unreadIds).then(function(){S._chatUnread[buyerId]=0;});}
+    if(unreadIds.length){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unreadIds).eq('user_id',S.user.id).then(function(){S._chatUnread[buyerId]=0;});}
     render();
     setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},50);
   });
@@ -9493,7 +9496,7 @@ function viewOrder(orderId){
 }
 
 function setOrderStatus(orderId,status){
-  sb.from('orders').update({status:status,updated_at:new Date().toISOString()}).eq('id',orderId).then(function(r){
+  sb.from('orders').update({status:status,updated_at:new Date().toISOString()}).eq('id',orderId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     var o=S.orders.find(function(x){return x.id===orderId;});if(o)o.status=status;
     closeModal('od');render();UI.toast('상태: '+status,'ok');
@@ -9506,7 +9509,7 @@ function setOrderPay(orderId,ps){
   var upd={payment_status:ps,updated_at:new Date().toISOString()};
   if(ps==='deposit_received')upd.deposit_received_at=new Date().toISOString();
   if(ps==='paid')upd.balance_received_at=new Date().toISOString();
-  sb.from('orders').update(upd).eq('id',orderId).then(function(r){
+  sb.from('orders').update(upd).eq('id',orderId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     var o=S.orders.find(function(x){return x.id===orderId;});if(o){o.payment_status=ps;}
     closeModal('od');render();UI.toast('결제: '+ps,'ok');
@@ -9515,7 +9518,7 @@ function setOrderPay(orderId,ps){
 
 function updateOrderField(orderId,field,value){
   var upd={updated_at:new Date().toISOString()};upd[field]=value;
-  sb.from('orders').update(upd).eq('id',orderId).then(function(r){
+  sb.from('orders').update(upd).eq('id',orderId).eq('user_id',S.user.id).then(function(r){
     if(!r.error){var o=S.orders.find(function(x){return x.id===orderId;});if(o)o[field]=value;}
   });
 }
@@ -9524,7 +9527,7 @@ function addOrderNote(orderId){
   UI.prompt('메모',function(text){
   var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
   var notes=o.notes||[];notes.push({text:text,date:new Date().toISOString()});
-  sb.from('orders').update({notes:notes,updated_at:new Date().toISOString()}).eq('id',orderId).then(function(r){
+  sb.from('orders').update({notes:notes,updated_at:new Date().toISOString()}).eq('id',orderId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}o.notes=notes;closeModal('od');viewOrder(orderId);
   });
   },'메모를 입력하세요');
@@ -9856,7 +9859,7 @@ function saveMeeting(editId){
     title:d.title,type:d.type||'video_call',scheduled_at:new Date(d.scheduled_at).toISOString(),
     duration_min:parseInt(d.duration_min)||60,platform:d.platform||null,
     meeting_url:d.meeting_url||null,location:d.location||null,agenda:agendaArr};
-  var q=editId?sb.from('meetings').update(data).eq('id',editId):sb.from('meetings').insert(data);
+  var q=editId?sb.from('meetings').update(data).eq('id',editId).eq('user_id',S.user.id):sb.from('meetings').insert(data);
   q.then(function(r){
     if(r.error){UI.toast('저장 실패: '+r.error.message,'err');return;}
     closeModal('mm');loadMeetings().then(function(){render();UI.toast(editId?'수정 완료!':'미팅 등록!','ok');});
@@ -9914,7 +9917,7 @@ function viewMeeting(mid){
 
 function saveMeetingNotes(mid){
   var notes=document.getElementById('mt_notes');if(!notes)return;
-  sb.from('meetings').update({notes:notes.value,updated_at:new Date().toISOString()}).eq('id',mid).then(function(r){
+  sb.from('meetings').update({notes:notes.value,updated_at:new Date().toISOString()}).eq('id',mid).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error,'저장');return;}
     var m=S.meetings.find(function(x){return x.id===mid;});if(m)m.notes=notes.value;
     UI.toast('노트 저장!','ok');
@@ -9925,7 +9928,7 @@ function addMeetingAction(mid){
   var inp=document.getElementById('mt_new_action');if(!inp||!inp.value.trim())return;
   var m=S.meetings.find(function(x){return x.id===mid;});if(!m)return;
   var actions=(m.action_items||[]).concat([{text:inp.value.trim(),done:false}]);
-  sb.from('meetings').update({action_items:actions}).eq('id',mid).then(function(r){
+  sb.from('meetings').update({action_items:actions}).eq('id',mid).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     m.action_items=actions;closeModal('mv');viewMeeting(mid);
   });
@@ -9935,13 +9938,13 @@ function toggleMeetingAction(mid,idx){
   var m=S.meetings.find(function(x){return x.id===mid;});if(!m)return;
   var actions=JSON.parse(JSON.stringify(m.action_items||[]));
   if(actions[idx])actions[idx].done=!actions[idx].done;
-  sb.from('meetings').update({action_items:actions}).eq('id',mid).then(function(r){
+  sb.from('meetings').update({action_items:actions}).eq('id',mid).eq('user_id',S.user.id).then(function(r){
     if(!r.error)m.action_items=actions;
   });
 }
 
 function setMeetingStatus(mid,status){
-  sb.from('meetings').update({status:status,updated_at:new Date().toISOString()}).eq('id',mid).then(function(r){
+  sb.from('meetings').update({status:status,updated_at:new Date().toISOString()}).eq('id',mid).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     closeModal('mv');loadMeetings().then(function(){render();UI.toast('상태 변경!','ok');});
   });
@@ -9951,7 +9954,7 @@ function completeMeeting(mid){
   var notes=document.getElementById('mt_notes');
   var upd={status:'completed',updated_at:new Date().toISOString()};
   if(notes)upd.notes=notes.value;
-  sb.from('meetings').update(upd).eq('id',mid).then(function(r){
+  sb.from('meetings').update(upd).eq('id',mid).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     closeModal('mv');loadMeetings().then(function(){render();UI.toast('미팅 완료!','ok');});
     pushNotif('meeting','미팅 완료','','meetings',null,true);
@@ -9968,7 +9971,7 @@ function getMeetingPrep(mid){
     meeting:m,buyer:buyer,product:product,company:S.company
   })}).then(function(r){return r.json();}).then(function(j){
     if(j.error){UI.toast('실패: '+j.error,'err');return;}
-    sb.from('meetings').update({ai_briefing:j.briefing}).eq('id',mid).then(function(){
+    sb.from('meetings').update({ai_briefing:j.briefing}).eq('id',mid).eq('user_id',S.user.id).then(function(){
       var mm=S.meetings.find(function(x){return x.id===mid;});if(mm)mm.ai_briefing=j.briefing;
       closeModal('mv');closeModal('mm');viewMeeting(mid);
       UI.toast('AI 브리핑 완료!','ok');
@@ -10141,7 +10144,7 @@ function saveTrackingStatus(shipId){
   var d=UI.fd('#tuf');var ship=S.shipments.find(function(x){return x.id===shipId;});if(!ship)return;
   var history=ship.tracking_history||[];
   history.push({stage:d.new_status,timestamp:new Date().toISOString(),details:d.details||''});
-  sb.from('shipments').update({tracking_status:d.new_status,tracking_history:history,updated_at:new Date().toISOString()}).eq('id',shipId).then(function(r){
+  sb.from('shipments').update({tracking_status:d.new_status,tracking_history:history,updated_at:new Date().toISOString()}).eq('id',shipId).eq('user_id',S.user.id).then(function(r){
     if(r.error){UI.toast('실패: '+r.error.message,'err');return;}
     ship.tracking_status=d.new_status;ship.tracking_history=history;
     closeModal('tum');render();
@@ -10157,7 +10160,7 @@ function generateShareLink(shipId){
   function copyLink(t){var url=window.location.origin+window.location.pathname+'?track='+shipId+'&token='+t;navigator.clipboard.writeText(url).then(function(){UI.toast('공유 링크가 복사되었습니다','ok');});}
   if(token){copyLink(token);return;}
   var arr=new Uint8Array(16);crypto.getRandomValues(arr);token='tk_'+Array.from(arr,function(b){return b.toString(36);}).join('').substr(0,16);
-  sb.from('shipments').update({share_token:token,buyer_visible:true}).eq('id',shipId).then(function(r){
+  sb.from('shipments').update({share_token:token,buyer_visible:true}).eq('id',shipId).eq('user_id',S.user.id).then(function(r){
     if(!r.error){ship.share_token=token;ship.buyer_visible=true;copyLink(token);}else{UI.toast('링크 생성 실패','err');}
   });
 }
@@ -10182,7 +10185,7 @@ function shareTrackingToBuyer(shipId){
     (ship.carrier?'운송사: '+ship.carrier+'\n':'')+
     (ship.eta?'도착예정: '+ship.eta+'\n':'')+
     '추적: '+trackUrl;
-  sb.from('shipments').update({share_token:token,buyer_visible:true}).eq('id',shipId).then(function(){
+  sb.from('shipments').update({share_token:token,buyer_visible:true}).eq('id',shipId).eq('user_id',S.user.id).then(function(){
     ship.share_token=token;ship.buyer_visible=true;
   });
   sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,sender_type:'seller',message_type:'system',body:msgBody,channel:'platform',direction:'outbound'}).select().single().then(function(r){
@@ -10290,7 +10293,7 @@ function syncAllShipments(){
       if(nextSt&&s.updated_at){
         var daysSince=(Date.now()-new Date(s.updated_at).getTime())/(86400000);
         if(daysSince>3){
-          sb.from('shipments').update({status:nextSt,updated_at:new Date().toISOString()}).eq('id',s.id).then(function(r){
+          sb.from('shipments').update({status:nextSt,updated_at:new Date().toISOString()}).eq('id',s.id).eq('user_id',S.user.id).then(function(r){
             if(!r.error){s.status=nextSt;updated++;if(i===ships.length-1){render();UI.toast('✅ '+updated+'건 상태 업데이트 완료','ok');}}
           });
         }else{if(i===ships.length-1&&!updated)UI.toast('ℹ️ 모든 배송이 최신 상태입니다','info');}
@@ -10328,7 +10331,7 @@ function respondInquiry(iqId){
   var iq=(S._directInquiries||[]).find(function(x){return x.id===iqId;});
   if(!iq){UI.toast('문의를 찾을 수 없습니다.','err');return;}
   /* 1) contact_requests 상태 업데이트 */
-  sb.from('contact_requests').update({status:'responded',responded_at:new Date().toISOString()}).eq('id',iqId).then(function(r){
+  sb.from('contact_requests').update({status:'responded',responded_at:new Date().toISOString()}).eq('id',iqId).eq('product_id',iq.product_id).then(function(r){
     if(r.error){UI.toast('상태 업데이트 실패','err');return;}
     /* 2) buyers 레코드 생성 (중복 방지: email 기준) */
     var buyerEmail=iq.contact_email||iq.email||'';
@@ -10822,7 +10825,7 @@ function viewAlibabaInquiry(iqId){
 }
 
 function setAlibabaInquiryStatus(iqId,status){
-  sb.from('alibaba_inquiries').update({status:status,updated_at:new Date().toISOString()}).eq('id',iqId).then(function(r){
+  sb.from('alibaba_inquiries').update({status:status,updated_at:new Date().toISOString()}).eq('id',iqId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     var iq=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(iq)iq.status=status;
     closeModal('aiv');viewAlibabaInquiry(iqId);UI.toast('상태 변경!','ok');
@@ -10838,7 +10841,7 @@ function getAlibabaReply(iqId){
     inquiry:iq,product:product,company:S.company
   })}).then(function(r){return r.json();}).then(function(j){
     if(j.error){UI.toast('실패: '+j.error,'err');return;}
-    sb.from('alibaba_inquiries').update({reply_draft:j.reply,status:iq.status==='new'?'replied':iq.status}).eq('id',iqId).then(function(){
+    sb.from('alibaba_inquiries').update({reply_draft:j.reply,status:iq.status==='new'?'replied':iq.status}).eq('id',iqId).eq('user_id',S.user.id).then(function(){
       var i2=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(i2){i2.reply_draft=j.reply;if(i2.status==='new')i2.status='replied';}
       closeModal('aiv');viewAlibabaInquiry(iqId);UI.toast('AI 응답 생성 완료!','ok');
     });
@@ -10855,7 +10858,7 @@ function convertInquiryToBuyer(iqId){
     if(r.error){UI.toast('바이어 등록 실패: '+r.error.message,'err');return;}
     var newBuyer=r.data&&r.data[0];
     var upd={status:'converted',converted_to_buyer_id:newBuyer?newBuyer.id:null,updated_at:new Date().toISOString()};
-    sb.from('alibaba_inquiries').update(upd).eq('id',iqId).then(function(){
+    sb.from('alibaba_inquiries').update(upd).eq('id',iqId).eq('user_id',S.user.id).then(function(){
       var i2=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(i2){i2.status='converted';i2.converted_to_buyer_id=newBuyer?newBuyer.id:null;}
       closeModal('aiv');
       Promise.all([loadB(),loadAlibabaInquiries()]).then(function(){render();
@@ -10899,7 +10902,7 @@ function updateSampleStatus(sampleId,status){
   var upd={status:status,updated_at:new Date().toISOString()};
   if(status==='shipped')upd.shipped_at=new Date().toISOString();
   if(status==='delivered')upd.delivered_at=new Date().toISOString();
-  sb.from('samples').update(upd).eq('id',sampleId).then(function(r){
+  sb.from('samples').update(upd).eq('id',sampleId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     loadSamples().then(function(){render();UI.toast('상태 변경!','ok');});
   });
@@ -10907,7 +10910,7 @@ function updateSampleStatus(sampleId,status){
 
 function updateSampleTracking(sampleId){
   UI.prompt('운송장 번호를 입력하세요',function(val){
-  sb.from('samples').update({tracking_number:val,status:'shipped',shipped_at:new Date().toISOString()}).eq('id',sampleId).then(function(r){
+  sb.from('samples').update({tracking_number:val,status:'shipped',shipped_at:new Date().toISOString()}).eq('id',sampleId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     loadSamples().then(function(){render();UI.toast('운송장 등록!','ok');});
   });
@@ -10968,7 +10971,7 @@ function saveSampleTracking(){
     domestic_carrier:d.domestic_carrier||null,domestic_tracking:d.domestic_tracking||null,
     sent_date:d.sent_date||null,sample_desc:d.sample_desc||''
   };
-  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',p.id).then(function(r){
+  sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',p.id).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     p.stage_progress=sp;closeModal('sampletrack');render();
     UI.toast('발송 정보 저장!','ok');
@@ -11039,7 +11042,7 @@ function saveShipment(orderId){
 }
 
 function setMilestonePaid(msId){
-  sb.from('payment_milestones').update({status:'paid',paid_at:new Date().toISOString()}).eq('id',msId).then(function(r){
+  sb.from('payment_milestones').update({status:'paid',paid_at:new Date().toISOString()}).eq('id',msId).eq('user_id',S.user.id).then(function(r){
     if(r.error){_toastE(r.error);return;}
     loadMilestones().then(function(){render();UI.toast('결제 완료!','ok');});
     pushNotif('payment','결제 마일스톤 완납','','orders',null,true);
@@ -11409,7 +11412,7 @@ function nextOb(step){
     if(d.biz_number&&!/^\d{3}-\d{2}-\d{5}$/.test(d.biz_number)){UI.toast('사업자번호 형식: 123-45-67890','warn');return;}
     var companyData={user_id:S.user.id,name_ko:d.name_ko,ceo_name_ko:d.ceo_name_ko||null,phone:d.phone||null,address_ko:d.address_ko||null,biz_number:d.biz_number||null,personal_id_type:d.personal_id_type||null,category:d.category||null,manufacturing_type:d.manufacturing_type||null};
     if(S.company&&S.company.id){
-      sb.from('companies').update(companyData).eq('id',S.company.id).then(function(){
+      sb.from('companies').update(companyData).eq('id',S.company.id).eq('user_id',S.user.id).then(function(){
         S.company=Object.assign(S.company||{},companyData);
         sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
         S.user.onboarding_step=1;render();
@@ -14333,7 +14336,7 @@ document.addEventListener('keydown',function(e){
   }else if(k==='g'||k==='n'){_pendingKey=k;setTimeout(function(){_pendingKey=null;},600);}
 });
 
-window.S=S;window.render=render;window.App={S:S,set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,sendBuyerInviteEmail:sendBuyerInviteEmail,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,toggleSampleShipFields:toggleSampleShipFields,saveSampleTracking:saveSampleTracking,trackSample:trackSample,toggleShipFields:toggleShipFields,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleCostProdCur:toggleCostProdCur,toggleCostMarginCur:toggleCostMarginCur,changeOriginCountry:changeOriginCountry,changeShipType:changeShipType,toggleCostCert:toggleCostCert,toggleCostCertOwned:toggleCostCertOwned,updateCertPanel:updateCertPanel,fetchTradeReqs:fetchTradeReqs,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,shareTrackingToBuyer:shareTrackingToBuyer,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportOrdersCSV:exportOrdersCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,savePjDocDraft:savePjDocDraft,viewPjDoc:viewPjDoc,viewPjDocByNumber:viewPjDocByNumber,downloadPjDocByNumber:downloadPjDocByNumber,_downloadPjDocPDF:_downloadPjDocPDF,startVideoMeeting:startVideoMeeting,_launchVideoMeeting:_launchVideoMeeting,_scheduleVideoMeeting:_scheduleVideoMeeting,togglePjAutoTranslate:togglePjAutoTranslate,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,refreshPopup:refreshPopup,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,requestLogisticsPartner:requestLogisticsPartner,requestCustomsBroker:requestCustomsBroker,refreshExRate:refreshExRate,toggleFTACur:toggleFTACur,recalcCost:recalcCost,saveCostCalc:saveCostCalc,exportCostPDF:exportCostPDF,askCustomsAI:askCustomsAI,customsAIAction:customsAIAction,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_docValContinue:null,respondInquiry:respondInquiry,previewProposalImg:previewProposalImg,onProposalProductSelect:onProposalProductSelect,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,_filterPjList:_filterPjList,clearSigCanvas:clearSigCanvas,saveSig:saveSig,uploadStamp:uploadStamp,deleteSig:deleteSig,requestPayment:requestPayment,submitPaymentRequest:submitPaymentRequest,requestSamplePayment:requestSamplePayment,submitSamplePayment:submitSamplePayment,requestContractPayment:requestContractPayment,submitContractPayment:submitContractPayment,triggerAutoRelease:triggerAutoRelease,showDealSelector:showDealSelector,_selectDealForStage:_selectDealForStage,UI:UI};
+window.S=S;window.render=render;window.App={S:S,set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,initTossCheckout:initTossCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,sendBuyerInviteEmail:sendBuyerInviteEmail,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,toggleSampleShipFields:toggleSampleShipFields,saveSampleTracking:saveSampleTracking,trackSample:trackSample,toggleShipFields:toggleShipFields,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleCostProdCur:toggleCostProdCur,toggleCostMarginCur:toggleCostMarginCur,changeOriginCountry:changeOriginCountry,changeShipType:changeShipType,toggleCostCert:toggleCostCert,toggleCostCertOwned:toggleCostCertOwned,updateCertPanel:updateCertPanel,fetchTradeReqs:fetchTradeReqs,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,shareTrackingToBuyer:shareTrackingToBuyer,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportOrdersCSV:exportOrdersCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,savePjDocDraft:savePjDocDraft,viewPjDoc:viewPjDoc,viewPjDocByNumber:viewPjDocByNumber,downloadPjDocByNumber:downloadPjDocByNumber,_downloadPjDocPDF:_downloadPjDocPDF,startVideoMeeting:startVideoMeeting,_launchVideoMeeting:_launchVideoMeeting,_scheduleVideoMeeting:_scheduleVideoMeeting,togglePjAutoTranslate:togglePjAutoTranslate,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,refreshPopup:refreshPopup,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,requestLogisticsPartner:requestLogisticsPartner,requestCustomsBroker:requestCustomsBroker,refreshExRate:refreshExRate,toggleFTACur:toggleFTACur,recalcCost:recalcCost,saveCostCalc:saveCostCalc,exportCostPDF:exportCostPDF,askCustomsAI:askCustomsAI,customsAIAction:customsAIAction,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,seedTestData:seedTestData,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_syncDocItemPrice:_syncDocItemPrice,_syncDocItemsFromDOM:_syncDocItemsFromDOM,_docValContinue:null,respondInquiry:respondInquiry,previewProposalImg:previewProposalImg,onProposalProductSelect:onProposalProductSelect,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,_filterPjList:_filterPjList,clearSigCanvas:clearSigCanvas,saveSig:saveSig,uploadStamp:uploadStamp,deleteSig:deleteSig,requestPayment:requestPayment,submitPaymentRequest:submitPaymentRequest,requestSamplePayment:requestSamplePayment,submitSamplePayment:submitSamplePayment,requestContractPayment:requestContractPayment,submitContractPayment:submitContractPayment,triggerAutoRelease:triggerAutoRelease,showDealSelector:showDealSelector,_selectDealForStage:_selectDealForStage,UI:UI};
 _handleTossCallback();
 _checkTossOneCallback();
 loadUser();
