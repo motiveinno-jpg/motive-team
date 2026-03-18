@@ -761,6 +761,56 @@ var CHAR_POSITIONS = {
   lounge: {nova:{left:'60%',top:'18%'},atlas:{left:'66%',top:'22%'},pixel:{left:'63%',top:'16%'},claude:{left:'58%',top:'24%'}}
 };
 
+/* ── Life simulation: agents occasionally move around ── */
+var _lifeTimer = null;
+var _agentLife = {};  /* tracks simulated sub-location per agent */
+var _lifeCycle = 0;
+
+function simulateOfficeLife(){
+  _lifeCycle++;
+  var agents = ['nova','atlas','pixel'];
+  agents.forEach(function(name){
+    var d = agentData[{nova:'pc1',atlas:'pc2',pixel:'pc3'}[name]];
+    if(!d || !d.is_online) { _agentLife[name] = 'desk'; return; }
+
+    var cur = _agentLife[name] || 'desk';
+    var roll = Math.random();
+
+    if(cur === 'desk'){
+      /* 15% chance to go to lounge (coffee break), 8% to meeting, 5% wander near desk */
+      if(roll < 0.15) _agentLife[name] = 'lounge';
+      else if(roll < 0.23) _agentLife[name] = 'meeting';
+      else if(roll < 0.28) _agentLife[name] = 'wander';
+      else _agentLife[name] = 'desk';
+    } else if(cur === 'lounge'){
+      /* 60% return to desk, 15% stay */
+      if(roll < 0.60) _agentLife[name] = 'desk';
+      else if(roll < 0.85) _agentLife[name] = 'lounge';
+      else _agentLife[name] = 'meeting';
+    } else if(cur === 'meeting'){
+      /* 50% return, 30% stay */
+      if(roll < 0.50) _agentLife[name] = 'desk';
+      else if(roll < 0.80) _agentLife[name] = 'meeting';
+      else _agentLife[name] = 'lounge';
+    } else {
+      _agentLife[name] = 'desk'; /* wander → back to desk */
+    }
+  });
+
+  /* Every 4th cycle, simulate a team meeting (everyone goes to meeting room) */
+  if(_lifeCycle % 12 === 0){
+    var meetingChance = Math.random();
+    if(meetingChance < 0.3){
+      agents.forEach(function(n){ if(agentData[{nova:'pc1',atlas:'pc2',pixel:'pc3'}[n]]?.is_online) _agentLife[n] = 'meeting'; });
+    }
+  }
+
+  updateCharPositions();
+}
+
+/* Start life simulation — every 8 seconds */
+if(!_lifeTimer) _lifeTimer = setInterval(simulateOfficeLife, 8000);
+
 function updateCharPositions(){
   var agents = {pc1:'nova',pc2:'atlas',pc3:'pixel'};
   Object.keys(agents).forEach(function(id){
@@ -791,11 +841,24 @@ function updateCharPositions(){
       dotEl.className = 'char-dot ' + (status === 'working' ? 'working' : status === 'idle' ? 'idle' : 'online');
     }
 
+    /* Use life simulation location if agent is working (not explicitly in meeting/break) */
+    var lifeLocation = _agentLife[name] || 'desk';
     var targetPos;
+
     if(status === 'meeting'){
       targetPos = CHAR_POSITIONS.meeting[name];
     } else if(status === 'break' || status === 'lounge'){
       targetPos = CHAR_POSITIONS.lounge[name];
+    } else if(lifeLocation === 'meeting'){
+      targetPos = CHAR_POSITIONS.meeting[name];
+    } else if(lifeLocation === 'lounge'){
+      targetPos = CHAR_POSITIONS.lounge[name];
+    } else if(lifeLocation === 'wander'){
+      /* Small random offset from desk */
+      var base = CHAR_POSITIONS.desk[name];
+      var ox = (Math.random() * 6 - 3);
+      var oy = (Math.random() * 4 - 2);
+      targetPos = {left: (parseFloat(base.left)+ox)+'%', top: (parseFloat(base.top)+oy)+'%'};
     } else {
       targetPos = CHAR_POSITIONS.desk[name];
     }
@@ -809,8 +872,8 @@ function updateCharPositions(){
     el.style.left = targetPos.left;
     el.style.top = targetPos.top;
 
-    /* Working state */
-    if(status === 'working'){
+    /* Working state — only at desk */
+    if(status === 'working' && lifeLocation === 'desk'){
       el.classList.add('is-working');
       if(deskEl) deskEl.classList.add('is-active');
     } else {
