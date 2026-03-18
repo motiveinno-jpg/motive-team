@@ -292,36 +292,44 @@ function App() {
   const [checkoutType, setCheckoutType] = useState("subscription"); // "subscription" | "single"
   const openCheckout = (planId, name, price, cycle) => { setCheckoutPlan({ planId, name, price, cycle }); setCheckoutType("subscription"); setShowCheckout(true); };
   const openSinglePay = () => { setCheckoutPlan({ planId: "ai_report", name: "AI 수출 상품분석 보고서", price: "25,000원", cycle: "" }); setCheckoutType("single"); setShowCheckout(true); };
-  const TOSS_CK = "test_ck_gmotivuy0z"; // 토스 실키 발급 후 교체 필요
-  const [paymentMethod, setPaymentMethod] = useState("CARD");
+  const SB_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0";
+  const STRIPE_PRICES = {
+    starter: { m: "price_1TBDCuBEJTGmEnmcZNjeU27n" },
+    pro: { m: "price_1TBDCvBEJTGmEnmcu3yS9KwY" },
+    enterprise: { m: "price_1TBDCvBEJTGmEnmcURkitVLN" },
+    single: "price_1TBDCwBEJTGmEnmcyzHJpann",
+  };
   const handleCheckout = async () => {
     try {
-      if (!window.TossPayments) {
-        const sc = document.createElement("script"); sc.src = "https://js.tosspayments.com/v2/standard";
-        await new Promise((ok, fail) => { sc.onload = ok; sc.onerror = fail; document.head.appendChild(sc); });
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { alert("로그인이 필요합니다."); setShowCheckout(false); return; }
+      const priceId = checkoutType === "single"
+        ? STRIPE_PRICES.single
+        : (STRIPE_PRICES[checkoutPlan.planId] || {})[checkoutPlan.cycle] || "";
+      if (!priceId || !priceId.startsWith("price_1")) {
+        alert("선택하신 결제 주기는 아직 지원되지 않습니다. 월간 결제를 이용해주세요.");
+        setShowCheckout(false); return;
       }
-      const toss = window.TossPayments(TOSS_CK);
-      const orderId = "WH-" + Date.now() + "-" + (crypto.randomUUID ? crypto.randomUUID().slice(0,8) : Math.random().toString(36).slice(2,10));
-      const amount = parseInt((checkoutPlan.price || "0").replace(/[^\d]/g, "")) || 0;
-      if (amount <= 0) { alert("결제 금액 오류"); return; }
-      const cycleName = { m: "월간", s: "6개월", a: "연간" }[checkoutPlan.cycle] || "";
-      const orderName = checkoutType === "single" ? checkoutPlan.name : "Whistle AI " + checkoutPlan.name + (cycleName ? " (" + cycleName + ")" : "");
-      const payment = toss.payment({ customerKey: "guest-" + Date.now() });
-      await payment.requestPayment({
-        method: paymentMethod,
-        amount: { currency: "KRW", value: amount },
-        orderId,
-        orderName,
-        successUrl: window.location.origin + window.location.pathname + "?payment=success&orderId=" + orderId,
-        failUrl: window.location.origin + window.location.pathname + "?payment=fail",
+      const res = await fetch(SB_FUNC + "/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + session.access_token,
+          "apikey": SB_ANON_KEY,
+        },
+        body: JSON.stringify({
+          price_id: priceId,
+          plan: checkoutPlan.planId,
+          billing_cycle: checkoutPlan.cycle,
+          success_url: window.location.origin + "/app?checkout=success",
+          cancel_url: window.location.origin + window.location.pathname + "?checkout=cancel",
+        }),
       });
+      const data = await res.json();
+      if (data.url) { window.location.href = data.url; }
+      else { alert(data.error || "결제 처리에 실패했습니다. 다시 시도해주세요."); }
     } catch (e) {
-      if (e.code === "USER_CANCEL") { /* 사용자 취소 */ }
-      else if (e.code === "INVALID_CLIENT_KEY" || (e.message && e.message.includes("client key"))) {
-        alert("결제 시스템 준비 중입니다. 곧 이용 가능합니다.\n\n문의: creative@mo-tive.com");
-      } else {
-        alert("결제 처리 중 오류가 발생했습니다.\n" + (e.message || "") + "\n\n다시 시도하거나 creative@mo-tive.com으로 문의해주세요.");
-      }
+      alert("결제 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.\n\n문의: creative@mo-tive.com");
     }
     setShowCheckout(false);
   };
