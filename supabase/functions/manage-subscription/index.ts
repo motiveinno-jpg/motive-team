@@ -164,6 +164,31 @@ serve(async (req) => {
           return respond({ error: "payment_intent_id required" }, 400);
         }
 
+        // Authorization: verify caller owns this payment or the related deal
+        const { data: paymentRecord } = await supabase
+          .from("payments")
+          .select("user_id, deal_id")
+          .eq("stripe_payment_intent", payment_intent_id)
+          .single();
+
+        if (!paymentRecord) {
+          return respond({ error: "Payment record not found" }, 404);
+        }
+
+        // Check: caller must be the buyer (payment owner) or the seller (deal owner via matchings)
+        let isAuthorized = paymentRecord.user_id === user.id;
+        if (!isAuthorized && paymentRecord.deal_id) {
+          const { data: deal } = await supabase
+            .from("matchings")
+            .select("user_id")
+            .eq("id", paymentRecord.deal_id)
+            .single();
+          isAuthorized = deal?.user_id === user.id;
+        }
+        if (!isAuthorized) {
+          return respond({ error: "Not authorized to release this payment" }, 403);
+        }
+
         // Capture the held payment
         const pi = await stripe.paymentIntents.capture(payment_intent_id);
 

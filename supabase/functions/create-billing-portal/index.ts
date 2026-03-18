@@ -55,7 +55,19 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { return_url } = await req.json();
+    const body = await req.json();
+
+    // Validate return_url — prevent open redirect
+    const ALLOWED_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com"];
+    let safeReturnUrl = "https://whistle-ai.com";
+    if (body.return_url) {
+      try {
+        const parsed = new URL(body.return_url);
+        if (ALLOWED_ORIGINS.includes(parsed.origin)) {
+          safeReturnUrl = body.return_url;
+        }
+      } catch { /* invalid URL, use default */ }
+    }
 
     const { data: profile } = await supabase
       .from("users")
@@ -72,7 +84,7 @@ serve(async (req) => {
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: profile.stripe_customer_id,
-      return_url: return_url || "https://whistle-ai.com",
+      return_url: safeReturnUrl,
     });
 
     return new Response(

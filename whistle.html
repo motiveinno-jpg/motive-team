@@ -8783,7 +8783,7 @@ function openCheckout(planId){
     :
     '<div style="padding:14px;border-radius:10px;border:1px solid var(--bd);margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:var(--w40)">'+p.n+' Monthly</span><span style="font-weight:700">'+_glPrice+'</span></div><div style="border-top:1px solid var(--bd);padding-top:8px;margin-top:8px;display:flex;justify-content:space-between;font-size:15px;font-weight:800"><span>Total</span><span style="color:'+p.c+'">'+_glPrice+(_isKorean?'':'/mo')+'</span></div></div>');
 
-  var _payFn=_isKorean?'initTossCheckout':'initStripeCheckout';
+  var _payFn='initStripeCheckout';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'ckm',title:(_isKorean?'💎 플랜 변경':'💎 Change Plan'),body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'ckm\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-pri" id="ck-submit" onclick="App.'+_payFn+'(\''+planId+'\')">💳 '+(_isKorean?'카드 결제하기':'Pay with Card')+'</button>',width:'480px'}));UI.showModal('ckm');
 }
 
@@ -14168,137 +14168,6 @@ function calcMarginSim(){
   el.innerHTML=h;
 }
 
-/* ── 시드 테스트 데이터 (콘솔: App.seedTestData()) ── */
-function seedTestData(){
-  if(!S.user){UI.toast('먼저 로그인하세요','warn');return;}
-  if(!confirm('테스트 데이터(제품 2개, 바이어 3개, 프로젝트 4개, 서류 2건)를 생성합니다.\n기존 데이터에 추가됩니다. 계속?'))return;
-  var uid=S.user.id;
-  UI.toast('시드 데이터 생성 중...','info');
-  /* 1) Products */
-  var prods=[
-    {user_id:uid,name_ko:'히알루론산 보습 세럼',name_en:'Hyaluronic Acid Moisturizing Serum',description_en:'50ml, Glass dropper bottle',category:'Skincare',fob_price:4.50,hs_code:'3304.99',moq:3000,lead_time:'30일',status:'active'},
-    {user_id:uid,name_ko:'비타민C 브라이트닝 크림',name_en:'Vitamin C Brightening Cream',description_en:'50g, Airless pump jar',category:'Skincare',fob_price:5.20,hs_code:'3304.99',moq:2000,lead_time:'25일',status:'active'}
-  ];
-  sb.from('products').insert(prods).select().then(function(pr){
-    if(pr.error){UI.toast('제품 생성 실패: '+pr.error.message,'err');return;}
-    var p1=pr.data[0],p2=pr.data[1];
-    console.log('[seed] Products:',p1.id,p2.id);
-    /* 2) Analyses */
-    sb.from('analyses').insert({user_id:uid,product_name:'히알루론산 보습 세럼',product_id:p1.id,status:'completed',ai_result:{
-      overall_score:87,market_score:82,competitor_score:79,hs_code:'3304.99',
-      executive_summary:'한국 화장품 시장의 글로벌 경쟁력이 높으며, 히알루론산 세럼은 미국/일본 시장에서 강한 수요가 예상됩니다. FOB $4.50은 경쟁력 있는 가격대입니다.',
-      recommended_markets:['US','JP','SG'],
-      risks:['FDA 화장품 등록 필요 (미국)','일본 PMDA 성분 규제 확인 필요'],
-      required_certs:['FDA','PMDA','HSA'],category:'Skincare'
-    }}).select().single().then(function(ar){
-      if(ar.error){UI.toast('분석 생성 실패','err');return;}
-      var ana=ar.data;console.log('[seed] Analysis:',ana.id);
-      sb.from('products').update({analysis_id:ana.id}).eq('id',p1.id);
-      /* 3) Buyers */
-      var buyers=[
-        {registered_by:uid,source:'ai_generated',company_name:'Beauty World Inc.',contact_name:'Sarah Johnson',email:'sarah@beautyworld.com',country:'US',city:'Los Angeles',trust_score:85,notes:'AI 매칭 — 미국 스킨케어 디스트리뷰터',tags:['Distributor','Large']},
-        {registered_by:uid,source:'ai_generated',company_name:'Tokyo Cosmetics Ltd.',contact_name:'Yuki Tanaka',email:'yuki@tokyocosm.co.jp',country:'JP',city:'Tokyo',trust_score:78,notes:'AI 매칭 — 일본 화장품 유통',tags:['Retailer','Medium']},
-        {registered_by:uid,source:'manual',company_name:'SG Beauty Pte.',contact_name:'Lim Wei',email:'wei@sgbeauty.sg',country:'SG',city:'Singapore',trust_score:72,notes:'싱가포르 뷰티 유통사',tags:['Distributor','Small']}
-      ];
-      sb.from('buyers').insert(buyers).select().then(function(br){
-        if(br.error){UI.toast('바이어 생성 실패','err');return;}
-        var b1=br.data[0],b2=br.data[1],b3=br.data[2];
-        console.log('[seed] Buyers:',b1.id,b2.id,b3.id);
-        /* 4) Projects — 4 stages */
-        var mkSP=function(stage,items){var sp={};
-          var stages=['planning','certification','buyer_search','sample','negotiation','payment','production','documents','shipping','customs','settlement','completed'];
-          var si=stages.indexOf(stage);
-          var defaults={planning:['AI 수출분석 실행','제품 등록 및 FOB 설정','HS코드 확인','타겟 시장 설정'],certification:['FDA 화장품 등록 신청','CPNP 등록 (EU)','성분 안전성 테스트'],buyer_search:['AI 바이어 매칭 실행','이메일 발송','바이어 응답 확인'],sample:['샘플 결제 요청','바이어 결제 확인','샘플 준비 및 발송','바이어 수령 확인','피드백 수렴'],negotiation:['PI 발행','결제조건 합의','계약서 서명'],payment:['선금 결제 요청','선금 입금 확인','잔금 결제 요청','잔금 입금 확인'],production:['생산 일정 확정','QC 검수','포장 및 라벨링'],documents:['CI 작성','PL 작성','CO 발급','B/L 확보'],shipping:['포워더 부킹','수출 통관','선적 완료','B/L 바이어 전달'],customs:['수입국 세관 제출','검역 통과','관세 납부','통관 완료'],settlement:['바이어 수령 확인','에스크로 자동 정산','정산 금액 확인'],completed:['사후관리','재주문 협의']};
-          stages.forEach(function(s,i){
-            sp[s]=(items&&items[s])||defaults[s].map(function(t){return{text:t,done:i<si};});
-          });
-          sp._roadmap={category:'Skincare',market:stage==='negotiation'?'US':stage==='production'?'JP':stage==='shipping'?'SG':'US'};
-          return sp;
-        };
-        var pjs=[
-          {user_id:uid,analysis_id:ana.id,product_id:p1.id,name:'히알루론산 세럼 미국 수출',target_countries:['US'],status:'negotiation',buyer_id:b1.id,alibaba_customer:false,
-            stage_progress:mkSP('negotiation',{
-              planning:[{text:'AI 수출분석 실행',done:true},{text:'제품 등록 및 FOB 설정',done:true},{text:'HS코드 확인',done:true},{text:'타겟 시장 설정',done:true}],
-              certification:[{text:'FDA 화장품 등록 신청',done:true},{text:'성분 안전성 테스트',done:true}],
-              buyer_search:[{text:'AI 바이어 매칭 실행',done:true},{text:'이메일 발송',done:true},{text:'바이어 응답 확인',done:true}],
-              negotiation:[{text:'PI 발행',done:false},{text:'결제조건 합의',done:false},{text:'계약서 서명',done:false}]
-            })},
-          {user_id:uid,analysis_id:ana.id,product_id:p2.id,name:'비타민C 크림 일본 수출',target_countries:['JP'],status:'production',buyer_id:b2.id,alibaba_customer:false,
-            stage_progress:mkSP('production',{
-              planning:[{text:'AI 수출분석',done:true},{text:'제품 등록',done:true}],
-              certification:[{text:'PMDA 등록',done:true}],
-              buyer_search:[{text:'바이어 매칭',done:true},{text:'이메일 발송',done:true}],
-              negotiation:[{text:'PI 발행',done:true},{text:'결제조건 합의',done:true},{text:'계약서 서명',done:true}],
-              production:[{text:'생산 일정 확정',done:true},{text:'QC 검수',done:false},{text:'CI/PL 작성',done:false}]
-            })},
-          {user_id:uid,analysis_id:ana.id,product_id:p1.id,name:'히알루론산 세럼 싱가포르',target_countries:['SG'],status:'shipping',buyer_id:b3.id,alibaba_customer:false,
-            stage_progress:mkSP('shipping',{
-              planning:[{text:'AI 수출분석',done:true}],
-              certification:[{text:'HSA 등록',done:true}],
-              buyer_search:[{text:'매칭',done:true}],
-              negotiation:[{text:'PI',done:true},{text:'계약',done:true}],
-              production:[{text:'생산완료',done:true},{text:'QC 합격',done:true},{text:'CI/PL 완료',done:true}],
-              shipping:[{text:'B/L 수령',done:true},{text:'CO 발급',done:false},{text:'바이어에 서류 전송',done:false}]
-            })},
-          {user_id:uid,analysis_id:ana.id,product_id:p2.id,name:'비타민C 크림 미국 재주문',target_countries:['US'],status:'completed',buyer_id:b1.id,alibaba_customer:false,is_reorder:true,
-            stage_progress:mkSP('completed',{
-              planning:[{text:'분석',done:true}],
-              certification:[{text:'인증 완료',done:true}],
-              buyer_search:[{text:'매칭 완료',done:true}],
-              negotiation:[{text:'PI',done:true},{text:'계약',done:true}],
-              production:[{text:'생산',done:true},{text:'검수',done:true}],
-              shipping:[{text:'선적',done:true},{text:'B/L',done:true},{text:'CO',done:true}],
-              completed:[{text:'대금 수령 확인',done:true},{text:'사후관리',done:false},{text:'재주문 협의',done:false}]
-            })}
-        ];
-        sb.from('projects').insert(pjs).select().then(function(pjr){
-          if(pjr.error){UI.toast('프로젝트 생성 실패: '+pjr.error.message,'err');return;}
-          console.log('[seed] Projects:',pjr.data.map(function(x){return x.id;}));
-          var pj1=pjr.data[0],pj2=pjr.data[1],pj3=pjr.data[2],pj4=pjr.data[3];
-          /* 재주문 프로젝트(pj4)에 source_project_id 연결 */
-          sb.from('projects').update({source_project_id:pj1.id}).eq('id',pj4.id);
-          /* 5) Documents */
-          var docs=[
-            {user_id:uid,project_id:pj2.id,buyer_id:b2.id,doc_type:'pi',doc_number:'W-2026-1001',status:'approved',content:{
-              seller:{company:'(주)모티브이노베이션',address:'서울특별시 강남구 논현로98길 28 3층 307호',phone:'+82-70-5097-6371'},
-              buyer:{buyer_company:'Tokyo Cosmetics Ltd.',buyer_address:'2-1-1 Shibuya, Tokyo',buyer_contact:'Yuki Tanaka'},
-              items:[{description:'Vitamin C Brightening Cream 50g',quantity:3000,unit_price:5.20,amount:15600}],
-              currency:'USD',incoterms:'FOB Seoul',payment_terms:'T/T 30% deposit, 70% before shipment',validity:'30 days'
-            }},
-            {user_id:uid,project_id:pj3.id,buyer_id:b3.id,doc_type:'ci',doc_number:'W-2026-1002',status:'sent',content:{
-              seller:{company:'(주)모티브이노베이션',address:'서울특별시 강남구 논현로98길 28 3층 307호'},
-              buyer:{buyer_company:'SG Beauty Pte.',buyer_address:'10 Orchard Road, Singapore'},
-              items:[{description:'Hyaluronic Acid Moisturizing Serum 50ml',quantity:5000,unit_price:4.50,amount:22500}],
-              currency:'USD',incoterms:'FOB Seoul'
-            }}
-          ];
-          sb.from('documents').insert(docs).then(function(dr){
-            if(dr.error)console.warn('[seed] Doc error:',dr.error.message);
-            /* 6) Orders */
-            sb.from('orders').insert({user_id:uid,project_id:pj2.id,buyer_id:b2.id,status:'production',total_amount:15600,currency:'USD',order_type:'export',payment_terms:'T/T'}).then(function(or){
-              if(or.error)console.warn('[seed] Order error:',or.error.message);
-              /* 7) Matchings */
-              var matchs=[
-                {user_id:uid,buyer_id:b1.id,status:'negotiation',match_reason:'AI 매칭 — 미국 스킨케어'},
-                {user_id:uid,buyer_id:b2.id,status:'order',match_reason:'AI 매칭 — 일본 화장품'},
-                {user_id:uid,buyer_id:b3.id,status:'completed',match_reason:'직접 등록 — 싱가포르'}
-              ];
-              sb.from('matchings').insert(matchs).then(function(mr){
-                if(mr.error)console.warn('[seed] Matching error:',mr.error.message);
-                /* Done — reload all data */
-                Promise.all([loadP(),loadA(),loadPr(),loadB(),loadDocs(),loadMatchings()]).then(function(){
-                  render();
-                  UI.toast('시드 데이터 생성 완료! 제품 2, 바이어 3, 프로젝트 4, 서류 2, 주문 1','ok');
-                  console.log('[seed] ALL DONE');
-                });
-              });
-            });
-          });
-        });
-      });
-    });
-  });
-}
 
 /* ★ Command Palette (Cmd+K / Ctrl+K) — Linear/Stripe 스타일 */
 var CMD_ITEMS=[
