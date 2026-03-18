@@ -1084,6 +1084,25 @@ function doSignup(f){
     set({authMode:'login'});
   }).catch(function(){set({authError:'Network error. Please try again.'});});
 }
+function _acceptInvite(userId){
+  var ref=localStorage.getItem('_invite_ref');
+  var token=localStorage.getItem('_invite_token');
+  if(!ref&&!token)return;
+  localStorage.removeItem('_invite_ref');localStorage.removeItem('_invite_token');
+  if(token){
+    sb.from('invitations').select('id,inviter_id').eq('invite_token',token).eq('status','pending').maybeSingle().then(function(r){
+      if(!r.data)return;
+      sb.from('invitations').update({status:'accepted',accepted_by:userId,accepted_at:new Date().toISOString()}).eq('id',r.data.id).then(function(){});
+      sb.from('users').update({referred_by:r.data.inviter_id}).eq('id',userId).then(function(){});
+    }).catch(function(e){console.error('[invite accept]',e);});
+  } else if(ref){
+    sb.from('invitations').select('id,inviter_id').eq('referral_code',ref).eq('status','pending').order('created_at',{ascending:false}).limit(1).maybeSingle().then(function(r){
+      if(!r.data)return;
+      sb.from('invitations').update({status:'accepted',accepted_by:userId,accepted_at:new Date().toISOString()}).eq('id',r.data.id).then(function(){});
+      sb.from('users').update({referred_by:r.data.inviter_id}).eq('id',userId).then(function(){});
+    }).catch(function(e){console.error('[invite accept]',e);});
+  }
+}
 function socialLogin(provider){
   sb.auth.signInWithOAuth({provider:provider,options:{redirectTo:window.location.origin+window.location.pathname}}).then(function(r){
     if(r.error)set({authError:_authErr(r.error.message)});
@@ -1131,6 +1150,7 @@ function loadUser(){
       }
       if(r.data.role!=='buyer'&&r.data.role!=='admin'){window.location.href='/app';return;}
       S.user=r.data;S.loading=false;
+      _acceptInvite(r.data.id);
       // Restore currency preference
       var _savedCur=r.data.preferred_currency||localStorage.getItem('buyer_currency');
       if(_savedCur&&FX[_savedCur]!==undefined)S.currency=_savedCur;
@@ -4922,6 +4942,8 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifO
     document.body.prepend(b);
   }
 })();
+/* Capture invite params from URL */
+(function(){var p=new URLSearchParams(location.search);var ref=p.get('ref');var inv=p.get('invite');if(ref)localStorage.setItem('_invite_ref',ref);if(inv)localStorage.setItem('_invite_token',inv);if(ref||inv)history.replaceState(null,'',location.pathname+location.hash);})();
 loadUser();
 _handlePaymentSuccess();
 
