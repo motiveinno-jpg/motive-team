@@ -791,7 +791,7 @@ function _showOneAnalysisCTA(){
 function _loadSingleAnalysisCredits(){
   if(!S.user)return Promise.resolve();
   var now=new Date();var m=now.getMonth();var y=now.getFullYear();
-  return sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('type','single_analysis_payment').eq('status','completed').then(function(r){
+  return sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('service_type','single_analysis_payment').eq('status','completed').then(function(r){
     var credits=(r.data||[]).length;
     var used=S.analyses.filter(function(a){var d=new Date(a.created_at);return d.getMonth()===m&&d.getFullYear()===y;}).length;
     var cur=S.user&&S.user.plan||'free';var planMax=(PLAN_LIMITS[cur]||PLAN_LIMITS.free).analyses;
@@ -867,13 +867,13 @@ function loadExchangeRate(){
 function _loadExRateFallback(){
   /* 3차 폴백: localStorage 캐시 (1시간 이내면 사용) */
   var cached=localStorage.getItem('whistle_exrate');
-  if(cached){try{var c=JSON.parse(cached);if(c.rate&&c.time&&Date.now()-c.time<3600000){S.exchangeRate=c.rate;window._exRate=c.rate;console.log('Exchange rate (cached):',c.rate);}}catch(e){}}
+  if(cached){try{var c=JSON.parse(cached);if(c.rate&&c.time&&Date.now()-c.time<3600000){S.exchangeRate=c.rate;window._exRate=c.rate;}}catch(e){}}
   fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
-    if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;console.log('Exchange rate (Frankfurter):',d.rates.KRW);localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
-  }).catch(function(){console.log('Exchange rate fallback failed, using '+(S.exchangeRate||1400));});
+    if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
+  }).catch(function(){});
   /* 다통화 환율 로드 (KRW 기준 → 시장별 통화 표시용) */
   fetch('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB').then(function(r){return r.json();}).then(function(d){
-    if(d&&d.rates){window._fxRates=d.rates;console.log('Multi-currency rates loaded:',Object.keys(d.rates).join(','));}
+    if(d&&d.rates){window._fxRates=d.rates;}
   }).catch(function(){});
 }
 function refreshExRate(){
@@ -891,7 +891,7 @@ function refreshExRate(){
 function _loadCountryData(){
   if(window._countryData)return;
   fetch('https://restcountries.com/v3.1/all?fields=name,cca2,cca3,currencies,languages,capital,population,region,subregion,flags,timezones').then(function(r){return r.json();}).then(function(data){
-    if(!Array.isArray(data)){console.log('Country data: unexpected response format');return;}
+    if(!Array.isArray(data)){return;}
     window._countryData={};
     data.forEach(function(c){
       var code=c.cca2;if(!code)return;
@@ -905,10 +905,9 @@ function _loadCountryData(){
         flag:c.flags?c.flags.svg||c.flags.png:null,timezone:c.timezones?c.timezones[0]:null
       };
     });
-    console.log('Country data loaded:',Object.keys(window._countryData).length+' countries');
     /* World Bank GDP/수출입 데이터 로드 (주요 수출 대상국) */
     _loadWorldBankData();
-  }).catch(function(e){console.log('Country data load failed:',e.message);});
+  }).catch(function(){});
 }
 /* World Bank API — GDP + 수출 규모 (무료, 인증 불필요) */
 function _loadWorldBankData(){
@@ -926,7 +925,6 @@ function _loadWorldBankData(){
           window._wbData[iso3][ind]={value:row.value,year:row.date};
         }
       });
-      console.log('World Bank '+ind+' loaded');
     }).catch(function(){});
   });
 }
@@ -1712,11 +1710,11 @@ function cancelAnalysis(){
 function autoCreateProduct(analysisId,res,productName){
   /* 중복 방지: 같은 analysis_id로 이미 등록된 제품이 있으면 스킵 */
   var existing=(S.products||[]).find(function(p){return p.analysis_id===analysisId;});
-  if(existing){console.log('[autoCreateProduct] already exists for analysis '+analysisId);return;}
+  if(existing){return;}
   var inp=res.input_data||{};
   var prod={user_id:S.user.id,analysis_id:analysisId,name_ko:productName||inp.product_name_en||'',name_en:inp.product_name_en||'',category:inp.category||null,hs_code:res.hs_code||null,fob_price:inp.fob_price||null,moq:inp.moq||null,certifications:res.existing_certs||[],status:'draft'};
   sb.from('products').select('id').eq('analysis_id',analysisId).eq('user_id',S.user.id).limit(1).then(function(chk){
-    if(chk.data&&chk.data.length>0){console.log('[autoCreateProduct] DB duplicate found');return;}
+    if(chk.data&&chk.data.length>0){return;}
     sb.from('products').insert(prod).select().single().then(function(r2){
       if(r2.error){UI.toast('자동 제품등록 실패','warn');return;}
       loadP().then(function(){UI.toast('제품 자동 등록: '+prod.name_ko,'ok');});
@@ -2422,7 +2420,6 @@ function downloadReportPDF(){
   var _safe=function(v){return typeof v==='string'?v.replace(/</g,'&lt;').replace(/>/g,'&gt;'):(v?JSON.stringify(v):'');};
   /* Load html2pdf into a sandboxed iframe to avoid dark-theme CSS interference */
   var _raw=a.ai_result||{};var r=(typeof _raw==='string')?JSON.parse(_raw):_raw;
-  console.log('[PDF] ai_result type:',typeof(a.ai_result),'keys:',Object.keys(r).join(','));
   var score=r.overall_score||0;var pName=a.product_name||'제품';
   var date=new Date(a.created_at).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'});
   var company=S.company?(S.company.name_ko||S.company.name_en||S.company.name||''):'';
@@ -5280,7 +5277,6 @@ function savePjDocDraft(){
 /* 화상미팅 — 플랫폼 선택형 허브 */
 function startVideoMeeting(){
   try{
-  console.log('[videoMeeting] called, project:', S.currentProject?S.currentProject.id:'null', 'user:', S.user?'yes':'no');
   var p=S.currentProject;if(!p){UI.toast('프로젝트를 선택해주세요','warn');return;}if(!S.user){UI.toast('로그인이 필요합니다','warn');return;}
   var _ubs=_getPjBuyerIds(p);
   var buyerId=S._pjChatBuyer||(p.buyer_id)||(_ubs.length?_ubs[0]:'')||'';
@@ -6989,7 +6985,7 @@ function _genDocInner(items,bd,rd,c){
     /* 서류 건당 과금 billing event 기록 */
     var _docPrice=_docPrices[_curDocType]||5000;
     var _sub=S.user||{};var _isFree=(!_sub.plan||_sub.plan==='free');
-    if(_isFree||_sub.plan==='starter'){sb.from('billing_events').insert({user_id:S.user.id,event_type:'document_generation',amount:_docPrice,currency:'KRW',status:'pending',metadata:{doc_type:_curDocType,doc_id:(r.data&&r.data[0])?r.data[0].id:null,plan:_sub.plan||'free'}}).then(function(br){if(!br.error)console.log('billing event created: '+_docPrice+'원');}).catch(function(e){console.error('[billing] doc event fail:',e);});}
+    if(_isFree||_sub.plan==='starter'){sb.from('billing_events').insert({user_id:S.user.id,event_type:'document_generation',amount:_docPrice,currency:'KRW',status:'pending',metadata:{doc_type:_curDocType,doc_id:(r.data&&r.data[0])?r.data[0].id:null,plan:_sub.plan||'free'}}).catch(function(e){console.error('[billing] doc event fail:',e);});}
   });
 }
 
@@ -7289,7 +7285,7 @@ function buildSellerDeals(){
 function enrichBuyerProfiles(){
   var bids=(S.buyers||[]).filter(function(b){return b.buyer_user_id&&!b._enriched;}).map(function(b){return b.buyer_user_id;});
   if(!bids.length)return;
-  sb.from('users').select('id,avatar_url,display_name,company_name,country,industry,description,website').in('id',bids).then(function(r){
+  sb.from('users').select('id,avatar_url,display_name,company_name,country').in('id',bids).then(function(r){
     if(!r.data)return;
     r.data.forEach(function(u){
       var buyer=(S.buyers||[]).find(function(b){return b.buyer_user_id===u.id;});
@@ -8920,7 +8916,7 @@ function _showPaymentCTA(planId){
 }
 function _paymentCTARequest(planId){
   if(!S.user){UI.toast('로그인이 필요합니다','warn');return;}
-  var d={user_id:S.user.id,type:'plan_inquiry',status:'pending',details:{plan:planId,method:'invoice_voucher',email:S.user.email,company:S.company?S.company.name_ko:''}};
+  var d={user_id:S.user.id,service_type:'plan_inquiry',status:'pending',details:{plan:planId,method:'invoice_voucher',email:S.user.email,company:S.company?S.company.name_ko:''}};
   sb.from('service_requests').insert(d).then(function(r){
     if(r.error){_toastE(r.error);return;}
     closeModal('pay-cta-m');UI.toast('결제 문의가 접수되었습니다! 영업일 1일 이내 연락드리겠습니다.','ok',6000);
@@ -12259,15 +12255,20 @@ function _setEscrow(dealId,data){
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
   var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays,method:data.method};
   if(S.user){
-    sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] DB upsert fail:',e);});
-    // Sync to buyer's record so buyer can read updated status
+    sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('service_type','escrow_'+dealId).limit(1).then(function(r){
+      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(){});}
+      else{sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_'+dealId,status:data.status,details:_escDetails}).catch(function(){});}
+    }).catch(function(){});
     var _deal=S._currentDeal;var _buyerUserId=_deal&&_deal.buyer&&_deal.buyer.buyer_user_id;
-    if(_buyerUserId)sb.from('service_requests').upsert({user_id:_buyerUserId,type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(){});
+    if(_buyerUserId){sb.from('service_requests').select('id').eq('user_id',_buyerUserId).eq('service_type','escrow_buyer_'+dealId).limit(1).then(function(r){
+      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(){});}
+      else{sb.from('service_requests').insert({user_id:_buyerUserId,service_type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails}).catch(function(){});}
+    }).catch(function(){});}
   }
 }
 function _loadEscrowFromDB(dealId){
   if(!S.user)return Promise.resolve();
-  return sb.from('service_requests').select('*').like('type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
+  return sb.from('service_requests').select('*').like('service_type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
     if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
   }).catch(function(){});
 }
@@ -12477,7 +12478,11 @@ function submitEscrowRequest(dealId){
   }
   // Use buyer_user_id (auth ID) not buyerId (buyers table ID) for notifications
   var _buyerAuthId=(deal.buyer&&deal.buyer.buyer_user_id)||deal.buyerId;
-  sb.from('service_requests').upsert({user_id:_buyerAuthId,type:'escrow_buyer_'+dealId,status:escData.status,details:Object.assign({deal_id:dealId},escData)},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer record upsert fail:',e);});
+  sb.from('service_requests').select('id').eq('user_id',_buyerAuthId).eq('service_type','escrow_buyer_'+dealId).limit(1).then(function(r){
+    var _d={status:escData.status,details:Object.assign({deal_id:dealId},escData)};
+    if(r.data&&r.data.length){sb.from('service_requests').update(_d).eq('id',r.data[0].id).catch(function(){});}
+    else{sb.from('service_requests').insert(Object.assign({user_id:_buyerAuthId,service_type:'escrow_buyer_'+dealId},_d)).catch(function(){});}
+  }).catch(function(){});
   sb.from('notifications').insert({user_id:_buyerAuthId,type:'deal',title:'Escrow Payment Requested',body:'$'+amt.toLocaleString()+' '+cur+' escrow payment requested for your deal.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(e){console.error('[escrow] buyer notification fail:',e);});
   closeModal('escrow-req');
   UI.toast('에스크로 결제 요청이 전송되었습니다.','ok',4000);
@@ -13271,7 +13276,7 @@ function loadTrendReports(){
     S._trendReports=r.data||[];
   });
   // Load auto-freq setting
-  sb.from('user_settings').select('setting_value').eq('user_id',S.user.id).eq('setting_key','trend_auto_freq').single().then(function(r){
+  sb.from('user_settings').select('setting_value').eq('user_id',S.user.id).eq('setting_key','trend_auto_freq').maybeSingle().then(function(r){
     if(r.data)S._trendAutoFreq=r.data.setting_value;
   });
 }
