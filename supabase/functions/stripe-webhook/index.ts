@@ -115,33 +115,81 @@ serve(async (req) => {
         );
 
         if (meta.type === "escrow") {
+          const paymentAmt = (session.amount_total || 0) / 100;
+          const paymentCur = session.currency?.toUpperCase() || "USD";
+          const paymentType = meta.payment_type || "sample"; // sample, deposit, full
+
           await supabase.from("payments").insert({
             user_id: meta.user_id,
             deal_id: meta.deal_id,
             stripe_session_id: session.id,
             stripe_payment_intent: session.payment_intent,
-            amount: (session.amount_total || 0) / 100,
-            currency: session.currency?.toUpperCase() || "USD",
+            amount: paymentAmt,
+            currency: paymentCur,
             status: "held",
             type: "escrow",
-            platform_fee: ((session.amount_total || 0) / 100) * PLATFORM_FEE_RATE,
-            net_amount: ((session.amount_total || 0) / 100) * (1 - PLATFORM_FEE_RATE),
+            payment_type: paymentType,
+            platform_fee: paymentAmt * PLATFORM_FEE_RATE,
+            net_amount: paymentAmt * (1 - PLATFORM_FEE_RATE),
             created_at: new Date().toISOString(),
           });
+
+          // Auto-update deal/matching status based on payment type
+          if (meta.deal_id) {
+            const dealUpdate: Record<string, any> = {
+              updated_at: new Date().toISOString(),
+            };
+
+            if (paymentType === "sample") {
+              dealUpdate.sample_payment_status = "paid";
+              dealUpdate.sample_paid_at = new Date().toISOString();
+            } else if (paymentType === "deposit") {
+              dealUpdate.deposit_payment_status = "paid";
+              dealUpdate.deposit_paid_at = new Date().toISOString();
+            } else if (paymentType === "full") {
+              dealUpdate.payment_status = "paid";
+              dealUpdate.full_paid_at = new Date().toISOString();
+            }
+
+            await supabase
+              .from("matchings")
+              .update(dealUpdate)
+              .eq("id", meta.deal_id);
+
+            // Also update related order if exists
+            await supabase
+              .from("orders")
+              .update({
+                payment_status: paymentType === "deposit" ? "deposit_paid" : "paid",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("deal_id", meta.deal_id);
+
+            // Update service_requests (escrow record)
+            await supabase
+              .from("service_requests")
+              .update({
+                status: "payment_held",
+                updated_at: new Date().toISOString(),
+              })
+              .eq("type", "escrow_" + meta.deal_id);
+          }
 
           // Notify seller that payment is held
           if (meta.deal_id) {
             const { data: matching } = await supabase
               .from("matchings")
-              .select("user_id")
+              .select("user_id, buyer_company")
               .eq("id", meta.deal_id)
               .single();
             if (matching) {
+              const payLabel = paymentType === "sample" ? "샘플비" :
+                               paymentType === "deposit" ? "선금(계약금)" : "전체 결제";
               await supabase.from("notifications").insert({
                 user_id: matching.user_id,
                 type: "payment",
-                title: "Payment Received & Held",
-                body: `Escrow payment of ${session.currency?.toUpperCase()} ${((session.amount_total || 0) / 100).toFixed(2)} is now secured.`,
+                title: `💰 ${payLabel} 결제 완료`,
+                body: `${matching.buyer_company || "바이어"}가 ${payLabel} ${paymentCur} ${paymentAmt.toFixed(2)}를 결제했습니다. 에스크로 보관 중입니다.`,
                 link_page: "deals",
                 link_id: meta.deal_id,
                 is_read: false,
@@ -179,12 +227,15 @@ serve(async (req) => {
         break;
       }
 
-      /* ─── ESCROW: CAPTURE (auto-release) ─── */
+      /* ─── ESCROW: CAPTURE (auto-release / settlement) ─── */
       case "payment_intent.succeeded": {
         const pi = event.data.object as Stripe.PaymentIntent;
         const meta = pi.metadata || {};
 
         if (meta.type === "escrow" && meta.deal_id) {
+          const capturedAmt = (pi.amount_received || pi.amount) / 100;
+          const capturedCur = pi.currency?.toUpperCase() || "USD";
+
           await supabase
             .from("payments")
             .update({
@@ -192,6 +243,44 @@ serve(async (req) => {
               captured_at: new Date().toISOString(),
             })
             .eq("stripe_payment_intent", pi.id);
+
+          // Update deal: escrow released → settlement complete
+          await supabase
+            .from("matchings")
+            .update({
+              settlement_status: "settled",
+              settled_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", meta.deal_id);
+
+          // Notify seller: funds released
+          const { data: deal } = await supabase
+            .from("matchings")
+            .select("user_id")
+            .eq("id", meta.deal_id)
+            .single();
+          if (deal) {
+            const netAmt = (capturedAmt * (1 - PLATFORM_FEE_RATE)).toFixed(2);
+            await supabase.from("notifications").insert({
+              user_id: deal.user_id,
+              type: "payment",
+              title: "🏦 정산 완료",
+              body: `에스크로 정산이 완료되었습니다. ${capturedCur} ${netAmt} (수수료 2.5% 차감)이 Stripe 계정으로 입금됩니다.`,
+              link_page: "deals",
+              link_id: meta.deal_id,
+              is_read: false,
+            });
+          }
+
+          await notifyCEO(
+            `SETTLED — ${capturedCur} ${capturedAmt.toFixed(2)}`,
+            `<p><strong>Escrow Released</strong></p>
+             <p>Deal: ${meta.deal_id}</p>
+             <p>Net: ${capturedCur} ${(capturedAmt * (1 - PLATFORM_FEE_RATE)).toFixed(2)}</p>
+             <p>Fee: ${capturedCur} ${(capturedAmt * PLATFORM_FEE_RATE).toFixed(2)}</p>`,
+            supabase
+          );
         }
         break;
       }

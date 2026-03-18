@@ -321,6 +321,80 @@ function payFromChat(msgId,amount,currency,payType){
   });
 }
 
+/* === WIRE TRANSFER MODAL === */
+function openWireTransferModal(msgId,amount,currency,payType){
+  if(!S.user){toast('Please log in first','warn');return;}
+  var dealId=S.currentDeal&&S.currentDeal.id?S.currentDeal.id:'chat_'+msgId;
+  var csym=({KRW:'₩',EUR:'€',GBP:'£',JPY:'¥',CNY:'¥'})[currency]||'$';
+  var typeLabels={sample:'Sample Payment',deposit:'Deposit',balance:'Balance Payment',full:'Full Payment'};
+  var body='<div style="margin-bottom:14px;padding:14px;border-radius:12px;background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.12)">';
+  body+='<div style="text-align:center;margin-bottom:12px"><div style="font-size:10px;color:var(--w40);margin-bottom:4px">'+(typeLabels[payType]||'Payment')+'</div>';
+  body+='<div style="font-size:24px;font-weight:800;color:var(--acc)">'+csym+Number(amount).toLocaleString(undefined,{minimumFractionDigits:2})+'<span style="font-size:12px;font-weight:400;color:var(--w40);margin-left:4px">'+esc(currency||'USD')+'</span></div></div>';
+  body+='<div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:8px">&#x1F3E6; Bank Account Details</div>';
+  body+='<div style="padding:10px;border-radius:8px;background:var(--w04);font-size:11px;line-height:1.8;color:var(--w70)">';
+  body+='<div><strong>Bank:</strong> Mercury (Column N.A.)</div>';
+  body+='<div><strong>Account Name:</strong> MOTIVE Global, Inc.</div>';
+  body+='<div><strong>Account Number:</strong> <span id="wire-acct-num" style="color:var(--acc);font-weight:700">Pending — contact us</span></div>';
+  body+='<div><strong>Routing (ACH):</strong> <span id="wire-routing" style="color:var(--acc);font-weight:700">Pending — contact us</span></div>';
+  body+='<div><strong>SWIFT:</strong> CLOMUS33</div>';
+  body+='<div><strong>Bank Address:</strong> Mercury, 545 Mavis Island, Chicago, IL 60652</div>';
+  body+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12);font-size:10px;color:var(--acc)">&#x26A0; Please include reference: <strong>WHISTLE-'+esc(dealId.substring(0,8).toUpperCase())+'</strong> in your transfer memo</div>';
+  body+='</div></div>';
+  body+='<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:var(--w70);margin-bottom:6px">Transfer Reference / Confirmation #</div>';
+  body+='<input class="form-input" id="wire-ref-num" placeholder="Enter your bank transfer reference number" style="width:100%"></div>';
+  body+='<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:var(--w70);margin-bottom:6px">Transfer Date</div>';
+  body+='<input class="form-input" id="wire-date" type="date" value="'+new Date().toISOString().split('T')[0]+'" style="width:100%"></div>';
+  body+='<div style="font-size:10px;color:var(--w30);line-height:1.6;margin-bottom:8px">&#x1F4CB; After submitting, our team will verify your transfer within 1-2 business days. Your payment will be held in escrow until delivery is confirmed.</div>';
+  var footer='<button class="btn btn-ghost" onclick="B.closeModal(\'wire-pay\')">Cancel</button>';
+  footer+='<button class="btn btn-acc" id="wire-submit-btn" onclick="B.submitWireTransfer(\''+esc(msgId)+'\','+amount+',\''+esc(currency)+'\',\''+esc(payType)+'\',\''+esc(dealId)+'\')">&#x1F3E6; Submit Wire Transfer</button>';
+  document.body.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="wire-pay" onclick="if(event.target===this)B.closeModal(\'wire-pay\')"><div class="modal" style="max-width:440px"><div class="modal-h"><h3>&#x1F3E6; Wire Transfer Payment</h3><button class="modal-close" onclick="B.closeModal(\'wire-pay\')">&#10005;</button></div><div class="modal-b">'+body+'</div><div class="modal-f">'+footer+'</div></div></div>');
+  var m=document.getElementById('wire-pay');if(m)m.style.display='flex';
+}
+function submitWireTransfer(msgId,amount,currency,payType,dealId){
+  var refNum=(document.getElementById('wire-ref-num').value||'').trim();
+  var wireDate=(document.getElementById('wire-date').value||'').trim();
+  if(!refNum){toast('Please enter your transfer reference number','warn');return;}
+  var btn=document.getElementById('wire-submit-btn');if(btn){btn.disabled=true;btn.textContent='Submitting...';}
+  /* Save wire transfer record to DB */
+  sb.from('payments').insert({
+    user_id:S.user.id,
+    deal_id:dealId,
+    amount:amount,
+    currency:currency||'USD',
+    status:'wire_pending',
+    type:'escrow',
+    payment_type:payType||'full',
+    platform_fee:amount*0.025,
+    net_amount:amount*0.975,
+    created_at:new Date().toISOString(),
+    metadata:{method:'wire_transfer',reference_number:refNum,transfer_date:wireDate,submitted_at:new Date().toISOString()}
+  }).select().single().then(function(r){
+    if(r.error){toast('Failed to submit: '+r.error.message,'err');if(btn){btn.disabled=false;btn.textContent='Submit Wire Transfer';}return;}
+    /* Update matchings */
+    sb.from('matchings').update({
+      payment_status:'wire_pending',
+      updated_at:new Date().toISOString()
+    }).eq('id',dealId).then(function(){});
+    /* Send system message to chat */
+    var _bid=S.user.id;
+    sb.from('messages').insert({
+      user_id:S.user.id,buyer_id:_bid,
+      body:'[Wire Transfer Submitted] '+currency+' '+Number(amount).toFixed(2)+' — Ref: '+refNum,
+      sender_type:'buyer',message_type:'system',channel:'platform',direction:'inbound',
+      metadata:{type:'wire_transfer_submitted',amount:amount,currency:currency,pay_type:payType,reference_number:refNum,transfer_date:wireDate,deal_id:dealId,payment_id:r.data.id}
+    }).then(function(){});
+    /* Notify seller */
+    var selId=S.currentDeal&&S.currentDeal.matching?S.currentDeal.matching.user_id:null;
+    if(selId){sb.from('notifications').insert({user_id:selId,type:'payment',title:'Wire Transfer Submitted',body:currency+' '+Number(amount).toFixed(2)+' wire transfer submitted (Ref: '+refNum+'). Pending verification.',link_page:'deals',link_id:dealId,is_read:false}).catch(function(){});}
+    closeModal('wire-pay');
+    toast('Wire transfer submitted! Our team will verify within 1-2 business days.','ok',6000);
+    if(typeof render==='function')render();
+  }).catch(function(err){
+    toast('Error: '+err.message,'err');
+    if(btn){btn.disabled=false;btn.textContent='Submit Wire Transfer';}
+  });
+}
+
 function _handlePaymentSuccess(){
   var params=new URLSearchParams(location.search);
   if(!params.get('payment_success'))return;
@@ -4651,8 +4725,20 @@ function renderSystemCard(m,body){
     if(_meta.description)h+='<div style="font-size:11px;color:var(--w30)">'+esc(_meta.description)+'</div>';
     h+='<div style="font-size:10px;color:var(--w20);margin-top:4px">'+ts+' &middot; From seller</div>';
     h+='</div><div class="rc-footer">';
-    h+='<button class="btn btn-pri btn-sm" onclick="B.payFromChat(\''+m.id+'\','+(_meta.amount||0)+',\''+esc(_meta.currency||'USD')+'\',\''+esc(_meta.pay_type||'payment')+'\')" style="font-size:11px;background:#4CAF50;border-color:#4CAF50">&#x1F4B3; Pay Now</button>';
-    h+='<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'dealChatInput\').focus()" style="font-size:10px">&#x1F4AC; Discuss</button>';
+    h+='<button class="btn btn-pri btn-sm" onclick="B.payFromChat(\''+m.id+'\','+(_meta.amount||0)+',\''+esc(_meta.currency||'USD')+'\',\''+esc(_meta.pay_type||'payment')+'\')" style="font-size:11px;background:#4CAF50;border-color:#4CAF50">&#x1F4B3; Pay by Card</button>';
+    h+='<button class="btn btn-sm" onclick="B.openWireTransferModal(\''+m.id+'\','+(_meta.amount||0)+',\''+esc(_meta.currency||'USD')+'\',\''+esc(_meta.pay_type||'payment')+'\')" style="font-size:11px;background:rgba(0,212,255,.1);color:var(--pri);border:1px solid rgba(0,212,255,.2)">&#x1F3E6; Wire Transfer</button>';
+    h+='</div></div></div>';
+    return h;
+  }
+  if(_meta.type==='wire_transfer_submitted'){
+    var _wcs=_meta.currency==='EUR'?'&euro;':_meta.currency==='GBP'?'&pound;':_meta.currency==='JPY'?'&yen;':'$';
+    var h='<div style="display:flex;justify-content:center"><div class="chat-rich-card" style="min-width:280px;border-color:rgba(255,184,0,.25)">';
+    h+='<div class="rc-header" style="background:rgba(255,184,0,.06)">&#x1F3E6; Wire Transfer Submitted</div>';
+    h+='<div class="rc-body">';
+    h+='<div style="font-size:18px;font-weight:800;color:var(--w90);margin-bottom:4px">'+_wcs+Number(_meta.amount||0).toLocaleString(undefined,{minimumFractionDigits:2})+'<span style="font-size:11px;font-weight:400;color:var(--w30);margin-left:4px">'+esc(_meta.currency||'USD')+'</span></div>';
+    h+='<div style="font-size:11px;color:var(--w50)">Ref: '+esc(_meta.reference_number||'-')+'</div>';
+    h+='<div style="font-size:10px;color:var(--acc);margin-top:4px;font-weight:600">&#x23F3; Pending verification (1-2 business days)</div>';
+    h+='<div style="font-size:10px;color:var(--w20);margin-top:4px">'+ts+'</div>';
     h+='</div></div></div>';
     return h;
   }
@@ -5088,7 +5174,7 @@ window.B={
   // Order Actions
   payMilestone:payMilestone,confirmOrderReceipt:confirmOrderReceipt,
   // Electronic Signature
-  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,clearBuyerSigCanvas:clearBuyerSigCanvas,saveBuyerSig:saveBuyerSig,uploadBuyerStamp:uploadBuyerStamp,deleteBuyerSig:deleteBuyerSig,payFromChat:payFromChat,
+  openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,clearBuyerSigCanvas:clearBuyerSigCanvas,saveBuyerSig:saveBuyerSig,uploadBuyerStamp:uploadBuyerStamp,deleteBuyerSig:deleteBuyerSig,payFromChat:payFromChat,openWireTransferModal:openWireTransferModal,submitWireTransfer:submitWireTransfer,
   // Notifications
   toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,
   // Translation
