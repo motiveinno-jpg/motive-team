@@ -256,7 +256,43 @@ function doLogin(e){
     loadUser();
   });
 }
-function doLogout(){if(confirm('로그아웃하시겠습니까?')){sb.auth.signOut().then(function(){S.user=null;render();});}}
+function doLogout(){if(confirm('로그아웃하시겠습니까?')){sb.auth.signOut().then(function(){S.user=null;S._reauthed=false;render();});}}
+
+/* === RE-AUTH GATE === */
+var REAUTH_TIMEOUT=30*60*1000; /* 30분 */
+var _lastReauth=0;
+function isReauthed(){return S._reauthed&&(Date.now()-_lastReauth<REAUTH_TIMEOUT);}
+function requireReauth(cb){
+  if(isReauthed()){cb();return;}
+  S._reauthCb=cb;S._reauthErr='';render();
+  setTimeout(function(){var el=document.getElementById('reauth-pw');if(el)el.focus();},100);
+}
+function doReauth(e){
+  e.preventDefault();S._reauthErr='';
+  var pw=document.getElementById('reauth-pw').value;
+  if(!pw){S._reauthErr='비밀번호를 입력하세요.';render();return;}
+  S._reauthLoading=true;render();
+  sb.auth.signInWithPassword({email:S.user.email,password:pw}).then(function(r){
+    S._reauthLoading=false;
+    if(r.error){S._reauthErr='비밀번호가 올바르지 않습니다.';render();return;}
+    S._reauthed=true;_lastReauth=Date.now();
+    var cb=S._reauthCb;S._reauthCb=null;
+    if(cb)cb();else render();
+  });
+}
+function cancelReauth(){S._reauthCb=null;S._reauthErr='';nav('dashboard');render();}
+function pgReauth(){
+  var errBox=S._reauthErr?'<div style="padding:10px 14px;border-radius:8px;background:rgba(255,82,82,.1);border:1px solid rgba(255,82,82,.2);color:var(--err);font-size:12px;margin-bottom:12px">'+S._reauthErr+'</div>':'';
+  return '<div style="display:flex;align-items:center;justify-content:center;min-height:60vh"><div style="width:380px;padding:32px;background:var(--sf);border-radius:16px;border:1px solid var(--bd)">'+
+    '<div style="text-align:center;margin-bottom:20px"><div style="font-size:40px;margin-bottom:8px">🔐</div><div style="font-size:18px;font-weight:800;color:var(--w)">보안 재인증</div><div style="font-size:12px;color:var(--w40);margin-top:4px">민감한 데이터 접근을 위해 비밀번호를 다시 입력하세요</div></div>'+
+    errBox+
+    '<form onsubmit="Adm.doReauth(event)">'+
+    '<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--w40);display:block;margin-bottom:4px">비밀번호</label><input id="reauth-pw" type="password" placeholder="비밀번호 입력" required style="width:100%;padding:12px;border-radius:8px;background:var(--bg);border:1px solid var(--bd);color:var(--w90);font-size:13px;box-sizing:border-box"></div>'+
+    '<button class="btn btn-admin btn-block btn-lg" type="submit" style="margin-top:8px"'+(S._reauthLoading?' disabled':'')+'>'+(S._reauthLoading?'확인 중...':'인증 확인')+'</button>'+
+    '</form>'+
+    '<div style="text-align:center;margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="Adm.cancelReauth()" style="font-size:11px;color:var(--w40)">취소</button></div>'+
+    '</div></div>';
+}
 function doReset(e){
   e.preventDefault();var f=e.target;S.authError='';
   var email=f.email.value;
@@ -418,7 +454,7 @@ function pgDash(){
     '<div class="card" style="cursor:pointer" onclick="Adm.nav(\'usershub\');S._usersHubTab=\'buyers\';render()"><div class="card-h"><span style="font-size:15px;font-weight:800">🌍 바이어 현황</span>'+UI.badge(S.buyers.length+'명','acc')+'</div><div class="card-b">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">'+
         '<div style="text-align:center;padding:10px;background:rgba(0,212,255,.06);border-radius:8px"><div style="font-size:22px;font-weight:800;color:var(--pri)">'+realBuyers+'</div><div style="font-size:10px;color:var(--w40)">실제 바이어</div></div>'+
-        '<div style="text-align:center;padding:10px;background:rgba(255,82,82,.06);border-radius:8px"><div style="font-size:22px;font-weight:800;color:var(--err)">'+mockBuyers+'</div><div style="font-size:10px;color:var(--w40)">Mock</div></div>'+
+        /* Mock count hidden from dashboard */
         '<div style="text-align:center;padding:10px;background:rgba(168,85,247,.06);border-radius:8px"><div style="font-size:22px;font-weight:800;color:var(--purple)">'+countryCount+'</div><div style="font-size:10px;color:var(--w40)">국가</div></div>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:600;color:var(--w40);margin-bottom:6px">국가별 TOP 5</div>'+
@@ -2617,7 +2653,13 @@ function pgChangelog(){
   return h;
 }
 
+var SENSITIVE_PAGES={payments:1,orderpay:1,settings:1,users:1,usershub:1,ordersMgmt:1};
 function renderPage(){
+  if(S._reauthCb)return pgReauth();
+  if(SENSITIVE_PAGES[S.page]&&!isReauthed()){
+    requireReauth(function(){render();});
+    return pgReauth();
+  }
   switch(S.page){
     case'usershub':return pgUsersHub();
     case'dealhub':return pgDealHub();
@@ -2956,7 +2998,7 @@ function saveAlibabaSync(projectId){
 function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.toggle('mobile-open');}
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
-window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doReset:doReset,setSearch:setSearch,setTab:setTab,closeModal:closeModal,setUserSort:setUserSort,setAdmHubTab:setAdmHubTab,
+window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doReset:doReset,doReauth:doReauth,cancelReauth:cancelReauth,setSearch:setSearch,setTab:setTab,closeModal:closeModal,setUserSort:setUserSort,setAdmHubTab:setAdmHubTab,
   viewUser:viewUser,viewAnalysis:viewAnalysis,viewFB:viewFB,updateFB:updateFB,saveFBNote:saveFBNote,deleteFB:deleteFB,viewSR:viewSR,notifySR:notifySR,
   viewSeller:viewSeller,viewBuyer:viewBuyer,viewMatching:viewMatching,viewOrder:viewOrder,
   setAnalyticsTab:setAnalyticsTab,setPaymentTab:setPaymentTab,
