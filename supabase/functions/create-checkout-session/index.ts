@@ -8,6 +8,26 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const ONE_ANALYSIS_AMOUNT_CENTS = 990;
+const ESCROW_MIN_AMOUNT_DOLLARS = 1;
+const ESCROW_MAX_AMOUNT_DOLLARS = 1_000_000;
+const ALLOWED_CURRENCIES = ["usd", "eur", "gbp", "jpy", "krw", "cny"];
+
+function jsonResponse(
+  body: Record<string, unknown>,
+  status = 200,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -16,10 +36,8 @@ serve(async (req) => {
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      return new Response(
-        JSON.stringify({ error: "Stripe not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      console.error("[checkout] STRIPE_SECRET_KEY not configured");
+      return jsonResponse({ error: "Payment service unavailable" }, 500);
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -27,37 +45,41 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // Verify auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sbAdmin = createClient(supabaseUrl, supabaseServiceRole);
 
-    // Extract and validate user from JWT
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userErr } = await sbAdmin.auth.getUser(token);
+    const {
+      data: { user },
+      error: userErr,
+    } = await sbAdmin.auth.getUser(token);
     if (!user || userErr) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    // Create user-scoped client for RLS operations
-    const supabaseKey = Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseKey =
+      Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
     const body = await req.json();
-    const { type, deal_id, amount, currency, price_id, plan, billing_cycle, success_url, cancel_url } = body;
+    const {
+      type,
+      deal_id,
+      currency,
+      price_id,
+      plan,
+      billing_cycle,
+      success_url,
+      cancel_url,
+    } = body;
 
     // Find or create Stripe customer
     let customerId: string | undefined;
@@ -72,7 +94,10 @@ serve(async (req) => {
     } else {
       const customer = await stripe.customers.create({
         email: user.email,
-        metadata: { supabase_uid: user.id, company: profile?.company_name || "" },
+        metadata: {
+          supabase_uid: user.id,
+          company: profile?.company_name || "",
+        },
       });
       customerId = customer.id;
       await supabase
@@ -84,33 +109,108 @@ serve(async (req) => {
     let sessionConfig: Stripe.Checkout.SessionCreateParams;
 
     if (type === "escrow") {
-      // Escrow deal payment — one-time
+      // --- ESCROW: Server-side amount verification ---
+      if (!deal_id || typeof deal_id !== "string") {
+        return jsonResponse({ error: "Missing or invalid deal_id" }, 400);
+      }
+
+      // Look up the escrow request from service_requests to get the
+      // seller-set amount. The seller creates a record with
+      // type = 'escrow_<dealId>' containing the agreed amount.
+      const { data: escrowRecord, error: escrowErr } = await sbAdmin
+        .from("service_requests")
+        .select("details")
+        .eq("type", `escrow_${deal_id}`)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      let verifiedAmountDollars: number;
+      let verifiedCurrency: string;
+
+      if (escrowRecord?.details?.amount && !escrowErr) {
+        // Use the seller-set amount from the database
+        verifiedAmountDollars = Number(escrowRecord.details.amount);
+        verifiedCurrency = (
+          escrowRecord.details.currency || "USD"
+        ).toLowerCase();
+
+        if (!isPositiveFiniteNumber(verifiedAmountDollars)) {
+          console.error(
+            `[checkout] Invalid escrow amount in DB for deal ${deal_id}:`,
+            escrowRecord.details.amount,
+          );
+          return jsonResponse(
+            { error: "Invalid escrow amount on record" },
+            422,
+          );
+        }
+      } else {
+        // Fallback: no DB record found. Validate client amount strictly.
+        console.warn(
+          `[checkout] No escrow record in DB for deal ${deal_id}, using client amount with strict validation`,
+        );
+        const clientAmount = Number(body.amount);
+
+        if (!isPositiveFiniteNumber(clientAmount)) {
+          return jsonResponse(
+            { error: "Invalid payment amount" },
+            400,
+          );
+        }
+
+        if (clientAmount < ESCROW_MIN_AMOUNT_DOLLARS) {
+          return jsonResponse(
+            {
+              error: `Amount must be at least $${ESCROW_MIN_AMOUNT_DOLLARS}`,
+            },
+            400,
+          );
+        }
+
+        if (clientAmount > ESCROW_MAX_AMOUNT_DOLLARS) {
+          return jsonResponse(
+            { error: "Amount exceeds maximum allowed" },
+            400,
+          );
+        }
+
+        verifiedAmountDollars = clientAmount;
+        verifiedCurrency = (currency || "USD").toLowerCase();
+      }
+
+      if (!ALLOWED_CURRENCIES.includes(verifiedCurrency)) {
+        return jsonResponse({ error: "Unsupported currency" }, 400);
+      }
+
+      const unitAmountCents = Math.round(verifiedAmountDollars * 100);
+
       sessionConfig = {
         customer: customerId,
         mode: "payment",
         line_items: [
           {
             price_data: {
-              currency: (currency || "USD").toLowerCase(),
+              currency: verifiedCurrency,
               product_data: {
-                name: `Escrow Payment — Deal ${deal_id}`,
+                name: `Escrow Payment`,
                 description: "Secure escrow payment via Whistle AI",
               },
-              unit_amount: Math.round(Number(amount) * 100),
+              unit_amount: unitAmountCents,
             },
             quantity: 1,
           },
         ],
         payment_intent_data: {
           metadata: { deal_id, user_id: user.id, type: "escrow" },
-          capture_method: "manual", // Hold funds, release later
+          capture_method: "manual",
         },
         success_url: success_url || "https://whistle-ai.com/app/buyer#deals",
         cancel_url: cancel_url || "https://whistle-ai.com/app/buyer#deals",
         metadata: { deal_id, user_id: user.id, type: "escrow" },
       };
     } else if (type === "one_analysis") {
-      // One-time analysis purchase
+      // --- ONE-TIME ANALYSIS: Always use hardcoded price ---
       const lineItem = price_id
         ? { price: price_id, quantity: 1 }
         : {
@@ -120,10 +220,11 @@ serve(async (req) => {
                 name: "Whistle AI — Export Analysis",
                 description: "One-time market analysis report",
               },
-              unit_amount: Math.round(Number(amount || 990)),
+              unit_amount: ONE_ANALYSIS_AMOUNT_CENTS,
             },
             quantity: 1,
           };
+
       sessionConfig = {
         customer: customerId,
         mode: "payment",
@@ -133,36 +234,44 @@ serve(async (req) => {
         metadata: { user_id: user.id, type: "one_analysis" },
       };
     } else if (price_id) {
-      // Subscription payment
+      // --- SUBSCRIPTION: Uses Stripe price_id, no client amount ---
+      if (typeof price_id !== "string" || !price_id.startsWith("price_")) {
+        return jsonResponse({ error: "Invalid price identifier" }, 400);
+      }
+
       sessionConfig = {
         customer: customerId,
         mode: "subscription",
         line_items: [{ price: price_id, quantity: 1 }],
-        success_url: success_url || "https://whistle-ai.com/app#subscription",
-        cancel_url: cancel_url || "https://whistle-ai.com/app#subscription",
+        success_url:
+          success_url || "https://whistle-ai.com/app#subscription",
+        cancel_url:
+          cancel_url || "https://whistle-ai.com/app#subscription",
         subscription_data: {
-          metadata: { user_id: user.id, plan: plan || "", billing_cycle: billing_cycle || "m" },
+          metadata: {
+            user_id: user.id,
+            plan: plan || "",
+            billing_cycle: billing_cycle || "m",
+          },
         },
-        metadata: { user_id: user.id, type: "subscription", plan: plan || "" },
+        metadata: {
+          user_id: user.id,
+          type: "subscription",
+          plan: plan || "",
+        },
       };
     } else {
-      return new Response(
-        JSON.stringify({ error: "Invalid payment type" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return jsonResponse({ error: "Invalid payment type" }, 400);
     }
 
     const session = await stripe.checkout.sessions.create(sessionConfig);
 
-    return new Response(
-      JSON.stringify({ url: session.url, sessionId: session.id }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ url: session.url, sessionId: session.id });
   } catch (err) {
-    console.error("Checkout error:", err);
-    return new Response(
-      JSON.stringify({ error: err.message || "Internal error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    console.error("[checkout] Unhandled error:", err);
+    return jsonResponse(
+      { error: "Something went wrong. Please try again or contact support." },
+      500,
     );
   }
 });
