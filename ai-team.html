@@ -480,6 +480,17 @@ function relTime(d){
   return Math.floor(diff/86400)+'일 전';
 }
 
+/* ── Task interaction state (prevent re-render while editing) ── */
+var expandedTasks={};
+var taskInteracting=false;
+var taskInteractTimer=null;
+
+function markTaskInteracting(){
+  taskInteracting=true;
+  clearTimeout(taskInteractTimer);
+  taskInteractTimer=setTimeout(function(){taskInteracting=false},5000);
+}
+
 /* ══════════════════════════════════════════ */
 /* ── Fetch Data                           ── */
 /* ══════════════════════════════════════════ */
@@ -665,6 +676,9 @@ function renderGoals(){
 /* ── Render: Tasks (Approval/Bugs/Proposals/Done) ── */
 /* ══════════════════════════════════════════ */
 function renderAllTasks(){
+  // Don't re-render while user is typing/interacting with a task card
+  if(taskInteracting) return;
+
   var pending=allTasks.filter(function(t){return t.status==='pending'});
   var approved=allTasks.filter(function(t){return t.status==='approved'||t.status==='in_progress'});
   var bugs=pending.filter(function(t){return t.category==='bug'||t.category==='qa'});
@@ -791,7 +805,7 @@ function renderTaskList(panelId, tasks, showActions){
       html+='<div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-weight:600">💬 CEO 코멘트</div>';
       html+='<div id="task-comments-'+t.id+'" style="margin-bottom:8px"></div>';
       html+='<div style="display:flex;gap:6px">';
-      html+='<input type="text" id="task-comment-input-'+t.id+'" placeholder="코멘트 작성..." style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
+      html+='<input type="text" id="task-comment-input-'+t.id+'" placeholder="코멘트 작성..." onfocus="markTaskInteracting()" oninput="markTaskInteracting()" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
       html+='<button onclick="postTaskComment('+t.id+')" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
 
@@ -811,6 +825,14 @@ function renderTaskList(panelId, tasks, showActions){
   });
   html+='</div>';
   el.innerHTML=html;
+
+  // Restore expanded state
+  Object.keys(expandedTasks).forEach(function(tid){
+    if(expandedTasks[tid]){
+      var card=qs('#task-'+tid);
+      if(card) card.classList.add('expanded');
+    }
+  });
 }
 
 /* ══════════════════════════════════════════ */
@@ -1035,7 +1057,10 @@ document.addEventListener('keydown',function(e){
 
 window.toggleTaskDetail=function(id){
   var card=qs('#task-'+id);
-  if(card) card.classList.toggle('expanded');
+  if(card){
+    card.classList.toggle('expanded');
+    expandedTasks[id]=card.classList.contains('expanded');
+  }
 };
 
 window.approveTask=function(id){
@@ -1198,7 +1223,7 @@ window.openOutput=function(idx){
   commentHtml+='<div style="font-size:11px;color:var(--dim);padding:8px;text-align:center">코멘트를 남기면 제안자에게 전달됩니다</div>';
   commentHtml+='</div>';
   commentHtml+='<div style="display:flex;gap:8px">';
-  commentHtml+='<input type="text" id="output-comment-input-'+o.id+'" placeholder="코멘트 또는 수정 요청 작성..." style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 14px;color:var(--text);font-size:12px;outline:none;font-family:var(--font)">';
+  commentHtml+='<input type="text" id="output-comment-input-'+o.id+'" placeholder="코멘트 또는 수정 요청 작성..." onfocus="markTaskInteracting()" oninput="markTaskInteracting()" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:9px 14px;color:var(--text);font-size:12px;outline:none;font-family:var(--font)">';
   commentHtml+='<button onclick="postOutputComment('+o.id+',\''+esc(o.agent_id)+'\')" style="background:var(--accent);color:#fff;border:none;padding:9px 18px;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">전송</button>';
   commentHtml+='</div></div>';
 
