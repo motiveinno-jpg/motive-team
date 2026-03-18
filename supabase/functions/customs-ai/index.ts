@@ -53,7 +53,7 @@ async function searchKnowledge(
     let q = sbAdmin
       .from("customs_knowledge")
       .select("id, title, content, category, country, metadata")
-      .or(`title.ilike.%${keyword}%,content.ilike.%${keyword}%`)
+      .or(`title.ilike.%${keyword.replace(/[%_,.()"']/g, "")}%,content.ilike.%${keyword.replace(/[%_,.()"']/g, "")}%`)
       .limit(MAX_CONTEXT_ENTRIES);
 
     if (category) {

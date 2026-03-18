@@ -226,7 +226,7 @@ All costs in USD. Use realistic estimates with (est.) if uncertain. Never say "c
   } catch (err) {
     console.error("trade-requirements error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: err.message || "서버 오류" }),
+      JSON.stringify({ ok: false, error: "서버 오류가 발생했습니다" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

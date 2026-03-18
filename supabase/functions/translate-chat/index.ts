@@ -30,6 +30,23 @@ const LANG_NAMES: Record<string, string> = {
   sv: "Swedish",
 };
 
+// Per-user rate limiting (resets on cold start)
+const userRateMap = new Map<string, { count: number; resetAt: number }>();
+const TRANSLATE_RATE_LIMIT = 30;
+const TRANSLATE_RATE_WINDOW_MS = 60_000; // 1 minute
+
+function checkUserRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const entry = userRateMap.get(userId);
+  if (!entry || now > entry.resetAt) {
+    userRateMap.set(userId, { count: 1, resetAt: now + TRANSLATE_RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= TRANSLATE_RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -52,6 +69,14 @@ serve(async (req: Request) => {
     if (!user || userErr) {
       return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Rate limit per user
+    if (!checkUserRateLimit(user.id)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Rate limit exceeded. Please wait a moment." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json", "Retry-After": "60" } },
+      );
     }
 
     // Create user-scoped client for RLS operations
@@ -129,7 +154,7 @@ serve(async (req: Request) => {
   } catch (err) {
     console.error("translate-chat error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: err.message || "Server error" }),
+      JSON.stringify({ ok: false, error: "Server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

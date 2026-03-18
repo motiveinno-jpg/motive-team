@@ -55,8 +55,24 @@ interface CrawlResult {
   error?: string;
 }
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("169.254.")) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    if (hostname.endsWith(".internal") || hostname.endsWith(".local")) return false;
+    return true;
+  } catch { return false; }
+}
+
 async function crawlUrl(url: string): Promise<CrawlResult> {
   try {
+    if (!isSafeUrl(url)) {
+      return { url, success: false, error: "URL not allowed" };
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CRAWL_TIMEOUT_MS);
 

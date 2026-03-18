@@ -265,7 +265,7 @@ JSON만 출력하세요.`;
   } catch (err) {
     console.error("classify-hs error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: err.message || "서버 오류" }),
+      JSON.stringify({ ok: false, error: "서버 오류가 발생했습니다" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

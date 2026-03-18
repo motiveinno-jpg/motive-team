@@ -315,7 +315,7 @@ serve(async (req) => {
   } catch (err) {
     console.error("Webhook error:", err);
     return new Response(
-      JSON.stringify({ error: err.message || "Internal error" }),
+      JSON.stringify({ error: "Internal error" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }

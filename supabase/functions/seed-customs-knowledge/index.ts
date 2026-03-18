@@ -824,6 +824,14 @@ serve(async (req: Request) => {
     const { action = "seed" } = body as { action?: string };
 
     if (action === "clear") {
+      // Admin-only: verify user has admin role
+      const { data: userProfile } = await sbAdmin.from("users").select("role").eq("id", user.id).single();
+      if (!userProfile || userProfile.role !== "admin") {
+        return new Response(
+          JSON.stringify({ ok: false, error: "Admin access required" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       const { error: delErr } = await sbAdmin.from("customs_knowledge").delete().neq("id", "00000000-0000-0000-0000-000000000000");
       if (delErr) {
         return new Response(
