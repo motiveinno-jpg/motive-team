@@ -4924,10 +4924,35 @@ try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from(
 
 /* === INIT === */
 sb.auth.onAuthStateChange(function(event,session){
-  if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){loadUser();}
-  else if(event==='SIGNED_OUT'){S.user=null;S.loading=false;render();}
+  if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){
+    console.log('[Auth] '+event+(session?' (expires: '+new Date(session.expires_at*1000).toLocaleTimeString()+')':''));
+    loadUser();
+  }
+  else if(event==='SIGNED_OUT'){
+    console.log('[Auth] SIGNED_OUT — redirecting to login');
+    S.user=null;S.loading=false;render();
+    /* Clear hash so user sees login screen cleanly */
+    if(location.hash&&location.hash!=='#')history.replaceState(null,'',location.pathname);
+  }
   else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
 });
+
+/* --- Session keep-alive: refresh on tab focus & periodic heartbeat --- */
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&S.user){
+    sb.auth.refreshSession().then(function(r){
+      if(r.error){console.warn('[Auth] Refresh on tab focus failed:',r.error.message);}
+      else{console.log('[Auth] Session refreshed on tab focus');}
+    });
+  }
+});
+/* Refresh token every 4 minutes (Supabase default expiry is 1 hour, but this prevents edge cases) */
+setInterval(function(){
+  if(!S.user)return;
+  sb.auth.refreshSession().then(function(r){
+    if(r.error){console.warn('[Auth] Periodic refresh failed:',r.error.message);}
+  });
+},240000);
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;closeMob();render();window.scrollTo(0,0);}});
 window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;closeMob();render();window.scrollTo(0,0);}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifOpen){S.notifOpen=false;render();return;}var modal=document.querySelector('.modal-overlay');if(modal){B.closeModal();return;}if(S.modal){B.closeModal();return;}}});
