@@ -77,9 +77,20 @@ serve(async (req) => {
       price_id,
       plan,
       billing_cycle,
-      success_url,
-      cancel_url,
     } = body;
+
+    // Validate redirect URLs — prevent open redirect
+    const ALLOWED_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com"];
+    const validateRedirectUrl = (url: string | undefined): string | undefined => {
+      if (!url) return undefined;
+      try {
+        const parsed = new URL(url);
+        if (ALLOWED_ORIGINS.includes(parsed.origin)) return url;
+      } catch { /* invalid URL */ }
+      return undefined;
+    };
+    const success_url = validateRedirectUrl(body.success_url);
+    const cancel_url = validateRedirectUrl(body.cancel_url);
 
     // Find or create Stripe customer
     let customerId: string | undefined;
