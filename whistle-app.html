@@ -698,14 +698,14 @@ function _lockOverlayEnd(gate){
 /* === SINGLE ANALYSIS PAYMENT (단건 결제) === */
 function _showAnalysisPaywall(){
   var _cur=S.currency||'KRW';
-  var regP=U.fmtUSD(40);var disP=U.fmtUSD(20);var rawAmt=20;
+  var regP=U.fmtUSD(40);var disP='$9.90';var rawAmt=9.90;
   var body='<div style="text-align:center;padding:10px 0">'+
     '<div style="font-size:40px;margin-bottom:12px">🔍</div>'+
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">AI 분석 한도 초과</div>'+
     '<div style="font-size:13px;color:var(--w40);margin-bottom:20px">무료 분석 횟수를 모두 사용했습니다.<br>아래 옵션 중 선택해주세요.</div>'+
     /* 옵션1: 단건 결제 */
     '<div style="padding:16px;border-radius:14px;border:2px solid var(--pri);background:rgba(0,212,255,.04);margin-bottom:12px;cursor:pointer;text-align:left" onclick="App.payOneAnalysis()">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:800;color:var(--pri)">⚡ 단건 AI 분석</span><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:3px 8px;border-radius:20px">50% OFF</span></div>'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:800;color:var(--pri)">⚡ 단건 AI 분석</span><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:3px 8px;border-radius:20px">75% OFF</span></div>'+
       '<div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:22px;font-weight:900;color:var(--w95)">'+disP+'</span><span style="font-size:13px;color:var(--w20);text-decoration:line-through">'+regP+'</span></div>'+
       '<div style="font-size:11px;color:var(--w40);margin-top:6px">1회 분석 즉시 이용 · 런칭 기념 특가</div>'+
     '</div>'+
@@ -725,13 +725,10 @@ function payOneAnalysis(){
   var isKo=!S.user.country||S.user.country==='KR'||S.user.country==='Korea';
   closeModal('analysis-pw');
 
-  if(isKo){
-    /* 한국: 토스 단건 결제 */
-    if(TOSS_CONFIG.ck.indexOf('REPLACE')!==-1){
-      _showOneAnalysisCTA();return;
-    }
+  if(isKo && TOSS_CONFIG.ck.indexOf('REPLACE')===-1){
+    /* 한국: 토스 단건 결제 (토스 설정 완료 시) */
     _getToss().then(function(payment){
-      if(!payment){UI.toast('토스 결제 초기화 실패','err');return;}
+      if(!payment){UI.toast('토스 결제 초기화 실패','err');_stripeOneAnalysis();return;}
       var orderId='WH-AI-'+S.user.id.slice(0,8)+'-'+Date.now();
       var baseUrl=location.origin+location.pathname;
       payment.requestPayment({
@@ -746,43 +743,41 @@ function payOneAnalysis(){
       });
     });
   } else {
-    /* 글로벌: Stripe 단건 결제 */
-    if(_isStripeReady()){
-      var stripe=_getStripe();
-      if(!stripe){_showOneAnalysisCTA();return;}
-      sb.auth.getSession().then(function(r){
-        if(!r.data||!r.data.session){UI.toast('Please log in first','warn');return;}
-        fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
-          body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'#analysis',cancel_url:location.origin+location.pathname+'#analysis'})
-        }).then(function(r){return r.json();}).then(function(data){
-          if(data.url){window.location.href=data.url;}
-          else if(data.error){UI.toast(data.error,'err');_showOneAnalysisCTA();}
-        }).catch(function(){_showOneAnalysisCTA();});
-      });
-    } else {
-      _showOneAnalysisCTA();
-    }
+    /* Stripe 단건 결제 (글로벌 + 토스 미설정 한국) */
+    _stripeOneAnalysis();
   }
+}
+function _stripeOneAnalysis(){
+  if(!_isStripeReady()){_showOneAnalysisCTA();return;}
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){UI.toast('로그인이 필요합니다','warn');return;}
+    UI.toast('결제 페이지로 이동합니다...','info');
+    fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
+      body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'#analysis',cancel_url:location.origin+location.pathname+'#analysis'})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.url){window.location.href=data.url;}
+      else if(data.error){UI.toast(data.error,'err');}
+    }).catch(function(e){console.error('[one-analysis]',e);UI.toast('결제 연결 오류','err');});
+  });
 }
 
 function _showOneAnalysisCTA(){
-  var body='<div style="text-align:center;padding:10px 0 20px"><div style="font-size:40px;margin-bottom:12px">💬</div>'+
-    '<div style="font-size:16px;font-weight:800;margin-bottom:6px">결제 방법 안내</div>'+
-    '<div style="font-size:13px;color:var(--w40);line-height:1.6;margin-bottom:20px"><b style="color:var(--acc)">계좌이체·카카오톡</b>으로 결제 가능합니다.</div>'+
-    '<div style="padding:14px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);margin-bottom:12px;text-align:left">'+
+  var body='<div style="text-align:center;padding:10px 0 20px"><div style="font-size:40px;margin-bottom:12px">💳</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:6px">단건 AI 분석 결제</div>'+
+    '<div style="font-size:13px;color:var(--w40);line-height:1.6;margin-bottom:20px">안전한 카드 결제로 즉시 분석을 이용하세요.</div>'+
+    '<div style="padding:14px;border-radius:10px;border:1px solid var(--bd);background:var(--w04);margin-bottom:16px;text-align:left">'+
       '<div style="font-size:12px;color:var(--w60);line-height:1.8">'+
-        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>금액</span><b style="color:var(--acc)">'+U.fmtUSD(20)+' (정상가 '+U.fmtUSD(40)+')</b></div>'+
-        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>은행</span><b style="color:var(--w90)">IBK 기업은행</b></div>'+
-        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>예금주</span><b style="color:var(--w90)">(주)모티브이노베이션</b></div>'+
-        '<div style="display:flex;justify-content:space-between;padding:3px 0"><span>계좌</span><b style="color:var(--w90)">카카오톡 상담 시 안내</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>상품</span><b style="color:var(--w90)">AI 수출 분석 리포트 1회</b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>정상가</span><span style="text-decoration:line-through;color:var(--w20)">$40.00</span></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0"><span>런칭 특가</span><b style="color:var(--acc);font-size:14px">$9.90 <span style="font-size:10px;color:var(--ok);font-weight:700">75% OFF</span></b></div>'+
       '</div>'+
     '</div>'+
     '<div style="display:flex;flex-direction:column;gap:10px;max-width:320px;margin:0 auto">'+
-      '<a href="https://open.kakao.com/o/sMotiveInno" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border-radius:12px;background:#FEE500;color:#191919;font-weight:700;font-size:14px;text-decoration:none">💬 카카오톡 상담 / 결제</a>'+
+      '<button onclick="App.closeModal(\'one-pay-cta\');App.payOneAnalysis()" class="btn btn-block" style="padding:14px;border-radius:12px;background:linear-gradient(135deg,var(--pri),#00b4d8);border:none;color:#000;font-weight:700;font-size:14px">💳 카드 결제하기</button>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--w20);margin-top:12px">입금 확인 후 분석 1회 즉시 충전</div></div>';
+    '<div style="font-size:11px;color:var(--w20);margin-top:12px">Stripe 보안 결제 · 결제 즉시 분석 이용 가능</div></div>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'one-pay-cta',title:'⚡ 단건 분석 결제',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'one-pay-cta\')">닫기</button>',width:'400px'}));
   UI.showModal('one-pay-cta');
 }
@@ -1494,32 +1489,23 @@ function pgDash(){
   /* 활동 타임라인 */
   var _af=S._actFilter||'all';
   h+='<div class="card"><div class="card-h"><span>🕐 최근 활동</span><div style="display:flex;gap:4px">';
-  ['all','analysis','email','order','buyer'].forEach(function(f){var lb={all:'전체',analysis:'분석',email:'이메일',order:'주문',buyer:'바이어'}[f];h+='<span onclick="App.set({_actFilter:\''+f+'\'})" style="font-size:12px;padding:6px 12px;border-radius:12px;cursor:pointer;min-height:32px;display:inline-flex;align-items:center;background:'+(_af===f?'rgba(0,212,255,.1)':'transparent')+';color:'+(_af===f?'var(--pri)':'var(--w40)')+'">'+lb+'</span>';});
+  ['all','analysis','order','buyer'].forEach(function(f){var lb={all:'전체',analysis:'분석',order:'주문',buyer:'바이어'}[f];h+='<span onclick="App.set({_actFilter:\''+f+'\'})" style="font-size:12px;padding:6px 12px;border-radius:12px;cursor:pointer;min-height:32px;display:inline-flex;align-items:center;background:'+(_af===f?'rgba(0,212,255,.1)':'transparent')+';color:'+(_af===f?'var(--pri)':'var(--w40)')+'">'+lb+'</span>';});
   h+='</div></div><div class="card-b" style="max-height:300px;overflow-y:auto">';
   var timeline=[];
-  if(_af==='all'||_af==='analysis')(S.analyses||[]).slice(0,5).forEach(function(a){timeline.push({t:a.created_at,icon:'🔬',text:'AI 분석: '+U.tr(a.product_name,25),pg:'analysis',cat:'analysis'});});
-  if(_af==='all'||_af==='email')(S.emailLogs||[]).slice(0,5).forEach(function(e){timeline.push({t:e.created_at,icon:'✉️',text:'이메일: '+U.esc((e.subject||'').substring(0,25)),pg:'emailhub',cat:'email'});});
+  if(_af==='all'||_af==='analysis')(S.analyses||[]).slice(0,8).forEach(function(a){timeline.push({t:a.created_at,icon:'🔬',text:'AI 분석: '+U.tr(a.product_name,25),pg:'analysis',id:a.id,cat:'analysis'});});
   if(_af==='all'||_af==='order')(S.orders||[]).slice(0,5).forEach(function(o){timeline.push({t:o.created_at,icon:'📋',text:'주문: '+U.esc(o.order_number),pg:'orders',cat:'order'});});
   if(_af==='all'||_af==='buyer')(S.notifications||[]).filter(function(n){return n.type==='buyer'||n.type==='cert';}).slice(0,5).forEach(function(n){timeline.push({t:n.created_at,icon:n.type==='buyer'?'🤝':'📜',text:U.esc(n.title),pg:n.link_page||'dashboard',cat:'buyer'});});
   timeline.sort(function(a,b){return new Date(b.t)-new Date(a.t);});
   if(timeline.length===0){h+=UI.empty('🕐','아직 활동이 없습니다','AI 분석을 시작하면 모든 활동이 여기에 기록됩니다')+'<div style="text-align:center;margin-top:-8px;margin-bottom:12px"><button class="btn btn-pri btn-sm" onclick="App.nav(\'analysis\')">첫 AI 분석 시작하기</button></div>';}
-  else{timeline.slice(0,8).forEach(function(ev){
-    h+='<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.nav(\''+ev.pg+'\')">';
-    h+='<span style="font-size:16px">'+ev.icon+'</span><div style="flex:1"><div style="font-size:12px;color:var(--w90)">'+ev.text+'</div><div style="font-size:10px;color:var(--w20)">'+_timeAgo(ev.t)+'</div></div></div>';
+  else{timeline.slice(0,10).forEach(function(ev){
+    var _click=ev.id&&ev.cat==='analysis'?'App.viewA(\''+ev.id+'\')':'App.nav(\''+ev.pg+'\')';
+    h+='<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="'+_click+'">';
+    h+='<span style="font-size:16px">'+ev.icon+'</span><div style="flex:1"><div style="font-size:12px;color:var(--w90)">'+ev.text+'</div><div style="font-size:10px;color:var(--w20)">'+_timeAgo(ev.t)+'</div></div>'+(ev.cat==='analysis'?UI.sb('완료'):'')+'</div>';
   });}
   h+='</div></div>';
-  /* 최근 분석 */
-  h+='<div class="card"><div class="card-h">최근 AI 분석</div><div class="card-b">';
-  if(!(S.analyses||[]).length){h+=UI.empty('🔬','분석 없음','첫 분석을 시작하세요');}
-  else{(S.analyses||[]).slice(0,5).forEach(function(a){
-    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewA(\''+a.id+'\')"><span style="font-size:20px">📊</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(a.product_name,30)+'</div><div style="font-size:11px;color:var(--w40)">'+U.fd(a.created_at,'rel')+'</div></div>'+UI.sb(a.status)+'</div>';
-  });}
-  h+='</div></div></div>';
-  /* 미팅 일정 위젯 */
-  h+='<div class="grid-2">';
-  /* 미팅 */
-  h+='<div class="card"><div class="card-h"><span>📅 다가오는 미팅</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'meetings\')" style="font-size:11px">전체보기</button></div><div class="card-b">';
-  var now=new Date();var upMeetings=(S.meetings||[]).filter(function(m){return new Date(m.scheduled_at)>=now&&m.status!=='cancelled';}).sort(function(a,b){return new Date(a.scheduled_at)-new Date(b.scheduled_at);}).slice(0,4);
+  /* 다가오는 미팅 (우측) */
+  h+='<div class="card"><div class="card-h"><span>📅 다가오는 미팅</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'meetings\')" style="font-size:11px">전체보기</button></div><div class="card-b" style="max-height:300px;overflow-y:auto">';
+  var now=new Date();var upMeetings=(S.meetings||[]).filter(function(m){return new Date(m.scheduled_at)>=now&&m.status!=='cancelled';}).sort(function(a,b){return new Date(a.scheduled_at)-new Date(b.scheduled_at);}).slice(0,5);
   if(upMeetings.length===0){h+=UI.empty('📅','예정된 미팅 없음','바이어와 미팅을 잡아보세요');}
   else{upMeetings.forEach(function(m){
     var mt=new Date(m.scheduled_at);var buyer=(S.buyers||[]).find(function(b){return b.id===m.buyer_id;});
@@ -9241,7 +9227,7 @@ function pgSub(){
   /* SaaS plans + 단건결제 나란히 */
   '<div class="plans-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px;margin-top:12px">'+
   /* 단건 AI 분석 결제 — 가장 좌측 */
-  '<div class="plan-card" style="position:relative;display:flex;flex-direction:column;border-color:rgba(0,212,255,.35);background:linear-gradient(135deg,rgba(0,212,255,.04),rgba(0,230,118,.03))"><div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:3px 14px;border-radius:20px;background:linear-gradient(135deg,#FFB800,#FF8C00);font-size:10px;font-weight:800;color:#000;white-space:nowrap">건별 구매</div><div class="plan-name" style="color:var(--acc)">AI 분석 보고서</div><div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">런칭 특가 50% OFF</div><div class="plan-price" style="display:flex;align-items:baseline;gap:4px"><span style="font-size:14px;color:var(--w20);text-decoration:line-through">'+U.fmtPrice(50000)+'</span><span style="font-size:22px;font-weight:800">'+U.fmtPrice(25000)+'</span><span class="plan-period" style="font-size:12px;color:var(--w40)">/건</span></div><div style="font-size:12px;color:var(--w40);margin-bottom:12px">구독 없이 1건씩 결제</div><div class="plan-features" style="flex:1"><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>13개국 시장 분석</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>HS코드 자동 매칭</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>타겟 바이어 추천</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>인증·규제 확인</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>FOB 가격 산정</div></div><button class="btn btn-block" style="margin-top:12px;font-weight:800;padding:12px;border-radius:10px;background:linear-gradient(135deg,#FFB800,#FF8C00);border:none;color:#000" onclick="App.payOneAnalysis()">⚡ 단건 분석 결제</button></div>'+
+  '<div class="plan-card" style="position:relative;display:flex;flex-direction:column;border-color:rgba(0,212,255,.35);background:linear-gradient(135deg,rgba(0,212,255,.04),rgba(0,230,118,.03))"><div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:3px 14px;border-radius:20px;background:linear-gradient(135deg,#FFB800,#FF8C00);font-size:10px;font-weight:800;color:#000;white-space:nowrap">건별 구매</div><div class="plan-name" style="color:var(--acc)">AI 분석 보고서</div><div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">런칭 특가 75% OFF</div><div class="plan-price" style="display:flex;align-items:baseline;gap:4px"><span style="font-size:14px;color:var(--w20);text-decoration:line-through">'+U.fmtUSD(40)+'</span><span style="font-size:22px;font-weight:800">$9.90</span><span class="plan-period" style="font-size:12px;color:var(--w40)">/건</span></div><div style="font-size:12px;color:var(--w40);margin-bottom:12px">구독 없이 1건씩 결제</div><div class="plan-features" style="flex:1"><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>13개국 시장 분석</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>HS코드 자동 매칭</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>타겟 바이어 추천</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>인증·규제 확인</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>FOB 가격 산정</div></div><button class="btn btn-block" style="margin-top:12px;font-weight:800;padding:12px;border-radius:10px;background:linear-gradient(135deg,#FFB800,#FF8C00);border:none;color:#000" onclick="App.payOneAnalysis()">⚡ 단건 분석 결제</button></div>'+
   plans.map(function(p){
     var isCur=cur===p.id;
     var isUp=plans.findIndex(function(x){return x.id===p.id;})>plans.findIndex(function(x){return x.id===cur;});
