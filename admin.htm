@@ -180,7 +180,7 @@ var S={
   orders:[],buyers:[],messages:[],shipments:[],paymentMilestones:[],paymentProofs:[],pageViews:[],buyerRequests:[],proposals:[],clientErrors:[],
   searchFilter:'',statusFilter:'all',dateFilter:'all',
   _pg:{},_userSort:{col:'created_at',asc:false},
-  selectedUser:null,selectedAnalysis:null,selectedSR:null,
+  selectedUser:null,selectedAnalysis:null,selectedSR:null,selectedFB:null,_fbTab:'all',
   selectedBuyer:null,selectedSeller:null,selectedMatching:null,selectedOrder:null,selectedDispute:null,
   tab:'all',analyticsTab:'users',paymentTab:'revenue',
   subscriptions:[],escrowTxns:[],disputes:[],reviews:[],
@@ -1129,6 +1129,121 @@ function pgAnalysisDetail(){
   }
 
   return html;
+}
+
+/* ── Feedback Management ── */
+function getFeedbacks(){return S.serviceRequests.filter(function(s){return s.service_type==='feedback'||((s.type||'').indexOf('feedback_')===0);});}
+function pgFeedback(){
+  if(S.selectedFB)return pgFBDetail();
+  var all=getFeedbacks();
+  var filtered=all;
+  if(S.searchFilter){var q=S.searchFilter.toLowerCase();filtered=filtered.filter(function(f){var d=f.details||{};return (d.title||'').toLowerCase().indexOf(q)>=0||(d.description||'').toLowerCase().indexOf(q)>=0||(d.feedback_type||'').toLowerCase().indexOf(q)>=0||(d.company||'').toLowerCase().indexOf(q)>=0;});}
+  var fbTab=S._fbTab||'all';
+  if(fbTab!=='all')filtered=filtered.filter(function(f){var d=f.details||{};return d.feedback_type===fbTab;});
+  var bugs=all.filter(function(f){return (f.details||{}).feedback_type==='bug';}).length;
+  var features=all.filter(function(f){return (f.details||{}).feedback_type==='feature';}).length;
+  var partners=all.filter(function(f){return (f.details||{}).feedback_type==='partnership';}).length;
+  var pending=all.filter(function(f){return f.status==='pending';}).length;
+
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">';
+  h+='<div><h2 style="font-size:20px;font-weight:800">📢 피드백 관리</h2><div style="font-size:12px;color:var(--w40);margin-top:4px">사용자 피드백 · 버그 신고 · 기능 요청 · 제휴 문의</div></div>';
+  h+='<div style="display:flex;gap:8px"><input class="form-input" placeholder="검색..." value="'+esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="width:200px;padding:8px 12px;font-size:13px"></div></div>';
+
+  // Stats cards
+  h+='<div class="grid-4" style="margin-bottom:20px">';
+  h+='<div class="card"><div class="card-b" style="text-align:center"><div style="font-size:28px;font-weight:900;color:var(--err)">'+bugs+'</div><div style="font-size:11px;color:var(--w40)">🐛 버그 신고</div></div></div>';
+  h+='<div class="card"><div class="card-b" style="text-align:center"><div style="font-size:28px;font-weight:900;color:var(--acc)">'+features+'</div><div style="font-size:11px;color:var(--w40)">💡 기능 요청</div></div></div>';
+  h+='<div class="card"><div class="card-b" style="text-align:center"><div style="font-size:28px;font-weight:900;color:var(--purple)">'+partners+'</div><div style="font-size:11px;color:var(--w40)">🤝 제휴 문의</div></div></div>';
+  h+='<div class="card"><div class="card-b" style="text-align:center"><div style="font-size:28px;font-weight:900;color:var(--pri)">'+pending+'</div><div style="font-size:11px;color:var(--w40)">⏳ 미처리</div></div></div>';
+  h+='</div>';
+
+  // Tabs
+  h+='<div style="display:flex;gap:6px;margin-bottom:16px">';
+  ['all','bug','feature','partnership'].forEach(function(t){
+    var label={all:'전체 ('+all.length+')',bug:'🐛 버그 ('+bugs+')',feature:'💡 기능 ('+features+')',partnership:'🤝 제휴 ('+partners+')'}[t];
+    h+='<button onclick="S._fbTab=\''+t+'\';render()" class="btn btn-sm '+(fbTab===t?'btn-admin':'btn-ghost')+'" style="font-size:11px">'+label+'</button>';
+  });
+  h+='</div>';
+
+  // Table
+  h+='<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>유형</th><th>제목</th><th>상태</th><th>심각도</th><th>접수일</th><th>사용자</th></tr></thead><tbody>';
+  if(!filtered.length)h+='<tr><td colspan="6" style="text-align:center;color:var(--w40);padding:40px">접수된 피드백이 없습니다</td></tr>';
+  filtered.forEach(function(f){
+    var d=f.details||{};
+    var typeIcon={bug:'🐛',feature:'💡',partnership:'🤝'}[d.feedback_type]||'📋';
+    var typeLabel={bug:'버그',feature:'기능요청',partnership:'제휴'}[d.feedback_type]||'기타';
+    var statusBadge={pending:'badge-acc',accepted:'badge-pri',processing:'badge-purple',completed:'badge-ok',cancelled:'badge-ghost'}[f.status]||'badge-ghost';
+    var statusLabel={pending:'대기',accepted:'접수',processing:'처리중',completed:'완료',cancelled:'취소'}[f.status]||f.status;
+    var sevBadge='';
+    if(d.severity){var sc={critical:'badge-err',high:'badge-acc',medium:'badge-pri',low:'badge-ghost'}[d.severity]||'badge-ghost';var sl={critical:'긴급',high:'높음',medium:'보통',low:'낮음'}[d.severity]||d.severity;sevBadge='<span class="badge '+sc+'">'+sl+'</span>';}
+    else if(d.priority){var pc={high:'badge-err',medium:'badge-acc',low:'badge-ghost'}[d.priority]||'badge-ghost';var pl={high:'높음',medium:'보통',low:'낮음'}[d.priority]||d.priority;sevBadge='<span class="badge '+pc+'">'+pl+'</span>';}
+    var ago=timeAgo(f.created_at);
+    var email=d.user_email||d.email||'';
+    h+='<tr onclick="Adm.viewFB(\''+f.id+'\')" style="cursor:pointer">';
+    h+='<td><span class="badge '+(d.feedback_type==='bug'?'badge-err':d.feedback_type==='feature'?'badge-acc':'badge-purple')+'">'+typeIcon+' '+typeLabel+'</span></td>';
+    h+='<td style="font-weight:600;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(d.title||'(제목없음)')+'</td>';
+    h+='<td><span class="badge '+statusBadge+'">'+statusLabel+'</span></td>';
+    h+='<td>'+sevBadge+'</td>';
+    h+='<td style="color:var(--w40);font-size:12px">'+ago+'</td>';
+    h+='<td style="color:var(--w40);font-size:12px">'+esc(email)+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div></div>';
+  return h;
+}
+
+function pgFBDetail(){
+  var f=S.selectedFB;if(!f)return pgFeedback();
+  var d=f.details||{};
+  var typeIcon={bug:'🐛',feature:'💡',partnership:'🤝'}[d.feedback_type]||'📋';
+  var typeLabel={bug:'버그 신고',feature:'기능 요청',partnership:'제휴 문의'}[d.feedback_type]||'피드백';
+
+  var h='<div style="margin-bottom:16px"><button class="btn btn-ghost btn-sm" onclick="S.selectedFB=null;render()">← 목록으로</button></div>';
+  h+='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>'+typeIcon+' '+esc(d.title||'(제목없음)')+'</span><span class="badge badge-admin">'+typeLabel+'</span></div><div class="card-b">';
+
+  // Meta info
+  h+='<div class="grid-3" style="margin-bottom:16px">';
+  h+='<div><div style="font-size:11px;color:var(--w40)">접수일</div><div style="font-size:13px;font-weight:600">'+new Date(f.created_at).toLocaleString('ko-KR')+'</div></div>';
+  h+='<div><div style="font-size:11px;color:var(--w40)">상태</div><div><select class="form-select" style="padding:6px 10px;font-size:12px" onchange="Adm.updateFB(\''+f.id+'\',\'status\',this.value)">';
+  ['pending','accepted','processing','completed','cancelled'].forEach(function(st){h+='<option value="'+st+'"'+(f.status===st?' selected':'')+'>'+({pending:'대기',accepted:'접수',processing:'처리중',completed:'완료',cancelled:'취소'}[st])+'</option>';});
+  h+='</select></div></div>';
+  if(d.severity){h+='<div><div style="font-size:11px;color:var(--w40)">심각도</div><div style="font-size:13px;font-weight:600">'+({critical:'🔴 긴급',high:'🟠 높음',medium:'🟡 보통',low:'🟢 낮음'}[d.severity]||d.severity)+'</div></div>';}
+  if(d.priority){h+='<div><div style="font-size:11px;color:var(--w40)">우선순위</div><div style="font-size:13px;font-weight:600">'+({high:'🔴 높음',medium:'🟡 보통',low:'🟢 낮음'}[d.priority]||d.priority)+'</div></div>';}
+  h+='</div>';
+
+  // Description
+  h+='<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--w40);margin-bottom:6px">상세 설명</div><div style="padding:12px;background:var(--sf);border-radius:var(--r-s);border:1px solid var(--bd);font-size:13px;line-height:1.7;white-space:pre-wrap;color:var(--w90)">'+esc(d.description||'설명 없음')+'</div></div>';
+
+  // Partnership-specific fields
+  if(d.feedback_type==='partnership'){
+    h+='<div class="grid-2" style="margin-bottom:16px">';
+    if(d.company)h+='<div><div style="font-size:11px;color:var(--w40)">회사명</div><div style="font-size:14px;font-weight:700">'+esc(d.company)+'</div></div>';
+    if(d.contact_name)h+='<div><div style="font-size:11px;color:var(--w40)">담당자</div><div style="font-size:14px">'+esc(d.contact_name)+'</div></div>';
+    if(d.email)h+='<div><div style="font-size:11px;color:var(--w40)">이메일</div><div style="font-size:14px"><a href="mailto:'+esc(d.email)+'">'+esc(d.email)+'</a></div></div>';
+    h+='</div>';
+  }
+
+  // Technical info
+  h+='<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--w40);margin-bottom:6px">기술 정보</div><div class="grid-2">';
+  if(d.page)h+='<div style="font-size:12px"><span style="color:var(--w40)">페이지:</span> '+esc(d.page)+'</div>';
+  if(d.user_agent)h+='<div style="font-size:11px;color:var(--w40);word-break:break-all">'+esc(d.user_agent)+'</div>';
+  if(d.user_email)h+='<div style="font-size:12px"><span style="color:var(--w40)">사용자:</span> '+esc(d.user_email)+'</div>';
+  if(d.timestamp)h+='<div style="font-size:12px"><span style="color:var(--w40)">타임스탬프:</span> '+esc(d.timestamp)+'</div>';
+  h+='</div></div>';
+
+  // Admin notes
+  h+='<div style="margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--w40);margin-bottom:6px">관리자 메모</div>';
+  h+='<textarea class="form-textarea" id="fb-admin-note" rows="3" placeholder="처리 내용을 기록하세요...">'+(f.admin_notes||'')+'</textarea></div>';
+
+  // Actions
+  h+='<div style="display:flex;gap:8px">';
+  h+='<button class="btn btn-admin" onclick="Adm.saveFBNote(\''+f.id+'\')">💾 메모 저장</button>';
+  if(f.status!=='completed')h+='<button class="btn btn-ok" onclick="Adm.updateFB(\''+f.id+'\',\'status\',\'completed\')">✅ 완료 처리</button>';
+  h+='<button class="btn btn-danger" onclick="if(confirm(\'정말 삭제하시겠습니까?\'))Adm.deleteFB(\''+f.id+'\')">🗑 삭제</button>';
+  h+='</div>';
+
+  h+='</div></div>';
+  return h;
 }
 
 /* ── Service Requests ── */
@@ -2615,14 +2730,18 @@ function paginationBar(key,info){
 }
 
 /* ============ NAV & RENDER ============ */
-var _APL={dashboard:1,financeDash:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1,errorMonitor:1,usershub:1,dealhub:1,orderpay:1,contenthub:1,systemhub:1,voucherReport:1,changelog:1};
-function nav(p){S.page=p;S.searchFilter='';S.tab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.selectedDeal=null;S.analyticsTab='users';S.paymentTab='revenue';S.dealsTab='all';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
+var _APL={dashboard:1,financeDash:1,feedback:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1,errorMonitor:1,usershub:1,dealhub:1,orderpay:1,contenthub:1,systemhub:1,voucherReport:1,changelog:1};
+function nav(p){S.page=p;S.searchFilter='';S.tab='all';S._fbTab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedFB=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.selectedDeal=null;S.analyticsTab='users';S.paymentTab='revenue';S.dealsTab='all';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 function setSearch(v){S.searchFilter=v;S._pg={};render();}
 function setTab(t){S.tab=t;S._pg={};render();}
 
 function viewUser(uid){var u=S.users.find(function(x){return x.id===uid;});if(u){S.selectedUser=u;S.page='users';render();}}
 function viewAnalysis(aid){var a=S.analyses.find(function(x){return x.id===aid;});if(a){S.selectedAnalysis=a;S.page='analyses';render();}}
+function viewFB(id){var f=S.serviceRequests.find(function(x){return x.id===id;});if(f){S.selectedFB=f;S.page='feedback';render();}}
+function updateFB(id,field,val){sb.from('service_requests').update(field==='status'?{status:val,updated_at:new Date().toISOString()}:{[field]:val}).eq('id',id).then(function(r){if(r.error){toast('업데이트 실패','err');return;}var idx=S.serviceRequests.findIndex(function(x){return x.id===id;});if(idx>=0){if(field==='status')S.serviceRequests[idx].status=val;if(S.selectedFB&&S.selectedFB.id===id)S.selectedFB=S.serviceRequests[idx];}toast('업데이트 완료','ok');render();});}
+function saveFBNote(id){var note=document.getElementById('fb-admin-note');if(!note)return;sb.from('service_requests').update({admin_notes:note.value,updated_at:new Date().toISOString()}).eq('id',id).then(function(r){if(r.error){toast('저장 실패','err');return;}var idx=S.serviceRequests.findIndex(function(x){return x.id===id;});if(idx>=0)S.serviceRequests[idx].admin_notes=note.value;toast('메모 저장 완료','ok');});}
+function deleteFB(id){sb.from('service_requests').delete().eq('id',id).then(function(r){if(r.error){toast('삭제 실패','err');return;}S.serviceRequests=S.serviceRequests.filter(function(x){return x.id!==id;});S.selectedFB=null;toast('삭제 완료','ok');render();});}
 function viewSR(id){var sr=S.serviceRequests.find(function(x){return x.id===id;});if(sr){S.selectedSR=sr;S.page='services';render();}}
 function viewSeller(uid){var u=S.users.find(function(x){return x.id===uid;});if(u){S.selectedSeller=u;S.page='sellers';render();}}
 function viewBuyer(bid){var b=S.buyers.find(function(x){return x.id===bid;});if(b){S.selectedBuyer=b;S.page='buyersMgmt';render();}}
@@ -2902,6 +3021,7 @@ function renderPage(){
     case'chat':return pgChat();
     case'users':return pgUsers();
     case'analyses':return pgAnalyses();
+    case'feedback':return pgFeedback();
     case'services':return pgServiceReq();
     case'products':return pgProducts();
     case'projects':return pgProjects();
@@ -2927,6 +3047,7 @@ function renderSidebar(){
     {id:'sec',label:'운영'},
     {id:'dashboard',icon:'📊',label:'대시보드'},
     {id:'financeDash',icon:'💹',label:'재무 대시보드'},
+    {id:'feedback',icon:'📢',label:'피드백 관리',count:getFeedbacks().filter(function(f){return f.status==='pending';}).length||null},
     {id:'services',icon:'💼',label:'서비스 요청',count:pendSR||null},
     {id:'sec',label:'사용자'},
     {id:'usershub',icon:'👥',label:'유저 관리',count:S.users.length},
@@ -3223,7 +3344,7 @@ function toggleMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classLis
 function closeMob(){var sb=document.querySelector('.sidebar');if(sb)sb.classList.remove('mobile-open');}
 
 window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doReset:doReset,setSearch:setSearch,setTab:setTab,closeModal:closeModal,setUserSort:setUserSort,setAdmHubTab:setAdmHubTab,setFinanceDashTab:setFinanceDashTab,
-  viewUser:viewUser,viewAnalysis:viewAnalysis,viewSR:viewSR,notifySR:notifySR,
+  viewUser:viewUser,viewAnalysis:viewAnalysis,viewFB:viewFB,updateFB:updateFB,saveFBNote:saveFBNote,deleteFB:deleteFB,viewSR:viewSR,notifySR:notifySR,
   viewSeller:viewSeller,viewBuyer:viewBuyer,viewMatching:viewMatching,viewOrder:viewOrder,
   setAnalyticsTab:setAnalyticsTab,setPaymentTab:setPaymentTab,
   editUserPlan:editUserPlan,editUserRole:editUserRole,toggleUserActive:toggleUserActive,
