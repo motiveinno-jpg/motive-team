@@ -383,12 +383,33 @@ var S={
   // currency
   currency:'USD'
 };
-var FX={USD:1,KRW:1400,JPY:155,AED:3.67,EUR:0.92,GBP:0.79};
-function fxConvert(usd,toCur){if(!usd||!toCur||toCur==='USD')return usd;var rate=FX[toCur];return rate?Math.round(usd*rate):usd;}
-function fxFormat(usd,cur){cur=cur||S.currency;if(!usd)return'Price on request';var v=fxConvert(parseFloat(usd),cur);var sym={USD:'$',KRW:'',JPY:'¥',AED:'AED ',EUR:'€',GBP:'£'};return(sym[cur]||'')+v.toLocaleString()+(cur==='KRW'?' KRW':'');}
-function fxFromKRW(krw,toCur){if(!krw)return 0;var usd=parseFloat(krw)/FX.KRW;if(toCur==='USD')return Math.round(usd*100)/100;return fxConvert(usd,toCur);}
-function fxFormatKRW(krw,cur){cur=cur||S.currency;if(!krw)return'—';if(cur==='KRW')return parseInt(krw).toLocaleString()+' KRW';var v=fxFromKRW(krw,cur);var sym={USD:'$',JPY:'¥',AED:'AED ',EUR:'€',GBP:'£'};return(sym[cur]||'')+(cur==='USD'?v.toFixed(2):Math.round(v).toLocaleString());}
+var FX={USD:1,KRW:1400,JPY:150,AED:3.67,EUR:0.92,GBP:0.79,CNY:7.25,AUD:1.55,CAD:1.37,INR:83.5,BRL:5.0,THB:36,VND:24500,IDR:15700,MYR:4.7,SGD:1.35,TWD:32,HKD:7.82,SAR:3.75,TRY:32,PLN:4.0,SEK:10.5,CHF:0.89,MXN:17.2,PHP:56,NOK:10.8,DKK:6.9,RUB:92,ZAR:18.7,NZD:1.68};
+var LOCAL_CURRENCY_MAP={KR:'KRW',JP:'JPY',CN:'CNY',EU:'EUR',DE:'EUR',FR:'EUR',IT:'EUR',ES:'EUR',NL:'EUR',BE:'EUR',AT:'EUR',PT:'EUR',IE:'EUR',FI:'EUR',GR:'EUR',GB:'GBP',AU:'AUD',CA:'CAD',IN:'INR',BR:'BRL',MX:'MXN',TH:'THB',VN:'VND',ID:'IDR',MY:'MYR',SG:'SGD',PH:'PHP',TW:'TWD',HK:'HKD',AE:'AED',SA:'SAR',TR:'TRY',RU:'RUB',PL:'PLN',SE:'SEK',NO:'NOK',DK:'DKK',CH:'CHF',NZ:'NZD',ZA:'ZAR',US:'USD'};
+var CURRENCY_SYMBOLS={USD:'$',KRW:'\u20A9',JPY:'\u00A5',CNY:'\u00A5',EUR:'\u20AC',GBP:'\u00A3',AUD:'A$',CAD:'C$',INR:'\u20B9',BRL:'R$',THB:'\u0E3F',VND:'\u20AB',IDR:'Rp',MYR:'RM',SGD:'S$',TWD:'NT$',HKD:'HK$',AED:'\u062F.\u0625',SAR:'\uFDFC',TRY:'\u20BA',PLN:'z\u0142',SEK:'kr',CHF:'CHF',MXN:'$',PHP:'\u20B1',NOK:'kr',DKK:'kr',RUB:'\u20BD',ZAR:'R',NZD:'NZ$'};
+function _getLocalCurrency(){
+  var cc=S.user&&S.user.country;if(!cc)return'USD';
+  return LOCAL_CURRENCY_MAP[cc]||LOCAL_CURRENCY_MAP[cc.toUpperCase()]||'USD';
+}
+function _getCurrencySymbol(c){return CURRENCY_SYMBOLS[c]||c+' ';}
+function fxConvert(usd,toCur){if(!usd||!toCur||toCur==='USD')return usd;var rate=FX[toCur];return rate?usd*rate:usd;}
+function fxFormat(usd,cur){cur=cur||S.currency;if(!usd)return'Price on request';var v=fxConvert(parseFloat(usd),cur);var sym=_getCurrencySymbol(cur);if(cur==='JPY'||cur==='VND'||cur==='IDR'||cur==='KRW')return sym+Math.round(v).toLocaleString();return sym+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fxFromKRW(krw,toCur){if(!krw)return 0;var usd=parseFloat(krw)/(FX.KRW||1400);if(toCur==='USD')return Math.round(usd*100)/100;return fxConvert(usd,toCur);}
+function fxFormatKRW(krw,cur){cur=cur||S.currency;if(!krw)return'\u2014';if(cur==='KRW')return parseInt(krw).toLocaleString()+' KRW';var v=fxFromKRW(krw,cur);var sym=_getCurrencySymbol(cur);if(cur==='USD')return sym+v.toFixed(2);if(cur==='JPY'||cur==='VND'||cur==='IDR')return sym+Math.round(v).toLocaleString();return sym+v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});}
 function setCurrency(c){S.currency=c;render();}
+function toggleCurrency(){
+  var local=_getLocalCurrency();
+  if(local==='USD'){
+    // For US-based users, cycle through USD -> EUR -> GBP -> JPY -> USD
+    var cycle=['USD','EUR','GBP','JPY','CNY','KRW'];
+    var idx=cycle.indexOf(S.currency);
+    S.currency=cycle[(idx+1)%cycle.length];
+  } else {
+    S.currency=S.currency===local?'USD':local;
+  }
+  localStorage.setItem('buyer_currency',S.currency);
+  if(S.user){sb.from('users').update({preferred_currency:S.currency}).eq('id',S.user.id).then(function(r){if(r.error)console.error('[toggleCurrency]',r.error);});}
+  render();
+}
 function toggleMob(){var sb=document.querySelector('.sidebar');var ov=document.querySelector('.mob-overlay');if(sb){sb.classList.toggle('mobile-open');if(ov)ov.classList.toggle('active');}}
 function closeMob(){var sb=document.querySelector('.sidebar');var ov=document.querySelector('.mob-overlay');if(sb)sb.classList.remove('mobile-open');if(ov)ov.classList.remove('active');}
 
@@ -894,6 +915,9 @@ function renderTopbar(){
   var h='<div class="topbar"><div class="topbar-title">'+(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Command palette hint
   h+='<button onclick="B.openCmdPalette()" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--bd);color:var(--w40);background:transparent;display:flex;align-items:center;gap:6px;cursor:pointer"><span>🔍</span><span style="font-size:11px">Search</span><kbd style="font-size:9px;background:var(--w10);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px">⌘K</kbd></button>';
+  // Currency toggle
+  var _curSym=_getCurrencySymbol(S.currency);
+  h+='<button onclick="B.toggleCurrency()" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--bd);color:var(--w60);background:transparent;cursor:pointer;display:flex;align-items:center;gap:4px" title="Toggle currency"><span style="font-size:14px">'+_curSym.trim()+'</span><span style="font-size:10px;color:var(--w40)">'+S.currency+'</span></button>';
   // Notification bell
   h+='<div class="notif-bell" onclick="event.stopPropagation();B.toggleNotif()">&#x1F514;';
   if(S.notifUnread)h+='<div class="notif-dot" style="width:auto;min-width:16px;height:16px;padding:0 4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;top:-4px;right:-6px">'+S.notifUnread+'</div>';
@@ -1033,6 +1057,9 @@ function loadUser(){
       }
       if(r.data.role!=='buyer'&&r.data.role!=='admin'){window.location.href='/app';return;}
       S.user=r.data;S.loading=false;
+      // Restore currency preference
+      var _savedCur=r.data.preferred_currency||localStorage.getItem('buyer_currency');
+      if(_savedCur&&FX[_savedCur]!==undefined)S.currency=_savedCur;
       loadAllData();
     }).catch(function(){set({loading:false,user:null});});
   }).catch(function(){set({loading:false,user:null});});
@@ -1183,6 +1210,12 @@ function pgDash(){
   var pendingOrders=S.orders.filter(function(o){return o.status==='pending'||o.status==='confirmed';}).length;
   var completedOrders=S.orders.filter(function(o){return o.status==='completed';}).length;
   var totalOrderAmt=S.orders.reduce(function(s,o){return s+(parseFloat(o.total_amount)||0);},0);
+  // Settlement & payment tracking
+  var unpaidOrders=S.orders.filter(function(o){return o.payment_status!=='paid'&&o.status!=='cancelled';});
+  var unpaidAmt=unpaidOrders.reduce(function(s,o){return s+(parseFloat(o.total_amount)||0);},0);
+  var overdueOrders=unpaidOrders.filter(function(o){var created=new Date(o.created_at);var now=new Date();return(now-created)>30*24*60*60*1000;});
+  var settlementPending=S.orders.filter(function(o){return o.payment_status==='partial'||o.payment_status==='deposit_received';});
+  var settlementAmt=settlementPending.reduce(function(s,o){var paid=parseFloat(o.paid_amount||0);return s+((parseFloat(o.total_amount)||0)-paid);},0);
   // Search credits info
   var searchUsed=S.searchCreditsUsed||0;
   var searchLimit=S.searchCreditsLimit||5;
@@ -1192,10 +1225,12 @@ function pgDash(){
   if(S.savedProducts.length||!isNew)h+='<div class="stat-card" style="cursor:pointer" onclick="B.nav(\'saved\')"><div class="stat-val" style="color:#3b82f6">'+S.savedProducts.length+'</div><div class="stat-label">Saved Products</div></div>';
   if(activeDeals||!isNew)h+='<div class="stat-card" style="cursor:pointer" onclick="B.nav(\'deals\')"><div class="stat-val" style="color:var(--ok)">'+activeDeals+'</div><div class="stat-label">Active Deals</div></div>';
   if(pendingOrders||activeOrders)h+='<div class="stat-card" style="cursor:pointer" onclick="B.nav(\'orders\')"><div class="stat-val" style="color:var(--acc)">'+pendingOrders+'</div><div class="stat-label">Pending Orders</div></div>';
+  if(unpaidAmt>0)h+='<div class="stat-card" style="cursor:pointer" onclick="B.nav(\'orders\')"><div class="stat-val" style="color:var(--err)">'+fxFormat(unpaidAmt)+'</div><div class="stat-label">Unpaid Balance</div>'+(overdueOrders.length?'<div style="font-size:10px;color:var(--err);margin-top:2px">'+overdueOrders.length+' overdue</div>':'')+'</div>';
+  if(settlementAmt>0)h+='<div class="stat-card" style="cursor:pointer" onclick="B.nav(\'orders\')"><div class="stat-val" style="color:var(--warn)">'+fxFormat(settlementAmt)+'</div><div class="stat-label">Settlement Pending</div><div style="font-size:10px;color:var(--w30);margin-top:2px">'+settlementPending.length+' orders awaiting</div></div>';
   if(S.inquiries.length)h+='<div class="stat-card"><div class="stat-val" style="color:var(--purple)">'+S.inquiries.length+'</div><div class="stat-label">Inquiries</div><div style="font-size:10px;color:var(--w30);margin-top:2px">'+pending+' pending</div></div>';
   if(S.chatUnread)h+='<div class="stat-card" style="cursor:pointer" onclick="B.nav(\'messages\')"><div class="stat-val" style="color:#ec4899">'+S.chatUnread+'</div><div class="stat-label">Unread Messages</div></div>';
   h+='</div>';
-  if(totalOrderAmt>0){h+='<div class="card" style="margin-bottom:16px;border-color:var(--pri)"><div class="card-b" style="display:flex;align-items:center;gap:16px;padding:14px 18px"><div style="font-size:24px">&#x1F4B0;</div><div><div style="font-size:11px;color:var(--w40)">Total Order Value</div><div style="font-size:20px;font-weight:800;color:var(--pri)">$'+totalOrderAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</div></div></div></div>';}
+  if(totalOrderAmt>0){h+='<div class="card" style="margin-bottom:16px;border-color:var(--pri)"><div class="card-b" style="display:flex;align-items:center;gap:16px;padding:14px 18px"><div style="font-size:24px">&#x1F4B0;</div><div><div style="font-size:11px;color:var(--w40)">Total Order Value</div><div style="font-size:20px;font-weight:800;color:var(--pri)">'+fxFormat(totalOrderAmt)+'</div></div></div></div>';}
 
   // Quick actions
   h+='<div class="card"><div class="card-h">Quick Actions</div><div class="card-b"><div class="grid-4">';
@@ -2695,8 +2730,8 @@ function pgProfile(){
   /* Plan comparison cards */
   var bPlans=[
     {id:'free',n:'Free',pr:'$0',desc:'1 search, 1 inquiry',c:'var(--w40)'},
-    {id:'starter',n:'Starter',pr:'$29/mo',yp:'$23.20/mo (annual)',desc:'30 searches, 15 inquiries/mo',c:'var(--pri)'},
-    {id:'pro',n:'Pro',pr:'$89/mo',yp:'$71.20/mo (annual)',desc:'200 searches, 50 inquiries/mo',c:'var(--acc)'},
+    {id:'starter',n:'Starter',pr:'$29/mo',sp:'$26.10/mo (6mo)',yp:'$23.20/mo (annual)',desc:'30 searches, 15 inquiries/mo',c:'var(--pri)'},
+    {id:'pro',n:'Pro',pr:'$89/mo',sp:'$80.10/mo (6mo)',yp:'$71.20/mo (annual)',desc:'200 searches, 50 inquiries/mo',c:'var(--acc)'},
     {id:'enterprise',n:'Enterprise',pr:'Custom',desc:'Unlimited everything',c:'var(--purple)'}
   ];
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">';
@@ -2706,9 +2741,10 @@ function pgProfile(){
     h+='<div style="padding:12px;border-radius:10px;border:1px solid '+(isCur?p.c:'var(--bd)')+';background:'+(isCur?p.c+'10':'var(--w04)')+';text-align:center">';
     h+='<div style="font-size:11px;font-weight:800;color:'+p.c+';margin-bottom:4px">'+p.n+'</div>';
     h+='<div style="font-size:16px;font-weight:800;margin-bottom:2px">'+p.pr+'</div>';
+    if(p.sp)h+='<div style="font-size:10px;color:var(--ok)">'+p.sp+'</div>';
     if(p.yp)h+='<div style="font-size:10px;color:var(--ok)">'+p.yp+'</div>';
     h+='<div style="font-size:10px;color:var(--w40);margin-top:4px">'+p.desc+'</div>';
-    if(!isCur&&isUp&&p.id!=='enterprise')h+='<a href="mailto:creative@mo-tive.com?subject=Upgrade%20to%20'+encodeURIComponent(p.n)+'" class="btn btn-pri btn-sm btn-block" style="margin-top:8px;font-size:10px;text-decoration:none">Upgrade</a>';
+    if(!isCur&&isUp&&p.id!=='enterprise')h+='<button class="btn btn-pri btn-sm btn-block" onclick="B.openBuyerCheckout(\''+p.id+'\')" style="margin-top:8px;font-size:10px">Upgrade</button>';
     else if(isCur)h+='<div style="margin-top:8px;font-size:10px;color:var(--w20)">Current</div>';
     else if(p.id==='enterprise')h+='<a href="mailto:contact@motiveinno.com" class="btn btn-ghost btn-sm btn-block" style="margin-top:8px;font-size:10px">Contact Us</a>';
     h+='</div>';
@@ -4281,7 +4317,7 @@ function pgOrders(){
     h+='<div style="margin-top:6px"><span class="badge '+payCls+'">'+(o.payment_status||'unpaid')+'</span></div></div></div>';
     // Order details row
     h+='<div style="display:flex;gap:20px;margin-top:14px;font-size:12px;color:var(--w60)">';
-    h+='<div><span style="color:var(--w40)">Amount:</span> <strong style="color:var(--acc)">$'+Number(o.total_amount||0).toLocaleString()+'</strong> '+esc(o.currency||'USD')+'</div>';
+    h+='<div><span style="color:var(--w40)">Amount:</span> <strong style="color:var(--acc)">'+fxFormat(o.total_amount)+'</strong></div>';
     h+='<div><span style="color:var(--w40)">Terms:</span> '+esc(o.payment_terms||'-')+'</div>';
     h+='<div><span style="color:var(--w40)">Incoterms:</span> '+esc(o.incoterms||'FOB')+'</div>';
     if(o.estimated_ship_date)h+='<div><span style="color:var(--w40)">Ship by:</span> '+o.estimated_ship_date+'</div>';
@@ -4311,7 +4347,7 @@ function renderOrderDetailModal(){
   // Info grid
   h+='<div class="grid-2" style="margin-bottom:16px">';
   h+='<div class="form-group"><div class="form-label">Seller</div><div style="font-weight:600">'+esc(getSellerName(o.user_id))+'</div></div>';
-  h+='<div class="form-group"><div class="form-label">Total Amount</div><div style="font-weight:800;color:var(--acc);font-size:18px">$'+Number(o.total_amount||0).toLocaleString()+'</div></div>';
+  h+='<div class="form-group"><div class="form-label">Total Amount</div><div style="font-weight:800;color:var(--acc);font-size:18px">'+fxFormat(o.total_amount)+'</div></div>';
   h+='<div class="form-group"><div class="form-label">Payment Terms</div><div>'+esc(o.payment_terms||'-')+'</div></div>';
   h+='<div class="form-group"><div class="form-label">Payment Status</div><div><span class="badge '+(o.payment_status==='paid'?'badge-ok':'badge-acc')+'">'+(o.payment_status||'unpaid')+'</span></div></div>';
   h+='</div>';
@@ -4900,8 +4936,8 @@ function openBuyerCheckout(planId){
   '<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:8px">Billing Cycle</div>'+
   '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">'+
   '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--pri);background:rgba(0,212,255,.06);cursor:pointer"><input type="radio" name="b_cycle" value="m" checked style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">Monthly</span><span style="font-size:11px;color:var(--w40);margin-left:8px">'+pr.dm+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.m+'</span></label>'+
-  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:not-allowed;opacity:0.4"><input type="radio" name="b_cycle" value="s" disabled style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">6 Months</span><span style="font-size:11px;color:var(--w40);margin-left:8px">Coming soon</span></div><span style="font-size:13px;font-weight:800;color:var(--w40)">'+pr.s+'</span></label>'+
-  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:not-allowed;opacity:0.4"><input type="radio" name="b_cycle" value="a" disabled style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">Annual</span><span style="font-size:11px;color:var(--w40);margin-left:8px">Coming soon</span></div><span style="font-size:13px;font-weight:800;color:var(--w40)">'+pr.a+'</span></label></div>'+
+  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:pointer" onclick="this.querySelector(\'input\').checked=true;document.querySelectorAll(\'input[name=b_cycle]\').forEach(function(r){r.closest(\'label\').style.borderColor=r.checked?\'var(--pri)\':\'var(--bd)\';r.closest(\'label\').style.background=r.checked?\'rgba(0,212,255,.06)\':\'transparent\'})"><input type="radio" name="b_cycle" value="s" style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">6 Months</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.ds+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.s+'</span></label>'+
+  '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--bd);cursor:pointer" onclick="this.querySelector(\'input\').checked=true;document.querySelectorAll(\'input[name=b_cycle]\').forEach(function(r){r.closest(\'label\').style.borderColor=r.checked?\'var(--pri)\':\'var(--bd)\';r.closest(\'label\').style.background=r.checked?\'rgba(0,212,255,.06)\':\'transparent\'})"><input type="radio" name="b_cycle" value="a" style="accent-color:var(--pri)"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">Annual</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.da+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.a+'</span></label></div>'+
   '<div style="font-size:11px;color:var(--w40)">Secure payment via Stripe. Cancel anytime.</div>';
   document.body.insertAdjacentHTML('beforeend','<div class="modal-overlay" id="bck" onclick="if(event.target===this)B.closeModal(\'bck\')"><div class="modal" style="max-width:420px"><div class="modal-h"><h3>Upgrade Plan</h3><button class="modal-close" onclick="B.closeModal(\'bck\')">&#10005;</button></div><div class="modal-b">'+body+'</div><div class="modal-f"><button class="btn btn-ghost" onclick="B.closeModal(\'bck\')">Cancel</button><button class="btn btn-pri" id="bck-btn" onclick="B.initBuyerStripe(\''+planId+'\')">Pay with Card</button></div></div></div>');
   var m=document.getElementById('bck');if(m)m.style.display='flex';
@@ -5068,7 +5104,7 @@ window.B={
   // Onboarding
   toggleBuyerCat:toggleBuyerCat,setBuyerExp:setBuyerExp,nextBuyerOb:nextBuyerOb,goToOnboardingStep:goToOnboardingStep,
   skipBuyerOnboarding:skipBuyerOnboarding,completeBuyerOnboarding:completeBuyerOnboarding,
-  setCurrency:setCurrency,
+  setCurrency:setCurrency,toggleCurrency:toggleCurrency,
   toggleMob:toggleMob,closeMob:closeMob,
   // Hub tabs
   setBuyHubTab:setBuyHubTab,
