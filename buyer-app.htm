@@ -387,7 +387,9 @@ var S={
   // recent activity feed
   recentActivity:[],
   // currency
-  currency:'USD'
+  currency:'USD',
+  // FTA simulator
+  _ftaBuyerResultHTML:''
 };
 var FX={USD:1,KRW:1400,JPY:155,AED:3.67,EUR:0.92,GBP:0.79};
 function fxConvert(usd,toCur){if(!usd||!toCur||toCur==='USD')return usd;var rate=FX[toCur];return rate?Math.round(usd*rate):usd;}
@@ -501,6 +503,7 @@ function renderPage(){
     case'orders':return pgOrders();
     case'shipments':return pgShipments();
     case'documents':return pgDocs();
+    case'fta':return pgFTA();
     case'partnership':return pgPartnership();
     case'product-detail':return pgProductDetail();
     default:return pgDash();
@@ -879,6 +882,7 @@ function renderSidebar(){
     {id:'pipeline',icon:'&#x1F680;',label:_t('Sourcing Pipeline','소싱 파이프라인'),count:pipelineCount||0,subs:['deals','inquiries','pipeline']},
     {id:'ordership',icon:'&#x1F4E6;',label:_t('Orders & Shipping','주문 및 배송'),count:activeOrders||0,subs:['orders','shipments','ordership']},
     {id:'documents',icon:'&#x1F4C4;',label:_t('Documents','서류')},
+    {id:'fta',icon:'&#x1F310;',label:_t('FTA Simulator','FTA 시뮬레이터')},
     {id:'sec',label:_t('Account','계정')},
     {id:'profilehub',icon:'&#x1F464;',label:_t('Profile & Settings','프로필 및 설정'),subs:['profile','saved','partnership','profilehub']}
   ];
@@ -895,7 +899,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  var titles={dashboard:_t('Dashboard','대시보드'),search:_t('Product Search','제품 검색'),sourcing:_t('Find Manufacturers','제조사 찾기'),deals:_t('Sourcing Pipeline','소싱 파이프라인'),inquiries:_t('My Inquiries','내 문의'),marketplace:_t('Marketplace','마켓플레이스'),saved:_t('Saved Products','저장된 제품'),profile:_t('Profile & Settings','프로필 및 설정'),messages:_t('Messages','메시지'),orders:_t('Orders','주문'),shipments:_t('Shipments','배송'),documents:_t('Documents','서류'),'product-detail':_t('Product Details','제품 상세'),partnership:_t('Partnership','파트너십'),pipeline:_t('Sourcing Pipeline','소싱 파이프라인'),ordership:_t('Orders & Shipping','주문 및 배송'),profilehub:_t('Profile & Settings','프로필 및 설정')};
+  var titles={dashboard:_t('Dashboard','대시보드'),search:_t('Product Search','제품 검색'),sourcing:_t('Find Manufacturers','제조사 찾기'),deals:_t('Sourcing Pipeline','소싱 파이프라인'),inquiries:_t('My Inquiries','내 문의'),marketplace:_t('Marketplace','마켓플레이스'),saved:_t('Saved Products','저장된 제품'),profile:_t('Profile & Settings','프로필 및 설정'),messages:_t('Messages','메시지'),orders:_t('Orders','주문'),shipments:_t('Shipments','배송'),documents:_t('Documents','서류'),fta:_t('FTA Simulator','FTA 시뮬레이터'),'product-detail':_t('Product Details','제품 상세'),partnership:_t('Partnership','파트너십'),pipeline:_t('Sourcing Pipeline','소싱 파이프라인'),ordership:_t('Orders & Shipping','주문 및 배송'),profilehub:_t('Profile & Settings','프로필 및 설정')};
   var h='<div class="topbar"><div class="topbar-title">'+(titles[S.page]||'Dashboard')+'</div><div style="display:flex;align-items:center;gap:14px">';
   // Command palette hint
   h+='<button onclick="B.openCmdPalette()" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--bd);color:var(--w40);background:transparent;display:flex;align-items:center;gap:6px;cursor:pointer"><span>🔍</span><span style="font-size:11px">'+_t('Search','검색')+'</span><kbd style="font-size:9px;background:var(--w10);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px">⌘K</kbd></button>';
@@ -4688,6 +4692,438 @@ function submitPartnership(){
   }).catch(function(){S._submitting=false;toast(_t('Failed to send. Please try again later.','전송 실패. 나중에 다시 시도해 주세요.'),'err');});
 }
 
+/* === FTA SIMULATOR PAGE === */
+var _FTA_COUNTRIES = [
+  {code:'US',name:'United States',flag:'🇺🇸'},
+  {code:'JP',name:'Japan',flag:'🇯🇵'},
+  {code:'CN',name:'China',flag:'🇨🇳'},
+  {code:'DE',name:'Germany',flag:'🇩🇪'},
+  {code:'GB',name:'United Kingdom',flag:'🇬🇧'},
+  {code:'FR',name:'France',flag:'🇫🇷'},
+  {code:'NL',name:'Netherlands',flag:'🇳🇱'},
+  {code:'IT',name:'Italy',flag:'🇮🇹'},
+  {code:'ES',name:'Spain',flag:'🇪🇸'},
+  {code:'VN',name:'Vietnam',flag:'🇻🇳'},
+  {code:'SG',name:'Singapore',flag:'🇸🇬'},
+  {code:'AU',name:'Australia',flag:'🇦🇺'},
+  {code:'CA',name:'Canada',flag:'🇨🇦'},
+  {code:'IN',name:'India',flag:'🇮🇳'},
+  {code:'ID',name:'Indonesia',flag:'🇮🇩'},
+  {code:'TH',name:'Thailand',flag:'🇹🇭'},
+  {code:'MY',name:'Malaysia',flag:'🇲🇾'},
+  {code:'PH',name:'Philippines',flag:'🇵🇭'},
+  {code:'NZ',name:'New Zealand',flag:'🇳🇿'},
+  {code:'CL',name:'Chile',flag:'🇨🇱'},
+  {code:'PE',name:'Peru',flag:'🇵🇪'},
+  {code:'CO',name:'Colombia',flag:'🇨🇴'},
+  {code:'TR',name:'Turkey',flag:'🇹🇷'},
+  {code:'IL',name:'Israel',flag:'🇮🇱'},
+  {code:'KH',name:'Cambodia',flag:'🇰🇭'},
+  {code:'NO',name:'Norway',flag:'🇳🇴'},
+  {code:'CH',name:'Switzerland',flag:'🇨🇭'},
+  {code:'MX',name:'Mexico',flag:'🇲🇽'},
+  {code:'BR',name:'Brazil',flag:'🇧🇷'},
+  {code:'AE',name:'UAE',flag:'🇦🇪'},
+  {code:'SA',name:'Saudi Arabia',flag:'🇸🇦'}
+];
+var _FTA_ORIGIN_COUNTRIES = [
+  {code:'KR',name:'South Korea',flag:'🇰🇷'},
+  {code:'CN',name:'China',flag:'🇨🇳'},
+  {code:'VN',name:'Vietnam',flag:'🇻🇳'},
+  {code:'JP',name:'Japan',flag:'🇯🇵'},
+  {code:'TH',name:'Thailand',flag:'🇹🇭'},
+  {code:'ID',name:'Indonesia',flag:'🇮🇩'},
+  {code:'IN',name:'India',flag:'🇮🇳'},
+  {code:'MY',name:'Malaysia',flag:'🇲🇾'},
+  {code:'DE',name:'Germany',flag:'🇩🇪'},
+  {code:'US',name:'United States',flag:'🇺🇸'},
+  {code:'IT',name:'Italy',flag:'🇮🇹'},
+  {code:'TW',name:'Taiwan',flag:'🇹🇼'}
+];
+var _FTA_PRODUCT_CATS = [
+  {id:'beauty',label:_t('Beauty & Cosmetics','뷰티/화장품'),icon:'💄'},
+  {id:'food',label:_t('Food & Beverages','식품/음료'),icon:'🍜'},
+  {id:'health',label:_t('Health Supplements','건강기능식품'),icon:'💊'},
+  {id:'electronics',label:_t('Electronics','전자제품'),icon:'📱'},
+  {id:'fashion',label:_t('Fashion & Apparel','패션/의류'),icon:'👜'},
+  {id:'home',label:_t('Home & Living','홈/리빙'),icon:'🏠'},
+  {id:'auto',label:_t('Auto Parts','자동차부품'),icon:'🚗'},
+  {id:'machinery',label:_t('Machinery','기계류'),icon:'⚙️'},
+  {id:'chemicals',label:_t('Chemicals','화학제품'),icon:'🧪'},
+  {id:'textiles',label:_t('Textiles','섬유/직물'),icon:'🧵'},
+  {id:'medical',label:_t('Medical Devices','의료기기'),icon:'🩺'},
+  {id:'other',label:_t('Other','기타'),icon:'📦'}
+];
+
+function pgFTA(){
+  var h = '';
+  /* Hero banner */
+  h += '<div style="padding:24px;border-radius:var(--r);background:linear-gradient(135deg,rgba(0,212,255,.08),rgba(0,136,255,.06));border:1px solid rgba(0,212,255,.15);margin-bottom:20px">';
+  h += '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">';
+  h += '<div style="font-size:40px">🌐</div>';
+  h += '<div style="flex:1;min-width:200px"><div style="font-size:18px;font-weight:800;margin-bottom:4px">'+_t('FTA Tariff Simulator','FTA 관세 시뮬레이터')+'</div>';
+  h += '<div style="font-size:13px;color:var(--w60);line-height:1.6">'+_t('Calculate applicable FTA agreements, compare MFN vs preferential tariff rates, and estimate your duty savings. Powered by AI analysis of 21+ Korean FTA agreements.','적용 가능한 FTA 협정을 조회하고, MFN 대비 특혜관세율을 비교하며, 관세 절감액을 산출합니다. 한국 21개 FTA 데이터 기반 AI 분석.')+'</div></div></div></div>';
+  /* Input form */
+  h += '<div class="card"><div class="card-h"><span>📋 '+_t('Simulation Input','시뮬레이션 입력')+'</span></div><div class="card-b">';
+  h += '<form id="buyerFtaForm" onsubmit="event.preventDefault();B.runFtaSim()">';
+  /* Row 1: Category + HS Code */
+  h += '<div class="form-row">';
+  h += '<div class="form-group"><label class="form-label">'+_t('Product Category','제품 카테고리')+' *</label>';
+  h += '<select class="form-select" name="fta_category" required>';
+  h += '<option value="">'+_t('Select category...','카테고리 선택...')+'</option>';
+  _FTA_PRODUCT_CATS.forEach(function(c){
+    h += '<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>';
+  });
+  h += '</select></div>';
+  h += '<div class="form-group"><label class="form-label">'+_t('HS Code','HS코드')+' <span style="font-size:10px;color:var(--w30)">('+_t('optional, 4-10 digits','선택, 4~10자리')+')</span></label>';
+  h += '<input class="form-input" name="fta_hs_code" placeholder="'+_t('e.g. 3304.99 or 330499','예: 3304.99 또는 330499')+'" maxlength="12"></div>';
+  h += '</div>';
+  /* Row 2: Origin + Destination */
+  h += '<div class="form-row">';
+  h += '<div class="form-group"><label class="form-label">'+_t('Origin Country','원산지 국가')+' *</label>';
+  h += '<select class="form-select" name="fta_origin" required>';
+  _FTA_ORIGIN_COUNTRIES.forEach(function(c){
+    h += '<option value="'+c.code+'"'+(c.code==='KR'?' selected':'')+'>'+c.flag+' '+c.name+'</option>';
+  });
+  h += '</select></div>';
+  h += '<div class="form-group"><label class="form-label">'+_t('Destination Country','수입 대상국')+' * <span style="font-size:9px;color:var(--w30)">🤝='+_t('FTA partner','FTA 체결국')+'</span></label>';
+  h += '<select class="form-select" name="fta_destination" required>';
+  h += '<option value="">'+_t('Select destination...','수입국 선택...')+'</option>';
+  _FTA_COUNTRIES.forEach(function(c){
+    h += '<option value="'+c.code+'">'+c.flag+' '+c.name+'</option>';
+  });
+  h += '</select></div>';
+  h += '</div>';
+  /* Row 3: Product value + Product description */
+  h += '<div class="form-row">';
+  h += '<div class="form-group"><label class="form-label">'+_t('Estimated Product Value (USD)','예상 상품가액 (USD)')+'</label>';
+  h += '<div style="position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;font-weight:700;color:var(--pri);pointer-events:none;opacity:.7">$</span>';
+  h += '<input class="form-input" name="fta_value" type="number" step="0.01" min="0" placeholder="'+_t('e.g. 10000','예: 10000')+'" style="padding-left:28px"></div></div>';
+  h += '<div class="form-group"><label class="form-label">'+_t('Product Description','제품 설명')+' <span style="font-size:10px;color:var(--w30)">('+_t('optional, helps AI accuracy','선택, AI 정확도 향상')+')</span></label>';
+  h += '<input class="form-input" name="fta_product_desc" placeholder="'+_t('e.g. Korean skincare serum with niacinamide','예: 나이아신아마이드 함유 한국 스킨케어 세럼')+'"></div>';
+  h += '</div>';
+  /* Multi-market comparison checkboxes */
+  h += '<div style="margin-top:8px"><label class="form-label" style="font-size:11px;color:var(--w30)">'+_t('Multi-Market Comparison (optional, max 8)','복수 시장 비교 (선택, 최대 8개)')+'</label>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">';
+  ['US','JP','CN','DE','GB','VN','SG','AU','CA','IN','ID','TH','MY','NZ','TR'].forEach(function(code){
+    var c = _FTA_COUNTRIES.find(function(fc){return fc.code===code;});
+    if(c) h += '<label style="display:flex;align-items:center;gap:3px;padding:3px 8px;border-radius:6px;background:var(--w08);cursor:pointer;font-size:11px;transition:all .15s"><input type="checkbox" name="fta_multi_'+code+'" value="'+code+'" style="width:13px;height:13px;accent-color:var(--pri)"> '+c.flag+' '+c.name+'</label>';
+  });
+  h += '</div></div>';
+  /* Submit buttons */
+  h += '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">';
+  h += '<button class="btn btn-pri" type="submit" id="fta-sim-btn" style="flex:1;min-width:140px">🌐 '+_t('Simulate FTA','FTA 시뮬레이션')+'</button>';
+  h += '<button class="btn btn-ghost" type="button" onclick="B.runFtaMulti()" style="flex:1;min-width:140px">📊 '+_t('Compare Markets','복수시장 비교')+'</button>';
+  h += '</div>';
+  h += '</form>';
+  h += '<div id="fta-buyer-result">'+(S._ftaBuyerResultHTML||'')+'</div>';
+  h += '</div></div>';
+  /* FTA Info card */
+  h += '<div class="card" style="margin-top:4px"><div class="card-b" style="padding:14px">';
+  h += '<div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--w90)">🇰🇷 '+_t('Korea FTA Network (21 Agreements)','한국 FTA 현황 (21개 협정)')+'</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  var ftaList = ['KORUS (US)','Korea-EU','Korea-UK','Korea-China','RCEP','Korea-ASEAN','Korea-Vietnam','Korea-India CEPA','Korea-Australia','Korea-Canada','Korea-New Zealand','Korea-Singapore','Korea-EFTA','Korea-Turkey','Korea-Chile','Korea-Peru','Korea-Colombia','Korea-Israel','Korea-Cambodia','Korea-Indonesia CEPA'];
+  ftaList.forEach(function(f){
+    h += '<span style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(0,212,255,.06);color:var(--pri);border:1px solid rgba(0,212,255,.1)">'+f+'</span>';
+  });
+  h += '</div>';
+  h += '<div style="font-size:10px;color:var(--w20);margin-top:8px">* '+_t('FTA preferential rates require Certificate of Origin (C/O). Product-specific origin criteria must be met.','FTA 특혜관세 적용 시 원산지증명서(C/O) 필요. 품목별 원산지 기준 충족 필수.')+'</div>';
+  h += '</div></div>';
+  return h;
+}
+
+function _ftaFormData(){
+  var form = document.getElementById('buyerFtaForm');
+  if(!form) return null;
+  var d = {};
+  var inputs = form.querySelectorAll('input,select,textarea');
+  inputs.forEach(function(el){
+    if(el.name && el.type !== 'checkbox') d[el.name] = el.value;
+  });
+  return d;
+}
+
+function runFtaSim(){
+  var d = _ftaFormData();
+  if(!d) return;
+  if(!d.fta_category){toast(_t('Please select a product category','제품 카테고리를 선택하세요'),'warn');return;}
+  if(!d.fta_destination){toast(_t('Please select a destination country','수입 대상국을 선택하세요'),'warn');return;}
+  var btn = document.getElementById('fta-sim-btn');
+  var el = document.getElementById('fta-buyer-result');
+  if(btn){btn.disabled=true;btn.innerHTML='<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:pulse .6s linear infinite;vertical-align:middle;margin-right:6px"></span>'+_t('Analyzing...','분석 중...');}
+  if(el) el.innerHTML='<div style="text-align:center;padding:24px"><div style="width:28px;height:28px;border:3px solid var(--w12);border-top-color:var(--pri);border-radius:50%;animation:pulse .8s linear infinite;margin:0 auto 10px"></div><div style="font-size:12px;color:var(--w40)">'+_t('Running FTA simulation...','FTA 시뮬레이션 실행 중...')+'</div></div>';
+  var hsCode = (d.fta_hs_code||'').replace(/\./g,'').trim();
+  var prompt = _buildFtaPrompt(d, hsCode, [d.fta_destination]);
+  _callFtaAI(prompt, function(result){
+    if(btn){btn.disabled=false;btn.innerHTML='🌐 '+_t('Simulate FTA','FTA 시뮬레이션');}
+    if(result.error){
+      if(el) el.innerHTML='<div style="color:var(--err);padding:16px;text-align:center;margin-top:12px">'+esc(result.error)+'</div>';
+      return;
+    }
+    _renderBuyerFTAResult(el, result, d);
+  });
+}
+
+function runFtaMulti(){
+  var d = _ftaFormData();
+  if(!d) return;
+  if(!d.fta_category){toast(_t('Please select a product category','제품 카테고리를 선택하세요'),'warn');return;}
+  var dests = [];
+  document.querySelectorAll('[name^="fta_multi_"]').forEach(function(cb){if(cb.checked) dests.push(cb.value);});
+  if(dests.length < 2){toast(_t('Select at least 2 markets to compare','비교할 시장을 2개 이상 선택하세요'),'warn');return;}
+  if(dests.length > 8){toast(_t('Maximum 8 markets allowed','최대 8개 시장까지 비교 가능합니다'),'warn');return;}
+  var el = document.getElementById('fta-buyer-result');
+  if(el) el.innerHTML='<div style="text-align:center;padding:24px"><div style="width:28px;height:28px;border:3px solid var(--w12);border-top-color:var(--pri);border-radius:50%;animation:pulse .8s linear infinite;margin:0 auto 10px"></div><div style="font-size:12px;color:var(--w40)">'+_t('Comparing','비교 중')+' '+dests.length+' '+_t('markets...','개 시장...')+'</div></div>';
+  var hsCode = (d.fta_hs_code||'').replace(/\./g,'').trim();
+  var prompt = _buildFtaPrompt(d, hsCode, dests);
+  _callFtaAI(prompt, function(result){
+    if(result.error){
+      if(el) el.innerHTML='<div style="color:var(--err);padding:16px;text-align:center;margin-top:12px">'+esc(result.error)+'</div>';
+      return;
+    }
+    _renderBuyerFTAMultiResult(el, result, d, dests);
+  });
+}
+
+function _buildFtaPrompt(d, hsCode, destinations){
+  var destNames = destinations.map(function(code){
+    var c = _FTA_COUNTRIES.find(function(fc){return fc.code===code;});
+    return c ? c.name+' ('+code+')' : code;
+  }).join(', ');
+  var originC = _FTA_ORIGIN_COUNTRIES.find(function(c){return c.code===d.fta_origin;});
+  var originName = originC ? originC.name : d.fta_origin;
+  var catObj = _FTA_PRODUCT_CATS.find(function(c){return c.id===d.fta_category;});
+  var catName = catObj ? catObj.label : d.fta_category;
+  var p = 'You are an expert international trade consultant specializing in FTA (Free Trade Agreement) analysis and tariff classification.\n\n';
+  p += 'Analyze the following import scenario and provide detailed FTA/tariff information:\n\n';
+  p += '- Product Category: '+catName+'\n';
+  if(hsCode) p += '- HS Code: '+hsCode+'\n';
+  if(d.fta_product_desc) p += '- Product Description: '+d.fta_product_desc+'\n';
+  p += '- Origin Country: '+originName+'\n';
+  p += '- Destination(s): '+destNames+'\n';
+  if(d.fta_value && parseFloat(d.fta_value) > 0) p += '- Estimated Product Value: $'+d.fta_value+' USD\n';
+  p += '\nPlease respond with ONLY valid JSON (no markdown, no code blocks) in this exact format:\n';
+  if(destinations.length === 1){
+    p += '{\n';
+    p += '  "destination": "'+destinations[0]+'",\n';
+    p += '  "best_fta": "Name of the best applicable FTA agreement",\n';
+    p += '  "mfn_rate": 8.5,\n';
+    p += '  "best_rate": 0,\n';
+    p += '  "savings_pct": 8.5,\n';
+    p += '  "origin_rule": "CTC (Change in Tariff Classification) or RVC 40% etc.",\n';
+    p += '  "required_docs": ["Certificate of Origin","Commercial Invoice","etc."],\n';
+    p += '  "applicable_ftas": [{"name":"FTA Name","fta_rate":0,"mfn_rate":8.5}],\n';
+    p += '  "hs_code_suggestion": "330499 if not provided",\n';
+    p += '  "recommendation": "Brief strategic recommendation for the buyer"\n';
+    p += '}\n';
+  } else {
+    p += '{"results": [{"destination":"US","best_fta":"KORUS","mfn_rate":6.5,"best_rate":0,"savings_pct":6.5,"origin_rule":"CTC","required_docs":["C/O"],"recommendation":"..."},...]}\n';
+  }
+  p += '\nIMPORTANT: Use realistic tariff rates. If no FTA applies, set best_fta to null and best_rate equal to mfn_rate. Numbers must be numeric (not strings). Always include origin_rule and required_docs.';
+  return p;
+}
+
+function _callFtaAI(prompt, callback){
+  var relay = RELAY_URL;
+  if(!relay){
+    /* Try Supabase edge function as fallback */
+    sb.functions.invoke('fta-simulator',{body:{prompt:prompt}}).then(function(resp){
+      if(resp.error) return callback({error:resp.error.message||'Simulation failed'});
+      var data = resp.data;
+      if(!data||!data.ok) return callback({error:(data&&data.error)||'Simulation failed'});
+      callback(data.result || data.results || data);
+    }).catch(function(err){callback({error:err.message});});
+    return;
+  }
+  fetch(relay+'/api/whistle/chat-inquiry',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+    body:JSON.stringify({
+      message:prompt,
+      page:'buyer-fta',
+      system:'You are an FTA trade expert. Respond only with valid JSON. No markdown.',
+      name:S.user?(S.user.display_name||S.user.email):'buyer',
+      email:S.user?S.user.email:''
+    })
+  }).then(function(r){return r.json();}).then(function(data){
+    if(!data.ok && !data.reply){
+      /* Fallback: try Supabase edge function */
+      var hsMatch = prompt.match(/HS Code:\s*(\d+)/);
+      var destMatch = prompt.match(/Destination\(s\):\s*([^\n]+)/);
+      var destCodes = [];
+      if(destMatch){
+        var dStr = destMatch[1];
+        _FTA_COUNTRIES.forEach(function(c){if(dStr.indexOf(c.code)>=0) destCodes.push(c.code);});
+      }
+      var body = {prompt:prompt};
+      if(hsMatch) body.hs_code = hsMatch[1];
+      if(destCodes.length===1) body.destination = destCodes[0];
+      else if(destCodes.length>1) body.destinations = destCodes;
+      sb.functions.invoke('fta-simulator',{body:body}).then(function(resp){
+        if(resp.error) return callback({error:resp.error.message||'Simulation failed'});
+        var rd = resp.data;
+        if(!rd||!rd.ok) return callback({error:(rd&&rd.error)||'Simulation failed'});
+        callback(rd.result || rd.results || rd);
+      }).catch(function(err){callback({error:err.message});});
+      return;
+    }
+    /* Parse AI reply as JSON */
+    var reply = data.reply || '';
+    try {
+      reply = reply.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim();
+      var parsed = JSON.parse(reply);
+      callback(parsed.results ? parsed : parsed);
+    } catch(e){
+      /* If JSON parse fails, return the text as-is for display */
+      callback({_rawText:reply});
+    }
+  }).catch(function(err){callback({error:err.message||'Network error'});});
+}
+
+function _renderBuyerFTAResult(el, r, formData){
+  if(!el) return;
+  /* Handle raw text fallback */
+  if(r._rawText){
+    var rh = '<div style="margin-top:16px;padding:16px;border-radius:var(--r);background:var(--sf);border:1px solid var(--bd)">';
+    rh += '<div style="font-size:13px;font-weight:700;margin-bottom:8px">🌐 '+_t('FTA Analysis Result','FTA 분석 결과')+'</div>';
+    rh += '<div style="font-size:13px;color:var(--w70);line-height:1.8;white-space:pre-wrap">'+esc(r._rawText)+'</div></div>';
+    S._ftaBuyerResultHTML = rh;
+    el.innerHTML = rh;
+    return;
+  }
+  var h = '<div style="margin-top:16px">';
+  /* Header banner */
+  h += '<div style="padding:18px;border-radius:12px 12px 0 0;background:linear-gradient(135deg,#0a1628,#1a2a4a)">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">';
+  h += '<div>';
+  var destC = _FTA_COUNTRIES.find(function(c){return c.code===r.destination||c.code===formData.fta_destination;});
+  var destLabel = destC ? destC.flag+' '+destC.name : (r.destination||formData.fta_destination||'');
+  var originC2 = _FTA_ORIGIN_COUNTRIES.find(function(c){return c.code===formData.fta_origin;});
+  var originLabel = originC2 ? originC2.flag+' '+originC2.name : formData.fta_origin;
+  h += '<div style="font-size:11px;color:rgba(255,255,255,.5)">'+esc(originLabel)+' → '+esc(destLabel);
+  if(r.hs_code_suggestion||formData.fta_hs_code) h += ' | HS '+(formData.fta_hs_code||r.hs_code_suggestion||'');
+  h += '</div>';
+  if(r.best_fta){
+    h += '<div style="font-size:22px;font-weight:800;color:var(--ok);margin-top:4px">'+esc(r.best_fta)+'</div>';
+    h += '<div style="font-size:12px;color:rgba(255,255,255,.6)">'+_t('Best applicable FTA','최적 적용 FTA')+'</div>';
+  } else {
+    h += '<div style="font-size:18px;font-weight:700;color:var(--acc);margin-top:4px">'+_t('No FTA Available','적용 가능 FTA 없음')+'</div>';
+  }
+  h += '</div>';
+  if(r.savings_pct !== undefined && r.savings_pct > 0){
+    h += '<div style="text-align:right"><div style="font-size:11px;color:rgba(255,255,255,.5)">'+_t('Duty Savings','관세 절감')+'</div>';
+    h += '<div style="font-size:32px;font-weight:900;color:var(--ok)">'+Number(r.savings_pct).toFixed(1)+'%</div></div>';
+  }
+  h += '</div></div>';
+  /* Rate comparison grid */
+  h += '<div style="padding:16px;background:var(--sf);border:1px solid var(--bd);border-top:none">';
+  h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;margin-bottom:14px">';
+  h += '<div style="padding:12px;border-radius:8px;background:var(--w08)"><div style="font-size:10px;color:var(--w40)">'+_t('MFN Tariff','MFN 관세율')+'</div>';
+  h += '<div style="font-size:20px;font-weight:800;color:var(--err);text-decoration:line-through;margin-top:4px;font-family:JetBrains Mono">'+(r.mfn_rate!==undefined&&r.mfn_rate!==null?r.mfn_rate+'%':'N/A')+'</div></div>';
+  h += '<div style="padding:12px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.1)"><div style="font-size:10px;color:var(--ok)">'+_t('FTA Tariff','FTA 관세율')+'</div>';
+  h += '<div style="font-size:20px;font-weight:800;color:var(--ok);margin-top:4px;font-family:JetBrains Mono">'+(r.best_rate!==undefined&&r.best_rate!==null?r.best_rate+'%':'N/A')+'</div></div>';
+  var fVal = parseFloat(formData.fta_value)||0;
+  if(fVal > 0 && r.mfn_rate !== undefined && r.best_rate !== undefined){
+    var mfnDuty = fVal * (r.mfn_rate||0) / 100;
+    var ftaDuty = fVal * (r.best_rate||0) / 100;
+    var savingAmt = mfnDuty - ftaDuty;
+    h += '<div style="padding:12px;border-radius:8px;background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.15)"><div style="font-size:10px;color:var(--ok)">'+_t('Estimated Savings','예상 절감액')+'</div>';
+    h += '<div style="font-size:20px;font-weight:900;color:var(--ok);margin-top:4px;font-family:JetBrains Mono">$'+Math.round(savingAmt).toLocaleString()+'</div></div>';
+  } else {
+    h += '<div style="padding:12px;border-radius:8px;background:rgba(0,230,118,.08)"><div style="font-size:10px;color:var(--w40)">'+_t('Savings Rate','절감율')+'</div>';
+    h += '<div style="font-size:20px;font-weight:900;color:var(--ok);margin-top:4px;font-family:JetBrains Mono">'+(r.savings_pct?Number(r.savings_pct).toFixed(1)+'%':'—')+'</div></div>';
+  }
+  h += '</div>';
+  /* HS Code suggestion */
+  if(r.hs_code_suggestion && !formData.fta_hs_code){
+    h += '<div style="padding:10px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);margin-bottom:10px;font-size:12px">';
+    h += '<span style="font-weight:700;color:var(--pri)">'+_t('Suggested HS Code','HS코드 추천')+':</span> <span style="font-family:JetBrains Mono;font-weight:600;color:var(--w80)">'+esc(r.hs_code_suggestion)+'</span></div>';
+  }
+  /* Applicable FTAs list */
+  if(r.applicable_ftas && r.applicable_ftas.length){
+    h += '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--w60)">'+_t('Applicable FTA Agreements','적용 가능 FTA 협정')+'</div>';
+    r.applicable_ftas.forEach(function(fta){
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-radius:6px;background:var(--w08);margin-bottom:6px">';
+      h += '<span style="font-weight:600;color:var(--w80)">'+esc(fta.name||fta.fta_name||'')+'</span>';
+      h += '<div style="text-align:right"><span style="font-size:13px;font-weight:700;color:var(--ok)">'+(fta.fta_rate!==undefined?fta.fta_rate+'%':fta.rate!==undefined?fta.rate+'%':'—')+'</span>';
+      if(fta.mfn_rate!==undefined) h += ' <span style="font-size:10px;color:var(--err);text-decoration:line-through">MFN '+fta.mfn_rate+'%</span>';
+      h += '</div></div>';
+    });
+  }
+  /* Origin rule */
+  if(r.origin_rule){
+    h += '<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.1);font-size:12px">';
+    h += '<span style="font-weight:700;color:var(--acc)">'+_t('Origin Criteria','원산지결정기준')+':</span> <span style="color:var(--w60)">'+esc(r.origin_rule)+'</span></div>';
+  }
+  /* Required documents */
+  if(r.required_docs && r.required_docs.length){
+    h += '<div style="margin-top:8px"><div style="font-size:11px;font-weight:600;color:var(--w40);margin-bottom:6px">'+_t('Required Documents','필요 서류')+'</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+    r.required_docs.forEach(function(doc){
+      h += '<span class="badge badge-ok" style="font-size:10px">📄 '+esc(doc)+'</span>';
+    });
+    h += '</div></div>';
+  }
+  /* Recommendation */
+  if(r.recommendation){
+    h += '<div style="margin-top:10px;padding:12px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);font-size:12px;color:var(--pri);line-height:1.6">💡 '+esc(r.recommendation)+'</div>';
+  }
+  /* Disclaimer */
+  h += '<div style="margin-top:12px;padding:8px 12px;background:var(--w04);border-radius:6px;font-size:10px;color:var(--w20)">'+_t('* FTA rates are AI estimates based on publicly available data. Verify with a licensed customs broker before making business decisions. Certificate of Origin (C/O) is required for preferential rates.','* FTA 세율은 공개 데이터 기반 AI 추정값입니다. 실제 비즈니스 결정 전 관세사와 확인하시기 바랍니다. 특혜관세 적용 시 원산지증명서(C/O) 필수.')+'</div>';
+  h += '</div></div>';
+  S._ftaBuyerResultHTML = h;
+  el.innerHTML = h;
+}
+
+function _renderBuyerFTAMultiResult(el, data, formData, dests){
+  if(!el) return;
+  var results = data.results || (Array.isArray(data) ? data : [data]);
+  if(!results.length){el.innerHTML='<div style="color:var(--err);padding:16px;text-align:center">'+_t('No results returned','결과가 반환되지 않았습니다')+'</div>';return;}
+  var originC2 = _FTA_ORIGIN_COUNTRIES.find(function(c){return c.code===formData.fta_origin;});
+  var originLabel = originC2 ? originC2.flag+' '+originC2.name : formData.fta_origin;
+  var fVal = parseFloat(formData.fta_value)||0;
+  var h = '<div style="margin-top:16px">';
+  h += '<div style="font-size:15px;font-weight:800;margin-bottom:12px;display:flex;align-items:center;gap:8px">📊 '+_t('Multi-Market FTA Comparison','복수 시장 FTA 비교');
+  h += '<span style="font-size:11px;font-weight:500;color:var(--w40)">'+esc(originLabel)+' → '+results.length+' '+_t('markets','개 시장')+'</span></div>';
+  /* Table */
+  h += '<div style="overflow-x:auto;border-radius:var(--r);border:1px solid var(--bd)">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h += '<thead><tr style="background:var(--w08);text-align:left">';
+  h += '<th style="padding:10px 12px">'+_t('Market','시장')+'</th>';
+  h += '<th style="padding:10px 8px">'+_t('FTA Agreement','FTA 협정')+'</th>';
+  h += '<th style="padding:10px 8px;text-align:right">'+_t('MFN Rate','MFN')+'</th>';
+  h += '<th style="padding:10px 8px;text-align:right;color:var(--ok)">'+_t('FTA Rate','FTA')+'</th>';
+  h += '<th style="padding:10px 8px;text-align:right">'+_t('Savings','절감')+'</th>';
+  if(fVal > 0) h += '<th style="padding:10px 8px;text-align:right;color:var(--ok)">'+_t('Est. Savings','절감액')+'</th>';
+  h += '</tr></thead><tbody>';
+  results.sort(function(a,b){return (a.best_rate||a.mfn_rate||99)-(b.best_rate||b.mfn_rate||99);});
+  results.forEach(function(r, i){
+    var destC = _FTA_COUNTRIES.find(function(c){return c.code===r.destination;});
+    var destLabel = destC ? destC.flag+' '+destC.name : (r.destination||'');
+    var savingAmt = fVal > 0 ? fVal*((r.mfn_rate||0)-(r.best_rate||0))/100 : 0;
+    h += '<tr style="border-bottom:1px solid var(--bd);'+(i===0?'background:rgba(0,230,118,.04)':'')+'">';
+    h += '<td style="padding:10px 12px;font-weight:'+(i===0?'700':'400')+'">'+esc(destLabel)+'</td>';
+    h += '<td style="padding:10px 8px;font-size:11px;color:var(--pri)">'+esc(r.best_fta||_t('None','없음'))+'</td>';
+    h += '<td style="padding:10px 8px;text-align:right;color:var(--err);text-decoration:'+(r.best_fta?'line-through':'none')+'">'+((r.mfn_rate!==undefined&&r.mfn_rate!==null)?r.mfn_rate+'%':'—')+'</td>';
+    h += '<td style="padding:10px 8px;text-align:right;font-weight:700;color:var(--ok)">'+((r.best_rate!==undefined&&r.best_rate!==null)?r.best_rate+'%':'—')+'</td>';
+    h += '<td style="padding:10px 8px;text-align:right;font-weight:600;color:var(--ok)">'+(r.savings_pct?Number(r.savings_pct).toFixed(1)+'%':'—')+'</td>';
+    if(fVal > 0) h += '<td style="padding:10px 8px;text-align:right;font-weight:700;color:var(--ok)">$'+Math.round(savingAmt).toLocaleString()+'</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  /* Best market highlight */
+  if(results.length > 0 && results[0].best_fta){
+    var bestDC = _FTA_COUNTRIES.find(function(c){return c.code===results[0].destination;});
+    var bestLabel = bestDC ? bestDC.flag+' '+bestDC.name : results[0].destination;
+    h += '<div style="margin-top:10px;padding:12px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.1);font-size:12px;color:var(--ok)">🏆 '+_t('Best market','최적 시장')+': <b>'+esc(bestLabel)+'</b> — '+esc(results[0].best_fta)+' ('+(results[0].best_rate||0)+'%)</div>';
+  }
+  /* Disclaimer */
+  h += '<div style="margin-top:10px;padding:8px 12px;background:var(--w04);border-radius:6px;font-size:10px;color:var(--w20)">'+_t('* FTA rates are AI estimates. Verify with customs broker. C/O required.','* AI 추정값. 관세사 확인 필요. C/O 필수.')+'</div>';
+  h += '</div>';
+  S._ftaBuyerResultHTML = h;
+  el.innerHTML = h;
+}
+
 /* ★ Command Palette (Cmd+K / Ctrl+K) */
 var CMD_ITEMS=[
   {icon:'🏠',label:_t('Dashboard','대시보드'),page:'dashboard'},
@@ -4702,6 +5138,7 @@ var CMD_ITEMS=[
   {icon:'📨',label:_t('Inquiries','문의'),page:'inquiries'},
   {icon:'👤',label:_t('Profile','프로필'),page:'profile'},
   {icon:'🤝',label:_t('Partnership','파트너십'),page:'partnership'},
+  {icon:'🌐',label:_t('FTA Simulator','FTA 시뮬레이터'),page:'fta'},
 ];
 function openCmdPalette(){
   if(document.getElementById('cmd-pal'))return;
@@ -4795,6 +5232,8 @@ window.B={
   pdPrevImg:pdPrevImg,pdNextImg:pdNextImg,pdSetImg:pdSetImg,
   pdRequestQuotation:pdRequestQuotation,pdRequestSample:pdRequestSample,
   toggleCompare:toggleCompare,clearCompare:clearCompare,showCompareView:showCompareView,
+  // FTA Simulator
+  runFtaSim:runFtaSim,runFtaMulti:runFtaMulti,
   _inqFilter:null
 };
 
