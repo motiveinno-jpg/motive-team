@@ -85,6 +85,7 @@ serve(async (req: Request) => {
     const PLAN_LIMITS: Record<string, number> = {
       free: 5,
       starter: 50,
+      pro: 200,
       professional: 200,
       enterprise: -1, // unlimited
       alibaba: -1,    // unlimited
