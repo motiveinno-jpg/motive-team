@@ -21,7 +21,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
 <script src="https://js.stripe.com/v3/"></script>
-<script src="https://js.tosspayments.com/v2/standard"></script>
+<!-- Toss removed: Stripe only -->
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root,html[data-theme="dark"]{--bg:#060B18;--bg2:#0A1020;--card:#0D1424;--card2:#111B2E;--sf:#111B2E;--pri:#00D4FF;--pri-g:linear-gradient(135deg,#00D4FF,#0088FF);--pri-d:#0088FF;--pri-glow:0 0 30px rgba(0,212,255,.12);--acc:#FFB800;--acc-g:linear-gradient(135deg,#FFB800,#FF8C00);--ok:#00E676;--err:#FF5252;--warn:#FFA726;--purple:#A855F7;--w:#fff;--w90:rgba(255,255,255,.9);--w70:rgba(255,255,255,.7);--w60:rgba(255,255,255,.6);--w40:rgba(255,255,255,.55);--w20:rgba(255,255,255,.35);--w12:rgba(255,255,255,.1);--w08:rgba(255,255,255,.06);--bd:rgba(255,255,255,.08);--bd-l:rgba(255,255,255,.15);--r:14px;--r-s:10px;--r-xs:6px;--shadow:0 4px 24px rgba(0,0,0,.4);--shadow-lg:0 12px 48px rgba(0,0,0,.6);--fg:#fff;--w04:rgba(255,255,255,.03);--w30:rgba(255,255,255,.25);--w50:rgba(255,255,255,.5);--w95:rgba(255,255,255,.95);--bg-s:var(--bg2);--ok-g:linear-gradient(135deg,#00E676,#00B85C);--w80:rgba(255,255,255,.8);--w10:rgba(255,255,255,.08);--txt:rgba(255,255,255,.9);--tx:var(--w)}
@@ -648,21 +648,7 @@ var _stripeInstance=null;
 function _getStripe(){if(!_stripeInstance&&STRIPE_CONFIG.pk){_stripeInstance=Stripe(STRIPE_CONFIG.pk);}return _stripeInstance;}
 function _isStripeReady(){return !!STRIPE_CONFIG.pk;}
 
-/* === TOSS PAYMENTS CONFIG === */
-/* 토스: 카드사 심사 중 — 실키 발급 후 ck에 클라이언트키 입력 */
-var TOSS_CONFIG={
-  ck:'',
-  fn:'https://lylktgxngrlxmsldxdqj.supabase.co/functions/v1'
-};
-var _tossInstance=null;
-async function _getToss(){
-  if(!_tossInstance&&TOSS_CONFIG.ck&&TOSS_CONFIG.ck.length>5&&typeof TossPayments!=='undefined'){
-    var tp=TossPayments(TOSS_CONFIG.ck);
-    var ck=S.user?S.user.id.replace(/-/g,'').slice(0,20):'guest';
-    _tossInstance=tp.payment({customerKey:ck});
-  }
-  return _tossInstance;
-}
+/* === TOSS REMOVED — ALL PAYMENTS VIA STRIPE === */
 
 /* === PLAN GATE === */
 function _planGate(feature){
@@ -731,36 +717,14 @@ function _showAnalysisPaywall(){
 
 function payOneAnalysis(){
   if(!S.user){UI.toast(T('toast_login_required'),'warn');closeModal('analysis-pw');return;}
-  var isKo=!S.user.country||S.user.country==='KR'||S.user.country==='Korea';
   closeModal('analysis-pw');
-
-  if(isKo && TOSS_CONFIG.ck.indexOf('REPLACE')===-1){
-    /* 한국: 토스 단건 결제 (토스 설정 완료 시) */
-    _getToss().then(function(payment){
-      if(!payment){UI.toast('토스 결제 초기화 실패','err');_stripeOneAnalysis();return;}
-      var orderId='WH-AI-'+S.user.id.slice(0,8)+'-'+Date.now();
-      var baseUrl=location.origin+location.pathname;
-      payment.requestPayment({
-        method:'CARD',
-        amount:{currency:'KRW',value:25000},
-        orderId:orderId,
-        orderName:'Whistle AI 단건 분석',
-        successUrl:baseUrl+'?toss_one_ok=1&orderId='+orderId,
-        failUrl:baseUrl+'?toss_one_fail=1'
-      }).catch(function(err){
-        if(err.code!=='USER_CANCEL')UI.toast('결제 오류: '+(err.message||err.code),'err');
-      });
-    });
-  } else {
-    /* Stripe 단건 결제 (글로벌 + 토스 미설정 한국) */
-    _stripeOneAnalysis();
-  }
+  _stripeOneAnalysis();
 }
 function _stripeOneAnalysis(){
   if(!_isStripeReady()){_showOneAnalysisCTA();return;}
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){UI.toast(T('toast_login_required'),'warn');return;}
-    UI.toast('결제 페이지로 이동합니다...','info');
+    UI.toast(_isKorean?'결제 페이지로 이동합니다...':'Redirecting to payment...','info');
     fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
@@ -768,7 +732,7 @@ function _stripeOneAnalysis(){
     }).then(function(r){return r.json();}).then(function(data){
       if(data.url){window.location.href=data.url;}
       else if(data.error){UI.toast(data.error,'err');}
-    }).catch(function(e){console.error('[one-analysis]',e);UI.toast('결제 연결 오류','err');});
+    }).catch(function(e){console.error('[one-analysis]',e);UI.toast(_isKorean?'결제 연결 오류':'Payment connection error','err');});
   });
 }
 
@@ -791,7 +755,7 @@ function _showOneAnalysisCTA(){
   UI.showModal('one-pay-cta');
 }
 
-/* Handle toss one-time payment callback */
+/* Load single analysis credits from DB */
 function _loadSingleAnalysisCredits(){
   if(!S.user)return Promise.resolve();
   var now=new Date();var m=now.getMonth();var y=now.getFullYear();
@@ -806,11 +770,11 @@ function _checkStripeCallback(){
   var p=new URLSearchParams(location.search);
   if(p.get('checkout')==='success'){
     history.replaceState(null,'',location.pathname);
-    UI.toast('결제가 완료되었습니다! 감사합니다.','ok',5000);
+    UI.toast(_isKorean?'결제가 완료되었습니다! 감사합니다.':'Payment completed! Thank you.','ok',5000);
   }
   if(p.get('checkout')==='cancel'){
     history.replaceState(null,'',location.pathname);
-    UI.toast('결제가 취소되었습니다.','info');
+    UI.toast(_isKorean?'결제가 취소되었습니다.':'Payment was cancelled.','info');
   }
 }
 
@@ -9540,7 +9504,7 @@ function pgSub(){
   var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">💎 구독 관리</h2></div>'+
 
   /* Current plan summary */
-  '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">현재 플랜</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div>'+(cur!=='free'&&S.user&&S.user.toss_billing_key?'<div style="margin-top:6px;display:flex;align-items:center;gap:6px"><span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(49,130,246,.1);color:#3182F6;font-weight:600">토스 정기결제</span><span style="font-size:10px;color:var(--w40)">카드 자동결제 중</span></div>':cur!=='free'&&S.user&&S.user.stripe_customer_id?'<button class="btn btn-ghost btn-sm" onclick="App.openBillingPortal()" style="margin-top:6px;font-size:11px">구독 관리 (결제수단·해지)</button>':'')+'</div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">AI 분석</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">제품</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">프로젝트</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
+  '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">현재 플랜</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div>'+(cur!=='free'&&S.user&&S.user.stripe_customer_id?'<button class="btn btn-ghost btn-sm" onclick="App.openBillingPortal()" style="margin-top:6px;font-size:11px">'+(_isKorean?'구독 관리 (결제수단·해지)':'Manage Subscription')+'</button>':'')+'</div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">AI 분석</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">제품</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">프로젝트</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
 
   /* Government voucher box — TOP position */
   '<div class="card" style="border-color:rgba(255,184,0,.2);margin-bottom:20px"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="font-size:28px">🏛️</span><div style="flex:1;min-width:200px"><div style="font-weight:700;color:var(--acc)">정부 바우처로 결제 가능</div><div style="font-size:12px;color:var(--w40);margin-top:2px">수출바우처·혁신바우처 최대 85% 지원. SaaS 구독 + 알리바바 패키지 모두 적용 가능.</div></div><button class="btn btn-acc btn-sm" onclick="App.reqSvc(\'certification\')">바우처 상담</button></div></div>'+
@@ -9681,7 +9645,7 @@ function openCheckout(planId){
   var isDown=order.indexOf(planId)<order.indexOf(cur);
 
   if(planId==='free'){
-    if(!confirm('FREE 플랜으로 변경하면 서류 자동생성, 이메일 허브 등 유료 기능이 제한됩니다. 현재 등록된 제품과 분석 데이터는 유지됩니다. 계속하시겠습니까?'))return;
+    if(!confirm(_isKorean?'FREE 플랜으로 변경하면 서류 자동생성, 이메일 허브 등 유료 기능이 제한됩니다. 현재 등록된 제품과 분석 데이터는 유지됩니다. 계속하시겠습니까?':'Downgrading to FREE will limit document generation, email hub, and other premium features. Your products and analysis data will be preserved. Continue?'))return;
     chgPlan('free');return;
   }
 
@@ -9750,15 +9714,15 @@ function _ckStripe(planId){
   var prices={starter:{m:'₩99,000',s:'₩534,600',a:'₩950,400',dm:'₩99,000/월 (정상가 ₩199,000)',ds:'₩89,100/월 (10%↓)',da:'₩79,200/월 (20%↓)'},pro:{m:'₩299,000',s:'₩1,614,600',a:'₩2,870,400',dm:'₩299,000/월 (정상가 ₩599,000)',ds:'₩269,100/월',da:'₩239,200/월'}};
   var pr=prices[planId]||prices.starter;
   return '<div style="padding:14px;border-radius:10px;background:var(--card);border:1px solid var(--bd)">'+
-    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:#3182F6">💳 카드 정기결제</div>'+
+    '<div style="font-size:13px;font-weight:700;margin-bottom:10px;color:#635BFF">💳 Stripe 카드 정기결제</div>'+
     '<div style="font-size:12px;color:var(--w60);margin-bottom:12px">신용/체크카드로 자동 정기결제됩니다. 구독은 자동 갱신되며 언제든 해지 가능합니다.</div>'+
     '<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:8px">결제 주기 선택</div>'+
-    '<div id="toss-cycle" style="display:flex;flex-direction:column;gap:6px">'+
+    '<div id="stripe-kr-cycle" style="display:flex;flex-direction:column;gap:6px">'+
     '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid #3182F6;background:rgba(49,130,246,.06);cursor:pointer"><input type="radio" name="billing_cycle" value="m" checked style="accent-color:#3182F6"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">월간</span><span style="font-size:11px;color:var(--w40);margin-left:8px">'+pr.dm+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.m+'</span></label>'+
     '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--w08);cursor:pointer"><input type="radio" name="billing_cycle" value="s" style="accent-color:#3182F6"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">6개월</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.ds+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90);white-space:nowrap">'+pr.s+'</span></label>'+
     '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--w08);cursor:pointer"><input type="radio" name="billing_cycle" value="a" style="accent-color:#3182F6"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">연간</span><span style="font-size:11px;color:var(--ok);margin-left:8px">'+pr.da+'</span></div><span style="font-size:13px;font-weight:800;color:var(--w90);white-space:nowrap">'+pr.a+'</span></label>'+
     '</div>'+
-    '<div style="margin-top:10px;font-size:11px;color:var(--w40)">토스페이먼츠 보안 결제. 카드 정보는 토스에서만 안전하게 처리됩니다.</div></div>';
+    '<div style="margin-top:10px;font-size:11px;color:var(--w40)">Stripe 보안 결제. 카드 정보는 안전하게 처리됩니다.</div></div>';
 }
 
 function _showPaymentCTA(planId){
@@ -9784,7 +9748,7 @@ function _paymentCTARequest(planId){
   });
 }
 function initStripeCheckout(planId){
-  /* 모든 사용자: Stripe 결제 (토스 심사 완료 전까지) */
+  /* 모든 사용자: Stripe 결제 */
   if(!_isStripeReady()){
     UI.toast(_isKorean?'선택하신 결제 옵션을 처리할 수 없습니다. creative@mo-tive.com으로 문의해주세요.':'Unable to process selected payment option. Please contact creative@mo-tive.com','info');
     return;
@@ -9868,7 +9832,7 @@ function _ckStripeGlobal(planId){
     '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--w08);cursor:pointer"><input type="radio" name="billing_cycle" value="s" style="accent-color:#635BFF"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">6 Months</span><span style="font-size:11px;color:var(--ok);margin-left:8px">10% off</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.s+'</span></label>'+
     '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--w08);cursor:pointer"><input type="radio" name="billing_cycle" value="a" style="accent-color:#635BFF"><div style="flex:1"><span style="font-size:12px;font-weight:600;color:var(--w90)">Annual</span><span style="font-size:11px;color:var(--ok);margin-left:8px">20% off</span></div><span style="font-size:13px;font-weight:800;color:var(--w90)">'+pr.a+'</span></label>'+
     '</div>'+
-    (!_isStripeReady()?'<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:11px;color:var(--acc)">Stripe payment is being activated. Please use card payment (Toss) or wire transfer for now.</div>':'')+
+    (!_isStripeReady()?'<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15);font-size:11px;color:var(--acc)">Stripe payment is being activated. Please contact creative@mo-tive.com for assistance.</div>':'')+
     '<div style="margin-top:10px;font-size:11px;color:var(--w40)">Secure payment via Stripe. Your card info is processed securely by Stripe.</div></div>';
 }
 
@@ -9906,12 +9870,21 @@ function confirmCheckout(planId){
 }
 
 function chgPlan(id){
-  /* 보안: 클라이언트에서는 무료 다운그레이드만 허용. 유료 업그레이드는 결제 프로세스 필수 */
-  var order=['free','starter','pro','alibaba'];
-  var curIdx=order.indexOf(S.user&&S.user.plan||'free');
-  var newIdx=order.indexOf(id);
-  if(newIdx>curIdx){UI.toast('결제를 통해 업그레이드해주세요.','warn');return;}
-  sb.from('users').update({plan:id}).eq('id',S.user.id).then(function(){S.user.plan=id;render();UI.toast(id.toUpperCase()+' 플랜으로 변경 완료!','ok');});
+  /* 보안: plan 변경은 서버(webhook/admin)에서만 가능. 클라이언트는 해지 요청만 */
+  if(id==='free'){
+    /* Stripe 구독 해지 → billing portal 이동 */
+    if(S.user&&S.user.stripe_customer_id){
+      openBillingPortal();
+    } else {
+      /* Stripe 미연동 사용자: service_request로 해지 요청 */
+      sb.from('service_requests').insert({user_id:S.user.id,service_type:'plan_downgrade',status:'pending',details:{from:S.user.plan,to:'free'}}).then(function(r){
+        if(r.error){_toastE(r.error);return;}
+        UI.toast(_isKorean?'해지 요청이 접수되었습니다. 영업일 1일 내 처리됩니다.':'Cancellation request submitted. Will be processed within 1 business day.','ok',5000);
+      });
+    }
+  } else {
+    UI.toast(_isKorean?'결제를 통해 업그레이드해주세요.':'Please upgrade through the payment process.','warn');
+  }
 }
 
 function pgSettings(){
