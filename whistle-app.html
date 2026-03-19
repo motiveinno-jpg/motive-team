@@ -7611,7 +7611,7 @@ function _genDocInner(items,bd,rd,c){
   _iframe.contentDocument.open();_iframe.contentDocument.write(h);_iframe.contentDocument.close();
   var _docPrices={pi:5000,ci:5000,pl:3000,co:10000,sc:15000,bl:5000,ic:3000,cd:5000,lc:5000,isc:5000,hsc:5000,cfs:5000,fc:3000,msds:3000};
   var _curDocType=S.docType;
-  sb.from('documents').insert({user_id:S.user.id,doc_type:_curDocType,doc_number:rd.doc_no,buyer_id:S._docBuyerId||null,content:{buyer:bd,ref:rd,items:items,total:tA},status:'draft',disclaimer_shown:true}).select().then(function(r){DRAFT.clear('doc_'+_curDocType+'_ref');DRAFT.clear('doc_'+_curDocType+'_buyer');UI.toast('서류 생성!','ok');if(r.data&&r.data[0]){_lastDoc.id=r.data[0].id;w._lastDocId=r.data[0].id;}loadDocs();sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'document_gen',quantity:1,metadata:{doc_type:_curDocType}}}).catch(function(){});
+  sb.from('documents').insert({user_id:S.user.id,doc_type:_curDocType,doc_number:rd.doc_no,buyer_id:S._docBuyerId||null,content:{buyer:bd,ref:rd,items:items,total:tA},status:'draft',disclaimer_shown:true}).select().then(function(r){DRAFT.clear('doc_'+_curDocType+'_ref');DRAFT.clear('doc_'+_curDocType+'_buyer');UI.toast(_isKorean?'서류 생성!':'Document created!','ok');if(r.data&&r.data[0]){_lastDoc.id=r.data[0].id;w._lastDocId=r.data[0].id;}loadDocs();sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'document_gen',quantity:1,metadata:{doc_type:_curDocType}}}).catch(function(){});
     /* 서류 건당 과금 billing event 기록 */
     var _docPrice=_docPrices[_curDocType]||5000;
     var _sub=S.user||{};var _isFree=(!_sub.plan||_sub.plan==='free');
@@ -7833,7 +7833,7 @@ function translateEmail(targetLang){
   if(!sj||!bd||!bd.value.trim()){UI.toast(_isKorean?'번역할 내용이 없습니다':'Nothing to translate','warn');return;}
   var langLabel=targetLang==='en'?'영어':'한국어';
   if(!RELAY_URL){UI.toast(_isKorean?'서버 연결이 필요합니다':'Server connection required','warn');return;}
-  UI.toast('제목+본문 '+langLabel+' 번역 중...','info');
+  UI.toast((_isKorean?'제목+본문 ':'Subject+body ')+langLabel+(_isKorean?' 번역 중...':' translating...'),'info');
   var texts=[sj.value,bd.value];
   Promise.all(texts.map(function(t){
     return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
@@ -10590,7 +10590,7 @@ function downloadDocsZip(projectId){
   if(!docs.length){UI.toast(_isKorean?'다운로드할 서류가 없습니다':'No documents to download','warn');return;}
   var pj=S.projects.find(function(p){return p.id===projectId;});
   var pjName=pj?pj.name:'project';
-  UI.toast('서류 '+docs.length+'건 순차 다운로드 시작...','info');
+  UI.toast((_isKorean?'서류 ':'Documents ')+docs.length+(_isKorean?'건 순차 다운로드 시작...':' sequential download starting...'),'info');
   var i=0;
   function _next(){
     if(i>=docs.length){UI.toast('✅ 전체 서류 다운로드 완료!','ok');return;}
@@ -11420,7 +11420,7 @@ function syncShipment(shipId){
   };
   var curStatus=ship.tracking_status||'production_complete';
   var nextStatus=autoStages[curStatus];
-  if(!nextStatus){UI.toast('현재 단계('+curStatus+') — 물류사 페이지에서 확인 후 수동 업데이트하세요','info');return;}
+  if(!nextStatus){UI.toast((_isKorean?'현재 단계(':'Current stage (')+curStatus+(_isKorean?') — 물류사 페이지에서 확인 후 수동 업데이트하세요':') — check logistics page and update manually'),'info');return;}
   /* 확인 후 상태 업데이트 */
   if(!confirm('물류사 페이지에서 확인한 결과, "'+({container_loaded:'컨테이너 적입',departed:'출항',in_transit:'운송중',arrived:'도착',customs_cleared:'통관완료'}[nextStatus]||nextStatus)+'" 상태로 업데이트할까요?'))return;
   sb.from('shipments').update({
@@ -12492,7 +12492,7 @@ function toggleShipFields(){
 }
 function showShipmentForm(orderId){
   /* orderId 없으면 현재 프로젝트 주문에서 자동 선택 */
-  if(!orderId&&S.currentProject){var pjOrders=S.orders.filter(function(x){return x.project_id===S.currentProject.id;});if(pjOrders.length===1){orderId=pjOrders[0].id;}else if(pjOrders.length>1){var pickBody='<div style="font-size:13px;color:var(--w60);margin-bottom:12px">선적할 주문을 선택하세요</div>';pjOrders.forEach(function(po){pickBody+='<div style="padding:10px 14px;border:1px solid var(--bd);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor=\'var(--pri)\'" onmouseout="this.style.borderColor=\'var(--bd)\'" onclick="App.closeModal(\'shpick\');App.showShipmentForm(\''+po.id+'\')"><div style="font-weight:700;font-size:14px">'+U.esc(po.order_number||po.id)+'</div><div style="font-size:12px;color:var(--w40);margin-top:2px">'+U.esc(po.buyer_name||'')+' · $'+(po.total_amount||0).toLocaleString()+'</div></div>';});document.body.insertAdjacentHTML('beforeend',UI.modal({id:'shpick',title:'📋 주문 선택',body:pickBody,width:'400px'}));UI.showModal('shpick');return;}else{UI.toast('먼저 주문을 등록하세요','warn');return;}}
+  if(!orderId&&S.currentProject){var pjOrders=S.orders.filter(function(x){return x.project_id===S.currentProject.id;});if(pjOrders.length===1){orderId=pjOrders[0].id;}else if(pjOrders.length>1){var pickBody='<div style="font-size:13px;color:var(--w60);margin-bottom:12px">선적할 주문을 선택하세요</div>';pjOrders.forEach(function(po){pickBody+='<div style="padding:10px 14px;border:1px solid var(--bd);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor=\'var(--pri)\'" onmouseout="this.style.borderColor=\'var(--bd)\'" onclick="App.closeModal(\'shpick\');App.showShipmentForm(\''+po.id+'\')"><div style="font-weight:700;font-size:14px">'+U.esc(po.order_number||po.id)+'</div><div style="font-size:12px;color:var(--w40);margin-top:2px">'+U.esc(po.buyer_name||'')+' · $'+(po.total_amount||0).toLocaleString()+'</div></div>';});document.body.insertAdjacentHTML('beforeend',UI.modal({id:'shpick',title:'📋 주문 선택',body:pickBody,width:'400px'}));UI.showModal('shpick');return;}else{UI.toast(_isKorean?'먼저 주문을 등록하세요':'Please register an order first','warn');return;}}
   var o=S.orders.find(function(x){return x.id===orderId;});if(!o){UI.toast(_isKorean?'주문을 찾을 수 없습니다':'Order not found','warn');return;}
   var body='<form id="shf">'+
     UI.sel('type','운송방식',[{value:'ocean',label:'🚢 해상 (국내택배 + B/L)'},{value:'air',label:'✈️ 항공 (국내택배 + AWB)'},{value:'express',label:'📦 특급 door-to-door (DHL/FedEx/EMS)'},{value:'rail',label:'🚂 철도'}],{onchange:'App.toggleShipFields()'})+
@@ -15399,7 +15399,7 @@ function render(){
   var _pc2=document.querySelector('.page-content');if(_pc2&&_scrollY>0&&!S._navScrollReset){_pc2.scrollTop=_scrollY;requestAnimationFrame(function(){_pc2.scrollTop=_scrollY;});}S._navScrollReset=false;
   _renderMobNav();
   /* Initialize live total for doc form */
-  if(S.page==='docgen'&&S.docType){setTimeout(function(){_updateDocTotal();/* Add live update listeners for qty/price fields */var _pc3=document.querySelector('.page-content');if(_pc3&&!_pc3._docTotalBound){_pc3._docTotalBound=true;_pc3.addEventListener('input',function(e){var n=e.target&&e.target.name;if(n&&(n.indexOf('itq_')===0||n.indexOf('itp_')===0))_updateDocTotal();_updateDocProgress();});_pc3.addEventListener('change',function(e){var n=e.target&&e.target.name;if(n==='currency')_updateDocTotal();});}_updateDocProgress();/* Auto-save drafts */DRAFT.autoSave('#docR','doc_'+S.docType+'_ref');DRAFT.autoSave('#docB','doc_'+S.docType+'_buyer');/* Restore draft if available */var _draftRef=DRAFT.load('doc_'+S.docType+'_ref');var _draftBuyer=DRAFT.load('doc_'+S.docType+'_buyer');if(_draftRef||_draftBuyer){var _hasDraft=false;if(_draftRef){Object.keys(_draftRef).forEach(function(k){var el=document.querySelector('#docR [name='+k+']');if(el&&!el.value&&_draftRef[k]){el.value=_draftRef[k];_hasDraft=true;}});}if(_draftBuyer){Object.keys(_draftBuyer).forEach(function(k){var el=document.querySelector('#docB [name='+k+']');if(el&&!el.value&&_draftBuyer[k]){el.value=_draftBuyer[k];_hasDraft=true;}});}if(_hasDraft)UI.toast('이전 작성 내용이 복원되었습니다','info',3000);}},50);}
+  if(S.page==='docgen'&&S.docType){setTimeout(function(){_updateDocTotal();/* Add live update listeners for qty/price fields */var _pc3=document.querySelector('.page-content');if(_pc3&&!_pc3._docTotalBound){_pc3._docTotalBound=true;_pc3.addEventListener('input',function(e){var n=e.target&&e.target.name;if(n&&(n.indexOf('itq_')===0||n.indexOf('itp_')===0))_updateDocTotal();_updateDocProgress();});_pc3.addEventListener('change',function(e){var n=e.target&&e.target.name;if(n==='currency')_updateDocTotal();});}_updateDocProgress();/* Auto-save drafts */DRAFT.autoSave('#docR','doc_'+S.docType+'_ref');DRAFT.autoSave('#docB','doc_'+S.docType+'_buyer');/* Restore draft if available */var _draftRef=DRAFT.load('doc_'+S.docType+'_ref');var _draftBuyer=DRAFT.load('doc_'+S.docType+'_buyer');if(_draftRef||_draftBuyer){var _hasDraft=false;if(_draftRef){Object.keys(_draftRef).forEach(function(k){var el=document.querySelector('#docR [name='+k+']');if(el&&!el.value&&_draftRef[k]){el.value=_draftRef[k];_hasDraft=true;}});}if(_draftBuyer){Object.keys(_draftBuyer).forEach(function(k){var el=document.querySelector('#docB [name='+k+']');if(el&&!el.value&&_draftBuyer[k]){el.value=_draftBuyer[k];_hasDraft=true;}});}if(_hasDraft)UI.toast(_isKorean?'이전 작성 내용이 복원되었습니다':'Previous draft restored','info',3000);}},50);}
   if(S.page==='settings'){setTimeout(function(){_initSigCanvas();},100);}
   }catch(renderErr){console.error('[render error]',renderErr);app.innerHTML='<div style="padding:40px;text-align:center"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">'+T('render_error')+'</div><div style="font-size:13px;color:#888;margin-bottom:16px">'+UI.esc(renderErr.message)+'</div><button onclick="location.reload()" style="padding:8px 20px;border-radius:8px;background:#2563eb;color:#fff;border:none;cursor:pointer">'+T('common_refresh')+'</button><button onclick="App.nav(\'dashboard\')" style="padding:8px 20px;border-radius:8px;background:#666;color:#fff;border:none;cursor:pointer;margin-left:8px">'+T('render_dashboard_btn')+'</button></div>';try{sb.from('client_errors').insert({user_id:S.user?S.user.id:null,error_type:'render_crash',message:renderErr.message,stack:renderErr.stack,url:location.href,page:S.page,portal:'whistle'}).then(function(){});}catch(e){}}
 }
@@ -15551,7 +15551,7 @@ function submitPartnership(){
   if(!name||!name.value.trim()){UI.toast(_isKorean?'담당자명을 입력해주세요.':'Please enter contact name.','warn');return;}
   if(!email||!email.value.trim()){UI.toast(_isKorean?'이메일을 입력해주세요.':'Please enter email.','warn');return;}
   var data={company:company.value.trim(),name:name.value.trim(),email:email.value.trim(),phone:phone?phone.value.trim():'',type:type?type.value:'',message:message?message.value.trim():'',page:'whistle-partnership',user_id:S.user?S.user.id:''};
-  fetch(RELAY_URL+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(d){UI.toast('제휴 문의가 접수되었습니다. 담당자가 빠르게 연락드리겠습니다.','ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';}).catch(function(){UI.toast('전송 실패. 잠시 후 다시 시도해주세요.','err');});
+  fetch(RELAY_URL+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(d){UI.toast(_isKorean?'제휴 문의가 접수되었습니다. 담당자가 빠르게 연락드리겠습니다.':'Partnership inquiry received. We will contact you shortly.','ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';}).catch(function(){UI.toast(_isKorean?'전송 실패. 잠시 후 다시 시도해주세요.':'Send failed. Please try again later.','err');});
 }
 
 /* 물류 파트너 제휴 문의 → service_requests 테이블 (관리자 어드민에 표시) */
@@ -16040,7 +16040,7 @@ sb.auth.onAuthStateChange(function(event, session){
   window.WC={
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:'더 자세한 상담을 원하시면 아래 정보를 남겨주세요.'});step=1;}r();},
-    submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){UI.toast('이름/회사명을 입력해주세요.','warn');return;}msgs.push({from:'bot',text:info.name+'님, 반갑습니다! 궁금한 점을 자유롭게 입력해주세요.'});step=2;r();},
+    submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){UI.toast(_isKorean?'이름/회사명을 입력해주세요.':'Please enter your name/company.','warn');return;}msgs.push({from:'bot',text:info.name+'님, 반갑습니다! 궁금한 점을 자유롭게 입력해주세요.'});step=2;r();},
     send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var _r=RELAY||window.RELAY_URL||'';if(!_r){msgs.push({from:'bot',text:'문의가 접수되었습니다. creative@mo-tive.com으로도 문의 가능합니다.'});r();return;}fetch(_r+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(resp){if(!resp.ok)throw new Error('HTTP '+resp.status);return resp.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||'접수되었습니다.'});r();}}).catch(function(){msgs.push({from:'bot',text:'전송에 실패했습니다. creative@mo-tive.com으로 문의해주세요.'});r();});}
   };r();
 })();
