@@ -43,7 +43,7 @@ test.describe('Whistle Manufacturer Portal', () => {
     // Address
     expect(footerText).toMatch(/미추홀구.*학익동.*663/s);
     // Contact email
-    expect(footerText).toContain('contact@whistle-ai.com');
+    expect(footerText).toContain('creative@mo-tive.com');
   });
 
   test('3 - Auth form with login/signup tabs', async ({ page }) => {
