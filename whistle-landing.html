@@ -214,6 +214,7 @@ const Fade = ({ children, delay = 0, style = {} }) => { const [ref, v] = useInVi
 const GlowLine = () => <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.pri}40, transparent)`, margin: "0 auto", maxWidth: 600 }} />;
 
 const _sb = window.supabase.createClient("https://lylktgxngrlxmsldxdqj.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0");
+const sb = _sb;
 
 function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -401,23 +402,33 @@ function App() {
           : error.message;
         setLoginError(msg); setLoginLoading(false); return;
       }
-      // role 확인 후 리다이렉트 — 세션이 확실히 설정된 후 이동
+      // role 확인 후 리다이렉트
       const uid = data.user.id;
       let role = data.user.user_metadata?.role || "client";
       try {
         const { data: u } = await sb.from("users").select("role").eq("id", uid).single();
         if (u?.role) role = u.role;
       } catch(e) { /* users 테이블 조회 실패해도 metadata role로 진행 */ }
-      // 세션이 localStorage에 완전히 저장될 때까지 대기
-      await new Promise(r => setTimeout(r, 800));
-      // 세션 확인 후 리다이렉트
-      const sess = await sb.auth.getSession();
-      if (!sess.data?.session) {
-        await new Promise(r => setTimeout(r, 1000));
+      // 세션 확인 — 최대 3초까지 폴링
+      for (let i = 0; i < 10; i++) {
+        const sess = await sb.auth.getSession();
+        if (sess.data?.session) break;
+        await new Promise(r => setTimeout(r, 300));
       }
       if (role === "buyer") window.location.href = "/app/buyer";
       else window.location.href = "/app";
     } catch(e) { setLoginError("서버 연결 실패. 잠시 후 다시 시도해주세요."); setLoginLoading(false); }
+  };
+
+  const handleSocialLogin = async (provider) => {
+    setLoginError("");
+    const { error } = await sb.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.origin + "/app" }
+    });
+    if (error) {
+      setLoginError(provider === "google" ? "Google 로그인에 실패했습니다: " + error.message : "카카오 로그인에 실패했습니다: " + error.message);
+    }
   };
 
   const s = {
@@ -599,6 +610,21 @@ function App() {
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 12 }}>
             <span style={{ color: T.w40, cursor: "pointer" }} onClick={() => { setShowLogin(false); setShowResetPw(true); setResetPwEmail(loginForm.email || ""); setResetPwSent(false); setResetPwError(""); }}>비밀번호 찾기</span>
             <span style={{ color: T.pri, cursor: "pointer", fontWeight: 600 }} onClick={() => { setShowLogin(false); openSignup(); }}>회원가입</span>
+          </div>
+          {/* 소셜 로그인 */}
+          <div style={{ position: "relative", textAlign: "center", margin: "20px 0 14px" }}>
+            <div style={{ position: "absolute", top: "50%", left: 0, right: 0, height: 1, background: T.border }} />
+            <span style={{ position: "relative", background: T.bgCard, padding: "0 12px", fontSize: 11, color: T.w20 }}>또는</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button onClick={() => handleSocialLogin("google")} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "12px 16px", borderRadius: 10, border: `1.5px solid ${T.borderL}`, background: "transparent", color: T.w, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.94 10.94 0 001 12c0 1.78.42 3.46 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              Google로 계속
+            </button>
+            <button onClick={() => handleSocialLogin("kakao")} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "12px 16px", borderRadius: 10, border: "none", background: "#FEE500", color: "#191919", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              <svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 3C6.48 3 2 6.58 2 10.94c0 2.82 1.87 5.29 4.69 6.69-.15.56-.96 3.6-.99 3.82 0 0-.02.17.09.24.11.06.24.01.24.01.32-.04 3.7-2.44 4.28-2.86.55.08 1.12.12 1.69.12 5.52 0 10-3.58 10-7.94C22 6.58 17.52 3 12 3z" fill="#191919"/></svg>
+              카카오로 계속
+            </button>
           </div>
         </div>
       </div>
