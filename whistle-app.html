@@ -9346,14 +9346,49 @@ function pgSub(){
 
   '<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--w20)">부가세 별도 · 6개월 10% 할인 · 연간 20% 할인 · 수출바우처/혁신바우처 정산 가능</div>'+
 
-  /* Subscription management */
-  (cur!=='free'?'<div class="card" style="margin-top:20px"><div class="card-h">⚙️ 구독 관리</div><div class="card-b"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="App.cancelSub()" style="font-size:11px;color:var(--err)">구독 해지</button><button class="btn btn-ghost btn-sm" onclick="App.pauseSub()" style="font-size:11px">일시 중지</button>'+(S.user&&S.user.plan_expires_at?'<div style="font-size:11px;color:var(--w30);display:flex;align-items:center;gap:4px;margin-left:auto">만료일: '+new Date(S.user.plan_expires_at).toLocaleDateString('ko-KR')+'</div>':'')+'</div></div></div>':'');
+  /* Subscription management — 미드저니식 락인 */
+  (cur!=='free'?(function(){
+    var expAt=S.user&&S.user.plan_expires_at;
+    var isCanceling=S.user&&S.user.subscription_status==='canceling';
+    var expDate=expAt?new Date(expAt):null;
+    var daysLeft=expDate?Math.max(0,Math.ceil((expDate-new Date())/(1000*60*60*24))):0;
+    var expStr=expDate?(_isKorean?expDate.toLocaleDateString('ko-KR'):expDate.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})):'';
+    var bc=S._billingCycle||'m';
+    var cycleLabel=bc==='a'?(_isKorean?'연간':'Annual'):bc==='s'?(_isKorean?'6개월':'6-month'):(_isKorean?'월간':'Monthly');
+    var planLabel=(cur==='starter'?'Starter':cur==='pro'?'Professional':'Enterprise');
+    return '<div class="card" style="margin-top:20px"><div class="card-h">⚙️ '+(_isKorean?'구독 관리':'Subscription')+'</div><div class="card-b">'+
+    /* 현재 구독 상태 */
+    '<div style="padding:14px;border-radius:10px;background:var(--w04);border:1px solid var(--bd);margin-bottom:12px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div><span style="font-size:14px;font-weight:800;color:var(--pri)">'+planLabel+'</span><span style="font-size:11px;color:var(--w40);margin-left:6px">'+cycleLabel+'</span></div>'+
+    (isCanceling?'<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(255,82,82,.1);color:var(--err)">'+(_isKorean?'해지 예정':'Canceling')+'</span>':'<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(0,230,118,.1);color:var(--ok)">'+(_isKorean?'활성':'Active')+'</span>')+'</div>'+
+    (expDate?'<div style="display:flex;justify-content:space-between;align-items:center"><div style="font-size:12px;color:var(--w40)">'+(_isKorean?'이용 가능 기간':'Access until')+'</div><div style="font-size:13px;font-weight:700">'+expStr+' <span style="font-size:11px;color:var(--pri);font-weight:600">('+daysLeft+(_isKorean?'일 남음':' days left')+')</span></div></div>':'')+'</div>'+
+    /* 취소해도 잔여기간 안내 */
+    (isCanceling?'<div style="padding:12px 14px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:4px">'+(_isKorean?'🔒 잔여 기간 동안 모든 기능을 이용할 수 있습니다':'🔒 Full access until your subscription expires')+'</div><div style="font-size:11px;color:var(--w40);line-height:1.5">'+(_isKorean?expStr+'까지 '+planLabel+' 플랜의 모든 기능(AI 분석, 바이어 매칭, 서류 자동생성 등)을 제한 없이 이용할 수 있습니다. 만료 후 FREE 플랜으로 전환됩니다.':'You have full access to all '+planLabel+' features until '+expStr+'. After expiration, your account will switch to the FREE plan.')+'</div></div>':'')+
+    /* 환불 정책 */
+    '<div style="padding:10px 14px;border-radius:8px;background:var(--w04);margin-bottom:12px"><div style="font-size:11px;color:var(--w30);line-height:1.6">'+
+    (_isKorean?'📋 <b>구독 정책</b><br>• 구독 취소 시 잔여 기간까지 모든 기능 이용 가능<br>• 중도 환불 불가 (잔여기간 서비스 제공)<br>• 만료일 전 재구독 시 기존 데이터 유지<br>• 만료 후 30일간 데이터 보관 (읽기 전용)':
+    '📋 <b>Subscription Policy</b><br>• Full access continues until the end of your billing period<br>• No refunds for unused time (service provided until expiry)<br>• Resubscribe before expiry to keep all data<br>• Data retained for 30 days after expiry (read-only)')+'</div></div>'+
+    /* 버튼 */
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    (!isCanceling?'<button class="btn btn-ghost btn-sm" onclick="App.cancelSub()" style="font-size:11px;color:var(--err)">'+(_isKorean?'구독 해지':'Cancel Subscription')+'</button><button class="btn btn-ghost btn-sm" onclick="App.pauseSub()" style="font-size:11px">'+(_isKorean?'일시 중지':'Pause')+'</button>':'<button class="btn btn-pri btn-sm" onclick="App.resumeSub()" style="font-size:11px">'+(_isKorean?'구독 재개':'Resume Subscription')+'</button>')+
+    '</div></div></div>';
+  })():'');
 
   return h;
 }
 function toggleVoucher(){S._showVoucher=!S._showVoucher;render();}
 
-function cancelSub(){if(!confirm('구독을 해지하시겠습니까? 현재 결제 기간 만료까지는 이용 가능합니다.'))return;sb.functions.invoke('manage-subscription',{body:{action:'cancel',reason:'user_requested'}}).then(function(r){if(r.error)throw r.error;var d=r.data;if(d&&d.success){UI.toast(d.message||'구독이 해지됩니다.','ok');loadUser();}else{_toastE({message:d&&d.error||'실패'},'구독 해지');}}).catch(function(e){_toastE(e,'구독 해지');});}
+function cancelSub(){
+  var expAt=S.user&&S.user.plan_expires_at;
+  var expDate=expAt?new Date(expAt):null;
+  var expStr=expDate?(_isKorean?expDate.toLocaleDateString('ko-KR'):expDate.toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})):(_isKorean?'결제 기간 종료일':'end of billing period');
+  var planLabel=(S.user.plan==='starter'?'Starter':S.user.plan==='pro'?'Professional':'Enterprise');
+  var body='<div style="text-align:center;margin-bottom:16px"><div style="font-size:40px;margin-bottom:8px">⚠️</div><div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(_isKorean?'정말 해지하시겠습니까?':'Cancel your subscription?')+'</div></div>'+
+    '<div style="padding:14px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:var(--pri);margin-bottom:6px">'+(_isKorean?'🔒 해지 후에도 '+expStr+'까지 모든 기능을 이용할 수 있습니다':'🔒 You\'ll keep full access until '+expStr)+'</div><div style="font-size:11px;color:var(--w40);line-height:1.6">'+(_isKorean?planLabel+' 플랜의 AI 분석, 바이어 매칭, 서류 자동생성 등 모든 기능이 만료일까지 유지됩니다.':'All '+planLabel+' features including AI analysis, buyer matching, and document generation will remain active until expiry.')+'</div></div>'+
+    '<div style="padding:12px 14px;border-radius:10px;background:rgba(255,82,82,.06);border:1px solid rgba(255,82,82,.15)"><div style="font-size:12px;color:var(--err);line-height:1.6">'+(_isKorean?'⛔ 중도 환불은 불가하며, 잔여 기간 동안 서비스가 제공됩니다.<br>만료 후 FREE 플랜으로 전환되며, 30일간 데이터는 읽기 전용으로 보관됩니다.':'⛔ No refunds for unused time. Service continues until expiry.<br>After expiry, your account switches to FREE plan. Data retained read-only for 30 days.')+'</div></div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'cancel-sub-m',title:(_isKorean?'구독 해지':'Cancel Subscription'),body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'cancel-sub-m\')">'+(_isKorean?'유지하기':'Keep Subscription')+'</button><button class="btn btn-sm" style="background:var(--err);color:#fff" onclick="App._confirmCancelSub()">'+(_isKorean?'해지 확인':'Confirm Cancellation')+'</button>',width:'440px'}));UI.showModal('cancel-sub-m');
+}
+function _confirmCancelSub(){App.closeModal('cancel-sub-m');sb.functions.invoke('manage-subscription',{body:{action:'cancel',reason:'user_requested'}}).then(function(r){if(r.error)throw r.error;var d=r.data;if(d&&d.success){UI.toast((_isKorean?'구독이 해지 예정으로 변경되었습니다. 잔여 기간까지 이용 가능합니다.':'Subscription will cancel at period end. Full access continues until then.'),'ok');loadUser();}else{_toastE({message:d&&d.error||'실패'},'구독 해지');}}).catch(function(e){_toastE(e,'구독 해지');});}
 
 function pauseSub(){if(!confirm('구독을 일시 중지하시겠습니까?'))return;sb.functions.invoke('manage-subscription',{body:{action:'pause'}}).then(function(r){if(r.error)throw r.error;var d=r.data;if(d&&d.success){UI.toast(d.message||'구독이 일시 중지되었습니다.','ok');loadUser();}else{_toastE({message:d&&d.error||'실패'},'구독 중지');}}).catch(function(e){_toastE(e,'구독 중지');});}
 
