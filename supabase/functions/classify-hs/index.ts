@@ -99,6 +99,67 @@ serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    // ─── Plan enforcement: check user's plan and usage limits ───
+    const PLAN_LIMITS: Record<string, number> = {
+      free: 3,
+      starter: 30,
+      professional: 100,
+      enterprise: -1, // unlimited
+      alibaba: -1,    // unlimited
+    };
+
+    const { data: userData } = await sbAdmin
+      .from("users")
+      .select("plan, analysis_credits")
+      .eq("id", user.id)
+      .single();
+
+    const userPlan = userData?.plan || "free";
+    const singleCredits = userData?.analysis_credits || 0;
+    const monthlyLimit = PLAN_LIMITS[userPlan] ?? 3;
+
+    // Count this month's HS classifications (skip for unlimited plans)
+    if (monthlyLimit !== -1) {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const { count: monthlyUsage } = await sbAdmin
+        .from("rate_limits")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("action", "classify_hs")
+        .gte("window_start", startOfMonth.toISOString());
+
+      const used = monthlyUsage || 0;
+
+      if (used >= monthlyLimit && singleCredits <= 0) {
+        const isKo = req.headers.get("accept-language")?.includes("ko");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: isKo
+              ? `월간 HS코드 분류 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
+              : `Monthly HS classification limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
+            code: "PLAN_LIMIT_EXCEEDED",
+            limit: monthlyLimit,
+            used,
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Deduct single analysis credit if over monthly limit
+      if (used >= monthlyLimit && singleCredits > 0) {
+        await sbAdmin
+          .from("users")
+          .update({ analysis_credits: singleCredits - 1 })
+          .eq("id", user.id);
+        console.log(`[plan] User ${user.id} used single credit for classify_hs (${singleCredits - 1} remaining)`);
+      }
+    }
+    // ─── End plan enforcement ───
+
     const {
       product_name,
       description = "",
@@ -254,6 +315,16 @@ JSON만 출력하세요.`;
         }
       );
     }
+
+    // Track usage in rate_limits
+    await sbAdmin
+      .from("rate_limits")
+      .insert({
+        user_id: user.id,
+        action: "classify_hs",
+        window_start: new Date().toISOString(),
+        count: 1,
+      });
 
     return new Response(
       JSON.stringify({ ok: true, result }),

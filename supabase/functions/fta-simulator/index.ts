@@ -81,6 +81,67 @@ serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    // ─── Plan enforcement: check user's plan and usage limits ───
+    const PLAN_LIMITS: Record<string, number> = {
+      free: 5,
+      starter: 50,
+      professional: 200,
+      enterprise: -1, // unlimited
+      alibaba: -1,    // unlimited
+    };
+
+    const { data: userData } = await sbAdmin
+      .from("users")
+      .select("plan, analysis_credits")
+      .eq("id", user.id)
+      .single();
+
+    const userPlan = userData?.plan || "free";
+    const singleCredits = userData?.analysis_credits || 0;
+    const monthlyLimit = PLAN_LIMITS[userPlan] ?? 5;
+
+    // Count this month's FTA simulations (skip for unlimited plans)
+    if (monthlyLimit !== -1) {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const { count: monthlyUsage } = await sbAdmin
+        .from("analyses")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("analysis_type", "fta_simulation")
+        .gte("created_at", startOfMonth.toISOString());
+
+      const used = monthlyUsage || 0;
+
+      if (used >= monthlyLimit && singleCredits <= 0) {
+        const isKo = req.headers.get("accept-language")?.includes("ko");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: isKo
+              ? `월간 FTA 시뮬레이션 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
+              : `Monthly FTA simulation limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
+            code: "PLAN_LIMIT_EXCEEDED",
+            limit: monthlyLimit,
+            used,
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      // Deduct single analysis credit if over monthly limit
+      if (used >= monthlyLimit && singleCredits > 0) {
+        await sbAdmin
+          .from("users")
+          .update({ analysis_credits: singleCredits - 1 })
+          .eq("id", user.id);
+        console.log(`[plan] User ${user.id} used single credit for FTA sim (${singleCredits - 1} remaining)`);
+      }
+    }
+    // ─── End plan enforcement ───
+
     const body = await req.json();
     const { hs_code, destination, destinations } = body;
 
@@ -112,6 +173,15 @@ serve(async (req: Request) => {
       const prompt = buildMultiPrompt(hs_code, destinations, destInfo);
       const aiResult = await callAI(anthropicKey, prompt);
 
+      // Track usage
+      await sbAdmin.from("analyses").insert({
+        user_id: user.id,
+        product_name: `FTA: ${hs_code} → ${destinations.join(",")}`,
+        analysis_type: "fta_simulation",
+        status: "completed",
+        ai_result: aiResult,
+      });
+
       return new Response(
         JSON.stringify({ ok: true, results: aiResult }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -131,6 +201,15 @@ serve(async (req: Request) => {
 
     const prompt = buildSinglePrompt(hs_code, destination, countryName, ftas);
     const result = await callAI(anthropicKey, prompt);
+
+    // Track usage
+    await sbAdmin.from("analyses").insert({
+      user_id: user.id,
+      product_name: `FTA: ${hs_code} → ${destination}`,
+      analysis_type: "fta_simulation",
+      status: "completed",
+      ai_result: result,
+    });
 
     return new Response(
       JSON.stringify({ ok: true, result }),

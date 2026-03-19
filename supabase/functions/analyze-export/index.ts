@@ -217,6 +217,67 @@ serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    // ─── Plan enforcement: check user's plan and usage limits ───
+    const PLAN_LIMITS: Record<string, number> = {
+      free: 1,
+      starter: 10,
+      pro: 50,
+      professional: 50,
+      enterprise: -1, // unlimited
+      alibaba: -1,    // unlimited
+    };
+
+    const { data: userData } = await sbAdmin
+      .from("users")
+      .select("plan, analysis_credits")
+      .eq("id", user.id)
+      .single();
+
+    const userPlan = userData?.plan || "free";
+    const singleCredits = userData?.analysis_credits || 0;
+    const monthlyLimit = PLAN_LIMITS[userPlan] ?? 1;
+
+    // Count this month's analyses (skip for unlimited plans)
+    if (monthlyLimit !== -1) {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+
+      const { count: monthlyUsage } = await sbAdmin
+        .from("analyses")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .gte("created_at", startOfMonth.toISOString());
+
+      const used = monthlyUsage || 0;
+
+      if (used >= monthlyLimit && singleCredits <= 0) {
+        const isKo = req.headers.get("accept-language")?.includes("ko");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: isKo
+              ? `월간 분석 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
+              : `Monthly analysis limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
+            code: "PLAN_LIMIT_EXCEEDED",
+            limit: monthlyLimit,
+            used,
+          }),
+          { status: 403, headers },
+        );
+      }
+
+      // Deduct single analysis credit if over monthly limit
+      if (used >= monthlyLimit && singleCredits > 0) {
+        await sbAdmin
+          .from("users")
+          .update({ analysis_credits: singleCredits - 1 })
+          .eq("id", user.id);
+        console.log(`[plan] User ${user.id} used single credit (${singleCredits - 1} remaining)`);
+      }
+    }
+    // ─── End plan enforcement ───
+
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
       return new Response(
