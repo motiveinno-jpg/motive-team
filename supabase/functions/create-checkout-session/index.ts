@@ -214,7 +214,9 @@ serve(async (req) => {
         ],
         payment_intent_data: {
           metadata: { deal_id, user_id: user.id, type: "escrow" },
-          capture_method: "manual",
+          // Full capture (no manual hold). Funds are charged immediately and
+          // held in our Stripe account. Settlement to seller happens via
+          // separate transfer after buyer confirms receipt.
         },
         payment_method_options: {
           card: { setup_future_usage: undefined },

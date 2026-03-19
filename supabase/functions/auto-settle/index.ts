@@ -7,7 +7,8 @@ const AUTO_SETTLE_DAYS = 7;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
 };
 
 serve(async (req) => {
@@ -26,24 +27,34 @@ serve(async (req) => {
     } else if (authHeader) {
       const sbUrl = Deno.env.get("SUPABASE_URL")!;
       const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sbCheck = (await import("https://esm.sh/@supabase/supabase-js@2.39.3")).createClient(sbUrl, sbKey);
+      const sbCheck = createClient(sbUrl, sbKey);
       const token = authHeader.replace("Bearer ", "");
-      const { data: { user }, error } = await sbCheck.auth.getUser(token);
+      const {
+        data: { user },
+        error,
+      } = await sbCheck.auth.getUser(token);
       if (error || !user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       // Verify admin role
-      const { data: userData } = await sbCheck.from("users").select("role").eq("id", user.id).single();
+      const { data: userData } = await sbCheck
+        .from("users")
+        .select("role")
+        .eq("id", user.id)
+        .single();
       if (!userData || userData.role !== "admin") {
         return new Response(JSON.stringify({ error: "Admin only" }), {
-          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     } else {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -52,10 +63,13 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     if (!stripeKey) {
-      return new Response(JSON.stringify({ error: "Stripe not configured" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Stripe not configured" }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -64,14 +78,17 @@ serve(async (req) => {
     });
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Find payments eligible for auto-settlement:
-    // status = 'held', delivery confirmed, and 7+ days since delivery
+    // Find escrow payments eligible for auto-settlement:
+    // status = 'held' (charged but not yet released to seller),
+    // delivery confirmed, and 7+ days since confirmation
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - AUTO_SETTLE_DAYS);
 
     const { data: eligiblePayments, error: fetchErr } = await supabase
       .from("payments")
-      .select("id, stripe_payment_intent, deal_id, amount, currency, user_id")
+      .select(
+        "id, stripe_payment_intent, deal_id, amount, currency, user_id",
+      )
       .eq("status", "held")
       .eq("type", "escrow")
       .not("stripe_payment_intent", "is", null);
@@ -84,15 +101,17 @@ serve(async (req) => {
       });
     }
 
-    const results: Array<{ id: string; status: string; error?: string }> = [];
+    const results: Array<{ id: string; status: string; error?: string }> =
+      [];
 
     for (const payment of eligiblePayments || []) {
-      // Check if the deal has delivery confirmed and is past the auto-settle window
       if (!payment.deal_id) continue;
 
       const { data: deal } = await supabase
         .from("matchings")
-        .select("delivered_at, buyer_confirmed_at, settlement_status")
+        .select(
+          "delivered_at, buyer_confirmed_at, settlement_status, user_id",
+        )
         .eq("id", payment.deal_id)
         .single();
 
@@ -104,19 +123,48 @@ serve(async (req) => {
       if (!confirmDate) continue;
 
       const confirmTime = new Date(confirmDate).getTime();
-      if (confirmTime > cutoffDate.getTime()) continue; // Not yet 7 days
+      if (confirmTime > cutoffDate.getTime()) continue;
 
-      // Capture the held payment via Stripe
+      // "Charge now, transfer later" model:
+      // Payment was already fully captured at checkout time.
+      // Now we mark it as settled and (optionally) create a Stripe Transfer
+      // to the seller's connected account if they have one.
       try {
-        await stripe.paymentIntents.capture(payment.stripe_payment_intent);
+        const platformFee = payment.amount * PLATFORM_FEE_RATE;
+        const netAmount = payment.amount - platformFee;
+        const netAmountCents = Math.round(netAmount * 100);
+
+        // Check if seller has a Stripe connected account for direct transfer
+        const { data: sellerProfile } = await supabase
+          .from("users")
+          .select("stripe_connect_account_id")
+          .eq("id", deal.user_id)
+          .single();
+
+        if (sellerProfile?.stripe_connect_account_id) {
+          // Transfer net amount to seller's connected Stripe account
+          await stripe.transfers.create({
+            amount: netAmountCents,
+            currency: payment.currency.toLowerCase(),
+            destination: sellerProfile.stripe_connect_account_id,
+            transfer_group: `escrow_${payment.deal_id}`,
+            metadata: {
+              deal_id: payment.deal_id,
+              payment_id: payment.id,
+              type: "escrow_settlement",
+            },
+          });
+        }
 
         // Update payment status
         await supabase
           .from("payments")
           .update({
-            status: "captured",
-            captured_at: new Date().toISOString(),
+            status: "settled",
+            settled_at: new Date().toISOString(),
             auto_settled: true,
+            platform_fee: platformFee,
+            net_amount: netAmount,
           })
           .eq("id", payment.id);
 
@@ -131,22 +179,26 @@ serve(async (req) => {
           .eq("id", payment.deal_id);
 
         // Notify seller
-        const netAmt = (payment.amount * (1 - PLATFORM_FEE_RATE)).toFixed(2);
+        const netAmtStr = netAmount.toFixed(2);
         await supabase.from("notifications").insert({
-          user_id: payment.user_id,
+          user_id: deal.user_id,
           type: "payment",
-          title: "🏦 자동 정산 완료",
-          body: `수령 확인 후 ${AUTO_SETTLE_DAYS}일 경과로 자동 정산되었습니다. ${payment.currency} ${netAmt} (수수료 2.5% 차감)`,
+          title: "Auto-Settlement Complete",
+          body: `Auto-settled after ${AUTO_SETTLE_DAYS} days since delivery confirmation. ${payment.currency} ${netAmtStr} (2.5% platform fee deducted).`,
           link_page: "deals",
           link_id: payment.deal_id,
           is_read: false,
         });
 
         results.push({ id: payment.id, status: "settled" });
-        console.log(`Auto-settled payment ${payment.id} for deal ${payment.deal_id}`);
-      } catch (captureErr: any) {
-        console.error(`Failed to capture ${payment.id}:`, captureErr.message);
-        results.push({ id: payment.id, status: "failed", error: captureErr.message });
+        console.log(
+          `Auto-settled payment ${payment.id} for deal ${payment.deal_id}`,
+        );
+      } catch (settleErr: unknown) {
+        const errMsg =
+          settleErr instanceof Error ? settleErr.message : String(settleErr);
+        console.error(`Failed to settle ${payment.id}:`, errMsg);
+        results.push({ id: payment.id, status: "failed", error: errMsg });
       }
     }
 
@@ -157,13 +209,14 @@ serve(async (req) => {
         failed: results.filter((r) => r.status === "failed").length,
         results,
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+      { status: 200, headers: { "Content-Type": "application/json" } },
     );
-  } catch (err: any) {
-    console.error("Auto-settle error:", err);
-    return new Response(
-      JSON.stringify({ error: err.message }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("Auto-settle error:", errMsg);
+    return new Response(JSON.stringify({ error: errMsg }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });

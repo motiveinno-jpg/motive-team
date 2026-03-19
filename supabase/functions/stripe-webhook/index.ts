@@ -227,59 +227,20 @@ serve(async (req) => {
         break;
       }
 
-      /* ─── ESCROW: CAPTURE (auto-release / settlement) ─── */
+      /* ─── PAYMENT INTENT SUCCEEDED ─── */
+      // With full-capture escrow model, this fires immediately at checkout.
+      // Escrow settlement is handled by auto-settle function + manage-subscription
+      // release_escrow action, NOT by this event. Only log non-escrow successes.
       case "payment_intent.succeeded": {
         const pi = event.data.object as Stripe.PaymentIntent;
         const meta = pi.metadata || {};
 
         if (meta.type === "escrow" && meta.deal_id) {
-          const capturedAmt = (pi.amount_received || pi.amount) / 100;
-          const capturedCur = pi.currency?.toUpperCase() || "USD";
-
-          await supabase
-            .from("payments")
-            .update({
-              status: "captured",
-              captured_at: new Date().toISOString(),
-            })
-            .eq("stripe_payment_intent", pi.id);
-
-          // Update deal: escrow released → settlement complete
-          await supabase
-            .from("matchings")
-            .update({
-              settlement_status: "settled",
-              settled_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", meta.deal_id);
-
-          // Notify seller: funds released
-          const { data: deal } = await supabase
-            .from("matchings")
-            .select("user_id")
-            .eq("id", meta.deal_id)
-            .single();
-          if (deal) {
-            const netAmt = (capturedAmt * (1 - PLATFORM_FEE_RATE)).toFixed(2);
-            await supabase.from("notifications").insert({
-              user_id: deal.user_id,
-              type: "payment",
-              title: "🏦 정산 완료",
-              body: `에스크로 정산이 완료되었습니다. ${capturedCur} ${netAmt} (수수료 2.5% 차감)이 Stripe 계정으로 입금됩니다.`,
-              link_page: "deals",
-              link_id: meta.deal_id,
-              is_read: false,
-            });
-          }
-
-          await notifyCEO(
-            `SETTLED — ${capturedCur} ${capturedAmt.toFixed(2)}`,
-            `<p><strong>Escrow Released</strong></p>
-             <p>Deal: ${meta.deal_id}</p>
-             <p>Net: ${capturedCur} ${(capturedAmt * (1 - PLATFORM_FEE_RATE)).toFixed(2)}</p>
-             <p>Fee: ${capturedCur} ${(capturedAmt * PLATFORM_FEE_RATE).toFixed(2)}</p>`,
-            supabase
+          // Escrow: payment was charged at checkout. The checkout.session.completed
+          // handler already recorded it as "held". No further action needed here.
+          // Settlement to seller happens via auto-settle or manual release_escrow.
+          console.log(
+            `Escrow payment_intent.succeeded for deal ${meta.deal_id} — already tracked as held`,
           );
         }
         break;

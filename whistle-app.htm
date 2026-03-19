@@ -643,7 +643,7 @@ var UI={
   sel:function(name,label,opts,sel){var _sv=typeof sel==='object'&&sel?sel.value:sel;var _oc=typeof sel==='object'&&sel&&sel.onchange?' onchange="'+sel.onchange+'"':'';var os=opts.map(function(o){var v=typeof o==='object'?o.value:o;var t=typeof o==='object'?o.label:o;return'<option value="'+U.esc(v)+'" '+(v===_sv?'selected':'')+'>'+U.esc(t)+'</option>';}).join('');return'<div class="form-group"><label class="form-label">'+U.esc(label)+'</label><select class="form-select" name="'+name+'"'+_oc+'>'+os+'</select></div>';},
   ta:function(name,label,o){o=o||{};return'<div class="form-group"><label class="form-label">'+U.esc(label)+'</label><textarea class="form-textarea" name="'+name+'" rows="'+(o.rows||3)+'" placeholder="'+U.esc(o.placeholder||'')+'">'+U.esc(o.value||'')+'</textarea></div>';},
   fd:function(sel){var el=typeof sel==='string'?document.querySelector(sel):sel;if(!el)return{};var d={};el.querySelectorAll('input,select,textarea').forEach(function(i){if(i.name){if(i.type==='checkbox'){d[i.name]=i.checked;}else if(i.type==='radio'){if(i.checked)d[i.name]=i.value;}else{d[i.name]=i.type==='number'&&i.value?Number(i.value):i.value;}}});return d;},
-  pb:function(p){var m={free:['FREE','var(--w40)'],starter:['STARTER','var(--pri)'],basic:['BASIC','var(--pri)'],pro:['PRO','var(--acc)'],alibaba:['ALIBABA','var(--err)']};var r=m[p]||m.free;return'<span class="badge" style="background:'+r[1]+'15;color:'+r[1]+';border:1px solid '+r[1]+'25">'+r[0]+'</span>';},
+  pb:function(p){var m={free:['FREE','var(--w40)'],starter:['STARTER','var(--pri)'],basic:['BASIC','var(--pri)'],pro:['PRO','var(--acc)'],enterprise:['ENTERPRISE','#8A5CF6'],alibaba:['ALIBABA','var(--err)']};var r=m[p]||m.free;return'<span class="badge" style="background:'+r[1]+'15;color:'+r[1]+';border:1px solid '+r[1]+'25">'+r[0]+'</span>';},
   clp:function(id,content,maxH){return'<div id="clp-'+id+'">'+content+'</div>';}
 };
 
@@ -651,9 +651,11 @@ var UI={
 var PLAN_LIMITS={
   free:{analyses:1,products:5,projects:1,docs:0,emails:0,matching:0},
   starter:{analyses:10,products:20,projects:5,docs:-1,emails:50,matching:0},
-  pro:{analyses:-1,products:-1,projects:-1,docs:-1,emails:-1,matching:1},
-  alibaba:{analyses:-1,products:-1,projects:-1,docs:-1,emails:-1,matching:3}
+  pro:{analyses:50,products:-1,projects:-1,docs:-1,emails:-1,matching:1},
+  enterprise:{analyses:200,products:-1,projects:-1,docs:-1,emails:-1,matching:3},
+  alibaba:{analyses:200,products:-1,projects:-1,docs:-1,emails:-1,matching:3}
 };
+var OVERAGE_PRICE={usd:1.90,krw:2500}; /* per-analysis overage for paid plans */
 
 /* === STRIPE CONFIG — MOTIVE Global, Inc. (acct_1T9mvXBEJTGmEnmc) === */
 var STRIPE_CONFIG={
@@ -689,11 +691,15 @@ function _planGate(feature){
   else if(feature==='matching'){max=lim.matching;label=(_isKorean?'바이어 매칭':'Buyer Matching');}
   else if(feature==='alibaba'){var isAli=cur==='alibaba'||cur==='enterprise';return{blocked:!isAli,label:(_isKorean?'알리바바':'Alibaba'),used:0,max:isAli?-1:0,plan:cur,minPlan:'alibaba'};}
   if(max===0)return{blocked:true,label:label,used:0,max:0,plan:cur,minPlan:feature==='matching'?'pro':'starter'};
-  if(max===-1)return{blocked:false};
-  if(used>=max)return{blocked:true,label:label,used:used,max:max,plan:cur,minPlan:_nextPlan(cur)};
+  if(max===-1)return{blocked:false,used:used,max:-1};
+  if(used>=max){
+    /* Paid plans allow overage for analysis at $1.90/₩2,500 per report */
+    if(feature==='analysis'&&cur!=='free'){return{blocked:false,used:used,max:max,overage:true,overageCount:used-max+1,plan:cur};}
+    return{blocked:true,label:label,used:used,max:max,plan:cur,minPlan:_nextPlan(cur)};
+  }
   return{blocked:false,used:used,max:max};
 }
-function _nextPlan(cur){return cur==='free'?'starter':cur==='starter'?'pro':'alibaba';}
+function _nextPlan(cur){return cur==='free'?'starter':cur==='starter'?'pro':cur==='pro'?'enterprise':'alibaba';}
 function _lockOverlay(gate){
   return '<div style="position:relative"><div style="filter:blur(3px);pointer-events:none;opacity:.5;user-select:none">';
 }
@@ -702,8 +708,8 @@ function _lockOverlayEnd(gate){
   var _ko=_isKorean;
   var _sOrig=_ko?'₩199,000':'$199';var _sDis=_ko?'₩99,000':'$79';var _pUnit=_ko?'/월':'/mo';
   var _pOrig=_ko?'₩599,000':'$599';var _pDis=_ko?'₩299,000':'$239';
-  var _sDesc=_ko?'AI 분석 10회/월<br>서류 자동생성 무제한<br>바이어 채팅 50건/월':'10 AI analyses/mo<br>Unlimited doc generation<br>50 buyer chats/mo';
-  var _pDesc=_ko?'AI 분석 무제한<br>바이어 매칭 3건/월<br>모든 기능 무제한':'Unlimited AI analyses<br>3 buyer matches/mo<br>All features unlimited';
+  var _sDesc=_ko?'AI 분석 10회/월<br>서류 자동생성 무제한<br>바이어 채팅 50건/월<br>초과 시 ₩2,500/건':'10 AI analyses/mo<br>Unlimited doc generation<br>50 buyer chats/mo<br>Overage: $1.90/report';
+  var _pDesc=_ko?'AI 분석 50회/월<br>바이어 매칭 1건/월<br>초과 시 ₩2,500/건':'50 AI analyses/mo<br>1 buyer match/mo<br>Overage: $1.90/report';
   var _launchTxt=_ko?'런칭 특가 50% OFF':'Launch Special 50% OFF';
   var planCards='<div style="display:flex;gap:10px;margin-top:14px;text-align:left">'+
     '<div style="flex:1;padding:14px;border-radius:10px;border:1px solid '+(mp==='starter'?'var(--pri)':'var(--bd)')+';background:'+(mp==='starter'?'rgba(0,212,255,.06)':'var(--w04)')+'"><div style="font-size:12px;font-weight:800;color:var(--pri);margin-bottom:4px">STARTER</div><div style="font-size:10px;color:var(--ok);margin-bottom:2px">'+_launchTxt+'</div><div style="font-size:16px;font-weight:800;margin-bottom:6px;white-space:nowrap"><span style="font-size:11px;color:var(--w20);text-decoration:line-through">'+_sOrig+'</span> '+_sDis+'<span style="font-size:10px;color:var(--w40);font-weight:400">'+_pUnit+'</span></div><div style="font-size:10px;color:var(--w50);line-height:1.5">'+_sDesc+'</div><button class="btn btn-pri btn-sm btn-block" style="margin-top:10px" onclick="App.openCheckout(\'starter\')">STARTER</button></div>'+
@@ -733,8 +739,8 @@ function _showAnalysisPaywall(){
     /* 옵션2: 구독 */
     '<div style="padding:16px;border-radius:14px;border:1px solid var(--bd);background:var(--w04);cursor:pointer;text-align:left" onclick="App.closeModal(\'analysis-pw\');App.nav(\'subscription\')">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:800;color:var(--acc)">💎 '+(isKo?'구독 플랜':'Subscription Plan')+'</span><span style="font-size:10px;color:var(--ok);font-weight:700">BEST VALUE</span></div>'+
-      '<div style="font-size:12px;color:var(--w60);line-height:1.5">STARTER '+(isKo?U.fmtPrice(99000)+'/월':'$29/mo')+' — '+(isKo?'AI 분석 10회/월':'10 AI analyses/mo')+'<br>PRO '+(isKo?U.fmtPrice(299000)+'/월':'$79/mo')+' — '+(isKo?'무제한 분석':'Unlimited')+'</div>'+
-      '<div style="font-size:11px;color:var(--acc);margin-top:6px;font-weight:600">'+(isKo?'분석 2회 이상이면 구독이 유리합니다 →':'Better value for 2+ analyses →')+'</div>'+
+      '<div style="font-size:12px;color:var(--w60);line-height:1.5">STARTER '+(isKo?U.fmtPrice(99000)+'/월':'$29/mo')+' — '+(isKo?'AI 분석 10회/월':'10 AI analyses/mo')+'<br>PRO '+(isKo?U.fmtPrice(299000)+'/월':'$79/mo')+' — '+(isKo?'AI 분석 50회/월':'50 AI analyses/mo')+'</div>'+
+      '<div style="font-size:11px;color:var(--acc);margin-top:6px;font-weight:600">'+(isKo?'분석 4회 이상이면 구독이 유리합니다 →':'Better value for 4+ analyses →')+'</div>'+
     '</div>'+
   '</div>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'analysis-pw',title:isKo?'🔍 AI 분석 결제':'🔍 AI Analysis Payment',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'analysis-pw\')">'+T('common_cancel')+'</button>',width:'420px'}));
@@ -2014,6 +2020,8 @@ function submitA(){
   /* Plan limit check */
   var g=_planGate('analysis');
   if(g.blocked){S._submitting=false;GP.done();_showAnalysisPaywall();return;}
+  /* Overage confirmation for paid plans */
+  if(g.overage){var _ovMsg=_isKorean?'월간 분석 한도('+g.max+'회)를 초과합니다.\n추가 분석 비용: ₩2,500/건\n계속하시겠습니까?':'Monthly analysis limit ('+g.max+') exceeded.\nOverage cost: $1.90/report.\nContinue?';if(!confirm(_ovMsg)){S._submitting=false;GP.done();return;}}
   var d=S.analysisData;
   /* collect current step data */
   if(S.analysisStep===1){
@@ -2046,10 +2054,12 @@ function submitA(){
       autoCreateProduct(r.data.id,res,d.product_name);
       loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:res})});UI.toast(_isKorean?'AI 분석 완료!':'AI analysis complete!','ok');});
       pushNotif('analysis','AI 분석 완료: '+d.product_name,(res.overall_score||'')+(_isKorean?' 점 — 상세 리포트가 준비되었습니다':' pts — detailed report ready'),'analysis',null,true);
-      /* Track usage + billing */
+      /* Track usage + billing — only for real AI results, NOT fallback */
       sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'ai_analysis',quantity:1,metadata:{analysis_id:r.data.id,product:d.product_name}}}).catch(function(e){console.error('[billing] usage record fail:',e);});
-      var _aSub=S.user||{};var _aFree=(!_aSub.plan||_aSub.plan==='free');var _aPrice=_aFree?50000:(_aSub.plan==='starter'?30000:0);
-      if(_aPrice>0){sb.from('billing_events').insert({user_id:S.user.id,event_type:'ai_analysis',amount:_aPrice,currency:'KRW',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free'}}).catch(function(e){console.error('[billing] analysis event fail:',e);});}
+      var _aSub=S.user||{};var _aFree=(!_aSub.plan||_aSub.plan==='free');
+      var _aOverage=g&&g.overage;var _overageAmt=_isKorean?OVERAGE_PRICE.krw:OVERAGE_PRICE.usd;
+      var _aPrice=_aFree?50000:_aOverage?_overageAmt:(_aSub.plan==='starter'?30000:0);
+      if(_aPrice>0&&!res._is_fallback){sb.from('billing_events').insert({user_id:S.user.id,event_type:_aOverage?'ai_analysis_overage':'ai_analysis',amount:_aPrice,currency:_isKorean?'KRW':'USD',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free',is_overage:!!_aOverage,overage_rate:_aOverage?(_isKorean?'₩2,500/건':'$1.90/report'):null}}).catch(function(e){console.error('[billing] analysis event fail:',e);});}
     }).catch(function(err){
       console.error('[analyze-export] Client error:',err.message);
       /* EF v5 may have updated DB to failed; check before fallback */
@@ -2903,7 +2913,7 @@ function downloadReportPDF(){
   if(r.data_sources&&r.data_sources.length)h+='<div style="font-size:9px;color:#aaa;margin-top:12px">'+(_isKorean?'데이터 출처: ':'Data Sources: ')+(Array.isArray(r.data_sources)?r.data_sources.join(', '):_safe(r.data_sources))+'</div>';
 
   // Footer
-  h+='<div class="footer"><div class="brand-f">WHISTLE AI</div><div style="font-size:9px;color:#888;margin-top:2px">'+(_isKorean?'(주)모티브이노베이션 · AI 기반 수출 통합 플랫폼':'MOTIVE Innovation · AI Export Platform')+' · whistle-ai.com</div><div class="disclaimer">'+(_isKorean?'본 보고서는 휘슬 AI 분석 엔진 기반으로 생성되었으며, 투자 또는 사업 결정의 참고용으로 사용되어야 합니다. 실제 시장 상황은 변동될 수 있으며, 전문가 상담을 권장합니다.':'This report was generated by Whistle AI and is for reference only. Market conditions may change. Professional consultation is recommended.')+' © '+new Date().getFullYear()+' Motive Innovation. All rights reserved.</div></div>';
+  h+='<div class="footer"><div class="brand-f">WHISTLE AI</div><div style="font-size:9px;color:#888;margin-top:2px">'+(_isKorean?'(주)모티브이노베이션 · AI 기반 수출 통합 플랫폼':'MOTIVE Global, Inc. · AI Export Platform')+' · whistle-ai.com</div><div class="disclaimer">'+(_isKorean?'본 보고서는 휘슬 AI 분석 엔진 기반으로 생성되었으며, 투자 또는 사업 결정의 참고용으로 사용되어야 합니다. 실제 시장 상황은 변동될 수 있으며, 전문가 상담을 권장합니다.':'This report was generated by Whistle AI and is for reference only. Market conditions may change. Professional consultation is recommended.')+' © '+new Date().getFullYear()+' MOTIVE Global, Inc. All rights reserved.</div></div>';
 
   h+='</div>';/* close #pdf-content */
 
@@ -9240,21 +9250,21 @@ function pgSub(){
   var cur=S.user&&S.user.plan||'free';
   var sv=S._showVoucher||false;
   var plans=_isKorean?[
-    {id:'free',n:'FREE',pr:0,pe:'',vPr:'무료',f:[['AI 수출 분석 1회 (최초 무료)',true],['제품 등록 5개',true],['프로젝트 1건',true],['원가 계산기',true],['수출 로드맵 가이드',true],['서류 자동생성',false],['이메일 허브',false]],c:'var(--w40)',desc:'수출 가능성을 먼저 확인해보세요'},
-    {id:'starter',n:'STARTER',pr:99000,rp:199000,pe:'/월',vPr:'29,700원',vRate:'70%',f:[['AI 분석 10회/월',true],['제품 등록 20개',true],['프로젝트 5건',true],['서류 자동생성 무제한',true],['이메일 허브 50건/월',true],['수출 체크리스트',true],['카테고리별 로드맵',true]],c:'var(--pri)',hi:true,desc:'본격적인 수출 준비를 시작하세요',voucher:29700},
-    {id:'pro',n:'PRO',pr:299000,rp:599000,pe:'/월',vPr:'89,700원',vRate:'70%',f:[['AI 분석 무제한',true],['제품/프로젝트 무제한',true],['바이어 매칭 3건/월',true],['우선 서비스 처리',true],['모든 기능 무제한',true],['에스크로 거래 지원',true],['우선 기술 지원',true]],c:'var(--acc)',desc:'수출 프로세스 전체를 자동화하세요',voucher:89700}
+    {id:'free',n:'FREE',pr:0,pe:'',vPr:'무료',f:[['AI 수출 분석 1회/월',true],['제품 등록 5개',true],['프로젝트 1건',true],['원가 계산기',true],['수출 로드맵 가이드',true],['서류 자동생성',false],['이메일 허브',false]],c:'var(--w40)',desc:'수출 가능성을 먼저 확인해보세요'},
+    {id:'starter',n:'STARTER',pr:99000,rp:199000,pe:'/월',vPr:'29,700원',vRate:'70%',f:[['AI 분석 10회/월',true],['제품 등록 20개',true],['프로젝트 5건',true],['서류 자동생성 무제한',true],['이메일 허브 50건/월',true],['초과 분석 ₩2,500/건',true],['매월 초기화 (이월 없음)',true]],c:'var(--pri)',hi:true,desc:'본격적인 수출 준비를 시작하세요',voucher:29700},
+    {id:'pro',n:'PRO',pr:299000,rp:599000,pe:'/월',vPr:'89,700원',vRate:'70%',f:[['AI 분석 50회/월',true],['제품/프로젝트 무제한',true],['바이어 매칭 1건/월',true],['초과 분석 ₩2,500/건',true],['에스크로 거래 지원',true],['우선 기술 지원',true],['매월 초기화 (이월 없음)',true]],c:'var(--acc)',desc:'수출 프로세스 전체를 자동화하세요',voucher:89700}
   ]:[
-    {id:'free',n:'FREE',pr:0,pe:'',vPr:'Free',f:[['1 Free AI Analysis',true],['5 Products',true],['1 Project',true],['Cost Calculator',true],['Export Roadmap Guide',true],['Auto Documents',false],['Email Hub',false]],c:'var(--w40)',desc:'Check your export potential first'},
-    {id:'starter',n:'STARTER',pr:29,rp:59,pe:'/mo',f:[['10 AI Analyses/mo',true],['20 Products',true],['5 Projects',true],['Unlimited Documents',true],['50 Emails/mo',true],['Export Checklist',true],['Category Roadmap',true]],c:'var(--pri)',hi:true,desc:'Start serious export preparation'},
-    {id:'pro',n:'PRO',pr:79,rp:159,pe:'/mo',f:[['Unlimited AI Analyses',true],['Unlimited Products/Projects',true],['3 Buyer Matches/mo',true],['Priority Processing',true],['All Features Unlimited',true],['Escrow Support',true],['Priority Support',true]],c:'var(--acc)',desc:'Automate your entire export process'},
-    {id:'enterprise',n:'ENTERPRISE',pr:199,rp:399,pe:'/mo',f:[['Everything in Pro',true],['Dedicated Account Manager',true],['Custom API Integration',true],['Unlimited Buyer Matches',true],['White-label Reports',true],['SLA Guarantee',true],['Custom Training',true]],c:'#8A5CF6',desc:'Enterprise-grade export management'}
+    {id:'free',n:'FREE',pr:0,pe:'',vPr:'Free',f:[['1 AI Analysis/mo',true],['5 Products',true],['1 Project',true],['Cost Calculator',true],['Export Roadmap Guide',true],['Auto Documents',false],['Email Hub',false]],c:'var(--w40)',desc:'Check your export potential first'},
+    {id:'starter',n:'STARTER',pr:29,rp:59,pe:'/mo',f:[['10 AI Analyses/mo',true],['20 Products',true],['5 Projects',true],['Unlimited Documents',true],['50 Emails/mo',true],['Overage: $1.90/report',true],['Resets monthly (no rollover)',true]],c:'var(--pri)',hi:true,desc:'Start serious export preparation'},
+    {id:'pro',n:'PRO',pr:79,rp:159,pe:'/mo',f:[['50 AI Analyses/mo',true],['Unlimited Products/Projects',true],['1 Buyer Match/mo',true],['Overage: $1.90/report',true],['Escrow Support',true],['Priority Support',true],['Resets monthly (no rollover)',true]],c:'var(--acc)',desc:'Automate your entire export process'},
+    {id:'enterprise',n:'ENTERPRISE',pr:199,rp:399,pe:'/mo',f:[['200 AI Analyses/mo',true],['Dedicated Account Manager',true],['Custom API Integration',true],['Overage: $1.90/report',true],['Unlimited Buyer Matches',true],['SLA Guarantee',true],['Resets monthly (no rollover)',true]],c:'#8A5CF6',desc:'Enterprise-grade export management'}
   ];
   var _fp=_isKorean?function(v){return U.fmtPrice(v);}:function(v){return '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 
   /* Usage stats */
   var aUsed=S.analyses.filter(function(a){var d=new Date(a.created_at);var n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}).length;
   var lim=PLAN_LIMITS[cur]||PLAN_LIMITS.free;
-  var aMax=lim.analyses===-1?999:lim.analyses;
+  var aMax=lim.analyses===-1?999:lim.analyses+(S._singleAnalysisCredit||0);
   var pUsed=S.products.length;
   var pjUsed=S.projects.length;
   var curDesc=(plans.find(function(p){return p.id===cur;})||plans[0]).desc;
@@ -9399,7 +9409,7 @@ function openCheckout(planId){
   var plans=_isKorean?{starter:{n:'STARTER',pr:99000,rp:199000,c:'var(--pri)',v:29700},pro:{n:'PRO',pr:299000,rp:599000,c:'var(--acc)',v:89700},free:{n:'FREE',pr:0,c:'var(--w40)'}}:{starter:{n:'STARTER',pr:29,rp:59,c:'var(--pri)'},pro:{n:'PRO',pr:79,rp:159,c:'var(--acc)'},enterprise:{n:'ENTERPRISE',pr:199,rp:399,c:'#8A5CF6'},free:{n:'FREE',pr:0,c:'var(--w40)'}};
   var p=plans[planId];if(!p)return;
   var cur=S.user&&S.user.plan||'free';
-  var order=['free','starter','pro'];
+  var order=['free','starter','pro','enterprise'];
   var isDown=order.indexOf(planId)<order.indexOf(cur);
 
   if(planId==='free'){
@@ -9449,7 +9459,7 @@ function _ckTransfer(p){
     '<div style="font-size:12px;color:var(--w60);line-height:1.8">'+
     '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--w08)"><span>Bank</span><b style="color:var(--w90)">Provided after confirmation</b></div>'+
     '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--w08)"><span>Account</span><b style="color:var(--w90)">Contact us for details</b></div>'+
-    '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--w08)"><span>Holder</span><b style="color:var(--w90)">MOTIVE Innovation Inc.</b></div>'+
+    '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--w08)"><span>Holder</span><b style="color:var(--w90)">MOTIVE Global, Inc.</b></div>'+
     '</div><div style="margin-top:10px;font-size:11px;color:var(--w40)">After transfer, click "Confirm Transfer". Your plan will be activated within 1 business hour.</div></div>';
 }
 function _ckKakao(){
@@ -9504,6 +9514,14 @@ function initStripeCheckout(planId){
   var priceId=STRIPE_CONFIG.prices[planId]&&STRIPE_CONFIG.prices[planId][cycle];
   var _btnReset='💳 '+(_isKorean?'카드 결제하기':'Pay with Card');
   if(!priceId||!priceId.startsWith('price_')){UI.toast(_isKorean?'유효하지 않은 결제 옵션입니다.':'Invalid payment option.','info');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
+
+  /* Check for existing active subscription — upgrade via API instead of creating duplicate */
+  var hasExistingSub=S.user&&S.user.stripe_subscription_id&&(S.user.subscription_status==='active'||S.user.subscription_status==='canceling');
+  if(hasExistingSub){
+    _upgradeSubscription(planId,priceId,cycle,btn,_btnReset);
+    return;
+  }
+
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){UI.toast(_isKorean?'로그인이 필요합니다.':'Please log in first.','warn');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
     fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
@@ -9513,18 +9531,31 @@ function initStripeCheckout(planId){
     }).then(function(r){return r.json();}).then(function(data){
       if(data.error){UI.toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
       if(data.url){window.location.href=data.url;}
-      else if(data.clientSecret){
-        closeModal('ckm');
-        document.body.insertAdjacentHTML('beforeend','<div class="modal-overlay show" id="stripe-sub-ck" onclick="if(event.target===this)App.closeStripeCheckout()"><div class="modal" style="max-width:520px"><div class="modal-h"><h3>Payment</h3><button class="modal-close" onclick="App.closeStripeCheckout()">&#10005;</button></div><div class="modal-b"><div id="stripe-sub-mount" style="min-height:300px"></div></div></div></div>');
-        var sm=document.getElementById('stripe-sub-ck');if(sm)sm.style.display='flex';
-        _getStripe().initEmbeddedCheckout({clientSecret:data.clientSecret}).then(function(checkout){window._stripeCheckout=checkout;checkout.mount('#stripe-sub-mount');});
-      }
+      else{UI.toast(_isKorean?'결제 세션 생성 실패':'Payment session creation failed','err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}}
     }).catch(function(err){UI.toast('Connection error: '+err.message,'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
   });
 }
 
+/* Upgrade existing subscription via manage-subscription Edge Function */
+function _upgradeSubscription(planId,newPriceId,cycle,btn,btnReset){
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){UI.toast(_isKorean?'로그인이 필요합니다.':'Please log in first.','warn');if(btn){btn.disabled=false;btn.textContent=btnReset;}return;}
+    fetch(STRIPE_CONFIG.fn+'/manage-subscription',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
+      body:JSON.stringify({action:'upgrade',new_price_id:newPriceId,plan:planId,billing_cycle:cycle})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.error){UI.toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}return;}
+      if(data.ok){
+        closeModal('ckm');
+        UI.toast(_isKorean?'플랜이 변경되었습니다! 차액은 비례 계산(proration)됩니다.':'Plan changed! The difference will be prorated.','ok',5000);
+        loadUser();
+      }
+    }).catch(function(err){UI.toast('Connection error: '+err.message,'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}});
+  });
+}
+
 function closeStripeCheckout(){
-  if(window._stripeCheckout){window._stripeCheckout.destroy();window._stripeCheckout=null;}
   closeModal('stripe-sub-ck');
 }
 
@@ -15596,8 +15627,16 @@ function openFeedbackModal(){
     body+='<div style="font-size:10px;color:var(--w30);margin-bottom:8px">현재 페이지: '+U.esc(S.page||'dashboard')+' | '+navigator.userAgent.substring(0,50)+'...</div>';
   }
   if(_fbType==='feature'){
-    body+='<select class="form-select" id="fb-priority" style="margin-bottom:8px"><option value="nice_to_have">있으면 좋겠음</option><option value="important" selected>중요 — 자주 필요함</option><option value="critical">필수 — 없으면 사용 곤란</option></select>';
+    body+='<select class="form-select" id="fb-priority" style="margin-bottom:8px"><option value="nice_to_have">'+(_isKorean?'있으면 좋겠음':'Nice to have')+'</option><option value="important" selected>'+(_isKorean?'중요 — 자주 필요함':'Important — Frequently needed')+'</option><option value="critical">'+(_isKorean?'필수 — 없으면 사용 곤란':'Critical — Cannot use without')+'</option></select>';
   }
+  /* 스크린샷/이미지 첨부 */
+  body+='<div id="fb-attach-zone" style="margin-bottom:10px;padding:14px;border:2px dashed var(--bd);border-radius:10px;text-align:center;cursor:pointer;transition:all .2s" onclick="document.getElementById(\'fb-file-input\').click()" ondragover="event.preventDefault();this.style.borderColor=\'var(--pri)\';this.style.background=\'rgba(0,212,255,.04)\'" ondragleave="this.style.borderColor=\'var(--bd)\';this.style.background=\'transparent\'" ondrop="event.preventDefault();this.style.borderColor=\'var(--bd)\';this.style.background=\'transparent\';App._handleFbFiles(event.dataTransfer.files)">';
+  body+='<div style="font-size:20px;margin-bottom:4px">📎</div>';
+  body+='<div style="font-size:12px;color:var(--w40)">'+(_isKorean?'스크린샷 또는 이미지를 드래그하거나 클릭하여 첨부':'Drag & drop or click to attach screenshots')+'</div>';
+  body+='<div style="font-size:10px;color:var(--w20);margin-top:4px">'+(_isKorean?'최대 3장, 각 5MB 이하 (PNG, JPG, GIF)':'Max 3 files, 5MB each (PNG, JPG, GIF)')+'</div>';
+  body+='</div>';
+  body+='<input type="file" id="fb-file-input" accept="image/*" multiple style="display:none" onchange="App._handleFbFiles(this.files)">';
+  body+='<div id="fb-previews" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>';
   body+='</div>';
   var footer='<button class="btn btn-ghost" onclick="App.closeModal(\'feedback\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-pri" onclick="App.submitFeedback()">📤 접수하기</button>';
   /* Remove existing modal synchronously to prevent setTimeout race condition */
@@ -15606,48 +15645,105 @@ function openFeedbackModal(){
   /* Defer showModal to next frame so browser registers the new element before adding .show class */
   requestAnimationFrame(function(){requestAnimationFrame(function(){UI.showModal('feedback');});});
 }
+/* 피드백 이미지 첨부 핸들러 */
+var _fbAttachments=[];
+function _handleFbFiles(files){
+  if(!files||!files.length)return;
+  var maxFiles=3,maxSize=5*1024*1024;
+  for(var i=0;i<files.length;i++){
+    if(_fbAttachments.length>=maxFiles){UI.toast(_isKorean?'최대 3장까지 첨부 가능합니다':'Max 3 attachments allowed','warn');break;}
+    var f=files[i];
+    if(!f.type.startsWith('image/')){UI.toast((_isKorean?'이미지 파일만 첨부 가능합니다':'Only image files allowed'),'warn');continue;}
+    if(f.size>maxSize){UI.toast((_isKorean?'5MB 이하 파일만 첨부 가능합니다':'Max file size is 5MB'),'warn');continue;}
+    _fbAttachments.push(f);
+  }
+  _renderFbPreviews();
+}
+function _renderFbPreviews(){
+  var container=document.getElementById('fb-previews');if(!container)return;
+  container.innerHTML='';
+  _fbAttachments.forEach(function(f,idx){
+    var wrap=document.createElement('div');
+    wrap.style.cssText='position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--bd)';
+    var img=document.createElement('img');
+    img.style.cssText='width:100%;height:100%;object-fit:cover';
+    var reader=new FileReader();reader.onload=function(e){img.src=e.target.result;};reader.readAsDataURL(f);
+    var rm=document.createElement('button');
+    rm.style.cssText='position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.7);color:#fff;border:none;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center';
+    rm.textContent='✕';rm.onclick=function(e){e.stopPropagation();_fbAttachments.splice(idx,1);_renderFbPreviews();};
+    wrap.appendChild(img);wrap.appendChild(rm);container.appendChild(wrap);
+  });
+  /* 첨부 영역 업데이트 */
+  var zone=document.getElementById('fb-attach-zone');
+  if(zone){zone.style.borderColor=_fbAttachments.length?'var(--pri)':'var(--bd)';}
+}
 function submitFeedback(){
   var type=S._fbType||'bug';
   var title=(document.getElementById('fb-title')||{}).value||'';
   var desc=(document.getElementById('fb-desc')||{}).value||'';
   if(!title.trim()){UI.toast(_isKorean?'제목을 입력해주세요':'Please enter a title','warn');return;}
-  var payload={
-    user_id:S.user?S.user.id:null,
-    type:'feedback_'+type,
-    service_type:'feedback',
-    status:'pending',
-    details:{
-      feedback_type:type,
-      title:title.trim(),
-      description:desc.trim(),
-      page:S.page||'dashboard',
-      user_email:S.user?S.user.email:'',
-      user_agent:navigator.userAgent,
-      timestamp:new Date().toISOString()
-    }
-  };
-  if(type==='bug'){
-    payload.details.severity=(document.getElementById('fb-severity')||{}).value||'medium';
-  }
-  if(type==='feature'){
-    payload.details.priority=(document.getElementById('fb-priority')||{}).value||'important';
-  }
-  if(type==='partnership'){
-    var company=(document.getElementById('fb-company')||{}).value||'';
-    var contact=(document.getElementById('fb-contact')||{}).value||'';
-    var email=(document.getElementById('fb-email')||{}).value||'';
-    if(!company.trim()||!contact.trim()){UI.toast(_isKorean?'회사명과 담당자를 입력해주세요':'Please enter company name and contact person','warn');return;}
-    payload.details.company=company.trim();
-    payload.details.contact=contact.trim();
-    payload.details.email=email.trim();
+  /* 이미지 업로드 */
+  var uploadPromises=[];
+  var attachmentUrls=[];
+  if(_fbAttachments.length>0&&S.user){
+    _fbAttachments.forEach(function(f,i){
+      var ext=f.name.split('.').pop()||'png';
+      var path='feedback/'+S.user.id+'/'+Date.now()+'_'+i+'.'+ext;
+      uploadPromises.push(
+        sb.storage.from('feedback-attachments').upload(path,f,{contentType:f.type}).then(function(r){
+          if(!r.error){
+            var url=sb.storage.from('feedback-attachments').getPublicUrl(path);
+            attachmentUrls.push(url.data?url.data.publicUrl:path);
+          }
+        }).catch(function(){/* skip failed upload */})
+      );
+    });
   }
   UI.toast(_isKorean?'접수 중...':'Submitting...','info');
-  sb.from('service_requests').insert(payload).then(function(r){
-    if(r.error){console.error('[feedback]',r.error);UI.toast((_isKorean?'접수 실패: ':'Submission failed: ')+r.error.message,'err');return;}
-    closeModal('feedback');
-    S._fbType='bug';
-    var msgs={bug:'버그 신고가 접수되었습니다. 빠르게 확인하겠습니다!',feature:'기능 요청이 접수되었습니다. 검토 후 반영하겠습니다!',partnership:'제휴 문의가 접수되었습니다. 빠른 시일 내 연락드리겠습니다!'};
-    UI.toast(msgs[type]||'접수 완료!','ok');
+  Promise.all(uploadPromises).then(function(){
+    var payload={
+      user_id:S.user?S.user.id:null,
+      type:'feedback_'+type,
+      service_type:'feedback',
+      status:'pending',
+      details:{
+        feedback_type:type,
+        title:title.trim(),
+        description:desc.trim(),
+        attachments:attachmentUrls,
+        page:S.page||'dashboard',
+        user_email:S.user?S.user.email:'',
+        user_agent:navigator.userAgent,
+        timestamp:new Date().toISOString()
+      }
+    };
+    if(type==='bug'){
+      payload.details.severity=(document.getElementById('fb-severity')||{}).value||'medium';
+    }
+    if(type==='feature'){
+      payload.details.priority=(document.getElementById('fb-priority')||{}).value||'important';
+    }
+    if(type==='partnership'){
+      var company=(document.getElementById('fb-company')||{}).value||'';
+      var contact=(document.getElementById('fb-contact')||{}).value||'';
+      var email=(document.getElementById('fb-email')||{}).value||'';
+      if(!company.trim()||!contact.trim()){UI.toast(_isKorean?'회사명과 담당자를 입력해주세요':'Please enter company name and contact person','warn');return;}
+      payload.details.company=company.trim();
+      payload.details.contact=contact.trim();
+      payload.details.email=email.trim();
+    }
+    sb.from('service_requests').insert(payload).then(function(r){
+      if(r.error){console.error('[feedback]',r.error);UI.toast((_isKorean?'접수 실패: ':'Submission failed: ')+r.error.message,'err');return;}
+      closeModal('feedback');
+      _fbAttachments=[];
+      S._fbType='bug';
+      var msgs={
+        bug:(_isKorean?'버그 신고가 접수되었습니다. 빠르게 확인하겠습니다!':'Bug report submitted. We will review it promptly!'),
+        feature:(_isKorean?'기능 요청이 접수되었습니다. 검토 후 반영하겠습니다!':'Feature request submitted. We will review and consider it!'),
+        partnership:(_isKorean?'제휴 문의가 접수되었습니다. 빠른 시일 내 연락드리겠습니다!':'Partnership inquiry submitted. We will contact you soon!')
+      };
+      UI.toast(msgs[type]||(_isKorean?'접수 완료!':'Submitted!'),'ok');
+    });
   });
 }
 function openCmdPalette(){
