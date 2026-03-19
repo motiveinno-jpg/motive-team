@@ -216,6 +216,11 @@ serve(async (req) => {
           metadata: { deal_id, user_id: user.id, type: "escrow" },
           capture_method: "manual",
         },
+        payment_method_options: {
+          card: { setup_future_usage: undefined },
+        },
+        allow_promotion_codes: true,
+        automatic_tax: { enabled: false },
         success_url: success_url || "https://whistle-ai.com/app/buyer#deals",
         cancel_url: cancel_url || "https://whistle-ai.com/app/buyer#deals",
         metadata: { deal_id, user_id: user.id, type: "escrow" },
@@ -240,6 +245,11 @@ serve(async (req) => {
         customer: customerId,
         mode: "payment",
         line_items: [lineItem],
+        payment_method_options: {
+          card: { setup_future_usage: undefined },
+        },
+        allow_promotion_codes: true,
+        automatic_tax: { enabled: false },
         success_url: success_url || "https://whistle-ai.com/app#analysis",
         cancel_url: cancel_url || "https://whistle-ai.com/app#analysis",
         metadata: { user_id: user.id, type: "one_analysis" },
@@ -254,6 +264,11 @@ serve(async (req) => {
         customer: customerId,
         mode: "subscription",
         line_items: [{ price: price_id, quantity: 1 }],
+        payment_method_options: {
+          card: { setup_future_usage: "off_session" },
+        },
+        allow_promotion_codes: true,
+        automatic_tax: { enabled: false },
         success_url:
           success_url || "https://whistle-ai.com/app#subscription",
         cancel_url:

@@ -382,8 +382,8 @@ serve(async (req: Request) => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 8000,
+        model: "claude-sonnet-4-6",
+        max_tokens: 16000,
         system: language === "en"
           ? "You are an export intelligence engine. Output ONLY valid JSON in English. No markdown code fences, no explanation text before or after the JSON. Start with { and end with }."
           : "You are an export intelligence engine. Output ONLY valid JSON. No markdown code fences, no explanation text before or after the JSON. Start with { and end with }.",
@@ -453,6 +453,8 @@ serve(async (req: Request) => {
           console.log("Salvaged truncated JSON successfully");
         } catch (salvageErr) {
           console.error("Salvage also failed:", salvageErr);
+          // Refund single credit on failure
+          await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
           await sbAdmin
             .from("analyses")
             .update({
@@ -467,6 +469,8 @@ serve(async (req: Request) => {
           );
         }
       } else {
+        // Refund single credit on failure
+        await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
         await sbAdmin
           .from("analyses")
           .update({
@@ -491,7 +495,7 @@ serve(async (req: Request) => {
     }));
     result.language = language;
     result.analysis_version = "EF-v6";
-    result.model_used = "claude-haiku-4-5-20251001";
+    result.model_used = "claude-sonnet-4-6";
     result.analyzed_at = new Date().toISOString();
     result.input_data = {
       product_name_en,
