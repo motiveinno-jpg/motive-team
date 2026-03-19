@@ -414,6 +414,19 @@ function toast(msg,type,dur){
   var t=document.createElement('div');t.className='toast toast-'+(type||'ok');t.textContent=msg;
   document.body.appendChild(t);setTimeout(function(){t.remove();},dur||3000);
 }
+/* Helper: send notification via Edge Function (prevents cross-user INSERT) */
+function _sendNotification(targetUserId, type, title, message, metadata) {
+  var body = { target_user_id: targetUserId, type: type, title: title, message: message || '' };
+  if (metadata && metadata.link_page) body.link_page = metadata.link_page;
+  if (metadata && metadata.link_id) body.link_id = metadata.link_id;
+  return sb.functions.invoke('send-notification', { body: body })
+    .catch(function(e) { console.warn('Notification send failed:', e); });
+}
+/* Helper: send batch notifications via Edge Function */
+function _sendNotifications(notifArray) {
+  return sb.functions.invoke('send-notification', { body: notifArray })
+    .catch(function(e) { console.warn('Batch notification send failed:', e); });
+}
 function _bPrompt(label,cb,ph){
   var ov=document.createElement('div');ov.className='modal-overlay';ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
   ov.innerHTML='<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;max-width:400px;width:90%"><div style="font-size:14px;font-weight:700;margin-bottom:12px">'+esc(label)+'</div><textarea id="_bprompt_v" placeholder="'+(ph||'')+'" style="width:100%;min-height:80px;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--w04);color:var(--w90);font-size:13px;resize:vertical;box-sizing:border-box"></textarea><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button onclick="this.closest(\'.modal-overlay\').remove()" style="padding:8px 16px;border:1px solid var(--bd);border-radius:8px;background:transparent;color:var(--w60);cursor:pointer">Cancel</button><button onclick="var v=document.getElementById(\'_bprompt_v\').value;this.closest(\'.modal-overlay\').remove();if(v&&v.trim())window._bprompt_cb(v)" style="padding:8px 16px;border:none;border-radius:8px;background:var(--pri);color:white;cursor:pointer;font-weight:600">Submit</button></div></div>';
@@ -808,22 +821,22 @@ function _notifyAdminsNewRequest(contactReq){
   sb.from('users').select('id').eq('role','admin').limit(20).then(function(r){
     if(!r.data||!r.data.length)return;
     var notifs=r.data.map(function(admin){
-      return {user_id:admin.id,type:'buyer',title:'New buyer sourcing request',
-        body:(contactReq.company_name||contactReq.email)+': '+((contactReq.message||'').slice(0,100)),
-        link_page:'admin-contacts',is_read:false};
+      return {target_user_id:admin.id,type:'buyer',title:'New buyer sourcing request',
+        message:(contactReq.company_name||contactReq.email)+': '+((contactReq.message||'').slice(0,100)),
+        link_page:'admin-contacts'};
     });
-    sb.from('notifications').insert(notifs).then(function(){});
+    _sendNotifications(notifs);
   });
   /* 카테고리 매칭: 관련 제품이 있는 제조사에게도 알림 */
   sb.from('products').select('user_id').eq('is_public',true).limit(10).then(function(r){
     if(!r.data||!r.data.length)return;
     var uids=[...new Set(r.data.map(function(p){return p.user_id;}))];
     var mfrNotifs=uids.map(function(uid){
-      return {user_id:uid,type:'buyer',title:'New buyer inquiry received',
-        body:'A buyer is looking for products. Check your marketplace for opportunities.',
-        link_page:'marketplace',is_read:false};
+      return {target_user_id:uid,type:'buyer',title:'New buyer inquiry received',
+        message:'A buyer is looking for products. Check your marketplace for opportunities.',
+        link_page:'marketplace'};
     });
-    if(mfrNotifs.length)sb.from('notifications').insert(mfrNotifs).then(function(){});
+    if(mfrNotifs.length)_sendNotifications(mfrNotifs);
   });
 }
 
@@ -990,15 +1003,10 @@ function doLogin(f){
 function doSignup(f){
   var _pw=f.password.value;if(_pw.length<8||!/[a-zA-Z]/.test(_pw)||!/[0-9]/.test(_pw)||!/[^a-zA-Z0-9]/.test(_pw))return set({authError:''+_t('Password must be 8+ characters with letters, numbers, and special characters.','비밀번호는 8자 이상이며 영문, 숫자, 특수문자를 포함해야 합니다.')+''});
   set({authError:''});
-  sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:{role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value,terms_accepted_at:new Date().toISOString()}}}).then(function(r){
+  sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:{role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value,country:f.country.value,interests:f.interest&&f.interest.value?JSON.stringify([f.interest.value]):null,terms_accepted_at:new Date().toISOString()}}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:_t('This email is already registered. Please sign in.','이미 등록된 이메일입니다. 로그인해 주세요.')});
-    // Also upsert into users table
-    var uid=r.data&&r.data.user?r.data.user.id:null;
-    if(uid){
-      var signupInterest=f.interest&&f.interest.value?JSON.stringify([f.interest.value]):null;
-      sb.from('users').upsert({id:uid,email:f.email.value,role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value,country:f.country.value,interests:signupInterest},{onConflict:'id'}).then(function(){});
-    }
+    // users table record is created on first login via loadUser(), after email verification
     toast(_t('Account created! Please check your email to verify, then sign in.','계정이 생성되었습니다! 이메일을 인증한 후 로그인해 주세요.'),'ok');
     set({authMode:'login'});
   }).catch(function(){set({authError:'Network error. Please try again.'});});
@@ -1046,7 +1054,7 @@ function loadUser(){
           sb.auth.signOut();
           window.location.href='/app?lang='+_userLang;return;
         }
-        sb.from('users').insert({id:session.user.id,email:session.user.email,role:'buyer',company_name:meta.company_name||'',display_name:meta.display_name||''}).then(function(ur){
+        sb.from('users').insert({id:session.user.id,email:session.user.email,role:'buyer',company_name:meta.company_name||'',display_name:meta.display_name||'',country:meta.country||'',interests:meta.interests||null}).then(function(ur){
           S.user=ur.data&&ur.data[0]?ur.data[0]:{id:session.user.id,email:session.user.email,role:'buyer'};
           S.loading=false;
           loadAllData();
@@ -2570,7 +2578,7 @@ function acceptProposal(propId,reqId){
         message_type:'system',channel:'platform',direction:'inbound'
       }).then(function(){}).catch(function(e){console.error('[acceptProposal] msg:',e);});
       // 7. Create buyer notification
-      sb.from('notifications').insert({user_id:S.user.id,title:'Deal Created',body:'Your deal with '+(prop.seller_company||'seller')+' for "'+request.title+'" is now active.',link_page:'deals',link_id:mr.data.id,is_read:false}).then(function(){}).catch(function(){});
+      _sendNotification(S.user.id,'deal','Deal Created','Your deal with '+(prop.seller_company||'seller')+' for "'+request.title+'" is now active.',{link_page:'deals',link_id:mr.data.id});
       // 8. Notify seller
       if(RELAY_URL)fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
         body:JSON.stringify({userId:prop.seller_user_id,type:'marketplace',title:'Proposal accepted: '+request.title,body:request.buyer_company+' accepted your proposal. Start the deal!',linkPage:'buyers',telegram:true})
@@ -3929,7 +3937,7 @@ function acceptQuote(matchingId){
       body:'[Quotation Accepted] I accept the quotation. Let\'s proceed with the next steps.',
       message_type:'system',channel:'platform',direction:'inbound'
     }).then(function(){});
-    if(deal.sellerId)sb.from('notifications').insert({user_id:deal.sellerId,type:'deal',title:'Quotation Accepted',body:(S.user.company_name||S.user.display_name||'Buyer')+' accepted your quotation',link_page:'deals',link_id:deal.id,is_read:false}).then(function(){});
+    if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Quotation Accepted',(S.user.company_name||S.user.display_name||'Buyer')+' accepted your quotation',{link_page:'deals',link_id:deal.id});
     toast(_t('Quotation accepted! Moving to negotiation stage.','견적이 수락되었습니다! 협상 단계로 이동합니다.'),'ok');
     deal.matching.status='negotiation';
     buildDeals();render();
@@ -3945,7 +3953,7 @@ function confirmSampleOk(matchingId){
       body:'[Sample Approved] The sample quality meets our requirements. Let\'s finalize the order terms.',
       message_type:'system',channel:'platform',direction:'inbound'
     }).then(function(){});
-    if(deal.sellerId)sb.from('notifications').insert({user_id:deal.sellerId,type:'deal',title:'Sample Approved',body:(S.user.company_name||S.user.display_name||'Buyer')+' approved the sample',link_page:'deals',link_id:deal.id,is_read:false}).then(function(){});
+    if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Sample Approved',(S.user.company_name||S.user.display_name||'Buyer')+' approved the sample',{link_page:'deals',link_id:deal.id});
     toast(_t('Sample approved! Moving to negotiation.','샘플이 승인되었습니다! 협상 단계로 이동합니다.'),'ok');
     deal.matching.status='negotiation';
     buildDeals();render();
@@ -3962,7 +3970,7 @@ function confirmReadyToOrder(matchingId){
     body:'[Ready to Order] We\'re ready to proceed with the order. Please create the purchase order with the agreed terms.',
     message_type:'system',channel:'platform',direction:'inbound'
   }).then(function(){
-    if(deal.sellerId)sb.from('notifications').insert({user_id:deal.sellerId,type:'deal',title:'Ready to Order',body:(S.user.company_name||S.user.display_name||'Buyer')+' is ready to place an order',link_page:'deals',link_id:deal.id,is_read:false}).then(function(){});
+    if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Ready to Order',(S.user.company_name||S.user.display_name||'Buyer')+' is ready to place an order',{link_page:'deals',link_id:deal.id});
     toast(_t('Order readiness confirmed! The seller will create the order.','주문 준비가 확인되었습니다! 셀러가 주문을 생성합니다.'),'ok');
     render();
   });
@@ -3987,7 +3995,7 @@ function confirmDelivery(matchingId){
       body:'[Delivery Confirmed] Goods received successfully. Thank you!',
       message_type:'system',channel:'platform',direction:'inbound'
     }).then(function(){
-      if(deal.sellerId)sb.from('notifications').insert({user_id:deal.sellerId,type:'deal',title:'Delivery Confirmed',body:(S.user.company_name||S.user.display_name||'Buyer')+' confirmed receipt. Deal completed!',link_page:'deals',link_id:deal.id,is_read:false}).then(function(){});
+      if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Delivery Confirmed',(S.user.company_name||S.user.display_name||'Buyer')+' confirmed receipt. Deal completed!',{link_page:'deals',link_id:deal.id});
       toast(_t('Delivery confirmed! Deal completed.','수령이 확인되었습니다! 거래 완료.'),'ok');
       deal.matching.status='completed';
       buildDeals();render();
