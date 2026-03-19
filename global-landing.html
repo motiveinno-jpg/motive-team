@@ -1312,14 +1312,14 @@ function App() {
         {/* Single Analysis card */}
         <Fade delay={0.15} style={{ marginTop: 24, marginBottom: 8 }}>
           <div style={{ ...s.card, maxWidth: 540, margin: "0 auto", padding: 24, border: `1px solid ${T.acc}30`, position: "relative", overflow: "visible" }}>
-            <div style={{ position: "absolute", top: -10, right: 16, background: T.accG, color: T.bg, fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: 12 }}>50% LAUNCH DISCOUNT</div>
+            <div style={{ position: "absolute", top: -10, right: 16, background: T.accG, color: T.bg, fontSize: 10, fontWeight: 800, padding: "3px 10px", borderRadius: 12 }}>75% LAUNCH DISCOUNT</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: T.acc, marginBottom: 4 }}>AI Export Analysis Report</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
                   <span style={{ fontSize: 24, fontWeight: 800, color: T.w }}>$9.90</span>
                   <span style={{ fontSize: 13, color: T.w40 }}>/report</span>
-                  <span style={{ fontSize: 13, color: T.w20, textDecoration: "line-through" }}>$19.90</span>
+                  <span style={{ fontSize: 13, color: T.w20, textDecoration: "line-through" }}>$40.00</span>
                 </div>
                 <div style={{ fontSize: 12, color: T.w40, lineHeight: 1.7 }}>
                   13-section comprehensive report: market analysis, HS code classification,<br />
@@ -2564,23 +2564,73 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
   // Register translations with i18n-detect system
   window._whistleI18n = translations;
 
+  // Store original English text nodes so we can restore before re-translating
+  var originalTextMap = new WeakMap();
+  var isInitialized = false;
+
+  /**
+   * Snapshot all text nodes in #root so we can restore English later.
+   */
+  function snapshotOriginalText() {
+    var root = document.getElementById('root');
+    if (!root || isInitialized) return;
+    isInitialized = true;
+
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while (node = walker.nextNode()) {
+      if (node.nodeValue && node.nodeValue.trim().length > 0) {
+        originalTextMap.set(node, node.nodeValue);
+      }
+    }
+  }
+
+  /**
+   * Restore all text nodes to their original English values.
+   */
+  function restoreOriginalText() {
+    var root = document.getElementById('root');
+    if (!root) return;
+
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while (node = walker.nextNode()) {
+      var orig = originalTextMap.get(node);
+      if (orig !== undefined) {
+        node.nodeValue = orig;
+      }
+    }
+  }
+
   /**
    * Walk the DOM tree after React renders and replace English text
    * with detected language translations.
-   * Uses text-matching approach since React controls the DOM (no data-i18n attrs).
+   * Stores originals on first run so language can be switched back to English.
    */
   function applyGlobalLandingI18n() {
     var lang = window._whistleLang || 'en';
-    if (lang === 'en') return;
+
+    var root = document.getElementById('root');
+    if (!root) return;
+
+    // Take snapshot of English text on first call
+    snapshotOriginalText();
+
+    // Always restore English first to avoid stale partial translations
+    restoreOriginalText();
+
+    // If target is English, just restore and stop
+    if (lang === 'en') {
+      document.documentElement.setAttribute('lang', 'en');
+      document.documentElement.removeAttribute('dir');
+      return;
+    }
 
     var dict = translations[lang];
     if (!dict) return;
 
     // Build sorted keys (longest first to avoid partial matches)
     var keys = Object.keys(dict).sort(function(a, b) { return b.length - a.length; });
-
-    var root = document.getElementById('root');
-    if (!root) return;
 
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
@@ -2613,12 +2663,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       }
     }
 
-    // Also translate placeholder/value attributes on inputs and buttons
-    var buttons = root.querySelectorAll('button, [role="button"], div[onClick]');
+    // Also translate text content on buttons
+    var buttons = root.querySelectorAll('button, [role="button"]');
     for (var b = 0; b < buttons.length; b++) {
       var btnText = buttons[b].textContent.trim();
       if (dict[btnText] !== undefined) {
-        // Only replace if it's a leaf text node (no complex children)
         if (buttons[b].childNodes.length === 1 && buttons[b].childNodes[0].nodeType === 3) {
           buttons[b].childNodes[0].nodeValue = dict[btnText];
         }
@@ -2629,6 +2678,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
     document.documentElement.setAttribute('lang', lang);
     if (lang === 'ar') {
       document.documentElement.setAttribute('dir', 'rtl');
+    } else {
+      document.documentElement.removeAttribute('dir');
     }
   }
 
@@ -2640,14 +2691,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
     var root = document.getElementById('root');
     if (!root) return;
 
-    // If React already rendered (content exists)
     if (root.children.length > 0) {
-      // Small delay to ensure all React sub-components are rendered
       setTimeout(applyGlobalLandingI18n, 150);
       return;
     }
 
-    // Watch for React to populate #root
     var observer = new MutationObserver(function(mutations, obs) {
       if (root.children.length > 0) {
         obs.disconnect();
@@ -2657,7 +2705,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 
     observer.observe(root, { childList: true, subtree: true });
 
-    // Fallback: if MutationObserver doesn't fire within 5s, try anyway
     setTimeout(function() {
       observer.disconnect();
       applyGlobalLandingI18n();

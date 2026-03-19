@@ -1146,23 +1146,73 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
   // Register translations with i18n-detect system
   window._whistleI18n = translations;
 
+  // Store original English text nodes so we can restore before re-translating
+  var originalTextMap = new WeakMap();
+  var isInitialized = false;
+
+  /**
+   * Snapshot all text nodes in #root so we can restore English later.
+   */
+  function snapshotOriginalText() {
+    var root = document.getElementById('root');
+    if (!root || isInitialized) return;
+    isInitialized = true;
+
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while (node = walker.nextNode()) {
+      if (node.nodeValue && node.nodeValue.trim().length > 0) {
+        originalTextMap.set(node, node.nodeValue);
+      }
+    }
+  }
+
+  /**
+   * Restore all text nodes to their original English values.
+   */
+  function restoreOriginalText() {
+    var root = document.getElementById('root');
+    if (!root) return;
+
+    var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while (node = walker.nextNode()) {
+      var orig = originalTextMap.get(node);
+      if (orig !== undefined) {
+        node.nodeValue = orig;
+      }
+    }
+  }
+
   /**
    * Walk the DOM tree after React renders and replace English text
    * with detected language translations.
-   * Uses text-matching approach since React controls the DOM (no data-i18n attrs).
+   * Stores originals on first run so language can be switched back to English.
    */
   function applyBuyerLandingI18n() {
     var lang = window._whistleLang || 'en';
-    if (lang === 'en') return;
+
+    var root = document.getElementById('root');
+    if (!root) return;
+
+    // Take snapshot of English text on first call
+    snapshotOriginalText();
+
+    // Always restore English first to avoid stale partial translations
+    restoreOriginalText();
+
+    // If target is English, just restore and stop
+    if (lang === 'en') {
+      document.documentElement.setAttribute('lang', 'en');
+      document.documentElement.removeAttribute('dir');
+      return;
+    }
 
     var dict = translations[lang];
     if (!dict) return;
 
     // Build sorted keys (longest first to avoid partial matches)
     var keys = Object.keys(dict).sort(function(a, b) { return b.length - a.length; });
-
-    var root = document.getElementById('root');
-    if (!root) return;
 
     var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
@@ -1195,8 +1245,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       }
     }
 
-    // Also translate placeholder/value attributes on inputs and buttons
-    var buttons = root.querySelectorAll('button, [role="button"], div[onClick]');
+    // Also translate text content on buttons
+    var buttons = root.querySelectorAll('button, [role="button"]');
     for (var b = 0; b < buttons.length; b++) {
       var btnText = buttons[b].textContent.trim();
       if (dict[btnText] !== undefined) {
@@ -1210,6 +1260,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
     document.documentElement.setAttribute('lang', lang);
     if (lang === 'ar') {
       document.documentElement.setAttribute('dir', 'rtl');
+    } else {
+      document.documentElement.removeAttribute('dir');
     }
   }
 

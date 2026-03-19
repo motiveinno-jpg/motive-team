@@ -25,22 +25,29 @@
   };
 
   function detectLang() {
-    // 1. Check URL param
+    // 1. Check URL param (?lang=ko)
     var urlLang = new URLSearchParams(window.location.search).get('lang');
     if (urlLang && SUPPORTED_LANGS.indexOf(urlLang) !== -1) return urlLang;
 
-    // 2. Check localStorage
+    // 2. Check URL path prefix (/en, /ko, /ja, etc.)
+    var pathSegments = window.location.pathname.split('/').filter(Boolean);
+    if (pathSegments.length > 0) {
+      var pathLang = pathSegments[0].toLowerCase();
+      if (SUPPORTED_LANGS.indexOf(pathLang) !== -1) return pathLang;
+    }
+
+    // 3. Check localStorage
     var saved = localStorage.getItem('whistle_lang');
     if (saved && SUPPORTED_LANGS.indexOf(saved) !== -1) return saved;
 
-    // 3. Check Cloudflare country header (set by CF Workers if available)
+    // 4. Check Cloudflare country header (set by CF Workers if available)
     var cfCountry = document.querySelector('meta[name="cf-ipcountry"]');
     if (cfCountry) {
       var cl = COUNTRY_TO_LANG[cfCountry.getAttribute('content')];
       if (cl) return cl;
     }
 
-    // 4. Browser language
+    // 5. Browser language
     var browserLang = (navigator.language || navigator.userLanguage || '').substring(0, 2).toLowerCase();
     if (SUPPORTED_LANGS.indexOf(browserLang) !== -1) return browserLang;
 
@@ -103,14 +110,18 @@
       item.setAttribute('data-lang', l);
       item.onmouseenter = function() { this.style.background = 'rgba(255,255,255,.08)'; this.style.color = '#fff'; };
       item.onmouseleave = function() { this.style.background = 'transparent'; this.style.color = 'rgba(255,255,255,.7)'; };
-      item.onclick = function() {
+      item.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
         setLang(l);
         dropdown.style.display = 'none';
       };
       dropdown.appendChild(item);
     });
 
-    btn.onclick = function() {
+    btn.onclick = function(e) {
+      e.preventDefault();
+      e.stopPropagation();
       dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
 
