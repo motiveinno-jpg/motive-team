@@ -258,6 +258,8 @@ var _userLang = (function() {
   return supported.indexOf(nav) >= 0 ? nav : 'en';
 })();
 var _isKorean = _userLang === 'ko' || location.pathname.indexOf('/ko') >= 0;
+window.__whistleLang = _userLang;
+window.__isKorean = _isKorean;
 
 /* Multi-language translation dictionary for UI chrome */
 var _ML = {
@@ -1032,12 +1034,17 @@ function loadUser(){
     var session=r.data.session;
     if(!session)return set({loading:false,user:null});
     sb.from('users').select('*').eq('id',session.user.id).single().then(function(r){
-      if(r.error||!r.data){
+      if(r.error){
+        console.error('Failed to load user profile:', r.error.message);
+        set({loading:false});
+        return;
+      }
+      if(!r.data){
         // User exists in auth but not users table - create entry
         var meta=session.user.user_metadata||{};
         if(meta.role && meta.role !== 'buyer' && meta.role !== 'admin'){
           sb.auth.signOut();
-          window.location.href='/app';return;
+          window.location.href='/app?lang='+_userLang;return;
         }
         sb.from('users').insert({id:session.user.id,email:session.user.email,role:'buyer',company_name:meta.company_name||'',display_name:meta.display_name||''}).then(function(ur){
           S.user=ur.data&&ur.data[0]?ur.data[0]:{id:session.user.id,email:session.user.email,role:'buyer'};
@@ -1046,7 +1053,7 @@ function loadUser(){
         });
         return;
       }
-      if(r.data.role!=='buyer'&&r.data.role!=='admin'){window.location.href='/app';return;}
+      if(r.data.role!=='buyer'&&r.data.role!=='admin'){window.location.href='/app?lang='+_userLang;return;}
       S.user=r.data;S.loading=false;
       loadAllData();
     }).catch(function(){set({loading:false,user:null});});
@@ -4615,7 +4622,7 @@ try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from(
 
 /* === INIT === */
 sb.auth.onAuthStateChange(function(event,session){
-  if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED'){loadUser();}
+  if(event==='TOKEN_REFRESHED'){loadUser();}
   else if(event==='SIGNED_OUT'){S.user=null;S.loading=false;render();}
   else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
 });
@@ -4624,7 +4631,7 @@ window.addEventListener('popstate',function(){var hp=location.hash.replace('#','
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifOpen){S.notifOpen=false;render();return;}var modal=document.querySelector('.modal-overlay');if(modal){B.closeModal();return;}if(S.modal){B.closeModal();return;}}});
 /* Korean language banner for KR users */
 (function(){
-  var isKo=_isKorean;
+  var isKo=window.__isKorean;
   if(isKo&&!sessionStorage.getItem('ko_banner_dismissed')){
     var b=document.createElement('div');
     b.id='ko-banner';
@@ -5317,7 +5324,7 @@ document.addEventListener('click',function(e){if(S.notifOpen){var dd=document.qu
 </div>
 <script>
 (function(){
-  var _ck=(typeof _isKorean!=='undefined')?_isKorean:(navigator.language||'').startsWith('ko');
+  var _ck=(typeof window.__isKorean!=='undefined')?window.__isKorean:(navigator.language||'').startsWith('ko');
   var ct=document.getElementById('cookie-text');if(ct)ct.innerHTML=_ck?'서비스 개선과 분석을 위해 쿠키를 사용합니다. 자세한 내용은 <a href="/privacy/ko" style="color:#4f8cff;text-decoration:underline">개인정보처리방침</a>을 확인하세요.':'We use cookies to improve our service and for analytics. See our <a href="/privacy/en" style="color:#4f8cff;text-decoration:underline">Privacy Policy</a> for details.';
   var cd=document.getElementById('cookie-decline');if(cd)cd.textContent=_ck?'거부':'Decline';
   var ca=document.getElementById('cookie-accept');if(ca)ca.textContent=_ck?'동의':'Accept';
