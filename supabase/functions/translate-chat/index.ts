@@ -110,6 +110,9 @@ serve(async (req: Request) => {
 
     const langName = LANG_NAMES[target] || target;
 
+    const aiController = new AbortController();
+    const aiTimeout = setTimeout(() => aiController.abort(), 15000);
+
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -127,7 +130,8 @@ serve(async (req: Request) => {
           },
         ],
       }),
-    });
+      signal: aiController.signal,
+    }).finally(() => clearTimeout(aiTimeout));
 
     if (!resp.ok) {
       const errText = await resp.text();

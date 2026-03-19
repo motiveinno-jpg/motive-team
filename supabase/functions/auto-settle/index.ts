@@ -5,12 +5,48 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 const PLATFORM_FEE_RATE = 0.025;
 const AUTO_SETTLE_DAYS = 7;
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "https://whistle-ai.com",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { status: 200 });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
+    // Auth: require either cron secret or valid admin JWT
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    const authHeader = req.headers.get("Authorization");
+    const cronHeader = req.headers.get("x-cron-secret");
+
+    if (cronSecret && cronHeader === cronSecret) {
+      // Cron invocation — OK
+    } else if (authHeader) {
+      const sbUrl = Deno.env.get("SUPABASE_URL")!;
+      const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const sbCheck = (await import("https://esm.sh/@supabase/supabase-js@2.39.3")).createClient(sbUrl, sbKey);
+      const token = authHeader.replace("Bearer ", "");
+      const { data: { user }, error } = await sbCheck.auth.getUser(token);
+      if (error || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Verify admin role
+      const { data: userData } = await sbCheck.from("users").select("role").eq("id", user.id).single();
+      if (!userData || userData.role !== "admin") {
+        return new Response(JSON.stringify({ error: "Admin only" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

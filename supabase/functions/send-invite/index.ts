@@ -6,7 +6,7 @@ serve(async (req) => {
     return new Response("ok", {
       status: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://whistle-ai.com",
         "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
       },
     });
@@ -186,7 +186,7 @@ serve(async (req) => {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": "https://whistle-ai.com",
         },
       }
     );

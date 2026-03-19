@@ -150,13 +150,16 @@ serve(async (req: Request) => {
         );
       }
 
-      // Deduct single analysis credit if over monthly limit
+      // Deduct single analysis credit atomically if over monthly limit
       if (used >= monthlyLimit && singleCredits > 0) {
-        await sbAdmin
-          .from("users")
-          .update({ analysis_credits: singleCredits - 1 })
-          .eq("id", user.id);
-        console.log(`[plan] User ${user.id} used single credit for classify_hs (${singleCredits - 1} remaining)`);
+        const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
+        if (rpcErr || remaining === -1) {
+          return new Response(
+            JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        console.log(`[plan] User ${user.id} used single credit for classify_hs (${remaining} remaining)`);
       }
     }
     // ─── End plan enforcement ───
@@ -260,6 +263,9 @@ ${hsHint ? "## HS코드 참고 데이터\n" + hsHint : ""}
 tariff_preview의 관세율은 해당 HS코드 기준 실제 관세율에 최대한 가깝게 추정하세요.
 JSON만 출력하세요.`;
 
+    const aiController = new AbortController();
+    const aiTimeout = setTimeout(() => aiController.abort(), 30000);
+
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -272,7 +278,8 @@ JSON만 출력하세요.`;
         max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       }),
-    });
+      signal: aiController.signal,
+    }).finally(() => clearTimeout(aiTimeout));
 
     if (!resp.ok) {
       const errText = await resp.text();
@@ -280,7 +287,7 @@ JSON만 출력하세요.`;
       return new Response(
         JSON.stringify({
           ok: false,
-          error: `AI API 오류 (${resp.status}): ${errText.substring(0, 300)}`,
+          error: `AI API error (${resp.status})`,
         }),
         {
           status: 502,

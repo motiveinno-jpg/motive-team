@@ -128,6 +128,9 @@ Return ONLY valid JSON (no markdown, no code fences). Keep string values short a
 }
 All costs in USD. Use realistic estimates with (est.) if uncertain. Never say "check with..." — give the most likely answer.`;
 
+    const aiController = new AbortController();
+    const aiTimeout = setTimeout(() => aiController.abort(), 30000);
+
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -140,7 +143,8 @@ All costs in USD. Use realistic estimates with (est.) if uncertain. Never say "c
         max_tokens: 4000,
         messages: [{ role: "user", content: prompt }],
       }),
-    });
+      signal: aiController.signal,
+    }).finally(() => clearTimeout(aiTimeout));
 
     if (!resp.ok) {
       const errText = await resp.text();
@@ -148,7 +152,7 @@ All costs in USD. Use realistic estimates with (est.) if uncertain. Never say "c
       return new Response(
         JSON.stringify({
           ok: false,
-          error: `AI API 오류 (${resp.status}): ${errText.substring(0, 300)}`,
+          error: `AI API error (${resp.status})`,
         }),
         {
           status: 502,

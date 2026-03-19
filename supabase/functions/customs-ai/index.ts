@@ -263,6 +263,9 @@ Rules:
 - If the reference material does not cover the question, use your general knowledge but note that the information should be verified.
 ${ragContext}`;
 
+    const aiController = new AbortController();
+    const aiTimeout = setTimeout(() => aiController.abort(), 30000);
+
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -276,7 +279,8 @@ ${ragContext}`;
         system: systemPrompt,
         messages: [{ role: "user", content: userMsg }],
       }),
-    });
+      signal: aiController.signal,
+    }).finally(() => clearTimeout(aiTimeout));
 
     if (!resp.ok) {
       const errText = await resp.text();

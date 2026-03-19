@@ -132,13 +132,16 @@ serve(async (req: Request) => {
         );
       }
 
-      // Deduct single analysis credit if over monthly limit
+      // Deduct single analysis credit atomically if over monthly limit
       if (used >= monthlyLimit && singleCredits > 0) {
-        await sbAdmin
-          .from("users")
-          .update({ analysis_credits: singleCredits - 1 })
-          .eq("id", user.id);
-        console.log(`[plan] User ${user.id} used single credit for FTA sim (${singleCredits - 1} remaining)`);
+        const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
+        if (rpcErr || remaining === -1) {
+          return new Response(
+            JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        console.log(`[plan] User ${user.id} used single credit for FTA sim (${remaining} remaining)`);
       }
     }
     // ─── End plan enforcement ───
@@ -292,6 +295,9 @@ JSON 배열만 출력하세요.`;
 }
 
 async function callAI(apiKey: string, prompt: string) {
+  const aiController = new AbortController();
+  const aiTimeout = setTimeout(() => aiController.abort(), 30000);
+
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -304,12 +310,13 @@ async function callAI(apiKey: string, prompt: string) {
       max_tokens: 3000,
       messages: [{ role: "user", content: prompt }],
     }),
-  });
+    signal: aiController.signal,
+  }).finally(() => clearTimeout(aiTimeout));
 
   if (!resp.ok) {
     const errText = await resp.text();
     console.error("Anthropic API error:", resp.status, errText);
-    throw new Error(`AI API 오류 (${resp.status})`);
+    throw new Error(`AI API error (${resp.status})`);
   }
 
   const aiResp = await resp.json();

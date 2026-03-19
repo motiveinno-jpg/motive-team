@@ -267,13 +267,16 @@ serve(async (req: Request) => {
         );
       }
 
-      // Deduct single analysis credit if over monthly limit
+      // Deduct single analysis credit atomically if over monthly limit
       if (used >= monthlyLimit && singleCredits > 0) {
-        await sbAdmin
-          .from("users")
-          .update({ analysis_credits: singleCredits - 1 })
-          .eq("id", user.id);
-        console.log(`[plan] User ${user.id} used single credit (${singleCredits - 1} remaining)`);
+        const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
+        if (rpcErr || remaining === -1) {
+          return new Response(
+            JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
+            { status: 403, headers },
+          );
+        }
+        console.log(`[plan] User ${user.id} used single credit (${remaining} remaining)`);
       }
     }
     // ─── End plan enforcement ───
