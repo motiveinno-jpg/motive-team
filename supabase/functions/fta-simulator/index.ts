@@ -57,99 +57,115 @@ serve(async (req: Request) => {
   }
 
   try {
-    // Auth check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sbAdmin = createClient(sbUrl, sbServiceRole);
 
-    // Extract and validate user from JWT
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userErr } = await sbAdmin.auth.getUser(token);
-    if (!user || userErr) {
-      return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Soft auth: try to extract user from JWT but do not block on failure
+    let user: { id: string; email?: string } | null = null;
+    const authHeader = req.headers.get("Authorization");
+    if (authHeader) {
+      try {
+        const token = authHeader.replace("Bearer ", "");
+        const { data: { user: authUser }, error: userErr } = await sbAdmin.auth.getUser(token);
+        if (authUser && !userErr) {
+          user = authUser;
+        } else {
+          console.warn("[fta-simulator] JWT validation failed (proceeding without user):", userErr?.message);
+        }
+      } catch (authErr) {
+        console.warn("[fta-simulator] Auth error (proceeding without user):", authErr);
+      }
     }
 
-    // Create user-scoped client for RLS operations
-    const sbAnon = Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
-    const sb = createClient(sbUrl, sbAnon, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // ─── Plan enforcement: check user's plan and usage limits ───
+    // ─── Plan enforcement: only if user is authenticated ───
     const PLAN_LIMITS: Record<string, number> = {
       free: 5,
       starter: 50,
       pro: 200,
       professional: 200,
-      enterprise: -1, // unlimited
-      alibaba: -1,    // unlimited
+      enterprise: -1,
+      alibaba: -1,
     };
 
-    const { data: userData } = await sbAdmin
-      .from("users")
-      .select("plan, analysis_credits")
-      .eq("id", user.id)
-      .single();
+    if (user) {
+      const { data: userData } = await sbAdmin
+        .from("users")
+        .select("plan, analysis_credits")
+        .eq("id", user.id)
+        .single();
 
-    const userPlan = userData?.plan || "free";
-    const singleCredits = userData?.analysis_credits || 0;
-    const monthlyLimit = PLAN_LIMITS[userPlan] ?? 5;
+      const userPlan = userData?.plan || "free";
+      const singleCredits = userData?.analysis_credits || 0;
+      const monthlyLimit = PLAN_LIMITS[userPlan] ?? 5;
 
-    // Count this month's FTA simulations (skip for unlimited plans)
-    if (monthlyLimit !== -1) {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
+      if (monthlyLimit !== -1) {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
 
-      const { count: monthlyUsage } = await sbAdmin
-        .from("analyses")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("analysis_type", "fta_simulation")
-        .gte("created_at", startOfMonth.toISOString());
+        const { count: monthlyUsage } = await sbAdmin
+          .from("analyses")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("analysis_type", "fta_simulation")
+          .gte("created_at", startOfMonth.toISOString());
 
-      const used = monthlyUsage || 0;
+        const used = monthlyUsage || 0;
 
-      if (used >= monthlyLimit && singleCredits <= 0) {
-        const isKo = req.headers.get("accept-language")?.includes("ko");
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            error: isKo
-              ? `월간 FTA 시뮬레이션 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
-              : `Monthly FTA simulation limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
-            code: "PLAN_LIMIT_EXCEEDED",
-            limit: monthlyLimit,
-            used,
-          }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-
-      // Deduct single analysis credit atomically if over monthly limit
-      if (used >= monthlyLimit && singleCredits > 0) {
-        const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
-        if (rpcErr || remaining === -1) {
+        if (used >= monthlyLimit && singleCredits <= 0) {
+          const isKo = req.headers.get("accept-language")?.includes("ko");
           return new Response(
-            JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
+            JSON.stringify({
+              ok: false,
+              error: isKo
+                ? `월간 FTA 시뮬레이션 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
+                : `Monthly FTA simulation limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
+              code: "PLAN_LIMIT_EXCEEDED",
+              limit: monthlyLimit,
+              used,
+            }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-        console.log(`[plan] User ${user.id} used single credit for FTA sim (${remaining} remaining)`);
+
+        if (used >= monthlyLimit && singleCredits > 0) {
+          const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
+          if (rpcErr || remaining === -1) {
+            return new Response(
+              JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          console.log(`[plan] User ${user.id} used single credit for FTA sim (${remaining} remaining)`);
+        }
       }
     }
     // ─── End plan enforcement ───
 
     const body = await req.json();
-    const { hs_code, destination, destinations } = body;
+    const { hs_code, destination, destinations, prompt } = body;
 
-    if (!hs_code) {
+    // If only prompt is provided (from buyer app), extract hs_code and destination
+    let effectiveHsCode = hs_code;
+    let effectiveDestination = destination;
+    let effectiveDestinations = destinations;
+
+    if (!effectiveHsCode && prompt) {
+      const hsMatch = prompt.match(/HS Code:\s*(\d+)/);
+      if (hsMatch) effectiveHsCode = hsMatch[1];
+    }
+    if (!effectiveDestination && !effectiveDestinations && prompt) {
+      const destMatch = prompt.match(/Destination\(s\):\s*([^\n]+)/);
+      if (destMatch) {
+        const destStr = destMatch[1];
+        const codes = Object.keys(COUNTRY_FTA).filter(c => destStr.includes(c));
+        if (codes.length === 1) effectiveDestination = codes[0];
+        else if (codes.length > 1) effectiveDestinations = codes;
+      }
+    }
+
+    if (!effectiveHsCode) {
       return new Response(
         JSON.stringify({ ok: false, error: "HS코드를 입력하세요" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -165,26 +181,25 @@ serve(async (req: Request) => {
     }
 
     /* 복수 시장 비교 */
-    if (destinations && Array.isArray(destinations) && destinations.length > 0) {
-      const results: Record<string, unknown> = {};
-
-      /* 한 번의 AI 호출로 모든 시장 비교 */
-      const destInfo = destinations.map((d: string) => {
+    if (effectiveDestinations && Array.isArray(effectiveDestinations) && effectiveDestinations.length > 0) {
+      const destInfo = effectiveDestinations.map((d: string) => {
         const ftas = COUNTRY_FTA[d] || ["확인 필요"];
         return `- ${d} (${COUNTRY_NAMES[d] || d}): 적용 가능 FTA = ${ftas.join(", ")}`;
       }).join("\n");
 
-      const prompt = buildMultiPrompt(hs_code, destinations, destInfo);
-      const aiResult = await callAI(anthropicKey, prompt);
+      const aiPrompt = buildMultiPrompt(effectiveHsCode, effectiveDestinations, destInfo);
+      const aiResult = await callAI(anthropicKey, aiPrompt);
 
-      // Track usage
-      await sbAdmin.from("analyses").insert({
-        user_id: user.id,
-        product_name: `FTA: ${hs_code} → ${destinations.join(",")}`,
-        analysis_type: "fta_simulation",
-        status: "completed",
-        ai_result: aiResult,
-      });
+      // Track usage if user is authenticated
+      if (user) {
+        await sbAdmin.from("analyses").insert({
+          user_id: user.id,
+          product_name: `FTA: ${effectiveHsCode} → ${effectiveDestinations.join(",")}`,
+          analysis_type: "fta_simulation",
+          status: "completed",
+          ai_result: aiResult,
+        });
+      }
 
       return new Response(
         JSON.stringify({ ok: true, results: aiResult }),
@@ -193,27 +208,29 @@ serve(async (req: Request) => {
     }
 
     /* 단일 시장 */
-    if (!destination) {
+    if (!effectiveDestination) {
       return new Response(
         JSON.stringify({ ok: false, error: "수출 대상국을 선택하세요" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const ftas = COUNTRY_FTA[destination] || ["확인 필요"];
-    const countryName = COUNTRY_NAMES[destination] || destination;
+    const ftas = COUNTRY_FTA[effectiveDestination] || ["확인 필요"];
+    const countryName = COUNTRY_NAMES[effectiveDestination] || effectiveDestination;
 
-    const prompt = buildSinglePrompt(hs_code, destination, countryName, ftas);
-    const result = await callAI(anthropicKey, prompt);
+    const aiPrompt = buildSinglePrompt(effectiveHsCode, effectiveDestination, countryName, ftas);
+    const result = await callAI(anthropicKey, aiPrompt);
 
-    // Track usage
-    await sbAdmin.from("analyses").insert({
-      user_id: user.id,
-      product_name: `FTA: ${hs_code} → ${destination}`,
-      analysis_type: "fta_simulation",
-      status: "completed",
-      ai_result: result,
-    });
+    // Track usage if user is authenticated
+    if (user) {
+      await sbAdmin.from("analyses").insert({
+        user_id: user.id,
+        product_name: `FTA: ${effectiveHsCode} → ${effectiveDestination}`,
+        analysis_type: "fta_simulation",
+        status: "completed",
+        ai_result: result,
+      });
+    }
 
     return new Response(
       JSON.stringify({ ok: true, result }),
