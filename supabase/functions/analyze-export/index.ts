@@ -8,8 +8,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CRAWL_TIMEOUT_MS = 8000;
-const MAX_CRAWL_TEXT_LENGTH = 5000;
+const CRAWL_TIMEOUT_MS = 12000;
+const MAX_CRAWL_TEXT_LENGTH = 12000;
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -97,7 +97,7 @@ async function crawlUrl(url: string): Promise<CrawlResult> {
       ".product-detail", ".product-info", ".item-detail",
       ".goods_description", ".prod_detail", "#productDetail",
       ".detail-content", ".product_detail", "[class*='product']",
-      "[class*='detail']", "[class*='description']",
+      "[class*='detail']", "[class*='description']", "[class*='spec']",
       "main", "article", ".content", "#content",
     ];
 
@@ -110,8 +110,39 @@ async function crawlUrl(url: string): Promise<CrawlResult> {
         const t = el.textContent?.replace(/\s+/g, " ").trim() || "";
         if (t.length > 50) extractedText += t + "\n";
       });
-      if (extractedText.length > 2000) break;
+      if (extractedText.length > 6000) break;
     }
+
+    // Extract tables (spec sheets, pricing tables, cert info)
+    let tableText = "";
+    doc.querySelectorAll("table").forEach((tbl: any) => {
+      if (tableText.length > 3000) return;
+      const rows: string[] = [];
+      tbl.querySelectorAll("tr").forEach((tr: any) => {
+        const cells: string[] = [];
+        tr.querySelectorAll("th, td").forEach((td: any) => {
+          cells.push(td.textContent?.trim() || "");
+        });
+        if (cells.some((c) => c.length > 0)) rows.push(cells.join(" | "));
+      });
+      if (rows.length > 1) tableText += "\n[Table] " + rows.join(" / ") + "\n";
+    });
+
+    // Extract structured data (JSON-LD)
+    let structuredData = "";
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach((s: any) => {
+      try {
+        const ld = JSON.parse(s.textContent || "");
+        if (ld["@type"] === "Product" || ld["@type"] === "IndividualProduct") {
+          if (ld.name) structuredData += `LD-제품명: ${ld.name}\n`;
+          if (ld.description) structuredData += `LD-설명: ${String(ld.description).substring(0, 500)}\n`;
+          if (ld.offers?.price) structuredData += `LD-가격: ${ld.offers.priceCurrency || ""} ${ld.offers.price}\n`;
+          if (ld.brand?.name) structuredData += `LD-브랜드: ${ld.brand.name}\n`;
+          if (ld.weight) structuredData += `LD-무게: ${ld.weight}\n`;
+          if (ld.image) structuredData += `LD-이미지: ${Array.isArray(ld.image) ? ld.image[0] : ld.image}\n`;
+        }
+      } catch {}
+    });
 
     // Fallback: extract from body
     if (extractedText.length < 500) {
@@ -136,9 +167,28 @@ async function crawlUrl(url: string): Promise<CrawlResult> {
     if (metaDesc || ogDesc) metaInfo += `설명: ${metaDesc || ogDesc}\n`;
     if (ogImage) metaInfo += `이미지: ${ogImage}\n`;
 
-    const finalText = (metaInfo + extractedText).slice(0, MAX_CRAWL_TEXT_LENGTH);
+    // Find detail/more links for deeper crawling
+    const detailLinks: string[] = [];
+    const linkPatterns = /상세|detail|more|spec|설명|보기|view|info/i;
+    doc.querySelectorAll("a[href]").forEach((a: any) => {
+      const href = a.getAttribute("href") || "";
+      const text = a.textContent?.trim() || "";
+      if ((linkPatterns.test(text) || linkPatterns.test(href)) && href.length > 1) {
+        try {
+          const fullUrl = new URL(href, url).href;
+          if (isSafeUrl(fullUrl) && !detailLinks.includes(fullUrl) && fullUrl !== url) {
+            detailLinks.push(fullUrl);
+          }
+        } catch {}
+      }
+    });
 
-    return { url, success: true, title, text: finalText, image: ogImage || undefined };
+    const finalText = (structuredData + metaInfo + extractedText + tableText).slice(0, MAX_CRAWL_TEXT_LENGTH);
+
+    return {
+      url, success: true, title, text: finalText, image: ogImage || undefined,
+      _detailLinks: detailLinks.slice(0, 2), // pass up to 2 detail links for deeper crawl
+    } as any;
   } catch (err) {
     const msg = (err as Error).message || "Unknown error";
     if (msg.includes("abort")) {
@@ -156,8 +206,9 @@ async function crawlUrls(urls: string[]): Promise<{
 
   const validUrls = urls.filter((u) => {
     try { new URL(u); return true; } catch { return false; }
-  }).slice(0, 3); // Max 3 URLs to stay within timeout
+  }).slice(0, 3); // Max 3 URLs
 
+  // Phase 1: Crawl main URLs
   const results = await Promise.allSettled(
     validUrls.map((u) => crawlUrl(u)),
   );
@@ -167,6 +218,33 @@ async function crawlUrls(urls: string[]): Promise<{
       ? r.value
       : { url: validUrls[i], success: false, error: "Promise rejected" }
   );
+
+  // Phase 2: Follow detail/more links (1 level deep, max 2 links)
+  const detailLinks: string[] = [];
+  for (const cr of crawlResults) {
+    const dl = (cr as any)._detailLinks;
+    if (dl && Array.isArray(dl)) {
+      for (const link of dl) {
+        if (!detailLinks.includes(link) && !validUrls.includes(link)) {
+          detailLinks.push(link);
+        }
+      }
+    }
+  }
+
+  if (detailLinks.length > 0) {
+    console.log(`[crawl] Following ${detailLinks.length} detail link(s)...`);
+    const deepResults = await Promise.allSettled(
+      detailLinks.slice(0, 2).map((u) => crawlUrl(u)),
+    );
+    for (let i = 0; i < deepResults.length; i++) {
+      if (deepResults[i].status === "fulfilled") {
+        const dr = (deepResults[i] as PromiseFulfilledResult<CrawlResult>).value;
+        dr.url = `[상세] ${dr.url}`;
+        crawlResults.push(dr);
+      }
+    }
+  }
 
   let crawledText = "";
   for (const cr of crawlResults) {
@@ -179,7 +257,7 @@ async function crawlUrls(urls: string[]): Promise<{
     }
   }
 
-  return { crawledText: crawledText.slice(0, 12000), crawlResults };
+  return { crawledText: crawledText.slice(0, 18000), crawlResults };
 }
 
 serve(async (req: Request) => {
