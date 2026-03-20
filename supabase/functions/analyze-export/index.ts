@@ -474,6 +474,7 @@ serve(async (req: Request) => {
     const decoder = new TextDecoder();
     let buffer = "";
     let lastProgressUpdate = 0;
+    let lastReportedPct = 0;
     const progressSections = [
       { key: "hs_code", pct: 40, label: "hs_code" },
       { key: "fta_analysis", pct: 55, label: "fta_analysis" },
@@ -511,7 +512,7 @@ serve(async (req: Request) => {
       const now = Date.now();
       if (now - lastProgressUpdate > 3000) {
         for (const ps of progressSections) {
-          if (rawText.includes(`"${ps.key}"`) && ps.pct > (lastProgressUpdate === 0 ? 0 : 25)) {
+          if (rawText.includes(`"${ps.key}"`) && ps.pct > lastReportedPct) {
             // Extract partial results from rawText for live preview
             const partial: Record<string, unknown> = {};
             const partialKeys = [
@@ -571,6 +572,7 @@ serve(async (req: Request) => {
               })
               .eq("id", analysis_id)
               .eq("user_id", user.id);
+            lastReportedPct = ps.pct;
             lastProgressUpdate = now;
             break;
           }
