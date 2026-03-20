@@ -335,6 +335,22 @@ serve(async (req: Request) => {
     };
     const marketNames = language === "en" ? marketNamesEn : marketNamesKo;
 
+    // Sanctions screening for target markets
+    const SANCTIONED_MARKETS = ["KP", "IR", "SY", "CU", "SS", "AF", "CF", "CD", "LY", "SO", "YE", "ZW", "NI"];
+    const HIGH_RISK_MARKETS = ["RU", "BY", "VE", "MM", "SD"];
+    const sanctionedTargets = target_markets.filter((m: string) => SANCTIONED_MARKETS.includes(m.toUpperCase()));
+    if (sanctionedTargets.length > 0) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: `Target market(s) ${sanctionedTargets.join(", ")} are under comprehensive international sanctions. Export analysis cannot proceed.`,
+          sanctioned: true,
+        }),
+        { status: 403, headers },
+      );
+    }
+    const highRiskTargets = target_markets.filter((m: string) => HIGH_RISK_MARKETS.includes(m.toUpperCase()));
+
     const marketList = target_markets
       .map((m: string) => marketNames[m] || m)
       .join(", ");
@@ -390,6 +406,7 @@ serve(async (req: Request) => {
       marketList,
       crawledText,
       language,
+      highRiskTargets,
     });
 
     // Progressive update: AI analysis started
@@ -683,6 +700,7 @@ interface PromptInput {
   marketList: string;
   crawledText: string;
   language: string;
+  highRiskTargets?: string[];
 }
 
 function buildPrompt(d: PromptInput): string {
@@ -786,11 +804,20 @@ Never write generalities, obvious statements, or generic advice. All content mus
 - 점수 근거: 어떤 요인이 점수에 긍정적/부정적 영향을 줬는지, 개선 방법은 무엇인지 설명합니다.
 - "병목이다 높다. 필요하다." 같은 단편적 서술 금지 — 반드시 완전한 문장으로 읽기 쉽게 작성합니다.`;
 
+  const hrWarning = d.highRiskTargets && d.highRiskTargets.length > 0
+    ? `\n## ⚠️ ${isEn ? "HIGH-RISK MARKET WARNING" : "고위험 시장 경고"}
+${isEn
+  ? `The following target market(s) are classified as HIGH-RISK under international trade controls: ${d.highRiskTargets.join(", ")}.
+In your analysis, you MUST include: (1) specific sanctions/export control warnings, (2) ECCN/EAR classification requirements, (3) end-use/end-user screening requirements, (4) enhanced due diligence steps, (5) potential license requirements. Add these to the risks array and regulatory_score rationale.`
+  : `다음 타겟 시장은 국제 수출통제 고위험 국가입니다: ${d.highRiskTargets.join(", ")}.
+분석 시 반드시 포함: (1) 제재/수출통제 경고, (2) ECCN/EAR 분류 요건, (3) 최종용도/최종사용자 스크리닝, (4) 강화된 실사 절차, (5) 잠재 수출허가 요건. risks 배열과 regulatory_score에 반영하세요.`}\n`
+    : "";
+
   return `${intro}
 
 ${productInfo}
 ${crawlSection}
-
+${hrWarning}
 ${principles}
 
 ## ${isEn ? "Response JSON Structure (all fields required)" : "응답 JSON 구조 (모든 필드 필수)"}

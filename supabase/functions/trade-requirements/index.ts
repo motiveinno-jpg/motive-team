@@ -82,6 +82,28 @@ serve(async (req: Request) => {
       );
     }
 
+    // Sanctioned country check
+    const SANCTIONED = ["KP", "IR", "SY", "CU", "SS", "AF", "CF", "CD", "LY", "SO", "YE", "ZW", "NI"];
+    const HIGH_RISK = ["RU", "BY", "VE", "MM", "SD", "CN", "PK", "LB", "IQ"];
+    const destUpper = dest_country.toUpperCase();
+
+    if (SANCTIONED.includes(destUpper)) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: `${dest_country} is under comprehensive international sanctions (OFAC/EU/UN). Export transactions to this destination are prohibited. Please consult a trade compliance specialist.`,
+          sanctioned: true,
+          country: destUpper,
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    const isHighRisk = HIGH_RISK.includes(destUpper);
+
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
       return new Response(
@@ -102,6 +124,7 @@ serve(async (req: Request) => {
     const prompt = `You are an international trade expert. Analyze trade requirements for this route. Be concise but practical.
 
 TRADE: ${origin_country} → ${dest_country} | Category: ${category || "General"} | HS: ${hs_code || "N/A"} | Product: ${product_name || "N/A"}
+${isHighRisk ? "⚠️ HIGH-RISK DESTINATION: " + dest_country + " is subject to enhanced trade controls (partial sanctions, export restrictions, or elevated compliance requirements). Include specific warnings about sanctions screening, export control classification (ECCN/EAR99), end-use restrictions, and required due diligence steps in your analysis." : ""}
 ${originCtx ? "ORIGIN: " + originCtx : ""}
 ${destCtx ? "DEST: " + destCtx : ""}
 
