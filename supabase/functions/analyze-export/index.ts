@@ -345,6 +345,25 @@ serve(async (req: Request) => {
       crawlResults.map((r) => `${r.url}: ${r.success ? "OK" : r.error}`),
     );
 
+    // Progressive update: crawl phase complete
+    const crawlMeta = crawlResults.map((cr) => ({
+      url: cr.url,
+      success: cr.success,
+      title: cr.title || "",
+      error: cr.error || "",
+    }));
+    await sbAdmin
+      .from("analyses")
+      .update({
+        ai_result: {
+          _progress: "crawl_done",
+          _progress_pct: 15,
+          crawl_results: crawlMeta,
+        },
+      })
+      .eq("id", analysis_id)
+      .eq("user_id", user.id);
+
     const prompt = buildPrompt({
       product_name,
       product_name_en,
@@ -371,6 +390,19 @@ serve(async (req: Request) => {
       language,
     });
 
+    // Progressive update: AI analysis started
+    await sbAdmin
+      .from("analyses")
+      .update({
+        ai_result: {
+          _progress: "ai_started",
+          _progress_pct: 25,
+          crawl_results: crawlMeta,
+        },
+      })
+      .eq("id", analysis_id)
+      .eq("user_id", user.id);
+
     const aiController = new AbortController();
     const aiTimer = setTimeout(() => aiController.abort(), 120000);
 
@@ -384,6 +416,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 16000,
+        stream: true,
         system: language === "en"
           ? "You are an export intelligence engine. Output ONLY valid JSON in English. No markdown code fences, no explanation text before or after the JSON. Start with { and end with }."
           : "You are an export intelligence engine. Output ONLY valid JSON. No markdown code fences, no explanation text before or after the JSON. Start with { and end with }.",
@@ -413,9 +446,71 @@ serve(async (req: Request) => {
       );
     }
 
-    const aiData = await aiResp.json();
-    const rawText = aiData.content?.[0]?.text || "";
-    console.log("AI response - model:", aiData.model, "stop_reason:", aiData.stop_reason, "text_length:", rawText.length, "usage:", JSON.stringify(aiData.usage));
+    // Stream response and collect text + progressive DB updates
+    let rawText = "";
+    let stopReason = "end_turn";
+    let aiModel = "claude-sonnet-4-6";
+    let aiUsage: any = {};
+    const reader = aiResp.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastProgressUpdate = 0;
+    const progressSections = [
+      { key: "hs_code", pct: 40, label: "hs_code" },
+      { key: "fta_analysis", pct: 55, label: "fta_analysis" },
+      { key: "market_analysis", pct: 65, label: "market_analysis" },
+      { key: "competitive_landscape", pct: 75, label: "competitive" },
+      { key: "price_competitiveness", pct: 85, label: "pricing" },
+      { key: "action_plan", pct: 92, label: "action_plan" },
+    ];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") continue;
+        try {
+          const evt = JSON.parse(data);
+          if (evt.type === "content_block_delta" && evt.delta?.text) {
+            rawText += evt.delta.text;
+          } else if (evt.type === "message_delta") {
+            stopReason = evt.delta?.stop_reason || stopReason;
+            if (evt.usage) aiUsage = { ...aiUsage, ...evt.usage };
+          } else if (evt.type === "message_start" && evt.message) {
+            aiModel = evt.message.model || aiModel;
+            if (evt.message.usage) aiUsage = evt.message.usage;
+          }
+        } catch { /* skip malformed events */ }
+      }
+      // Progressive DB update when new sections detected (throttle to every 3s)
+      const now = Date.now();
+      if (now - lastProgressUpdate > 3000) {
+        for (const ps of progressSections) {
+          if (rawText.includes(`"${ps.key}"`) && ps.pct > (lastProgressUpdate === 0 ? 0 : 25)) {
+            await sbAdmin
+              .from("analyses")
+              .update({
+                ai_result: {
+                  _progress: ps.label,
+                  _progress_pct: ps.pct,
+                  crawl_results: crawlMeta,
+                },
+              })
+              .eq("id", analysis_id)
+              .eq("user_id", user.id);
+            lastProgressUpdate = now;
+            break;
+          }
+        }
+        if (lastProgressUpdate !== now) lastProgressUpdate = now;
+      }
+    }
+    console.log("AI response - model:", aiModel, "stop_reason:", stopReason, "text_length:", rawText.length, "usage:", JSON.stringify(aiUsage));
 
     let result;
     try {
@@ -425,10 +520,10 @@ serve(async (req: Request) => {
       result = JSON.parse(jsonMatch[0]);
     } catch (parseErr) {
       // If truncated (max_tokens hit), try to fix incomplete JSON
-      const stopReason = aiData.stop_reason;
+      const _stopReason = stopReason;
       console.error("JSON parse error:", parseErr, "stop_reason:", stopReason, "Raw tail:", rawText.slice(-200));
 
-      if (stopReason === "max_tokens") {
+      if (_stopReason === "max_tokens") {
         // Try to salvage truncated JSON by closing brackets
         try {
           let jsonStr = rawText.match(/\{[\s\S]*/)?.[0] || "";
@@ -494,8 +589,8 @@ serve(async (req: Request) => {
       error: cr.error || "",
     }));
     result.language = language;
-    result.analysis_version = "EF-v6";
-    result.model_used = "claude-sonnet-4-6";
+    result.analysis_version = "EF-v7-stream";
+    result.model_used = aiModel;
     result.analyzed_at = new Date().toISOString();
     result.input_data = {
       product_name_en,
