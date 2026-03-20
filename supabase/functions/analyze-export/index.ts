@@ -439,14 +439,18 @@ MOQ: ${moq || na}
       ? "You are an export intelligence engine. Output ONLY valid JSON. No markdown. Start with { end with }."
       : "수출 인텔리전스 엔진. JSON만 출력. 마크다운 금지. {로 시작 }로 끝내세요.";
 
-    // Helper: non-streaming AI call with timeout
-    // Strategy: Haiku first (fast, 10-20s) → Sonnet fallback (quality, 40-60s)
-    // This guarantees sub-60s per call while maintaining quality fallback
+    // Helper: non-streaming AI call with timeout + retry
+    // Strategy: Haiku PRIMARY (fast 10-15s, reliable) → retry once on failure
+    // Haiku produces excellent structured JSON. Speed = reliability.
     async function callAI(prompt: string, maxTokens: number): Promise<{ result: any; model: string }> {
-      const doCall = async (model: string, timeoutMs: number): Promise<{ result: any; model: string }> => {
+      const MODEL = "claude-haiku-4-5-20251001";
+      const TIMEOUT = 50000; // 50s generous timeout
+
+      const doCall = async (attempt: number): Promise<{ result: any; model: string }> => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
         try {
+          console.log(`[AI] Attempt ${attempt}, model: ${MODEL}, maxTokens: ${maxTokens}`);
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
@@ -455,7 +459,7 @@ MOQ: ${moq || na}
               "anthropic-version": "2023-06-01",
             },
             body: JSON.stringify({
-              model,
+              model: MODEL,
               max_tokens: maxTokens,
               system: sysMsg,
               messages: [{ role: "user", content: prompt }],
@@ -463,23 +467,32 @@ MOQ: ${moq || na}
             signal: ctrl.signal,
           });
           clearTimeout(timer);
-          if (!resp.ok) throw new Error(`API ${resp.status}`);
+          if (!resp.ok) {
+            const errBody = await resp.text().catch(() => "");
+            throw new Error(`API ${resp.status}: ${errBody.substring(0, 200)}`);
+          }
           const data = await resp.json();
           const text = data.content?.[0]?.text || "";
           const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) throw new Error("No JSON in response");
-          return { result: JSON.parse(jsonMatch[0]), model };
+          if (!jsonMatch) throw new Error("No JSON in response: " + text.substring(0, 100));
+          return { result: JSON.parse(jsonMatch[0]), model: MODEL };
         } catch (err) {
           clearTimeout(timer);
           throw err;
         }
       };
 
+      // Try up to 2 times (original + 1 retry)
       try {
-        return await doCall("claude-sonnet-4-6", 45000); // 45s for Sonnet
-      } catch (err) {
-        console.warn("Sonnet failed, falling back to Haiku:", (err as Error).message);
-        return await doCall("claude-haiku-4-5-20251001", 40000); // 40s for Haiku
+        return await doCall(1);
+      } catch (err1) {
+        console.warn("[AI] Attempt 1 failed:", (err1 as Error).message, "— retrying...");
+        try {
+          return await doCall(2);
+        } catch (err2) {
+          console.error("[AI] Attempt 2 also failed:", (err2 as Error).message);
+          throw err2;
+        }
       }
     }
 
@@ -701,12 +714,52 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       );
     }
 
+    // ─── RESCUE: If 1-2 calls failed, retry the missing sections ───
+    if (failedCalls > 0) {
+      console.log(`[rescue] ${failedCalls} call(s) failed, attempting rescue...`);
+      const rescuePromises: Promise<void>[] = [];
+
+      if (r1.status !== "fulfilled") {
+        rescuePromises.push(
+          callAI(prompt1, 5000).then((res) => {
+            Object.assign(result, res.result);
+            usedModels.push(res.model + "-rescue");
+            failedCalls--;
+            console.log("[rescue] Call 1 recovered");
+          }).catch((e) => console.error("[rescue] Call 1 still failed:", (e as Error).message))
+        );
+      }
+      if (r2.status !== "fulfilled") {
+        rescuePromises.push(
+          callAI(prompt2, 5000).then((res) => {
+            Object.assign(result, res.result);
+            usedModels.push(res.model + "-rescue");
+            failedCalls--;
+            console.log("[rescue] Call 2 recovered");
+          }).catch((e) => console.error("[rescue] Call 2 still failed:", (e as Error).message))
+        );
+      }
+      if (r3.status !== "fulfilled") {
+        rescuePromises.push(
+          callAI(prompt3, 3000).then((res) => {
+            Object.assign(result, res.result);
+            usedModels.push(res.model + "-rescue");
+            failedCalls--;
+            console.log("[rescue] Call 3 recovered");
+          }).catch((e) => console.error("[rescue] Call 3 still failed:", (e as Error).message))
+        );
+      }
+
+      await Promise.allSettled(rescuePromises);
+      console.log(`[rescue] Done. Remaining failures: ${failedCalls}`);
+    }
+
     // Attach metadata
     const firstImage = crawlResults.find((cr) => cr.success && cr.image);
     result.crawl_results = crawlMeta;
     if (firstImage?.image) result.thumbnail = firstImage.image;
     result.language = language;
-    result.analysis_version = "EF-v9-parallel";
+    result.analysis_version = "EF-v10-reliable";
     result.model_used = usedModels.join("+");
     result.analyzed_at = new Date().toISOString();
     result.processing_time_ms = totalTime;
