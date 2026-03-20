@@ -507,16 +507,65 @@ serve(async (req: Request) => {
         } catch { /* skip malformed events */ }
       }
       // Progressive DB update when new sections detected (throttle to every 3s)
+      // Include partial results so the client can show real data behind the overlay
       const now = Date.now();
       if (now - lastProgressUpdate > 3000) {
         for (const ps of progressSections) {
           if (rawText.includes(`"${ps.key}"`) && ps.pct > (lastProgressUpdate === 0 ? 0 : 25)) {
+            // Extract partial results from rawText for live preview
+            const partial: Record<string, unknown> = {};
+            const partialKeys = [
+              "executive_summary", "product_name", "hs_code", "hs_description",
+              "overall_score", "market_fit", "price_competitiveness", "brand_power",
+              "competition", "regulatory", "estimated_fob", "target_markets",
+              "fta_analysis", "market_analysis", "competitive_landscape",
+              "cert_requirements", "price_competitiveness_detail", "action_plan",
+            ];
+            for (const pk of partialKeys) {
+              // Try to extract completed JSON values for each key
+              const keyPattern = new RegExp(`"${pk}"\\s*:\\s*`);
+              const match = rawText.match(keyPattern);
+              if (match && match.index !== undefined) {
+                const startIdx = match.index + match[0].length;
+                try {
+                  // Attempt to parse the value starting at this position
+                  const sub = rawText.slice(startIdx);
+                  // Simple extraction: find the value end
+                  if (sub[0] === '"') {
+                    const endQ = sub.indexOf('"', 1);
+                    if (endQ > 0) partial[pk] = sub.slice(1, endQ);
+                  } else if (sub[0] === '[' || sub[0] === '{') {
+                    // Try to parse array/object — may be incomplete
+                    let depth = 0; let inStr = false; let esc = false; let end = -1;
+                    const open = sub[0]; const close = open === '[' ? ']' : '}';
+                    for (let ci = 0; ci < sub.length && ci < 8000; ci++) {
+                      const ch = sub[ci];
+                      if (esc) { esc = false; continue; }
+                      if (ch === '\\') { esc = true; continue; }
+                      if (ch === '"') { inStr = !inStr; continue; }
+                      if (inStr) continue;
+                      if (ch === open || ch === '{' || ch === '[') depth++;
+                      if (ch === close || ch === '}' || ch === ']') depth--;
+                      if (depth === 0) { end = ci + 1; break; }
+                    }
+                    if (end > 0) {
+                      try { partial[pk] = JSON.parse(sub.slice(0, end)); } catch { /* skip */ }
+                    }
+                  } else {
+                    // number or boolean
+                    const numMatch = sub.match(/^(-?\d+\.?\d*)/);
+                    if (numMatch) partial[pk] = Number(numMatch[1]);
+                  }
+                } catch { /* skip unparseable */ }
+              }
+            }
             await sbAdmin
               .from("analyses")
               .update({
                 ai_result: {
                   _progress: ps.label,
                   _progress_pct: ps.pct,
+                  _partial: partial,
                   crawl_results: crawlMeta,
                 },
               })
