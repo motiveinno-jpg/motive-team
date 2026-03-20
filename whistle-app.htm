@@ -756,17 +756,18 @@ function payOneAnalysis(){
 }
 function _stripeOneAnalysis(){
   if(!_isStripeReady()){_showOneAnalysisCTA();return;}
+  _savePendingAnalysis();
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){UI.toast(T('toast_login_required'),'warn');return;}
     UI.toast(_isKorean?'결제 페이지로 이동합니다...':'Redirecting to payment...','info');
     fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
-      body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'#analysis',cancel_url:location.origin+location.pathname+'#analysis'})
+      body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'?checkout=success#analysis',cancel_url:location.origin+location.pathname+'?checkout=cancel#analysis'})
     }).then(function(r){return r.json();}).then(function(data){
       if(data.url){window.location.href=data.url;}
-      else if(data.error){UI.toast(data.error,'err');}
-    }).catch(function(e){console.error('[one-analysis]',e);UI.toast(_isKorean?'결제 연결 오류':'Payment connection error','err');});
+      else if(data.error){UI.toast(_payErr(data.error),'err');}
+    }).catch(function(e){console.error('[one-analysis]',e);UI.toast(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.','err');});
   });
 }
 
@@ -792,13 +793,79 @@ function _showOneAnalysisCTA(){
 function _checkStripeCallback(){
   var p=new URLSearchParams(location.search);
   if(p.get('checkout')==='success'){
-    history.replaceState(null,'',location.pathname);
-    UI.toast(_isKorean?'결제가 완료되었습니다! 감사합니다.':'Payment completed! Thank you.','ok',5000);
+    history.replaceState(null,'',location.pathname+location.hash);
+    UI.toast(_isKorean?'결제가 완료되었습니다! 플랜을 갱신합니다...':'Payment completed! Updating your plan...','ok',5000);
+    /* 결제 후 플랜 자동 반영: loadUser 재호출 + 최대 5회 폴링 */
+    var _planPollCount=0;
+    var _prevPlan=S.user&&S.user.plan||'free';
+    function _pollPlanUpdate(){
+      loadUser().then(function(){
+        _planPollCount++;
+        var newPlan=S.user&&S.user.plan||'free';
+        if(newPlan!==_prevPlan){
+          UI.toast(_isKorean?'플랜이 '+newPlan.toUpperCase()+'로 활성화되었습니다!':'Plan activated: '+newPlan.toUpperCase()+'!','ok',5000);
+          /* 결제 전 분석 데이터 복원 */
+          _restorePendingAnalysis();
+        } else if(_planPollCount<5){
+          setTimeout(_pollPlanUpdate,2000);
+        } else {
+          /* 5회 시도 후에도 미반영: webhook 지연 가능 */
+          UI.toast(_isKorean?'결제가 확인되었습니다. 플랜 반영에 잠시 시간이 걸릴 수 있습니다.':'Payment confirmed. Plan update may take a moment.','info',5000);
+          _restorePendingAnalysis();
+        }
+      });
+    }
+    setTimeout(_pollPlanUpdate,1500);
   }
   if(p.get('checkout')==='cancel'){
-    history.replaceState(null,'',location.pathname);
+    history.replaceState(null,'',location.pathname+location.hash);
     UI.toast(_isKorean?'결제가 취소되었습니다.':'Payment was cancelled.','info');
+    _restorePendingAnalysis();
   }
+}
+/* 결제 에러 한글화 */
+var _payErrMap=_isKorean?{
+  'card_declined':'카드 결제가 거절되었습니다. 다른 카드를 사용하거나 카드사에 문의해주세요.',
+  'insufficient_funds':'잔액이 부족합니다. 다른 카드를 사용해주세요.',
+  'expired_card':'만료된 카드입니다. 유효한 카드를 사용해주세요.',
+  'incorrect_cvc':'CVC 번호가 올바르지 않습니다. 카드 뒷면을 확인해주세요.',
+  'processing_error':'결제 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+  'rate_limit':'요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+  'authentication_required':'3D Secure 인증이 필요합니다. 카드사 앱에서 승인해주세요.',
+  'payment_intent_authentication_failure':'결제 인증에 실패했습니다. 다시 시도해주세요.',
+  'No such price':'유효하지 않은 결제 상품입니다. 페이지를 새로고침해주세요.',
+  'No such customer':'고객 정보를 찾을 수 없습니다. 다시 로그인해주세요.'
+}:{
+  'card_declined':'Your card was declined. Please try a different card or contact your bank.',
+  'insufficient_funds':'Insufficient funds. Please use a different card.',
+  'expired_card':'This card has expired. Please use a valid card.',
+  'incorrect_cvc':'Incorrect CVC. Please check the back of your card.',
+  'processing_error':'A processing error occurred. Please try again.',
+  'rate_limit':'Too many requests. Please try again later.',
+  'authentication_required':'3D Secure authentication required. Please approve in your banking app.',
+  'payment_intent_authentication_failure':'Payment authentication failed. Please try again.',
+  'No such price':'Invalid product. Please refresh the page.',
+  'No such customer':'Customer not found. Please log in again.'
+};
+function _payErr(msg){if(!msg)return msg;for(var k in _payErrMap){if(msg.indexOf(k)>=0)return _payErrMap[k];}return _isKorean?'결제 오류: '+msg:'Payment error: '+msg;}
+/* 결제 전 분석 데이터 저장/복원 */
+function _savePendingAnalysis(){
+  if(S.analysisData&&S.analysisData.product_name){
+    try{sessionStorage.setItem('_pendingAnalysis',JSON.stringify(S.analysisData));sessionStorage.setItem('_pendingAnalysisStep',S.analysisStep||1);}catch(e){}
+  }
+}
+function _restorePendingAnalysis(){
+  try{
+    var saved=sessionStorage.getItem('_pendingAnalysis');
+    if(saved){
+      var data=JSON.parse(saved);
+      var step=parseInt(sessionStorage.getItem('_pendingAnalysisStep'))||1;
+      sessionStorage.removeItem('_pendingAnalysis');sessionStorage.removeItem('_pendingAnalysisStep');
+      S.analysisData=data;S.analysisStep=step;
+      nav('analysis');
+      UI.toast(_isKorean?'이전 분석 데이터가 복원되었습니다. 분석을 다시 시작할 수 있습니다.':'Previous analysis data restored. You can restart the analysis.','ok',4000);
+    }
+  }catch(e){}
 }
 
 /* === DISCLAIMER === */
@@ -2054,7 +2121,7 @@ function submitA(){
   var sp=d.selling_points.filter(function(s){return s;});
   sb.from('analyses').insert({user_id:S.user.id,product_name:d.product_name,product_url:urls[0]||null,analysis_type:(S.user&&S.user.plan&&S.user.plan!=='free')?'premium':'free',status:'analyzing',ai_result:{input_data:{product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:urls,files:(d.files||[]).map(function(f){return f.name||'file';}),selling_points:sp,target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton}}}).select().single().then(function(r){
     if(r.error){S._submitting=false;GP.done();UI.toast((_isKorean?'실패: ':'Failed: ')+r.error.message,'err');return;}
-    S.analyses.unshift(r.data);S.analysisStep=0;S.analysisData=null;_clearAFormClass();
+    S.analyses.unshift(r.data);S._lastAnalysisData=JSON.parse(JSON.stringify(d));S.analysisStep=0;S.analysisData=null;_clearAFormClass();
     S._aiStartTime=Date.now();S._aiProgressPct=0;S._aiProgressLabel='';set({currentAnalysis:r.data});UI.toast(_isKorean?'AI 수출 분석을 시작합니다.':'Starting AI export analysis.','info');
     /* Realtime subscription for progressive updates */
     if(S._aiRealtime)sb.removeChannel(S._aiRealtime);
@@ -2256,7 +2323,7 @@ function _showAnalysisGuidance(reason,d,analysisId){
     '<div style="padding:10px 16px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);margin-bottom:16px"><div style="font-size:12px;color:var(--ok);font-weight:700">'+(_ko?'✅ 분석 횟수가 차감되지 않았습니다':'✅ Your analysis credits were not deducted')+'</div></div>'+
     inputSummary+
     '<div style="display:flex;gap:10px;margin-top:20px;justify-content:center">'+
-    '<button class="btn btn-pri" onclick="App._closeGuidance();App.nav(\'analysis\');App.set({analysisStep:1})" style="padding:12px 24px;font-weight:700">'+(_ko?'정보 보완하고 재분석':'Improve & Re-analyze')+'</button>'+
+    '<button class="btn btn-pri" onclick="App._closeGuidance(true)" style="padding:12px 24px;font-weight:700">'+(_ko?'정보 보완하고 재분석':'Improve & Re-analyze')+'</button>'+
     '<button class="btn btn-ghost" onclick="App._closeGuidance();App.nav(\'analysis\')" style="padding:12px 24px">'+(_ko?'목록으로':'Back to List')+'</button>'+
     '</div></div></div>';
 
@@ -2264,7 +2331,13 @@ function _showAnalysisGuidance(reason,d,analysisId){
   var existing=document.getElementById('analysis-guidance');if(existing)existing.remove();
   var div=document.createElement('div');div.id='analysis-guidance';div.innerHTML=html;document.body.appendChild(div);
 }
-function _closeGuidance(){var el=document.getElementById('analysis-guidance');if(el)el.remove();set({currentAnalysis:null});}
+function _closeGuidance(retry){
+  var el=document.getElementById('analysis-guidance');if(el)el.remove();set({currentAnalysis:null});
+  if(retry&&S._lastAnalysisData){
+    S.analysisData=S._lastAnalysisData;S.analysisStep=1;nav('analysis');
+    UI.toast(_isKorean?'이전 입력 정보가 복원되었습니다. 보완 후 다시 분석해주세요.':'Previous input restored. Improve and re-analyze.','info',4000);
+  } else {nav('analysis');}
+}
 
 /* ── Auto-create product from analysis ── */
 function autoCreateProduct(analysisId,res,productName){
@@ -9491,7 +9564,7 @@ function pgSub(){
   var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">💎 '+(_isKorean?'구독 관리':'Subscription')+'</h2></div>'+
 
   /* Current plan summary */
-  '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">'+(_isKorean?'현재 플랜':'Current Plan')+'</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div>'+(cur!=='free'&&S.user&&S.user.stripe_customer_id?'<button class="btn btn-ghost btn-sm" onclick="App.openBillingPortal()" style="margin-top:6px;font-size:11px">'+(_isKorean?'구독 관리 (결제수단·해지)':'Manage Subscription')+'</button>':'')+'</div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'AI 분석':'AI Analysis')+'</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'제품':'Products')+'</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'프로젝트':'Projects')+'</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
+  '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">'+(_isKorean?'현재 플랜':'Current Plan')+'</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div>'+(cur!=='free'&&S.user&&S.user.stripe_customer_id?'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="App.openBillingPortal()" style="font-size:11px">'+(_isKorean?'구독 관리 (결제수단·해지)':'Manage Subscription')+'</button><button class="btn btn-ghost btn-sm" onclick="App.requestRefund()" style="font-size:11px;color:var(--err)">'+(_isKorean?'환불 요청':'Request Refund')+'</button></div>':'')+'</div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'AI 분석':'AI Analysis')+'</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'제품':'Products')+'</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'프로젝트':'Projects')+'</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
 
   /* Government voucher box — TOP position */
   '<div class="card" style="border-color:rgba(255,184,0,.2);margin-bottom:20px"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="font-size:28px">🏛️</span><div style="flex:1;min-width:200px"><div style="font-weight:700;color:var(--acc)">'+(_isKorean?'정부 바우처로 결제 가능':'Government Voucher Payment Available')+'</div><div style="font-size:12px;color:var(--w40);margin-top:2px">'+(_isKorean?'수출바우처·혁신바우처 최대 85% 지원. SaaS 구독 + 알리바바 패키지 모두 적용 가능.':'Export/Innovation voucher covers up to 85%. Applicable to SaaS subscription + Alibaba packages.')+'</div></div><button class="btn btn-acc btn-sm" onclick="App.reqSvc(\'certification\')">'+(_isKorean?'바우처 상담':'Voucher Consultation')+'</button></div></div>'+
@@ -9743,12 +9816,12 @@ function initStripeCheckout(planId){
     fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
-      body:JSON.stringify({price_id:priceId,plan:planId,billing_cycle:cycle,success_url:location.origin+location.pathname+'#subscription',cancel_url:location.origin+location.pathname+'#subscription'})
+      body:JSON.stringify({price_id:priceId,plan:planId,billing_cycle:cycle,success_url:location.origin+location.pathname+'?checkout=success#subscription',cancel_url:location.origin+location.pathname+'?checkout=cancel#subscription'})
     }).then(function(r){return r.json();}).then(function(data){
-      if(data.error){UI.toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
-      if(data.url){window.location.href=data.url;}
-      else{UI.toast(_isKorean?'결제 세션 생성 실패':'Payment session creation failed','err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}}
-    }).catch(function(err){UI.toast('Connection error: '+err.message,'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
+      if(data.error){UI.toast(_payErr(data.error),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
+      if(data.url){_savePendingAnalysis();window.location.href=data.url;}
+      else{UI.toast(_isKorean?'결제 세션 생성 실패. 잠시 후 다시 시도해주세요.':'Payment session creation failed. Please try again.','err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}}
+    }).catch(function(err){UI.toast(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.','err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
   });
 }
 
@@ -9761,13 +9834,13 @@ function _upgradeSubscription(planId,newPriceId,cycle,btn,btnReset){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({action:'upgrade',new_price_id:newPriceId,plan:planId,billing_cycle:cycle})
     }).then(function(r){return r.json();}).then(function(data){
-      if(data.error){UI.toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}return;}
+      if(data.error){UI.toast(_payErr(data.error),'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}return;}
       if(data.ok){
         closeModal('ckm');
         UI.toast(_isKorean?'플랜이 변경되었습니다! 차액은 비례 계산(proration)됩니다.':'Plan changed! The difference will be prorated.','ok',5000);
         loadUser();
       }
-    }).catch(function(err){UI.toast('Connection error: '+err.message,'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}});
+    }).catch(function(err){UI.toast(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.','err');if(btn){btn.disabled=false;btn.textContent=btnReset;}});
   });
 }
 
@@ -9776,6 +9849,10 @@ function closeStripeCheckout(){
 }
 
 function openBillingPortal(){
+  if(!S.user||!S.user.stripe_customer_id){
+    UI.toast(_isKorean?'결제 정보가 없습니다. 구독 결제 후 이용 가능합니다.':'No payment info found. Available after subscription payment.','warn');
+    return;
+  }
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){UI.toast(T('toast_login_required'),'warn');return;}
     fetch(STRIPE_CONFIG.fn+'/create-billing-portal',{
@@ -9784,11 +9861,56 @@ function openBillingPortal(){
       body:JSON.stringify({return_url:location.href})
     }).then(function(r){return r.json();}).then(function(data){
       if(data.url)window.open(data.url,'_blank');
-      else UI.toast(data.error||'Billing Portal을 열 수 없습니다.','warn');
+      else UI.toast(_payErr(data.error)||(_isKorean?'빌링 포탈을 열 수 없습니다.':'Unable to open billing portal.'),'warn');
     });
   });
 }
 
+function requestRefund(){
+  if(!S.user)return;
+  var _daysSinceSubscription=0;
+  if(S.user.subscription_start){_daysSinceSubscription=Math.floor((Date.now()-new Date(S.user.subscription_start).getTime())/(1000*60*60*24));}
+  var _withinCooling=_daysSinceSubscription<=7;
+  var body='<div style="text-align:center;padding:10px 0">'+
+    '<div style="font-size:40px;margin-bottom:12px">💳</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:10px">'+(_isKorean?'환불 요청':'Refund Request')+'</div>'+
+    (_withinCooling?
+      '<div style="padding:12px;border-radius:10px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);margin-bottom:12px"><div style="font-size:12px;color:var(--ok);font-weight:700">'+(_isKorean?'✅ 7일 쿨링 기간 내 — 전액 환불 가능':'✅ Within 7-day cooling period — full refund available')+'</div></div>':
+      '<div style="padding:12px;border-radius:10px;background:rgba(255,77,77,.06);border:1px solid rgba(255,77,77,.15);margin-bottom:12px"><div style="font-size:12px;color:var(--err);font-weight:700">'+(_isKorean?'⚠️ 쿨링 기간(7일)이 경과했습니다':'⚠️ Cooling period (7 days) has passed')+'</div><div style="font-size:11px;color:var(--w50);margin-top:4px">'+(_isKorean?'잔여 기간에 대한 부분 환불이 가능할 수 있습니다. 담당자가 확인 후 연락드리겠습니다.':'Partial refund for remaining period may be available. We will review and contact you.')+'</div></div>')+
+    '<div style="text-align:left;margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--w60);margin-bottom:6px">'+(_isKorean?'환불 사유 (선택)':'Reason for refund (optional)')+'</div>'+
+    '<textarea id="refund-reason" rows="3" style="width:100%;background:var(--w04);border:1px solid var(--bd);border-radius:8px;color:var(--w90);padding:10px;font-size:12px;resize:none" placeholder="'+(_isKorean?'환불 사유를 입력해주세요...':'Please enter your reason...')+'"></textarea></div></div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'refund-req',title:(_isKorean?'환불 요청':'Refund Request'),body:body,footer:
+    '<button class="btn btn-ghost" onclick="App.closeModal(\'refund-req\')">'+(_isKorean?'취소':'Cancel')+'</button>'+
+    '<button class="btn" style="background:var(--err);color:#fff" onclick="App._submitRefund()">'+(_isKorean?'환불 요청 제출':'Submit Refund Request')+'</button>',width:'420px'}));
+  UI.showModal('refund-req');
+}
+function _submitRefund(){
+  var reason=(document.getElementById('refund-reason')||{}).value||'';
+  GP.start();
+  sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session){UI.toast(T('toast_login_required'),'warn');GP.done();return;}
+    fetch(STRIPE_CONFIG.fn+'/process-refund',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
+      body:JSON.stringify({type:'subscription_cooling',reason:reason})
+    }).then(function(r){return r.json();}).then(function(data){
+      GP.done();closeModal('refund-req');
+      if(data.ok||data.refund_id){
+        UI.toast(_isKorean?'환불 요청이 처리되었습니다. 3~5영업일 내 환불됩니다.':'Refund processed. Expect refund within 3-5 business days.','ok',6000);
+        loadUser();
+      } else if(data.error){
+        /* 쿨링 기간 경과 시 서비스 요청으로 전환 */
+        sb.from('service_requests').insert({user_id:S.user.id,service_type:'refund',status:'pending',description:(_isKorean?'환불 요청 — 사유: ':'Refund request — Reason: ')+(reason||'미입력'),details:{plan:S.user.plan,email:S.user.email}}).then(function(){
+          UI.toast(_isKorean?'환불 요청이 접수되었습니다. 담당자가 확인 후 연락드리겠습니다.':'Refund request submitted. We will review and contact you.','ok',5000);
+        });
+      }
+    }).catch(function(e){GP.done();closeModal('refund-req');
+      sb.from('service_requests').insert({user_id:S.user.id,service_type:'refund',status:'pending',description:(_isKorean?'환불 요청 — 사유: ':'Refund request — Reason: ')+(reason||'미입력'),details:{plan:S.user.plan,email:S.user.email}}).then(function(){
+        UI.toast(_isKorean?'환불 요청이 접수되었습니다. 담당자가 확인 후 연락드리겠습니다.':'Refund request submitted. We will review and contact you.','ok',5000);
+      });
+    });
+  });
+}
 function ckTab(idx){
   var tabs=document.querySelectorAll('.ck-tab');
   tabs.forEach(function(t,i){
@@ -14704,7 +14826,7 @@ function pgBizHub(){
 /* 팝업용 렌더 함수 바인딩 */
 _pgFns={costsim:pgCost,marketplace:pgMarketplace,emailhub:pgEmail,tracking:pgTracking,orders:pgOrders,voucherreport:pgVoucherReport};
 function renderPage(){
-  if(S.user&&!S.user.onboarding_completed&&S.page==='dashboard')return pgOnboarding();
+  if(S.user&&!S.user.onboarding_completed&&S.page!=='settings'&&S.page!=='subscription'&&S.page!=='guide')return pgOnboarding();
   switch(S.page){case'dashboard':return pgDash();case'analysis':return pgAnalysis();case'products':return pgProducts();case'projects':return pgProjects();case'deals':S.page='projects';S._pjTab='buyers';return pgProjects();case'buyers':case'buyerhub':S.page='projects';S._pjTab='buyers';return pgProjects();case'services':return pgServices();case'documents':case'docgen':return pgDocgen();case'chat':return pgChat();case'emailhub':return pgEmail();case'costsim':return pgCost();case'orders':return pgOrders();case'tracking':return pgTracking();case'subscription':return pgSub();case'voucherreport':return pgVoucherReport();case'settings':return pgSettings();case'meetings':return pgMeetings();case'alibaba':return pgAlibaba();case'alibaba_agency':return pgAlibabaAgency();case'marketplace':return pgMarketplace();case'trends':return pgTrends();case'partnership':return pgPartnership();case'guide':return pgGuide();case'processmap':return pgProcessMap();case'invite':return pgInviteReferral();case'comms':return pgComms();case'ordershipping':return pgOrderShipping();case'bizhub':return pgBizHub();default:return pgDash();}
 }
 
@@ -16025,7 +16147,7 @@ document.addEventListener('keydown',function(e){
   }else if(k==='g'||k==='n'){_pendingKey=k;setTimeout(function(){_pendingKey=null;},600);}
 });
 
-window.S=S;window.render=render;window.App={S:S,set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,sendBuyerInviteEmail:sendBuyerInviteEmail,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,toggleSampleShipFields:toggleSampleShipFields,saveSampleTracking:saveSampleTracking,trackSample:trackSample,toggleShipFields:toggleShipFields,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleCostProdCur:toggleCostProdCur,toggleCostMarginCur:toggleCostMarginCur,changeOriginCountry:changeOriginCountry,changeShipType:changeShipType,toggleCostCert:toggleCostCert,toggleCostCertOwned:toggleCostCertOwned,updateCertPanel:updateCertPanel,fetchTradeReqs:fetchTradeReqs,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,setAgencyTab:setAgencyTab,addAgencyMessage:addAgencyMessage,toggleAgencySection:toggleAgencySection,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,shareTrackingToBuyer:shareTrackingToBuyer,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportOrdersCSV:exportOrdersCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,reorderFromOrder:reorderFromOrder,showOrderHistory:showOrderHistory,downloadDocsZip:downloadDocsZip,printExportCert:printExportCert,openClaimManager:openClaimManager,newClaim:newClaim,submitClaim:submitClaim,updateClaimStatus:updateClaimStatus,addClaimEvidence:addClaimEvidence,resolveClaim:resolveClaim,addClaimNote:addClaimNote,showTariffCompare:showTariffCompare,runTariffCompare:runTariffCompare,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,savePjDocDraft:savePjDocDraft,viewPjDoc:viewPjDoc,viewPjDocByNumber:viewPjDocByNumber,downloadPjDocByNumber:downloadPjDocByNumber,_downloadPjDocPDF:_downloadPjDocPDF,startVideoMeeting:startVideoMeeting,_launchVideoMeeting:_launchVideoMeeting,_scheduleVideoMeeting:_scheduleVideoMeeting,togglePjAutoTranslate:togglePjAutoTranslate,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,refreshPopup:refreshPopup,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,requestLogisticsPartner:requestLogisticsPartner,requestCustomsBroker:requestCustomsBroker,refreshExRate:refreshExRate,toggleFTACur:toggleFTACur,recalcCost:recalcCost,saveCostCalc:saveCostCalc,exportCostPDF:exportCostPDF,askCustomsAI:askCustomsAI,customsAIAction:customsAIAction,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_syncDocItemPrice:_syncDocItemPrice,_syncDocItemsFromDOM:_syncDocItemsFromDOM,_docValContinue:null,respondInquiry:respondInquiry,previewProposalImg:previewProposalImg,onProposalProductSelect:onProposalProductSelect,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deleteChatMsg:deleteChatMsg,togglePinChat:togglePinChat,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,_filterPjList:_filterPjList,clearSigCanvas:clearSigCanvas,saveSig:saveSig,uploadStamp:uploadStamp,deleteSig:deleteSig,showDeleteAccountModal:showDeleteAccountModal,confirmDeleteAccount:confirmDeleteAccount,requestPayment:requestPayment,submitPaymentRequest:submitPaymentRequest,requestSamplePayment:requestSamplePayment,proposeSampleQuote:proposeSampleQuote,submitSampleQuote:submitSampleQuote,respondToQuote:respondToQuote,submitCounterOffer:submitCounterOffer,sendPI:sendPI,requestContractPayment:requestContractPayment,submitContractPayment:submitContractPayment,triggerAutoRelease:triggerAutoRelease,showDealSelector:showDealSelector,_selectDealForStage:_selectDealForStage,openFeedbackModal:openFeedbackModal,submitFeedback:submitFeedback,UI:UI};
+window.S=S;window.render=render;window.App={S:S,set:set,nav:nav,render:render,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,socialLogin:socialLogin,submitPartnership:submitPartnership,startAForm:startAForm,aStep:aStep,cancelA:cancelA,submitA:submitA,addUrl:addUrl,rmUrl:rmUrl,addSP:addSP,rmSP:rmSP,addFiles:addFiles,rmFile:rmFile,toggleMkt:toggleMkt,toggleCert:toggleCert,updateUSD:updateUSD,viewA:viewA,delA:delA,createPj:createPj,showPF:showPF,saveP:saveP,editP:editP,delP:delP,naverSearch:naverSearch,prevImg:prevImg,prodImgFile:prodImgFile,reqSvc:reqSvc,subSvc:subSvc,composeE:composeE,selEB:selEB,chgEP:chgEP,cpEmail:cpEmail,translateEmail:translateEmail,sendE:sendE,calcC:calcC,calcCCompare:calcCCompare,genForwarderRFQ:genForwarderRFQ,sendRFQEmail:sendRFQEmail,showOrderForm:showOrderForm,saveOrder:saveOrder,viewOrder:viewOrder,setOrderStatus:setOrderStatus,setOrderPay:setOrderPay,updateOrderField:updateOrderField,addOrderNote:addOrderNote,openCheckout:openCheckout,confirmCheckout:confirmCheckout,initStripeCheckout:initStripeCheckout,closeStripeCheckout:closeStripeCheckout,openBillingPortal:openBillingPortal,chgPlan:chgPlan,saveSt:saveSt,showBF:showBF,saveBuyer:saveBuyer,sendBuyerInviteEmail:sendBuyerInviteEmail,findBuyersAI:findBuyersAI,saveAIBuyer:saveAIBuyer,saveAllAIBuyers:saveAllAIBuyers,closeModal:closeModal,viewPj:viewPj,setPjStage:setPjStage,addPjNote:addPjNote,rmPjNote:rmPjNote,delPj:delPj,reqSvcForPj:reqSvcForPj,subSvcPj:subSvcPj,showDocUpgradePrompt:showDocUpgradePrompt,startDoc:startDoc,addDocItem:addDocItem,rmDocItem:rmDocItem,fillDocProd:fillDocProd,fillBuyerDoc:fillBuyerDoc,calcInlineDocCost:calcInlineDocCost,applyCalcToItems:applyCalcToItems,saveDocTemplate:saveDocTemplate,loadDocTemplate:loadDocTemplate,_applyDocTemplate:_applyDocTemplate,_delDocTemplate:_delDocTemplate,genDoc:genDoc,genDocPDF:genDocPDF,loadEmailLogs:loadEmailLogs,toggleMob:toggleMob,closeMob:closeMob,autoCreateProduct:autoCreateProduct,genCatalogEN:genCatalogEN,toggleStageItem:toggleStageItem,setCertStatus:setCertStatus,setCertDeadline:setCertDeadline,toggleCertDoc:toggleCertDoc,addCertItem:addCertItem,addCertPreset:addCertPreset,addCertsToProject:addCertsToProject,rmCertItem:rmCertItem,getCertGuide:getCertGuide,toggleJourneyStage:toggleJourneyStage,ckTab:ckTab,reqExpertReview:reqExpertReview,toggleCurrency:toggleCurrency,nextOb:nextOb,skipOnboarding:skipOnboarding,completeOnboarding:completeOnboarding,genVoucherReport:genVoucherReport,saveVoucherReport:saveVoucherReport,toggleNotif:toggleNotif,clickNotif:clickNotif,markAllRead:markAllRead,pushNotif:pushNotif,showMeetingForm:showMeetingForm,saveMeeting:saveMeeting,viewMeeting:viewMeeting,saveMeetingNotes:saveMeetingNotes,addMeetingAction:addMeetingAction,toggleMeetingAction:toggleMeetingAction,setMeetingStatus:setMeetingStatus,completeMeeting:completeMeeting,getMeetingPrep:getMeetingPrep,showAlibabaStoreForm:showAlibabaStoreForm,saveAlibabaStore:saveAlibabaStore,showAlibabaInquiryForm:showAlibabaInquiryForm,saveAlibabaInquiry:saveAlibabaInquiry,viewAlibabaInquiry:viewAlibabaInquiry,setAlibabaInquiryStatus:setAlibabaInquiryStatus,getAlibabaReply:getAlibabaReply,convertInquiryToBuyer:convertInquiryToBuyer,showSampleForm:showSampleForm,saveSample:saveSample,updateSampleStatus:updateSampleStatus,updateSampleTracking:updateSampleTracking,convertPItoOrder:convertPItoOrder,openSampleTrackingForm:openSampleTrackingForm,toggleSampleShipFields:toggleSampleShipFields,saveSampleTracking:saveSampleTracking,trackSample:trackSample,toggleShipFields:toggleShipFields,showShipmentForm:showShipmentForm,saveShipment:saveShipment,setMilestonePaid:setMilestonePaid,doSearch:doSearch,closeCtx:closeCtx,buyerCtx:buyerCtx,orderCtx:orderCtx,filterOrderStatus:filterOrderStatus,cloneDoc:cloneDoc,loadDocs:loadDocs,autoCBM:autoCBM,toggleCostCurrency:toggleCostCurrency,toggleCostProdCur:toggleCostProdCur,toggleCostMarginCur:toggleCostMarginCur,changeOriginCountry:changeOriginCountry,changeShipType:changeShipType,toggleCostCert:toggleCostCert,toggleCostCertOwned:toggleCostCertOwned,updateCertPanel:updateCertPanel,fetchTradeReqs:fetchTradeReqs,toggleVoucher:toggleVoucher,uploadCompDoc:uploadCompDoc,delCompDoc:delCompDoc,loadCompanyDocs:loadCompanyDocs,chatFilterBuyer:chatFilterBuyer,openChatRoom:openChatRoom,chatSend:chatSend,chatAttach:chatAttach,chatDrop:chatDrop,chatSendDoc:chatSendDoc,sendDocToChat:sendDocToChat,_updateCheckboxUI:_updateCheckboxUI,setCostTab:setCostTab,navWithCtx:navWithCtx,applyHSTariff:applyHSTariff,calcProduct:calcProduct,copyFOBToChat:copyFOBToChat,setAlibabaTab:setAlibabaTab,setAgencyTab:setAgencyTab,addAgencyMessage:addAgencyMessage,toggleAgencySection:toggleAgencySection,toggleAliManual:toggleAliManual,toggleAliSection:toggleAliSection,setTrackingFilter:setTrackingFilter,viewTrackingDetail:viewTrackingDetail,updateTrackingStatus:updateTrackingStatus,saveTrackingStatus:saveTrackingStatus,generateShareLink:generateShareLink,shareTrackingToBuyer:shareTrackingToBuyer,trackBL:trackBL,openDocModal:openDocModal,openCostModal:openCostModal,calcCostModal:calcCostModal,openFTAModalInline:openFTAModalInline,_calcFTAModal:_calcFTAModal,openBuyerModalInline:openBuyerModalInline,_searchBuyerModal:_searchBuyerModal,openGuideModalInline:openGuideModalInline,viewMarketRequest:viewMarketRequest,backToMarketplace:backToMarketplace,submitProposal:submitProposal,loadMarketplace:loadMarketplace,loadMyProposals:loadMyProposals,exportCSV:exportCSV,exportOrdersCSV:exportOrdersCSV,exportProductsCSV:exportProductsCSV,loadTrends:loadTrends,setTrendFilter:setTrendFilter,setDealFilter:setDealFilter,openDeal:openDeal,showDemoDetail:showDemoDetail,closeDeal:closeDeal,openDealRoom:openDealRoom,closeDealRoom:closeDealRoom,createAndOpenDealRoom:createAndOpenDealRoom,loadDealRoomDeals:loadDealRoomDeals,sendDealChat:sendDealChat,openDealDocForm:openDealDocForm,closeDealDocForm:closeDealDocForm,updateDocItem:updateDocItem,addDealDocItem:addDealDocItem,rmDealDocItem:rmDealDocItem,updateDocField:updateDocField,submitDealDoc:submitDealDoc,showDealOrderForm:showDealOrderForm,hideDealOrderForm:hideDealOrderForm,createDealOrder:createDealOrder,showDealShipForm:showDealShipForm,hideDealShipForm:hideDealShipForm,createDealShipment:createDealShipment,advanceDeal:advanceDeal,advanceDealOrder:advanceDealOrder,completeDeal:completeDeal,acceptSampleReq:acceptSampleReq,declineSampleReq:declineSampleReq,showSampleShipForm:showSampleShipForm,translateChatMsg:translateChatMsg,toggleDealSidebar:toggleDealSidebar,downloadReportPDF:downloadReportPDF,setPjViewStage:setPjViewStage,openPjChat:openPjChat,sendPjChat:sendPjChat,setPjTab:setPjTab,openBuyerDrawer:openBuyerDrawer,closeBuyerDrawer:closeBuyerDrawer,copyProject:copyProject,execCopyProject:execCopyProject,reorderFromOrder:reorderFromOrder,showOrderHistory:showOrderHistory,downloadDocsZip:downloadDocsZip,printExportCert:printExportCert,openClaimManager:openClaimManager,newClaim:newClaim,submitClaim:submitClaim,updateClaimStatus:updateClaimStatus,addClaimEvidence:addClaimEvidence,resolveClaim:resolveClaim,addClaimNote:addClaimNote,showTariffCompare:showTariffCompare,runTariffCompare:runTariffCompare,openPjDocModal:openPjDocModal,addPjDocItem:addPjDocItem,submitPjDoc:submitPjDoc,savePjDocDraft:savePjDocDraft,viewPjDoc:viewPjDoc,viewPjDocByNumber:viewPjDocByNumber,downloadPjDocByNumber:downloadPjDocByNumber,_downloadPjDocPDF:_downloadPjDocPDF,startVideoMeeting:startVideoMeeting,_launchVideoMeeting:_launchVideoMeeting,_scheduleVideoMeeting:_scheduleVideoMeeting,togglePjAutoTranslate:togglePjAutoTranslate,calcDocMargin:calcDocMargin,applyMarginToItems:applyMarginToItems,updatePaymentTerms:updatePaymentTerms,openFloatPanel:openFloatPanel,closeFloatPanel:closeFloatPanel,refreshPopup:refreshPopup,openPageAsPopup:openPageAsPopup,startPjuResize:startPjuResize,toggleItemCur:toggleItemCur,showPriceConvert:showPriceConvert,translateDocFields:translateDocFields,saveSCTemplate:saveSCTemplate,loadSCTemplate:loadSCTemplate,resetSCTemplate:resetSCTemplate,syncShipment:syncShipment,syncAllShipments:syncAllShipments,toggleTheme:toggleTheme,showNewProjectModal:showNewProjectModal,showDirectProjectForm:showDirectProjectForm,toggleDirectPjCur:toggleDirectPjCur,showDirectPjConvert:showDirectPjConvert,submitDirectProject:submitDirectProject,showProductProjectForm:showProductProjectForm,submitProductProject:submitProductProject,showCloneProjectForm:showCloneProjectForm,submitCloneProject:submitCloneProject,setTrendAutoFreq:setTrendAutoFreq,genTrendReport:genTrendReport,loadTrendReport:loadTrendReport,shareTrendReport:shareTrendReport,downloadTrendReport:downloadTrendReport,selectProcessStep:selectProcessStep,sendInvite:sendInvite,copyRefLink:copyRefLink,shareRef:shareRef,genMarketingContent:genMarketingContent,calcMarginSim:calcMarginSim,classifyHS:classifyHS,hsToFTA:hsToFTA,hsToCost:hsToCost,simulateFTA:simulateFTA,simulateFTAMulti:simulateFTAMulti,ftaToCost:ftaToCost,saveCompanyProfile:saveCompanyProfile,_paymentCTARequest:_paymentCTARequest,toggleClp:toggleClp,cancelSub:cancelSub,pauseSub:pauseSub,resumeSub:resumeSub,togglePublic:togglePublic,selectProd:selectProd,diagnoseVoucher:diagnoseVoucher,requestVoucherConsulting:requestVoucherConsulting,requestLogisticsPartner:requestLogisticsPartner,requestCustomsBroker:requestCustomsBroker,refreshExRate:refreshExRate,toggleFTACur:toggleFTACur,recalcCost:recalcCost,saveCostCalc:saveCostCalc,exportCostPDF:exportCostPDF,askCustomsAI:askCustomsAI,customsAIAction:customsAIAction,genSettlementChecklist:genSettlementChecklist,setHubTab:setHubTab,togglePjStageExpand:togglePjStageExpand,pjChatDrop:pjChatDrop,pjChatAttach:pjChatAttach,sendPjDocToChat:sendPjDocToChat,cancelAnalysis:cancelAnalysis,rerunA:rerunA,openEscrowModal:openEscrowModal,submitEscrowRequest:submitEscrowRequest,releaseEscrow:releaseEscrow,openSignatureModal:openSignatureModal,submitSignatureRequest:submitSignatureRequest,openSignatureModalFromDoc:openSignatureModalFromDoc,payOneAnalysis:payOneAnalysis,escrowMarkShipped:escrowMarkShipped,_escrowConfirmSecured:_escrowConfirmSecured,requestEscrowRelease:requestEscrowRelease,previewDocSample:previewDocSample,restartOnboarding:restartOnboarding,dealChatAttach:dealChatAttach,toggleAutoTranslate:toggleAutoTranslate,_updateDocTotal:_updateDocTotal,_syncDocItemPrice:_syncDocItemPrice,_syncDocItemsFromDOM:_syncDocItemsFromDOM,_docValContinue:null,respondInquiry:respondInquiry,previewProposalImg:previewProposalImg,onProposalProductSelect:onProposalProductSelect,saveMfgAvatarUrl:saveMfgAvatarUrl,uploadMfgAvatar:uploadMfgAvatar,deletePjChatMsg:deletePjChatMsg,deleteChatMsg:deleteChatMsg,togglePinChat:togglePinChat,deletePjDoc:deletePjDoc,cancelOrder:cancelOrder,deleteMeeting:deleteMeeting,_filterPjList:_filterPjList,clearSigCanvas:clearSigCanvas,saveSig:saveSig,uploadStamp:uploadStamp,deleteSig:deleteSig,showDeleteAccountModal:showDeleteAccountModal,confirmDeleteAccount:confirmDeleteAccount,requestPayment:requestPayment,submitPaymentRequest:submitPaymentRequest,requestSamplePayment:requestSamplePayment,proposeSampleQuote:proposeSampleQuote,submitSampleQuote:submitSampleQuote,respondToQuote:respondToQuote,submitCounterOffer:submitCounterOffer,sendPI:sendPI,requestContractPayment:requestContractPayment,submitContractPayment:submitContractPayment,triggerAutoRelease:triggerAutoRelease,showDealSelector:showDealSelector,_selectDealForStage:_selectDealForStage,openFeedbackModal:openFeedbackModal,submitFeedback:submitFeedback,requestRefund:requestRefund,_submitRefund:_submitRefund,_closeGuidance:_closeGuidance,UI:UI};
 _checkStripeCallback();
 /* Capture invite params from URL */
 (function(){var p=new URLSearchParams(location.search);var ref=p.get('ref');var inv=p.get('invite');if(ref)localStorage.setItem('_invite_ref',ref);if(inv)localStorage.setItem('_invite_token',inv);if(ref||inv)history.replaceState(null,'',location.pathname+location.hash);})();
