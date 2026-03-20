@@ -783,8 +783,12 @@ Never write generalities, obvious statements, or generic advice. All content mus
 5. Markets: specific analysis limited to the relevant category
 6. Pricing: number-based comparisons
 7. Action plan: practical level (agencies/URLs/costs/timelines)
-**IMPORTANT - Tone & Length:**
-- Write in a friendly, professional consulting tone — as if advising a client in person.
+**★★★ TOP PRIORITY — Tone & Style:**
+- Write as if you are a warm, encouraging export consultant speaking directly to the manufacturer.
+- Use a friendly, supportive tone throughout. Acknowledge challenges but always point toward solutions.
+- Example: (X) "FDA clearance absent. Market entry blocked." → (O) "You don't have FDA clearance yet, which means you can't sell as a medical device in the US right now. However, positioning as a wellness device is a smart workaround that many Korean brands have used successfully."
+- Example: (X) "Entry barrier high." → (O) "The entry barrier is relatively high, but with step-by-step preparation, this market is absolutely worth pursuing."
+**Length:**
 - Each text field should be 2-4 sentences: enough to explain WHY, not just WHAT.
 - Use clear explanations a non-expert manufacturer can understand. Avoid jargon without context.
 - For score reasons: explain the logic behind the score, what factors helped/hurt, and what could improve it.
@@ -797,8 +801,13 @@ Never write generalities, obvious statements, or generic advice. All content mus
 5. 시장: 해당 카테고리 한정 구체적 분석
 6. 가격: 숫자 기반 비교
 7. 행동계획: 실무 수준 (기관/URL/비용/기간)
-**중요 - 톤 & 길이:**
-- 친절하고 전문적인 컨설팅 톤으로 작성하세요. 고객에게 직접 조언하듯 설명합니다.
+**★★★ 최우선 — 톤 & 어투:**
+- 반드시 "~입니다", "~하세요", "~드립니다" 등 친절한 존댓말로 작성하세요.
+- 제조사 대표님에게 1:1로 컨설팅하듯 따뜻하고 격려하는 톤을 유지하세요.
+- "~이다", "~된다", "~않다" 같은 딱딱한 논문체/보고서체는 절대 사용하지 마세요.
+- 예시: (X) "FDA 510(k) 미보유 상태로 판매 불가하다" → (O) "현재 FDA 510(k)가 아직 없으시기 때문에 미국에서 의료기기로 판매하기 어려운 상황이에요. 하지만 웰니스 기기로 포지셔닝하시면 이 문제를 우회할 수 있습니다."
+- 예시: (X) "진입 장벽이 높다" → (O) "진입 장벽이 다소 높은 편이지만, 단계적으로 준비하시면 충분히 도전해볼 만한 시장입니다."
+**길이:**
 - 각 텍스트 필드는 2~4문장: "왜"를 충분히 설명하되 핵심을 놓치지 마세요.
 - 수출 비전문가인 제조사도 이해할 수 있는 쉬운 말로 작성하세요. 전문 용어는 반드시 풀어서 설명합니다.
 - 점수 근거: 어떤 요인이 점수에 긍정적/부정적 영향을 줬는지, 개선 방법은 무엇인지 설명합니다.
@@ -880,10 +889,10 @@ ${principles}
     {
       "name": "${isEn ? "Certification name" : "인증명"}",
       "market": "${isEn ? "Target country" : "대상국"}",
-      "duration": "${isEn ? "Processing time" : "소요 기간"}",
-      "cost": "${isEn ? "Cost range (USD)" : "비용 범위 (USD)"}",
+      "duration": "${isEn ? "Estimated processing time (e.g., 3-6 months)" : "예상 소요 기간 (예: 3~6개월)"}",
+      "cost": "${isEn ? "Cost range in USD (e.g., $5,000~$15,000)" : "비용 범위 USD (예: $5,000~$15,000)"}",
       "priority": "${isEn ? "Required/Recommended/Optional" : "필수/권장/선택"}",
-      "note": "${isEn ? "Application method, required documents, practical notes" : "신청 방법, 필요 서류, 주의사항 등 실무 정보"}"
+      "note": "${isEn ? "Step-by-step application process: (1) where to apply (agency name + website), (2) required documents, (3) Korean testing labs that can help (e.g., KTL, KTC, KOTITI), (4) tips to save time/cost. Write 3-5 sentences in friendly tone." : "취득 절차를 단계별로 안내하세요: (1) 어디서 신청하는지 (기관명 + 웹사이트), (2) 필요 서류, (3) 한국에서 도움받을 수 있는 시험기관 (예: KTL, KTC, KOTITI), (4) 시간/비용 절약 팁. 친절한 톤으로 3~5문장 작성."}"
     }
   ],
   "recommended_markets": ["US", "JP"],
@@ -956,5 +965,5 @@ ${principles}
 ## ${isEn ? "Rules" : "규칙"}
 - ${isEn ? "ALL text fields must be in English. Output JSON only. Use real competitor names. No generalities. Write in friendly, clear consulting tone." : "한국어로 작성. JSON만 출력. 경쟁사 실명 사용. 일반론 금지. 친절하고 명확한 컨설팅 톤으로 작성."}
 - ${isEn ? "Conservative scoring when information is insufficient. Max 3 global_competitors. Max 2 local_competitors." : "정보 부족 시 보수적 채점. global_competitors 최대 3개. local_competitors 최대 2개."}
-- ${isEn ? "Max 3 cert_details. market_analysis only for requested target markets." : "cert_details 최대 3개. market_analysis는 요청된 타겟 시장만."}`;
+- ${isEn ? "Max 5 cert_details — include ALL certifications needed for the recommended markets. market_analysis only for requested target markets." : "cert_details 최대 5개 — 추천 시장에서 필요한 모든 인증을 포함하세요. market_analysis는 요청된 타겟 시장만."}`;
 }
