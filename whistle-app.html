@@ -2107,7 +2107,7 @@ function autoCreateProduct(analysisId,res,productName){
   var existing=(S.products||[]).find(function(p){return p.analysis_id===analysisId;});
   if(existing){return;}
   var inp=res.input_data||{};
-  var prod={user_id:S.user.id,analysis_id:analysisId,name_ko:productName||inp.product_name_en||'',name_en:inp.product_name_en||'',category:inp.category||null,hs_code:res.hs_code||null,fob_price:inp.fob_price||null,moq:inp.moq||null,certifications:res.existing_certs||[],status:'draft'};
+  var prod={user_id:S.user.id,analysis_id:analysisId,name_ko:productName||inp.product_name_en||'',name_en:inp.product_name_en||'',category:inp.category||null,hs_code:res.hs_code||null,fob_price:inp.fob_price||null,moq:inp.moq||null,certifications:res.existing_certs||[],status:'draft',is_public:true};
   sb.from('products').select('id').eq('analysis_id',analysisId).eq('user_id',S.user.id).limit(1).then(function(chk){
     if(chk.data&&chk.data.length>0){return;}
     sb.from('products').insert(prod).select().single().then(function(r2){
@@ -3332,7 +3332,7 @@ function submitDirectProject(){
   var fobUSD=parseFloat(d.fob_price)||null;
   if(fobUSD&&_dpCur==='KRW')fobUSD=parseFloat((fobUSD/(S.exchangeRate||1400)).toFixed(2));
   /* 제품도 자동 생성 */
-  sb.from('products').insert({user_id:S.user.id,name_ko:d.product_name,name_en:d.product_name,category:category,fob_price:fobUSD,moq:parseInt(d.moq)||null,status:'active'}).then(function(pr){
+  sb.from('products').insert({user_id:S.user.id,name_ko:d.product_name,name_en:d.product_name,category:category,fob_price:fobUSD,moq:parseInt(d.moq)||null,status:'active',is_public:true}).then(function(pr){
     if(pr.error){_toastE(pr.error);UI.toast(_isKorean?'제품 등록 실패':'Product registration failed','err');return;}
     var prodId=(pr.data&&pr.data[0])?pr.data[0].id:null;
     sb.from('projects').insert({user_id:S.user.id,product_id:prodId,name:d.project_name,target_countries:mkts,status:'planning',stage_progress:initProgress,alibaba_customer:isAlibaba}).then(function(r){
@@ -3569,7 +3569,7 @@ function saveP(id){
 
   function _doSaveP(d,id){
     if(d.image_url){d.images=[d.image_url];delete d.image_url;}
-    var q=id?sb.from('products').update(d).eq('id',id):sb.from('products').insert(Object.assign(d,{user_id:S.user.id,status:'draft'}));
+    var q=id?sb.from('products').update(d).eq('id',id):sb.from('products').insert(Object.assign(d,{user_id:S.user.id,status:'draft',is_public:true}));
     q.then(function(r){if(r.error){_toastE(r.error);return;}closeModal('pm');_pendingProdImgFile=null;loadP().then(function(){render();UI.toast(id?(_isKorean?'수정!':'Updated!'):(_isKorean?'등록!':'Registered!'),'ok');});});
   }
 
@@ -9757,27 +9757,27 @@ function pgSettings(){
   '<div class="card" style="margin-bottom:10px"><div class="card-h">📁 '+(_isKorean?'서류':'Documents')+'</div><div class="card-b"><div style="font-size:11px;color:var(--w40);margin-bottom:10px">'+(_isKorean?'회사소개서와 카탈로그를 등록하면 바이어에게 바로 전송할 수 있습니다':'Upload brochures and catalogs to share instantly with buyers')+'</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">'+docCards+'</div></div></div>'+
 
   /* Electronic Signature / Company Seal */
-  '<div class="card" style="margin-top:14px;margin-bottom:10px"><div class="card-h"><span>✍️ Electronic Signature / Company Seal</span><span style="font-size:11px;color:var(--w30)">'+(_isKorean?'서류에 자동 삽입됩니다':'Auto-inserted in documents')+'</span></div><div class="card-b">'+
+  '<div class="card" style="margin-top:14px;margin-bottom:10px"><div class="card-h"><span>✍️ '+(_isKorean?'전자 서명 / 법인 인감':'Electronic Signature / Company Seal')+'</span><span style="font-size:11px;color:var(--w30)">'+(_isKorean?'서류에 자동 삽입됩니다':'Auto-inserted in documents')+'</span></div><div class="card-b">'+
   '<div style="display:flex;gap:8px;margin-bottom:14px">'+
-  '<button class="btn '+(_sigType==='draw'?'btn-pri':'btn-ghost')+'" onclick="S._sigType=\'draw\';App.render()" style="font-size:11px;padding:6px 14px">✏️ Signature</button>'+
-  '<button class="btn '+(_sigType==='stamp'?'btn-pri':'btn-ghost')+'" onclick="S._sigType=\'stamp\';App.render()" style="font-size:11px;padding:6px 14px">🔴 Company Stamp</button>'+
+  '<button class="btn '+(_sigType==='draw'?'btn-pri':'btn-ghost')+'" onclick="S._sigType=\'draw\';App.render()" style="font-size:11px;padding:6px 14px">✏️ '+(_isKorean?'서명':'Signature')+'</button>'+
+  '<button class="btn '+(_sigType==='stamp'?'btn-pri':'btn-ghost')+'" onclick="S._sigType=\'stamp\';App.render()" style="font-size:11px;padding:6px 14px">🔴 '+(_isKorean?'법인 인감':'Company Stamp')+'</button>'+
   '</div>'+
   (_sigType==='draw'?
     '<div style="margin-bottom:10px"><canvas id="sig-reg-canvas" width="400" height="150" style="border:1px dashed var(--bd);border-radius:8px;background:#fff;cursor:crosshair;display:block;width:100%;max-width:400px;touch-action:none"></canvas></div>'+
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-    '<button class="btn btn-ghost" onclick="App.clearSigCanvas()" style="font-size:11px">🔄 Clear</button>'+
-    '<button class="btn btn-pri" onclick="App.saveSig()" style="font-size:11px">💾 Save Signature</button>'+
-    (_sigImg?'<button class="btn btn-ghost" onclick="App.deleteSig()" style="font-size:11px;color:var(--err)">🗑️ Delete</button>':'')+'</div>'
+    '<button class="btn btn-ghost" onclick="App.clearSigCanvas()" style="font-size:11px">🔄 '+(_isKorean?'지우기':'Clear')+'</button>'+
+    '<button class="btn btn-pri" onclick="App.saveSig()" style="font-size:11px">💾 '+(_isKorean?'서명 저장':'Save Signature')+'</button>'+
+    (_sigImg?'<button class="btn btn-ghost" onclick="App.deleteSig()" style="font-size:11px;color:var(--err)">🗑️ '+(_isKorean?'삭제':'Delete')+'</button>':'')+'</div>'
     :
     '<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap"><div id="stamp-preview" style="width:120px;height:120px;border:1px dashed var(--bd);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--sf);flex-shrink:0" onclick="document.getElementById(\'stamp-inp\').click()">'+
-    (_sigImg&&_sigType==='stamp'?'<img src="'+U.esc(_sigImg)+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:32px">🔴</div><div style="font-size:10px">Upload</div></div>')+
+    (_sigImg&&_sigType==='stamp'?'<img src="'+U.esc(_sigImg)+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<div style="text-align:center;color:var(--w20)"><div style="font-size:32px">🔴</div><div style="font-size:10px">'+(_isKorean?'업로드':'Upload')+'</div></div>')+
     '</div><div><input type="file" id="stamp-inp" accept="image/*" style="display:none" onchange="App.uploadStamp(this)">'+
-    '<div style="font-size:11px;color:var(--w40);margin-bottom:8px">PNG/JPG, max 2MB<br>Recommended: transparent background</div>'+
+    '<div style="font-size:11px;color:var(--w40);margin-bottom:8px">PNG/JPG, '+(_isKorean?'최대 2MB<br>투명 배경 권장':'max 2MB<br>Recommended: transparent background')+'</div>'+
     '<div style="display:flex;gap:8px">'+
-    '<button class="btn btn-pri" onclick="App.saveSig()" style="font-size:11px">💾 Save Stamp</button>'+
-    (_sigImg?'<button class="btn btn-ghost" onclick="App.deleteSig()" style="font-size:11px;color:var(--err)">🗑️ Delete</button>':'')+'</div></div></div>'
+    '<button class="btn btn-pri" onclick="App.saveSig()" style="font-size:11px">💾 '+(_isKorean?'인감 저장':'Save Stamp')+'</button>'+
+    (_sigImg?'<button class="btn btn-ghost" onclick="App.deleteSig()" style="font-size:11px;color:var(--err)">🗑️ '+(_isKorean?'삭제':'Delete')+'</button>':'')+'</div></div></div>'
   )+
-  (_sigImg?'<div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(0,200,83,.06);border:1px solid rgba(0,200,83,.12)"><div style="font-size:11px;color:var(--ok);font-weight:600;margin-bottom:6px">✅ '+(_sigType==='draw'?'Signature':'Company Stamp')+' Registered</div><img src="'+U.esc(_sigImg)+'" style="max-width:200px;max-height:80px;border:1px solid var(--bd);border-radius:4px;background:#fff;padding:4px"></div>':'')+
+  (_sigImg?'<div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(0,200,83,.06);border:1px solid rgba(0,200,83,.12)"><div style="font-size:11px;color:var(--ok);font-weight:600;margin-bottom:6px">✅ '+(_isKorean?(_sigType==='draw'?'서명 등록 완료':'법인 인감 등록 완료'):(_sigType==='draw'?'Signature':'Company Stamp')+' Registered')+'</div><img src="'+U.esc(_sigImg)+'" style="max-width:200px;max-height:80px;border:1px solid var(--bd);border-radius:4px;background:#fff;padding:4px"></div>':'')+
   '</div></div>'+
   /* Delete Account */
   '<div class="card" style="margin-top:24px;border-color:rgba(255,59,48,.2)"><div class="card-h" style="color:var(--err)">⚠️ 계정 삭제</div><div class="card-b">'+
@@ -12829,7 +12829,7 @@ function nextOb(step){
     }
   }else if(step===1){
     var d=UI.fd('#obf1');if(!d.product_name){UI.toast(T('toast_product_name'),'warn');return;}
-    var prod={user_id:S.user.id,name_ko:d.product_name,category:d.category||null,status:'draft'};
+    var prod={user_id:S.user.id,name_ko:d.product_name,category:d.category||null,status:'draft',is_public:true};
     sb.from('products').insert(prod).select().single().then(function(r){
       if(r.data)S.products.push(r.data);
       S._obProductUrl=d.product_url||'';
@@ -13974,9 +13974,9 @@ function submitSignatureRequest(docId){
   if(S.user&&_sigDeal){
     var _dealMatch=_sigDeal.matching||{};
     var _buyerId=_dealMatch.buyer_id||(_sigDeal.buyer&&_sigDeal.buyer.buyer_user_id)||_sigDeal.buyer_user_id;
-    if(!_buyerId&&_sigDeal.buyerId){(function(){var bid=_sigDeal.buyerId;sb.from('buyers').select('buyer_user_id').eq('id',bid).single().then(function(r){if(r.data&&r.data.buyer_user_id){_sendNotification(r.data.buyer_user_id,'deal','Signature Required','A document requires your signature for deal: '+(_sigDeal.product_name||'Deal'),{link_page:'deals',link_id:_sigDeal.id});}});})();}
+    if(!_buyerId&&_sigDeal.buyerId){(function(){var bid=_sigDeal.buyerId;sb.from('buyers').select('buyer_user_id').eq('id',bid).single().then(function(r){if(r.data&&r.data.buyer_user_id){_sendNotification(r.data.buyer_user_id,'deal',(_isKorean?'서명 요청':'Signature Required'),(_isKorean?'서류에 서명이 필요합니다: ':'A document requires your signature for deal: ')+(_sigDeal.product_name||(_isKorean?'딜':'Deal')),{link_page:'deals',link_id:_sigDeal.id});}});})();}
     else if(_buyerId){
-      _sendNotification(_buyerId,'deal','Signature Required','A document requires your signature for deal: '+(_sigDeal.product_name||'Deal'),{link_page:'deals',link_id:_sigDeal.id});
+      _sendNotification(_buyerId,'deal',(_isKorean?'서명 요청':'Signature Required'),(_isKorean?'서류에 서명이 필요합니다: ':'A document requires your signature for deal: ')+(_sigDeal.product_name||(_isKorean?'딜':'Deal')),{link_page:'deals',link_id:_sigDeal.id});
     }
   }
   /* Send signature request as chat message */
@@ -13987,11 +13987,11 @@ function submitSignatureRequest(docId){
     var _sigBuyerLink=(S._deals||S.deals||[]).find(function(d){return d.buyer&&(d.buyer.buyer_user_id===_buyerId||d.buyer_user_id===_buyerId);});
     var _sigBuyerId=_sigBuyerLink&&_sigBuyerLink.buyer?_sigBuyerLink.buyer.id:(_sigBuyerLink?_sigBuyerLink.buyer_id:null);
     if(_sigBuyerId){
-      sb.from('messages').insert({user_id:S.user.id,buyer_id:_sigBuyerId,body:'[Signature Request] '+_sigDocType+' '+_sigDocNo+' — Signature requested by '+(S.company&&S.company.name_en||S.user.company_name||'Seller'),sender_type:'seller',message_type:'system',channel:'platform',metadata:{type:'signature_request',doc_id:docId,doc_type:_sigDocData.type,doc_number:_sigDocNo}}).then(function(){}).catch(function(e){console.error('[sig chat]',e);});
+      sb.from('messages').insert({user_id:S.user.id,buyer_id:_sigBuyerId,body:(_isKorean?'[서명 요청] ':'[Signature Request] ')+_sigDocType+' '+_sigDocNo+' — '+(_isKorean?'서명 요청: ':'Signature requested by ')+(S.company&&S.company.name_en||S.company&&S.company.name_ko||S.user.company_name||(_isKorean?'판매자':'Seller')),sender_type:'seller',message_type:'system',channel:'platform',metadata:{type:'signature_request',doc_id:docId,doc_type:_sigDocData.type,doc_number:_sigDocNo}}).then(function(){}).catch(function(e){console.error('[sig chat]',e);});
     }
   }
   closeModal('sig-req');
-  UI.toast('Signature request sent ✅','ok');
+  UI.toast(_isKorean?'서명 요청을 보냈습니다 ✅':'Signature request sent ✅','ok');
 }
 
 function openSignatureModalFromDoc(){
@@ -14040,9 +14040,9 @@ function saveSig(){
   localStorage.setItem('seller_signature',JSON.stringify(sigData));
   if(S.user&&S.company&&S.company.id){
     sb.from('companies').update({signature_data:sigData,updated_at:new Date().toISOString()}).eq('id',S.company.id).then(function(r){
-      UI.toast(type==='draw'?'Signature registered ✅':'Company stamp registered ✅','ok');
+      UI.toast(_isKorean?(type==='draw'?'서명이 등록되었습니다 ✅':'법인 인감이 등록되었습니다 ✅'):(type==='draw'?'Signature registered ✅':'Company stamp registered ✅'),'ok');
     });
-  } else { UI.toast('Saved locally ✅','ok'); }
+  } else { UI.toast(_isKorean?'로컬에 저장되었습니다 ✅':'Saved locally ✅','ok'); }
   render();
 }
 function uploadStamp(inp){
