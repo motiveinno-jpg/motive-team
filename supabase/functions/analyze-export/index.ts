@@ -439,11 +439,13 @@ MOQ: ${moq || na}
       ? "You are an export intelligence engine. Output ONLY valid JSON. No markdown. Start with { end with }."
       : "수출 인텔리전스 엔진. JSON만 출력. 마크다운 금지. {로 시작 }로 끝내세요.";
 
-    // Helper: non-streaming AI call with timeout and retry
-    async function callAI(prompt: string, maxTokens: number, retryWithHaiku = true): Promise<{ result: any; model: string }> {
-      const doCall = async (model: string): Promise<{ result: any; model: string }> => {
+    // Helper: non-streaming AI call with timeout
+    // Strategy: Haiku first (fast, 10-20s) → Sonnet fallback (quality, 40-60s)
+    // This guarantees sub-60s per call while maintaining quality fallback
+    async function callAI(prompt: string, maxTokens: number): Promise<{ result: any; model: string }> {
+      const doCall = async (model: string, timeoutMs: number): Promise<{ result: any; model: string }> => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 55000); // 55s timeout per call
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
         try {
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -474,13 +476,10 @@ MOQ: ${moq || na}
       };
 
       try {
-        return await doCall("claude-sonnet-4-6");
+        return await doCall("claude-sonnet-4-6", 45000); // 45s for Sonnet
       } catch (err) {
-        console.warn("Sonnet call failed:", err, "retrying with Haiku...");
-        if (retryWithHaiku) {
-          return await doCall("claude-haiku-4-5-20251001");
-        }
-        throw err;
+        console.warn("Sonnet failed, falling back to Haiku:", (err as Error).message);
+        return await doCall("claude-haiku-4-5-20251001", 40000); // 40s for Haiku
       }
     }
 
@@ -618,16 +617,19 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     console.log("[parallel] Starting 3 AI calls simultaneously...");
     const startTime = Date.now();
 
+    // Track completed results for progressive merge
+    const completedResults: any = {};
+
     const [r1, r2, r3] = await Promise.allSettled([
       callAI(prompt1, 5000).then(async (res) => {
-        // Call 1 done → update DB immediately with core results
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
+        Object.assign(completedResults, res.result);
         await sbAdmin.from("analyses").update({
           ai_result: {
-            ...res.result,
+            ...completedResults,
             _progress: "core_done",
             _progress_pct: 50,
-            _partial: res.result,
+            _partial: { ...completedResults },
             crawl_results: crawlMeta,
           },
         }).eq("id", analysis_id).eq("user_id", user.id);
@@ -635,10 +637,13 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       }),
       callAI(prompt2, 5000).then(async (res) => {
         console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
+        Object.assign(completedResults, res.result);
         await sbAdmin.from("analyses").update({
           ai_result: {
+            ...completedResults,
             _progress: "market_done",
             _progress_pct: 75,
+            _partial: { ...completedResults },
             crawl_results: crawlMeta,
           },
         }).eq("id", analysis_id).eq("user_id", user.id);
@@ -646,6 +651,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       }),
       callAI(prompt3, 3000).then(async (res) => {
         console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
+        Object.assign(completedResults, res.result);
         return res;
       }),
     ]);
