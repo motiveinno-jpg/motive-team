@@ -261,10 +261,18 @@ function App() {
   const handleFileDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f && f.size > 10485760) { alert("File size exceeds 10MB limit."); return; } if (f && isAllowedFile(f)) { readFileWithProgress(f); } else if (f) { alert("Supported files: Images, PDF, CSV, Text, Excel"); } };
   const handleFileSelect = (e) => { const f = e.target.files[0]; if (f && f.size > 10485760) { alert("File size exceeds 10MB limit."); return; } if (f && isAllowedFile(f)) { readFileWithProgress(f); } else if (f) { alert("Supported files: Images, PDF, CSV, Text, Excel"); } };
 
-  const runAnonAnalysis = () => {
+  const [pendingAutoAnalyze, setPendingAutoAnalyze] = useState(false);
+  const runAnonAnalysis = async () => {
     if (anonLoading) return;
     if (anonTab === "url") { const u = anonUrl.trim(); if (!u) { alert("Please enter a product URL."); return; } try { new URL(u); } catch(e) { alert("Please enter a valid URL (https://...)"); return; } }
     if (anonTab === "file" && !anonFile) { alert("Please upload a product file (image, PDF, CSV, or text)."); return; }
+    /* ── Auth required: must sign in first ── */
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      if (anonTab === "url" && anonUrl.trim()) localStorage.setItem("whistle_pending_url", anonUrl.trim());
+      openSignup();
+      return;
+    }
     setAnonLoading(true); setAnonResult(null); setShowAnalysisModal(true); setAnalysisStage(0);
     const stages = [800, 2200, 4000, 6000]; stages.forEach((ms, i) => setTimeout(() => setAnalysisStage(i + 1), ms));
     const doFetch = (bodyData) => {
@@ -274,18 +282,24 @@ function App() {
       const headers = { "Content-Type": "application/json" };
       if (RELAY) headers["ngrok-skip-browser-warning"] = "1";
       else headers["apikey"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0";
+      const authToken = session?.access_token;
+      if (authToken) headers["Authorization"] = "Bearer " + authToken;
       bodyData.language = "en";
       fetch(endpoint, { method: "POST", headers, body: JSON.stringify(bodyData), signal: ctrl.signal })
         .then(r => { if (!r.ok) throw new Error("Server error (" + r.status + ")"); return r.json(); })
         .then(d => { clearTimeout(timer); setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); } else { alert(d.error || "Analysis failed"); setShowAnalysisModal(false); } })
         .catch((e) => { clearTimeout(timer); setAnonLoading(false);
-          const msg = e.name === "AbortError" ? "Analysis timed out. Please try again."
-            : "Cannot connect to AI analysis server. Please try again later.\n\nContact: creative@mo-tive.com";
-          alert(msg); setShowAnalysisModal(false); });
+          if (e.name === "AbortError") { alert("Analysis timed out. Please try again."); setShowAnalysisModal(false); }
+          else if (anonTab === "url") {
+            setShowAnalysisModal(false);
+            if (confirm("Could not retrieve information from this URL.\n\nUpload a product detail page for a more accurate analysis.\nSwitch to file upload?")) { setAnonTab("file"); }
+          } else { alert("Cannot connect to AI analysis server. Please try again later.\n\nContact: creative@mo-tive.com"); setShowAnalysisModal(false); }
+        });
     };
     if (anonTab === "file" && anonFilePreview) { doFetch({ fileBase64: anonFilePreview }); }
     else { doFetch({ url: anonUrl }); }
   };
+  useEffect(() => { if (pendingAutoAnalyze) { setPendingAutoAnalyze(false); runAnonAnalysis(); } }, [pendingAutoAnalyze]);
 
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
 
@@ -414,6 +428,15 @@ function App() {
       let role = data.user.user_metadata?.role || "client";
       try { const { data: u } = await sb.from("users").select("role").eq("id", uid).single(); if (u?.role) role = u.role; } catch(e) {}
       await new Promise(r => setTimeout(r, 300));
+      /* ── Check for pending analysis ── */
+      const pendingUrl = localStorage.getItem("whistle_pending_url");
+      if (pendingUrl) {
+        localStorage.removeItem("whistle_pending_url");
+        setAnonUrl(pendingUrl); setAnonTab("url");
+        setShowLogin(false); setLoginLoading(false);
+        setPendingAutoAnalyze(true);
+        return;
+      }
       if (role === "buyer") window.location.href = "/app/buyer";
       else window.location.href = "/app";
     } catch(e) { setLoginError("Server connection failed. Please try again later."); setLoginLoading(false); }
@@ -755,7 +778,7 @@ function App() {
             <div onClick={openSignup} style={{ ...s.btn("pri"), padding: "16px 40px", fontSize: 16 }}>Get Free Export Analysis</div>
             <div onClick={() => scrollTo("demo")} style={{ ...s.btn("ghost"), padding: "16px 28px", fontSize: 15 }}>Try Live Demo</div>
           </div>
-          <div style={{ fontSize: 13, color: T.w40 }}>No signup required for demo. No credit card needed.</div>
+          <div style={{ fontSize: 13, color: T.w40 }}>Free signup, instant analysis. No credit card needed.</div>
         </div>
         <div style={{ display: "flex", gap: 48, justifyContent: "center", marginTop: 60, flexWrap: "wrap" }}>
           {[["13", "Analysis Sections"], ["60s", "Analysis Time"], ["15+", "Countries"], ["14", "Document Types"]].map(([v, l], i) => (
@@ -1226,7 +1249,7 @@ function App() {
     <div id="demo" style={{ background: T.deep, padding: "100px 24px" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
         <Fade><h2 className="section-heading" style={s.heading}>Try It Now — Free</h2></Fade>
-        <Fade delay={0.1}><p style={s.sub}>Upload a product image or paste a URL. Get a full AI export analysis instantly — no signup required.</p></Fade>
+        <Fade delay={0.1}><p style={s.sub}>Upload a product image or paste a URL. Get a full AI export analysis instantly — free account required.</p></Fade>
         <Fade delay={0.2}>
           <div style={{ marginTop: 40, maxWidth: 560, margin: "40px auto 0", padding: "24px 28px", background: T.bgCard, borderRadius: 16, border: `1px solid ${T.borderL}`, boxShadow: T.glow }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 4, textAlign: "left" }}>Free Export Analysis</div>
@@ -1534,7 +1557,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       "Escrow Payment Protection": "에스크로 결제 보호",
       "Document Generation": "서류 자동 생성",
       "Try It Now — Free": "지금 무료로 체험하기",
-      "Upload a product image or paste a URL. Get a full AI export analysis instantly — no signup required.": "제품 이미지를 업로드하거나 URL을 붙여넣으세요. 가입 없이 즉시 AI 수출 분석을 받아보세요.",
+      "Upload a product image or paste a URL. Get a full AI export analysis instantly — free account required.": "제품 이미지를 업로드하거나 URL을 붙여넣으세요. 가입 없이 즉시 AI 수출 분석을 받아보세요.",
       "Simple, Transparent Pricing": "심플하고 투명한 요금제",
       "Start free. Scale as you grow. All plans include core AI analysis features.": "무료로 시작하세요. 성장에 맞춰 확장하세요. 모든 플랜에 핵심 AI 분석 기능이 포함됩니다.",
       "Free": "무료",
@@ -1625,7 +1648,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       "Escrow Payment Protection": "エスクロー決済保護",
       "Document Generation": "書類自動生成",
       "Try It Now — Free": "今すぐ無料で試す",
-      "Upload a product image or paste a URL. Get a full AI export analysis instantly — no signup required.": "製品画像をアップロードまたはURLを貼り付け。登録不要で即座にAI輸出分析を取得。",
+      "Upload a product image or paste a URL. Get a full AI export analysis instantly — free account required.": "製品画像をアップロードまたはURLを貼り付け。登録不要で即座にAI輸出分析を取得。",
       "Simple, Transparent Pricing": "シンプルで透明な料金体系",
       "Start free. Scale as you grow. All plans include core AI analysis features.": "無料で開始。成長に合わせて拡張。全プランに主要AI分析機能を搭載。",
       "Your Products Deserve a Global Audience": "あなたの製品は世界の舞台にふさわしい",
@@ -1716,7 +1739,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       "Escrow Payment Protection": "第三方担保支付",
       "Document Generation": "文件自动生成",
       "Try It Now — Free": "立即免费试用",
-      "Upload a product image or paste a URL. Get a full AI export analysis instantly — no signup required.": "上传产品图片或粘贴URL。无需注册，即时获取完整的AI出口分析。",
+      "Upload a product image or paste a URL. Get a full AI export analysis instantly — free account required.": "上传产品图片或粘贴URL。无需注册，即时获取完整的AI出口分析。",
       "Simple, Transparent Pricing": "简单透明的定价",
       "Start free. Scale as you grow. All plans include core AI analysis features.": "免费开始，随业务增长扩展。所有方案均包含核心AI分析功能。",
       "Your Products Deserve a Global Audience": "您的产品值得走向世界",
@@ -1801,7 +1824,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
       "Everything You Need to Export": "Mọi Thứ Bạn Cần Để Xuất Khẩu",
       "A complete AI-powered platform covering every aspect of international trade": "Nền tảng AI toàn diện bao quát mọi khía cạnh của thương mại quốc tế",
       "Try It Now — Free": "Thử Ngay — Miễn Phí",
-      "Upload a product image or paste a URL. Get a full AI export analysis instantly — no signup required.": "Tải lên hình ảnh sản phẩm hoặc dán URL. Nhận phân tích xuất khẩu AI đầy đủ ngay lập tức — không cần đăng ký.",
+      "Upload a product image or paste a URL. Get a full AI export analysis instantly — free account required.": "Tải lên hình ảnh sản phẩm hoặc dán URL. Nhận phân tích xuất khẩu AI đầy đủ ngay lập tức — không cần đăng ký.",
       "Simple, Transparent Pricing": "Bảng Giá Đơn Giản, Minh Bạch",
       "Start free. Scale as you grow. All plans include core AI analysis features.": "Bắt đầu miễn phí. Mở rộng khi phát triển. Tất cả gói đều có tính năng phân tích AI cốt lõi.",
       "Your Products Deserve a Global Audience": "Sản Phẩm Của Bạn Xứng Đáng Với Thị Trường Toàn Cầu",

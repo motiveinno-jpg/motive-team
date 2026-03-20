@@ -1,9 +1,10 @@
 /**
  * Whistle AI Motion Demo — Full Process Journey
- * 6 scenes showing real export workflow: Analysis → Matching → Chat → Sample → Escrow → Complete
+ * Manufacturer: 11-step journey (Analysis→Results→Project→Progress→Matching→Quote→Contract→Payment→Shipping→Delivery→Settlement)
+ * Buyer: 6 scenes (Search→Tariff→Chat→Escrow→Complete)
  *
- * createManufacturerDemo(isKorean) — manufacturer landing
- * createBuyerDemo(isKorean) — buyer landing
+ * createManufacturerDemo(isKorean) — manufacturer landing (11 scenes, 3.5s cycle)
+ * createBuyerDemo(isKorean) — buyer landing (6 scenes, 5.5s cycle)
  */
 
 (function (global) {
@@ -87,162 +88,149 @@
   }
 
   /* ══════════════════════════════════════
-     MANUFACTURER SCENES — 6 scenes
+     MANUFACTURER SCENES — 11-step journey
+     상품분석→분석결과→프로젝트생성→프로젝트진행→바이어매칭→견적문서→본계약→결제요청→배송입력→배송확인→잔금입금
      ══════════════════════════════════════ */
 
-  // Scene 1: AI Export Analysis Report
+  function mfrProg(id, step) {
+    return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><div style="flex:1;height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden;"><div style="width:' + Math.round((step + 1) / 11 * 100) + '%;height:100%;background:linear-gradient(90deg,#00d4aa,#4f8cff);border-radius:2px;"></div></div><span class="' + id + '-dim" style="font-size:9px;white-space:nowrap;">' + (step + 1) + '/11</span></div>';
+  }
+
+  // 0: 상품 분석
   function mfrScene1(id, kr) {
-    return '<div class="' + id + '-scene" data-scene="0">\
-<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:10px;">\
-<div class="' + id + '-product" data-el="product">\u{1F9F4}</div>\
-<div style="flex:1;">\
-<div style="font-weight:700;font-size:14px;">' + (kr ? '프리미엄 비타민C 세럼' : 'Premium Vitamin C Serum') + '</div>\
-<div class="' + id + '-dim" style="font-size:11px;">' + (kr ? '화장품 · 미국 수출' : 'Cosmetics · Export to USA') + '</div>\
-<div style="margin-top:6px;display:flex;gap:4px;">\
-<span class="' + id + '-tag ' + id + '-tag-blue">HS 3304.99</span>\
-<span class="' + id + '-tag ' + id + '-tag-teal">KORUS FTA 0%</span>\
-</div></div>\
-<div data-el="btn" class="' + id + '-btn" style="align-self:center;white-space:nowrap;">' + (kr ? '🔬 분석하기' : '🔬 Analyze') + '</div>\
-<div data-el="spinner" style="display:none;align-self:center;"><span class="' + id + '-spinner"></span></div>\
-</div>\
-<div data-el="report" style="display:none;" class="' + id + '-fadeUp">\
-<div class="' + id + '-grid3" style="margin-bottom:8px;">\
-<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-teal">92</div><div class="' + id + '-metric-label">' + (kr ? '시장 적합도' : 'Market Fit') + '</div></div>\
-<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-blue">A+</div><div class="' + id + '-metric-label">' + (kr ? '가격 경쟁력' : 'Price Score') + '</div></div>\
-<div class="' + id + '-metric"><div class="' + id + '-metric-val" style="color:#ff9800;">B+</div><div class="' + id + '-metric-label">' + (kr ? '인증 준비도' : 'Cert. Ready') + '</div></div>\
-</div>\
-<div class="' + id + '-card" style="padding:10px;">\
-<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;"><span class="' + id + '-dim">' + (kr ? '13개 섹션 분석 완료' : '13 sections analyzed') + '</span><span class="' + id + '-teal">✓ ' + (kr ? '완료' : 'Done') + '</span></div>\
-<div class="' + id + '-bar"><div class="' + id + '-bar-fill" data-el="progress-bar" style="width:0;background:linear-gradient(90deg,#00d4aa,#4f8cff);"></div></div>\
-</div>\
-</div></div>';
+    return '<div class="' + id + '-scene" data-scene="0">' + mfrProg(id, 0) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">🔬 ' + (kr ? '상품 분석' : 'Product Analysis') + '</div>' +
+      '<div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;"><div class="' + id + '-product">🧴</div>' +
+      '<div style="flex:1;"><div style="font-weight:600;font-size:13px;">' + (kr ? '프리미엄 비타민C 세럼' : 'Premium Vitamin C Serum') + '</div>' +
+      '<div class="' + id + '-dim" style="font-size:11px;">' + (kr ? '화장품 · 30ml · 미국 수출' : 'Cosmetics · 30ml · USA Export') + '</div>' +
+      '<div style="margin-top:4px;display:flex;gap:4px;"><span class="' + id + '-tag ' + id + '-tag-blue">HS 3304.99</span><span class="' + id + '-tag ' + id + '-tag-teal">' + (kr ? '한-미 FTA' : 'KORUS FTA') + '</span></div></div></div>' +
+      '<div data-el="btn" class="' + id + '-btn" style="width:100%;text-align:center;">' + (kr ? '🔬 AI 분석 시작' : '🔬 Start AI Analysis') + '</div>' +
+      '<div data-el="spin" style="display:none;text-align:center;padding:10px;" class="' + id + '-fadeUp"><span class="' + id + '-spinner"></span> <span class="' + id + '-dim" style="font-size:11px;">' + (kr ? 'AI가 13개 섹션 분석 중...' : 'AI analyzing 13 sections...') + '</span></div></div>';
   }
 
-  // Scene 2: Buyer Match Notification
+  // 1: 분석 결과
   function mfrScene2(id, kr) {
-    return '<div class="' + id + '-scene" data-scene="1">\
-<div class="' + id + '-header">\
-<span style="font-size:16px;">🔔</span>\
-<span style="font-weight:600;font-size:13px;">' + (kr ? '새로운 바이어 매칭!' : 'New Buyer Match!') + '</span>\
-<span class="' + id + '-tag ' + id + '-tag-ok" style="margin-left:auto;">' + (kr ? 'AI 추천' : 'AI Match') + '</span>\
-</div>\
-<div data-el="match1" style="display:none;" class="' + id + '-notif ' + id + '-fadeUp">\
-<div class="' + id + '-avatar" style="background:linear-gradient(135deg,#1a3a5c,#0d2240);">🇺🇸</div>\
-<div style="flex:1;"><div style="font-weight:600;font-size:12px;">Sarah Kim — ' + (kr ? 'LA 뷰티 유통' : 'LA Beauty Distribution') + '</div>\
-<div class="' + id + '-dim" style="font-size:10px;">' + (kr ? '스킨케어 바이어 · MOQ 1,000+ · 즉시 발주 가능' : 'Skincare buyer · MOQ 1,000+ · Ready to order') + '</div></div>\
-<div class="' + id + '-btn ' + id + '-btn-ok" style="font-size:10px;padding:5px 10px;" data-el="accept-btn">' + (kr ? '수락' : 'Accept') + '</div>\
-</div>\
-<div data-el="match2" style="display:none;" class="' + id + '-notif ' + id + '-fadeUp">\
-<div class="' + id + '-avatar" style="background:linear-gradient(135deg,#3a1a3a,#2a0d2a);">🇬🇧</div>\
-<div style="flex:1;"><div style="font-weight:600;font-size:12px;">James Parker — ' + (kr ? '런던 프리미엄 리테일' : 'London Premium Retail') + '</div>\
-<div class="' + id + '-dim" style="font-size:10px;">' + (kr ? '프리미엄 화장품 · MOQ 500+ · 샘플 요청' : 'Premium cosmetics · MOQ 500+ · Sample request') + '</div></div>\
-<div class="' + id + '-btn" style="font-size:10px;padding:5px 10px;">' + (kr ? '검토' : 'Review') + '</div>\
-</div>\
-<div data-el="match3" style="display:none;" class="' + id + '-notif ' + id + '-fadeUp">\
-<div class="' + id + '-avatar" style="background:linear-gradient(135deg,#1a3a1a,#0d240d);">🇯🇵</div>\
-<div style="flex:1;"><div style="font-weight:600;font-size:12px;">Yuki Tanaka — ' + (kr ? '도쿄 드럭스토어 체인' : 'Tokyo Drugstore Chain') + '</div>\
-<div class="' + id + '-dim" style="font-size:10px;">' + (kr ? 'K-뷰티 전문 · MOQ 3,000+ · 연간 계약' : 'K-Beauty specialist · MOQ 3,000+ · Annual contract') + '</div></div>\
-<div class="' + id + '-btn" style="font-size:10px;padding:5px 10px;">' + (kr ? '검토' : 'Review') + '</div>\
-</div>\
-<div data-el="match-summary" style="display:none;text-align:center;margin-top:6px;" class="' + id + '-fadeUp">\
-<span class="' + id + '-dim" style="font-size:10px;">' + (kr ? '💡 AI가 12개 바이어 중 적합도 상위 3명을 추천했습니다' : '💡 AI recommended top 3 from 12 matched buyers') + '</span>\
-</div>\
-</div>';
+    return '<div class="' + id + '-scene" data-scene="1">' + mfrProg(id, 1) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">📊 ' + (kr ? '분석 결과' : 'Analysis Results') + '</div>' +
+      '<div class="' + id + '-grid3" style="margin-bottom:8px;">' +
+      '<div class="' + id + '-metric" data-el="r0" style="display:none;"><div class="' + id + '-metric-val ' + id + '-teal">92</div><div class="' + id + '-metric-label">' + (kr ? '수출 적합도' : 'Export Score') + '</div></div>' +
+      '<div class="' + id + '-metric" data-el="r1" style="display:none;"><div class="' + id + '-metric-val ' + id + '-blue">A+</div><div class="' + id + '-metric-label">' + (kr ? '가격 경쟁력' : 'Price Score') + '</div></div>' +
+      '<div class="' + id + '-metric" data-el="r2" style="display:none;"><div class="' + id + '-metric-val" style="color:#ff9800;">B+</div><div class="' + id + '-metric-label">' + (kr ? '인증 준비' : 'Cert Ready') + '</div></div></div>' +
+      '<div data-el="r3" style="display:none;" class="' + id + '-card ' + id + '-fadeUp">' +
+      '<div class="' + id + '-dim" style="font-size:10px;margin-bottom:4px;">' + (kr ? '추천 시장' : 'Top Markets') + '</div>' +
+      '<div style="display:flex;gap:6px;"><span class="' + id + '-tag ' + id + '-tag-ok">🇺🇸 92%</span><span class="' + id + '-tag ' + id + '-tag-blue">🇯🇵 88%</span><span class="' + id + '-tag ' + id + '-tag-warn">🇬🇧 79%</span></div></div></div>';
   }
 
-  // Scene 3: Chat & Quotation
+  // 2: 프로젝트 생성
   function mfrScene3(id, kr) {
-    return '<div class="' + id + '-scene" data-scene="2">\
-<div class="' + id + '-header">\
-<div class="' + id + '-avatar" style="background:linear-gradient(135deg,#1a3a5c,#0d2240);font-size:12px;">🇺🇸</div>\
-<div><div style="font-weight:600;font-size:12px;">Sarah Kim</div><div class="' + id + '-dim" style="font-size:10px;">' + (kr ? '온라인' : 'Online') + ' <span style="color:#00c853;">●</span></div></div>\
-<span class="' + id + '-tag ' + id + '-tag-blue" style="margin-left:auto;">' + (kr ? '자동 번역' : 'Auto-translate') + '</span>\
-</div>\
-<div style="flex:1;overflow:hidden;">\
-<div data-el="msg1" style="display:none;" class="' + id + '-chat-user ' + id + '-fadeUp"><span>' + (kr ? '안녕하세요! 비타민C 세럼 500개 견적 요청드립니다.' : 'Hi! Requesting quote for 500 units of Vitamin C Serum.') + '</span></div>\
-<div data-el="msg2" style="display:none;" class="' + id + '-chat-ai ' + id + '-fadeUp">\
-<div style="font-size:11px;font-weight:600;margin-bottom:6px;">📄 ' + (kr ? '견적서 자동 생성' : 'Auto-generated Quotation') + '</div>\
-<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">' + (kr ? '품목' : 'Item') + '</span><span>Vitamin C Serum 30ml</span></div>\
-<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">' + (kr ? '수량' : 'Qty') + '</span><span>500 units</span></div>\
-<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;"><span class="' + id + '-dim">FOB ' + (kr ? '가격' : 'Price') + '</span><span class="' + id + '-teal" style="font-weight:700;">$12,400</span></div>\
-</div>\
-<div data-el="msg3" style="display:none;" class="' + id + '-chat-user ' + id + '-fadeUp"><span>' + (kr ? '좋습니다! 샘플 먼저 보내주실 수 있나요?' : 'Sounds great! Can you send samples first?') + '</span></div>\
-<div data-el="msg4" style="display:none;" class="' + id + '-chat-system ' + id + '-fadeUp">💳 ' + (kr ? '샘플비 결제 요청이 전송되었습니다' : 'Sample payment request sent') + '</div>\
-</div></div>';
+    return '<div class="' + id + '-scene" data-scene="2">' + mfrProg(id, 2) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">📁 ' + (kr ? '프로젝트 자동 생성' : 'Project Auto-Created') + '</div>' +
+      '<div class="' + id + '-card" style="padding:12px;margin-bottom:8px;"><div style="font-weight:700;font-size:13px;margin-bottom:4px;">🇺🇸 ' + (kr ? 'US 수출 프로젝트' : 'US Export Project') + '</div>' +
+      '<div class="' + id + '-dim" style="font-size:10px;">' + (kr ? '비타민C 세럼 · 1,000개 · FOB ₩12,750' : 'Vitamin C Serum · 1,000 units · FOB $8.50') + '</div></div>' +
+      '<div data-el="s0" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '기획' : 'Planning') + '</span></div>' +
+      '<div data-el="s1" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '샘플' : 'Sample') + '</span></div>' +
+      '<div data-el="s2" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c">3</div><span>' + (kr ? '계약' : 'Contract') + '</span></div>' +
+      '<div data-el="s3" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c">4</div><span>' + (kr ? '결제' : 'Payment') + '</span></div>' +
+      '<div data-el="s4" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c">5</div><span>' + (kr ? '배송' : 'Shipping') + '</span></div>' +
+      '<div data-el="s5" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c">6</div><span>' + (kr ? '정산' : 'Settlement') + '</span></div></div>';
   }
 
-  // Scene 4: Sample & Contract Progress
+  // 3: 프로젝트 진행
   function mfrScene4(id, kr) {
-    return '<div class="' + id + '-scene" data-scene="3">\
-<div style="font-weight:700;font-size:14px;margin-bottom:10px;">🚀 ' + (kr ? '프로젝트 진행 현황' : 'Project Progress') + '</div>\
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">\
-<div class="' + id + '-bar" style="flex:1;height:6px;"><div class="' + id + '-bar-fill" data-el="proj-bar" style="width:0;background:linear-gradient(90deg,#00d4aa,#4f8cff);transition:width 1s;"></div></div>\
-<span data-el="proj-pct" style="font-size:12px;font-weight:700;color:#4f8cff;">0%</span>\
-</div>\
-<div data-el="stage1" style="display:none;" class="' + id + '-fadeUp">\
-<div class="' + id + '-step"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '샘플 발송 완료' : 'Sample Shipped') + '</span><span class="' + id + '-tag ' + id + '-tag-ok" style="margin-left:auto;">DHL</span></div>\
-<div class="' + id + '-step-line wd-done"></div>\
-</div>\
-<div data-el="stage2" style="display:none;" class="' + id + '-fadeUp">\
-<div class="' + id + '-step"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '바이어 샘플 승인' : 'Buyer Approved Sample') + '</span><span class="' + id + '-dim" style="margin-left:auto;font-size:10px;">⭐ 4.8/5</span></div>\
-<div class="' + id + '-step-line wd-done"></div>\
-</div>\
-<div data-el="stage3" style="display:none;" class="' + id + '-fadeUp">\
-<div class="' + id + '-step"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '본계약 협상 완료' : 'Contract Negotiated') + '</span></div>\
-<div class="' + id + '-step-line wd-done"></div>\
-</div>\
-<div data-el="stage4" style="display:none;" class="' + id + '-fadeUp">\
-<div class="' + id + '-step"><div class="' + id + '-step-c wd-now ' + id + '-pulse">▶</div><span style="font-weight:600;">' + (kr ? '선금 결제 대기 중' : 'Awaiting Deposit Payment') + '</span></div>\
-</div>\
-<div data-el="stage-doc" style="display:none;margin-top:8px;" class="' + id + '-fadeUp">\
-<div class="' + id + '-doc">\
-<span>📄</span>\
-<span style="flex:1;">' + (kr ? '프로포마 인보이스 (PI)' : 'Proforma Invoice (PI)') + '</span>\
-<span class="' + id + '-tag ' + id + '-tag-ok">' + (kr ? '서명 완료' : 'Signed') + '</span>\
-</div>\
-</div></div>';
+    return '<div class="' + id + '-scene" data-scene="3">' + mfrProg(id, 3) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">🚀 ' + (kr ? '프로젝트 진행' : 'Project Progress') + '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><div class="' + id + '-bar" style="flex:1;height:6px;"><div class="' + id + '-bar-fill" data-el="pbar" style="width:0;background:linear-gradient(90deg,#00d4aa,#4f8cff);transition:width .8s;"></div></div>' +
+      '<span data-el="ppct" style="font-size:12px;font-weight:700;color:#4f8cff;">0%</span></div>' +
+      '<div data-el="p0" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '기획 단계 완료' : 'Planning Complete') + '</span></div>' +
+      '<div class="' + id + '-step-line" data-el="pl0" style="display:none;"></div>' +
+      '<div data-el="p1" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '샘플 발송 · 바이어 승인' : 'Sample Sent · Approved') + '</span><span class="' + id + '-dim" style="margin-left:auto;font-size:10px;">⭐ 4.8</span></div>' +
+      '<div class="' + id + '-step-line" data-el="pl1" style="display:none;"></div>' +
+      '<div data-el="p2" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-now ' + id + '-pulse">▶</div><span style="font-weight:600;">' + (kr ? '인증 서류 확인 중' : 'Certifications Review') + '</span></div></div>';
   }
 
-  // Scene 5: Escrow Payment
+  // 4: 바이어 매칭
   function mfrScene5(id, kr) {
-    return '<div class="' + id + '-scene" data-scene="4">\
-<div style="font-weight:700;font-size:14px;margin-bottom:10px;">💰 ' + (kr ? '에스크로 결제' : 'Escrow Payment') + '</div>\
-<div class="' + id + '-card" style="text-align:center;margin-bottom:10px;padding:16px;">\
-<div class="' + id + '-dim" style="font-size:10px;margin-bottom:4px;">' + (kr ? '에스크로 보관 금액' : 'Amount Held in Escrow') + '</div>\
-<div class="' + id + '-amount ' + id + '-teal" data-el="escrow-amt">$0</div>\
-<div class="' + id + '-dim" style="font-size:10px;margin-top:4px;">' + (kr ? 'Stripe 안전 보관 · 수수료 2.5%' : 'Secured by Stripe · 2.5% fee') + '</div>\
-</div>\
-<div data-el="esc-steps">\
-<div class="' + id + '-step"><div class="' + id + '-step-c" data-el="ec-0">1</div><span>' + (kr ? '바이어 선금 결제' : 'Buyer Deposit Payment') + '</span><span data-el="ec-0-amt" class="' + id + '-dim" style="margin-left:auto;font-size:10px;"></span></div>\
-<div class="' + id + '-step-line" data-el="el-1"></div>\
-<div class="' + id + '-step"><div class="' + id + '-step-c" data-el="ec-1">2</div><span>' + (kr ? '생산 완료 · 출하' : 'Production Done · Shipped') + '</span></div>\
-<div class="' + id + '-step-line" data-el="el-2"></div>\
-<div class="' + id + '-step"><div class="' + id + '-step-c" data-el="ec-2">3</div><span>' + (kr ? '바이어 수취 확인' : 'Buyer Confirms Receipt') + '</span></div>\
-<div class="' + id + '-step-line" data-el="el-3"></div>\
-<div class="' + id + '-step"><div class="' + id + '-step-c" data-el="ec-3">4</div><span>' + (kr ? '자동 정산 (7일 이내)' : 'Auto-Settlement (within 7 days)') + '</span></div>\
-</div></div>';
+    return '<div class="' + id + '-scene" data-scene="4">' + mfrProg(id, 4) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">🤝 ' + (kr ? '바이어 매칭' : 'Buyer Matching') + '</div>' +
+      '<div data-el="b0" style="display:none;" class="' + id + '-notif ' + id + '-fadeUp"><div class="' + id + '-avatar" style="background:linear-gradient(135deg,#1a3a5c,#0d2240);">🇺🇸</div>' +
+      '<div style="flex:1;"><div style="font-weight:600;font-size:12px;">Sarah Kim</div><div class="' + id + '-dim" style="font-size:10px;">' + (kr ? 'LA 뷰티 유통 · MOQ 1,000+' : 'LA Beauty · MOQ 1,000+') + '</div></div>' +
+      '<div class="' + id + '-btn ' + id + '-btn-ok" style="font-size:10px;padding:5px 10px;">' + (kr ? '수락' : 'Accept') + '</div></div>' +
+      '<div data-el="b1" style="display:none;" class="' + id + '-notif ' + id + '-fadeUp"><div class="' + id + '-avatar" style="background:linear-gradient(135deg,#3a1a3a,#2a0d2a);">🇬🇧</div>' +
+      '<div style="flex:1;"><div style="font-weight:600;font-size:12px;">James Parker</div><div class="' + id + '-dim" style="font-size:10px;">' + (kr ? '런던 리테일 · MOQ 500+' : 'London Retail · MOQ 500+') + '</div></div>' +
+      '<div class="' + id + '-btn" style="font-size:10px;padding:5px 10px;">' + (kr ? '검토' : 'Review') + '</div></div>' +
+      '<div data-el="b2" style="display:none;text-align:center;margin-top:6px;" class="' + id + '-fadeUp"><span class="' + id + '-dim" style="font-size:10px;">💡 ' + (kr ? 'AI가 12개 바이어 중 상위 2명 추천' : 'AI recommended top 2 from 12 buyers') + '</span></div></div>';
   }
 
-  // Scene 6: Deal Complete
+  // 5: 견적문서 생성
   function mfrScene6(id, kr) {
-    return '<div class="' + id + '-scene" data-scene="5">\
-<div style="text-align:center;padding-top:10px;">\
-<div data-el="confetti" style="display:none;font-size:32px;margin-bottom:8px;" class="' + id + '-fadeUp">🎉</div>\
-<div data-el="complete-title" style="display:none;font-size:18px;font-weight:800;margin-bottom:6px;" class="' + id + '-fadeUp">' + (kr ? '거래 완료!' : 'Deal Complete!') + '</div>\
-<div data-el="complete-sub" style="display:none;font-size:12px;margin-bottom:16px;" class="' + id + '-dim ' + id + '-fadeUp">' + (kr ? '첫 수출 성공 — 모든 프로세스가 휘슬 AI에서 완료되었습니다' : 'First export success — entire process completed on Whistle AI') + '</div>\
-</div>\
-<div data-el="summary-card" style="display:none;" class="' + id + '-card ' + id + '-fadeUp">\
-<div class="' + id + '-grid2">\
-<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-teal">$12,090</div><div class="' + id + '-metric-label">' + (kr ? '정산 금액' : 'Settlement') + '</div></div>\
-<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-blue">500</div><div class="' + id + '-metric-label">' + (kr ? '수출 수량' : 'Units Exported') + '</div></div>\
-</div>\
-<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:11px;padding:6px 8px;background:rgba(255,255,255,.02);border-radius:6px;">\
-<span class="' + id + '-dim">' + (kr ? '소요 기간' : 'Duration') + '</span><span>45 ' + (kr ? '일' : 'days') + '</span>\
-</div>\
-<div style="display:flex;justify-content:space-between;font-size:11px;padding:6px 8px;">\
-<span class="' + id + '-dim">' + (kr ? '다음 발주' : 'Re-order') + '</span><span class="' + id + '-teal">📩 ' + (kr ? '바이어가 재발주를 요청했습니다' : 'Buyer requested re-order') + '</span>\
-</div>\
-</div></div>';
+    return '<div class="' + id + '-scene" data-scene="5">' + mfrProg(id, 5) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">📝 ' + (kr ? '견적문서 자동 생성' : 'Quote Auto-Generated') + '</div>' +
+      '<div class="' + id + '-card" style="padding:12px;"><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:8px;"><span>PROFORMA INVOICE</span><span class="' + id + '-dim">#WH-2026-0042</span></div>' +
+      '<div data-el="q0" style="display:none;" class="' + id + '-fadeUp"><div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">' + (kr ? '제품' : 'Product') + '</span><span>Vitamin C Serum 30ml</span></div></div>' +
+      '<div data-el="q1" style="display:none;" class="' + id + '-fadeUp"><div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">' + (kr ? '수량' : 'Qty') + '</span><span>1,000</span></div></div>' +
+      '<div data-el="q2" style="display:none;" class="' + id + '-fadeUp"><div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">FOB ' + (kr ? '단가' : 'Price') + '</span><span>' + (kr ? '₩12,750' : '$8.50') + '</span></div></div>' +
+      '<div data-el="q3" style="display:none;" class="' + id + '-fadeUp"><div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding:6px 0;"><span>' + (kr ? '합계' : 'Total') + '</span><span class="' + id + '-teal">' + (kr ? '₩12,750,000' : '$8,500') + '</span></div></div></div>' +
+      '<div data-el="q4" style="display:none;margin-top:8px;text-align:center;" class="' + id + '-btn ' + id + '-fadeUp">' + (kr ? '📄 PDF 발송' : '📄 Send PDF') + '</div></div>';
+  }
+
+  // 6: 본계약 진행
+  function mfrScene7(id, kr) {
+    return '<div class="' + id + '-scene" data-scene="6">' + mfrProg(id, 6) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">📋 ' + (kr ? '본계약 진행' : 'Main Contract') + '</div>' +
+      '<div class="' + id + '-card" style="padding:12px;">' +
+      '<div data-el="c0" style="display:none;" class="' + id + '-fadeUp"><div style="font-size:11px;font-weight:600;margin-bottom:6px;">' + (kr ? '계약 조건' : 'Contract Terms') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">' + (kr ? '결제 조건' : 'Payment') + '</span><span>' + (kr ? '선금 50% + 잔금 50%' : '50% Deposit + 50% Balance') + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04);"><span class="' + id + '-dim">' + (kr ? '납기' : 'Delivery') + '</span><span>30 ' + (kr ? '일' : 'days') + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:10px;padding:3px 0;"><span class="' + id + '-dim">' + (kr ? '품질 보증' : 'Warranty') + '</span><span>' + (kr ? 'FDA 인증 필수' : 'FDA Required') + '</span></div></div>' +
+      '<div data-el="c1" style="display:none;text-align:center;margin-top:8px;padding:8px;background:rgba(0,200,83,.08);border:1px solid rgba(0,200,83,.15);border-radius:8px;" class="' + id + '-fadeUp"><span style="font-size:18px;">✍️</span> <span style="font-size:12px;font-weight:700;color:#00c853;">' + (kr ? '전자 서명 완료' : 'Digitally Signed') + '</span></div></div></div>';
+  }
+
+  // 7: 결제 요청
+  function mfrScene8(id, kr) {
+    return '<div class="' + id + '-scene" data-scene="7">' + mfrProg(id, 7) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">💳 ' + (kr ? '결제 요청' : 'Payment Request') + '</div>' +
+      '<div class="' + id + '-card" style="text-align:center;padding:14px;margin-bottom:8px;">' +
+      '<div class="' + id + '-dim" style="font-size:10px;margin-bottom:4px;">' + (kr ? '에스크로 보관 금액' : 'Escrow Amount') + '</div>' +
+      '<div class="' + id + '-amount ' + id + '-teal" data-el="e-amt">' + (kr ? '₩0' : '$0') + '</div>' +
+      '<div class="' + id + '-dim" style="font-size:10px;margin-top:4px;">' + (kr ? 'Stripe 안전 보관' : 'Secured by Stripe') + '</div></div>' +
+      '<div data-el="e0" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-now ' + id + '-pulse">▶</div><span>' + (kr ? '선금 결제 (50%)' : 'Deposit (50%)') + '</span><span class="' + id + '-dim" style="margin-left:auto;font-size:10px;">' + (kr ? '₩6,375,000' : '$4,250') + '</span></div>' +
+      '<div data-el="e1" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span style="font-weight:600;color:#00c853;">' + (kr ? '선금 결제 완료!' : 'Deposit Paid!') + '</span></div></div>';
+  }
+
+  // 8: 배송 입력
+  function mfrScene9(id, kr) {
+    return '<div class="' + id + '-scene" data-scene="8">' + mfrProg(id, 8) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">📦 ' + (kr ? '배송 입력' : 'Shipping Details') + '</div>' +
+      '<div data-el="sh0" style="display:none;" class="' + id + '-doc ' + id + '-fadeUp"><span>🚢</span><span style="flex:1;">' + (kr ? '운송 방식' : 'Carrier') + '</span><span class="' + id + '-tag ' + id + '-tag-blue">' + (kr ? '해상 운송' : 'Sea Freight') + '</span></div>' +
+      '<div data-el="sh1" style="display:none;" class="' + id + '-doc ' + id + '-fadeUp"><span>📋</span><span style="flex:1;">' + (kr ? 'B/L 번호' : 'B/L Number') + '</span><span style="font-weight:600;font-size:11px;">MAEU-2026-84721</span></div>' +
+      '<div data-el="sh2" style="display:none;" class="' + id + '-doc ' + id + '-fadeUp"><span>📅</span><span style="flex:1;">' + (kr ? '도착 예정' : 'ETA') + '</span><span style="font-weight:600;font-size:11px;color:#4f8cff;">2026-04-18</span></div>' +
+      '<div data-el="sh3" style="display:none;margin-top:8px;" class="' + id + '-fadeUp"><div class="' + id + '-btn ' + id + '-btn-ok" style="width:100%;text-align:center;">' + (kr ? '📦 출하 확인 완료' : '📦 Shipment Confirmed') + '</div></div></div>';
+  }
+
+  // 9: 배송 확인
+  function mfrScene10(id, kr) {
+    return '<div class="' + id + '-scene" data-scene="9">' + mfrProg(id, 9) +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px;">✅ ' + (kr ? '배송 확인' : 'Delivery Confirmed') + '</div>' +
+      '<div data-el="d0" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '출하 완료' : 'Shipped') + '</span><span class="' + id + '-dim" style="margin-left:auto;font-size:10px;">03-20</span></div>' +
+      '<div class="' + id + '-step-line wd-done"></div>' +
+      '<div data-el="d1" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '통관 완료' : 'Customs Cleared') + '</span><span class="' + id + '-dim" style="margin-left:auto;font-size:10px;">04-15</span></div>' +
+      '<div class="' + id + '-step-line wd-done"></div>' +
+      '<div data-el="d2" style="display:none;" class="' + id + '-step ' + id + '-fadeUp"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '바이어 수취 확인' : 'Buyer Received') + '</span><span class="' + id + '-tag ' + id + '-tag-ok" style="margin-left:auto;">⭐ 5.0</span></div>' +
+      '<div data-el="d3" style="display:none;text-align:center;margin-top:8px;padding:8px;background:rgba(0,200,83,.08);border:1px solid rgba(0,200,83,.15);border-radius:8px;" class="' + id + '-fadeUp">' +
+      '<span style="font-size:11px;color:#00c853;font-weight:700;">' + (kr ? '🎉 수취 확인 — 잔금 정산 진행!' : '🎉 Confirmed — releasing balance!') + '</span></div></div>';
+  }
+
+  // 10: 잔금 입금
+  function mfrScene11(id, kr) {
+    return '<div class="' + id + '-scene" data-scene="10">' + mfrProg(id, 10) +
+      '<div style="text-align:center;padding-top:8px;">' +
+      '<div data-el="f0" style="display:none;font-size:32px;margin-bottom:6px;" class="' + id + '-fadeUp">🎉</div>' +
+      '<div data-el="f1" style="display:none;font-size:18px;font-weight:800;margin-bottom:4px;" class="' + id + '-fadeUp">' + (kr ? '거래 완료!' : 'Deal Complete!') + '</div>' +
+      '<div data-el="f2" style="display:none;font-size:12px;margin-bottom:12px;" class="' + id + '-dim ' + id + '-fadeUp">' + (kr ? '모든 수출 프로세스가 휘슬에서 완료' : 'Entire export completed on Whistle AI') + '</div></div>' +
+      '<div data-el="f3" style="display:none;" class="' + id + '-card ' + id + '-fadeUp"><div class="' + id + '-grid2">' +
+      '<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-teal">' + (kr ? '₩12,431,000' : '$12,090') + '</div><div class="' + id + '-metric-label">' + (kr ? '정산 금액' : 'Settlement') + '</div></div>' +
+      '<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-blue">1,000</div><div class="' + id + '-metric-label">' + (kr ? '수출 수량' : 'Units') + '</div></div></div>' +
+      '<div style="text-align:center;margin-top:8px;font-size:10px;"><span class="' + id + '-teal">📩 ' + (kr ? '바이어 재발주 요청!' : 'Buyer re-order request!') + '</span></div></div></div>';
   }
 
   /* ══════════════════════════════════════
@@ -323,7 +311,30 @@
   }
 
   function buyerScene4(id, kr) {
-    return mfrScene4(id, kr);
+    return '<div class="' + id + '-scene" data-scene="3">\
+<div style="font-weight:700;font-size:14px;margin-bottom:10px;">🚀 ' + (kr ? '프로젝트 진행 현황' : 'Project Progress') + '</div>\
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">\
+<div class="' + id + '-bar" style="flex:1;height:6px;"><div class="' + id + '-bar-fill" data-el="proj-bar" style="width:0;background:linear-gradient(90deg,#00d4aa,#4f8cff);transition:width 1s;"></div></div>\
+<span data-el="proj-pct" style="font-size:12px;font-weight:700;color:#4f8cff;">0%</span>\
+</div>\
+<div data-el="stage1" style="display:none;" class="' + id + '-fadeUp">\
+<div class="' + id + '-step"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '샘플 발송 완료' : 'Sample Shipped') + '</span><span class="' + id + '-tag ' + id + '-tag-ok" style="margin-left:auto;">DHL</span></div>\
+<div class="' + id + '-step-line wd-done"></div>\
+</div>\
+<div data-el="stage2" style="display:none;" class="' + id + '-fadeUp">\
+<div class="' + id + '-step"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '바이어 샘플 승인' : 'Buyer Approved Sample') + '</span><span class="' + id + '-dim" style="margin-left:auto;font-size:10px;">⭐ 4.8/5</span></div>\
+<div class="' + id + '-step-line wd-done"></div>\
+</div>\
+<div data-el="stage3" style="display:none;" class="' + id + '-fadeUp">\
+<div class="' + id + '-step"><div class="' + id + '-step-c wd-done">✓</div><span>' + (kr ? '본계약 협상 완료' : 'Contract Negotiated') + '</span></div>\
+<div class="' + id + '-step-line wd-done"></div>\
+</div>\
+<div data-el="stage4" style="display:none;" class="' + id + '-fadeUp">\
+<div class="' + id + '-step"><div class="' + id + '-step-c wd-now ' + id + '-pulse">▶</div><span style="font-weight:600;">' + (kr ? '선금 결제 대기 중' : 'Awaiting Deposit Payment') + '</span></div>\
+</div>\
+<div data-el="stage-doc" style="display:none;margin-top:8px;" class="' + id + '-fadeUp">\
+<div class="' + id + '-doc"><span>📄</span><span style="flex:1;">' + (kr ? '프로포마 인보이스 (PI)' : 'Proforma Invoice (PI)') + '</span><span class="' + id + '-tag ' + id + '-tag-ok">' + (kr ? '서명 완료' : 'Signed') + '</span></div>\
+</div></div>';
   }
 
   function buyerScene5(id, kr) {
@@ -346,21 +357,46 @@
   }
 
   function buyerScene6(id, kr) {
-    return mfrScene6(id, kr);
+    return '<div class="' + id + '-scene" data-scene="5">\
+<div style="text-align:center;padding-top:10px;">\
+<div data-el="confetti" style="display:none;font-size:32px;margin-bottom:8px;" class="' + id + '-fadeUp">🎉</div>\
+<div data-el="complete-title" style="display:none;font-size:18px;font-weight:800;margin-bottom:6px;" class="' + id + '-fadeUp">' + (kr ? '거래 완료!' : 'Deal Complete!') + '</div>\
+<div data-el="complete-sub" style="display:none;font-size:12px;margin-bottom:16px;" class="' + id + '-dim ' + id + '-fadeUp">' + (kr ? '첫 수출 성공 — 모든 프로세스가 휘슬 AI에서 완료되었습니다' : 'First export success — entire process completed on Whistle AI') + '</div>\
+</div>\
+<div data-el="summary-card" style="display:none;" class="' + id + '-card ' + id + '-fadeUp">\
+<div class="' + id + '-grid2">\
+<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-teal">$12,090</div><div class="' + id + '-metric-label">' + (kr ? '정산 금액' : 'Settlement') + '</div></div>\
+<div class="' + id + '-metric"><div class="' + id + '-metric-val ' + id + '-blue">500</div><div class="' + id + '-metric-label">' + (kr ? '수출 수량' : 'Units Exported') + '</div></div>\
+</div>\
+<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:11px;padding:6px 8px;background:rgba(255,255,255,.02);border-radius:6px;">\
+<span class="' + id + '-dim">' + (kr ? '소요 기간' : 'Duration') + '</span><span>45 ' + (kr ? '일' : 'days') + '</span>\
+</div>\
+<div style="display:flex;justify-content:space-between;font-size:11px;padding:6px 8px;">\
+<span class="' + id + '-dim">' + (kr ? '다음 발주' : 'Re-order') + '</span><span class="' + id + '-teal">📩 ' + (kr ? '바이어가 재발주를 요청했습니다' : 'Buyer requested re-order') + '</span>\
+</div>\
+</div></div>';
   }
 
   /* ══════════════════════════════════════
      ANIMATION TIMELINES
      ══════════════════════════════════════ */
 
-  function animMfr1(root, id) {
+  /* — helper: reveal multiple data-el in sequence — */
+  function mfrReveal(root, sceneIdx, els, delays) {
+    var s = root.querySelector('[data-scene="' + sceneIdx + '"]');
+    if (!s) return;
+    els.forEach(function (e) { var el = s.querySelector('[data-el="' + e + '"]'); if (el) el.style.display = 'none'; });
+    els.forEach(function (e, i) {
+      setTimeout(function () { var el = s.querySelector('[data-el="' + e + '"]'); if (el) el.style.display = ''; }, delays[i] || i * 500);
+    });
+  }
+
+  // S0: 상품 분석 — click button → spinner → done
+  function animS0(root, id) {
     var s = root.querySelector('[data-scene="0"]');
     var btn = s.querySelector('[data-el="btn"]');
-    var spinner = s.querySelector('[data-el="spinner"]');
-    var report = s.querySelector('[data-el="report"]');
-    var bar = s.querySelector('[data-el="progress-bar"]');
-    btn.style.display = ''; spinner.style.display = 'none'; report.style.display = 'none';
-    if (bar) bar.style.width = '0';
+    var spin = s.querySelector('[data-el="spin"]');
+    btn.style.display = ''; spin.style.display = 'none';
     var cursor = root.querySelector('.' + id + '-cursor');
     if (cursor) {
       var r = btn.getBoundingClientRect(); var w = root.getBoundingClientRect();
@@ -368,23 +404,62 @@
       cursor.style.left = (r.left - w.left + r.width / 2) + 'px';
       cursor.style.top = (r.top - w.top + r.height / 2) + 'px';
     }
-    setTimeout(function () { if (cursor) cursor.classList.add('wd-click'); }, 800);
-    setTimeout(function () { if (cursor) cursor.classList.remove('wd-click'); btn.style.display = 'none'; spinner.style.display = ''; }, 950);
-    setTimeout(function () { spinner.style.display = 'none'; report.style.display = ''; if (bar) { bar.style.transition = 'width 1.5s ease'; bar.style.width = '100%'; } }, 2000);
+    setTimeout(function () { if (cursor) cursor.classList.add('wd-click'); }, 700);
+    setTimeout(function () { if (cursor) cursor.classList.remove('wd-click'); btn.style.display = 'none'; spin.style.display = ''; }, 850);
   }
 
-  function animMfr2(root, id) {
-    var s = root.querySelector('[data-scene="1"]');
-    var m1 = s.querySelector('[data-el="match1"]');
-    var m2 = s.querySelector('[data-el="match2"]');
-    var m3 = s.querySelector('[data-el="match3"]');
-    var ms = s.querySelector('[data-el="match-summary"]');
-    m1.style.display = 'none'; m2.style.display = 'none'; m3.style.display = 'none'; ms.style.display = 'none';
-    setTimeout(function () { m1.style.display = ''; }, 500);
-    setTimeout(function () { m2.style.display = ''; }, 1200);
-    setTimeout(function () { m3.style.display = ''; }, 1900);
-    setTimeout(function () { ms.style.display = ''; }, 2800);
+  // S1: 분석 결과 — metrics pop in
+  function animS1(root, id) { mfrReveal(root, 1, ['r0', 'r1', 'r2', 'r3'], [300, 700, 1100, 1800]); }
+
+  // S2: 프로젝트 생성 — stages appear one by one
+  function animS2(root, id) { mfrReveal(root, 2, ['s0', 's1', 's2', 's3', 's4', 's5'], [300, 600, 900, 1200, 1500, 1800]); }
+
+  // S3: 프로젝트 진행 — progress bar + checklist
+  function animS3(root, id) {
+    var s = root.querySelector('[data-scene="3"]');
+    var bar = s.querySelector('[data-el="pbar"]');
+    var pct = s.querySelector('[data-el="ppct"]');
+    ['p0', 'pl0', 'p1', 'pl1', 'p2'].forEach(function (e) { var el = s.querySelector('[data-el="' + e + '"]'); if (el) el.style.display = 'none'; });
+    if (bar) bar.style.width = '0';
+    if (pct) pct.textContent = '0%';
+    setTimeout(function () { var e = s.querySelector('[data-el="p0"]'); if (e) e.style.display = ''; if (bar) { bar.style.transition = 'width .6s ease'; bar.style.width = '35%'; } if (pct) pct.textContent = '35%'; }, 400);
+    setTimeout(function () { var e = s.querySelector('[data-el="pl0"]'); if (e) e.style.display = ''; }, 700);
+    setTimeout(function () { var e = s.querySelector('[data-el="p1"]'); if (e) e.style.display = ''; if (bar) bar.style.width = '60%'; if (pct) pct.textContent = '60%'; }, 1000);
+    setTimeout(function () { var e = s.querySelector('[data-el="pl1"]'); if (e) e.style.display = ''; }, 1300);
+    setTimeout(function () { var e = s.querySelector('[data-el="p2"]'); if (e) e.style.display = ''; if (bar) bar.style.width = '72%'; if (pct) pct.textContent = '72%'; }, 1600);
   }
+
+  // S4: 바이어 매칭 — notifications pop in
+  function animS4(root, id) { mfrReveal(root, 4, ['b0', 'b1', 'b2'], [400, 1200, 2000]); }
+
+  // S5: 견적문서 — invoice lines appear
+  function animS5(root, id) { mfrReveal(root, 5, ['q0', 'q1', 'q2', 'q3', 'q4'], [300, 700, 1100, 1500, 2000]); }
+
+  // S6: 본계약 — terms → signature
+  function animS6(root, id) { mfrReveal(root, 6, ['c0', 'c1'], [400, 1800]); }
+
+  // S7: 결제 요청 — amount count up + deposit step
+  function animS7(root, id) {
+    var s = root.querySelector('[data-scene="7"]');
+    var amt = s.querySelector('[data-el="e-amt"]');
+    var kr = root.dataset.kr === '1';
+    ['e0', 'e1'].forEach(function (e) { var el = s.querySelector('[data-el="' + e + '"]'); if (el) el.style.display = 'none'; });
+    if (amt) amt.textContent = kr ? '₩0' : '$0';
+    setTimeout(function () { var e = s.querySelector('[data-el="e0"]'); if (e) e.style.display = ''; if (amt) amt.textContent = kr ? '₩6,375,000' : '$4,250'; }, 600);
+    setTimeout(function () {
+      var e0 = s.querySelector('[data-el="e0"]'); if (e0) { var c = e0.querySelector('.' + id + '-step-c'); if (c) { c.className = id + '-step-c wd-done'; c.textContent = '✓'; } }
+      var e1 = s.querySelector('[data-el="e1"]'); if (e1) e1.style.display = '';
+    }, 2000);
+  }
+
+  // S8: 배송 입력 — shipping details appear
+  function animS8(root, id) { mfrReveal(root, 8, ['sh0', 'sh1', 'sh2', 'sh3'], [400, 900, 1400, 2000]); }
+
+  // S9: 배송 확인 — tracking steps
+  function animS9(root, id) { mfrReveal(root, 9, ['d0', 'd1', 'd2', 'd3'], [400, 1000, 1600, 2200]); }
+
+  // S10: 잔금 입금 — celebration
+  function animS10(root, id) { mfrReveal(root, 10, ['f0', 'f1', 'f2', 'f3'], [300, 700, 1200, 1800]); }
 
   function animChat(root, id, prefix) {
     var p = prefix || 'msg';
@@ -498,7 +573,7 @@
      ORCHESTRATOR
      ══════════════════════════════════════ */
 
-  function createDemo(scenes, animators, id, kr, labels) {
+  function createDemo(scenes, animators, id, kr, labels, cycleMs) {
     var html = baseStyles(id);
     html += '<div class="' + id + '-wrap" data-kr="' + (kr ? '1' : '0') + '">';
     html += '<div class="' + id + '-cursor" style="left:50%;top:80%;opacity:0;"></div>';
@@ -536,7 +611,7 @@
       setInterval(function () {
         current = (current + 1) % sceneEls.length;
         show(current);
-      }, CYCLE_MS);
+      }, cycleMs || CYCLE_MS);
     };
 
     return html;
@@ -550,12 +625,12 @@
     var id = ANIM_ID + 'm';
     var kr = !!isKorean;
     var labels = kr
-      ? ['1/6 AI 수출 분석', '2/6 바이어 매칭', '3/6 채팅 & 견적', '4/6 샘플 & 계약', '5/6 에스크로 결제', '6/6 거래 완료']
-      : ['1/6 AI Export Analysis', '2/6 Buyer Matching', '3/6 Chat & Quote', '4/6 Sample & Contract', '5/6 Escrow Payment', '6/6 Deal Complete'];
+      ? ['1/11 상품 분석', '2/11 분석 결과', '3/11 프로젝트 생성', '4/11 프로젝트 진행', '5/11 바이어 매칭', '6/11 견적문서', '7/11 본계약', '8/11 결제 요청', '9/11 배송 입력', '10/11 배송 확인', '11/11 잔금 입금']
+      : ['1/11 Analysis', '2/11 Results', '3/11 Project Created', '4/11 Progress', '5/11 Buyer Match', '6/11 Quote', '7/11 Contract', '8/11 Payment', '9/11 Shipping', '10/11 Delivery', '11/11 Settlement'];
     return createDemo(
-      [mfrScene1(id, kr), mfrScene2(id, kr), mfrScene3(id, kr), mfrScene4(id, kr), mfrScene5(id, kr), mfrScene6(id, kr)],
-      [animMfr1, animMfr2, animMfrChat, animProject, animEscrow, animComplete],
-      id, kr, labels
+      [mfrScene1(id, kr), mfrScene2(id, kr), mfrScene3(id, kr), mfrScene4(id, kr), mfrScene5(id, kr), mfrScene6(id, kr), mfrScene7(id, kr), mfrScene8(id, kr), mfrScene9(id, kr), mfrScene10(id, kr), mfrScene11(id, kr)],
+      [animS0, animS1, animS2, animS3, animS4, animS5, animS6, animS7, animS8, animS9, animS10],
+      id, kr, labels, 3500
     );
   };
 

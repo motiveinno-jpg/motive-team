@@ -263,10 +263,18 @@ function App() {
   /* startCountdown 제거됨 — 프리뷰 잠금 없음 */
   useEffect(() => { return () => { if (countdownRef.current) clearInterval(countdownRef.current); }; }, []);
 
-  const runAnonAnalysis = () => {
+  const [pendingAutoAnalyze, setPendingAutoAnalyze] = useState(false);
+  const runAnonAnalysis = async () => {
     if (anonLoading) return;
     if (anonTab === "url") { const u = anonUrl.trim(); if (!u) { alert("상품 URL을 입력해주세요."); return; } try { new URL(u); } catch(e) { alert("올바른 URL 형식이 아닙니다. (https://...)"); return; } }
     if (anonTab === "file" && !anonFile) { alert("제품 파일을 업로드해주세요. (이미지, PDF, CSV, 텍스트)"); return; }
+    /* ── 인증 필수: 로그인 안 되어 있으면 회원가입 먼저 ── */
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      if (anonTab === "url" && anonUrl.trim()) localStorage.setItem("whistle_pending_url", anonUrl.trim());
+      openSignup();
+      return;
+    }
     setAnonLoading(true); setAnonResult(null); setShowAnalysisModal(true); setAnalysisStage(0);
     const stages = [800, 2200, 4000, 6000]; stages.forEach((ms, i) => setTimeout(() => setAnalysisStage(i + 1), ms));
     const doFetch = (bodyData) => {
@@ -276,17 +284,23 @@ function App() {
       const headers = { "Content-Type": "application/json" };
       if (RELAY) headers["ngrok-skip-browser-warning"] = "1";
       else headers["apikey"] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0";
+      const authToken = session?.access_token;
+      if (authToken) headers["Authorization"] = "Bearer " + authToken;
       fetch(endpoint, { method: "POST", headers, body: JSON.stringify(bodyData), signal: ctrl.signal })
         .then(r => { if (!r.ok) throw new Error("서버 응답 오류 (" + r.status + ")"); return r.json(); })
         .then(d => { clearTimeout(timer); setAnonLoading(false); setAnalysisStage(5); if (d.ok) { setAnonResult(d.result); } else { alert(d.error || "분석 실패"); setShowAnalysisModal(false); } })
         .catch((e) => { clearTimeout(timer); setAnonLoading(false);
-          const msg = e.name === "AbortError" ? "분석 시간이 초과되었습니다. 다시 시도해주세요."
-            : "AI 분석 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.\n\n문의: creative@mo-tive.com";
-          alert(msg); setShowAnalysisModal(false); });
+          if (e.name === "AbortError") { alert("분석 시간이 초과되었습니다. 다시 시도해주세요."); setShowAnalysisModal(false); }
+          else if (anonTab === "url") {
+            setShowAnalysisModal(false);
+            if (confirm("이 URL에서 정보를 가져올 수 없습니다.\n\n상세페이지를 직접 업로드하시면 더 정확한 분석이 가능합니다.\n파일 업로드로 전환하시겠습니까?")) { setAnonTab("file"); }
+          } else { alert("AI 분석 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.\n\n문의: creative@mo-tive.com"); setShowAnalysisModal(false); }
+        });
     };
     if (anonTab === "file" && anonFilePreview) { doFetch({ fileBase64: anonFilePreview }); }
     else { doFetch({ url: anonUrl }); }
   };
+  useEffect(() => { if (pendingAutoAnalyze) { setPendingAutoAnalyze(false); runAnonAnalysis(); } }, [pendingAutoAnalyze]);
 
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
@@ -299,7 +313,7 @@ function App() {
   const [checkoutType, setCheckoutType] = useState("subscription"); // "subscription" | "single"
   const [paymentMethod, setPaymentMethod] = useState("CARD");
   const openCheckout = (planId, name, price, cycle) => { setCheckoutPlan({ planId, name, price, cycle }); setCheckoutType("subscription"); setShowCheckout(true); };
-  const openSinglePay = () => { setCheckoutPlan({ planId: "ai_report", name: "AI 수출 상품분석 보고서", price: "$9.90", cycle: "" }); setCheckoutType("single"); setShowCheckout(true); };
+  const openSinglePay = () => { setCheckoutPlan({ planId: "ai_report", name: "AI 수출 상품분석 보고서", price: "₩14,900", cycle: "" }); setCheckoutType("single"); setShowCheckout(true); };
   const SB_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0";
   const STRIPE_PRICES = {
     starter: { m: "price_1TBDCuBEJTGmEnmcZNjeU27n", s: "price_1TCG17BEJTGmEnmctEW5svtD", a: "price_1TCG17BEJTGmEnmcZkiwz4SW" },
@@ -416,6 +430,15 @@ function App() {
         const sess = await sb.auth.getSession();
         if (sess.data?.session) break;
         await new Promise(r => setTimeout(r, 300));
+      }
+      /* ── 대기 중인 분석이 있으면 앱 이동 대신 여기서 바로 분석 ── */
+      const pendingUrl = localStorage.getItem("whistle_pending_url");
+      if (pendingUrl) {
+        localStorage.removeItem("whistle_pending_url");
+        setAnonUrl(pendingUrl); setAnonTab("url");
+        setShowLogin(false); setLoginLoading(false);
+        setPendingAutoAnalyze(true);
+        return;
       }
       if (role === "buyer") window.location.href = "/app/buyer";
       else window.location.href = "/app";
@@ -925,7 +948,7 @@ function App() {
             <div onClick={openSignup} style={{ ...s.btn("pri"), padding: "16px 40px", fontSize: 16 }}>무료 수출 진단 받기</div>
             <div onClick={() => nav("voucher")} style={{ ...s.btn("ghost"), padding: "16px 28px", fontSize: 15, border: `1px solid ${T.acc}40`, color: T.acc }}>💰 바우처로 무료 이용</div>
           </div>
-          <div style={{ fontSize: 13, color: T.w40 }}>가입 없이 분석 시작 · 카드 불필요 · 1분 완료</div>
+          <div style={{ fontSize: 13, color: T.w40 }}>무료 가입 후 바로 분석 · 카드 불필요 · 1분 완료</div>
         </div>
         <div style={{ display: "flex", gap: 48, justifyContent: "center", marginTop: 60, flexWrap: "wrap" }}>
           {[["13개", "분석 섹션"], ["1분", "분석 완료"], ["최대 85%", "정부 지원"], ["수행기관", "공식 등록"]].map(([v, l], i) => (
@@ -1076,7 +1099,7 @@ function App() {
             <div style={{ width: 80, height: 80, borderRadius: 14, background: "linear-gradient(135deg, #e91e63, #ff5722)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, flexShrink: 0 }}>💧</div>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ fontSize: 20, fontWeight: 800, color: T.w, marginBottom: 4 }}>Beauty & Cosmetics Serum</div>
-              <div style={{ fontSize: 12, color: T.w40 }}>HS코드: 3304.99 | 카테고리: Skincare / Serum | FOB: $4.50~6.80/unit</div>
+              <div style={{ fontSize: 12, color: T.w40 }}>HS코드: 3304.99 | 카테고리: 스킨케어 / 세럼 | FOB: ₩6,750~10,200/개</div>
             </div>
             <div style={{ textAlign: "center", flexShrink: 0 }}>
               <div style={{ position: "relative", width: 80, height: 80 }}>
@@ -1090,14 +1113,14 @@ function App() {
                   <div style={{ fontSize: 9, color: T.w40 }}>/100</div>
                 </div>
               </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: T.ok, marginTop: 4 }}>Export Score</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: T.ok, marginTop: 4 }}>수출 적합도</div>
             </div>
           </div>
           {/* 상세 분석 그리드 */}
           <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0 }}>
             {/* Top Markets */}
             <div style={{ padding: "20px", borderRight: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.ok, marginBottom: 12 }}>🌍 Top Markets</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.ok, marginBottom: 12 }}>🌍 추천 수출 시장</div>
               {[{market:"US",pct:92,flag:"🇺🇸"},{market:"Japan",pct:88,flag:"🇯🇵"},{market:"SEA",pct:79,flag:"🌏"}].map((m,i) => (
                 <div key={i} style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -1112,8 +1135,8 @@ function App() {
             </div>
             {/* Required Certs */}
             <div style={{ padding: "20px", borderRight: `1px solid ${T.border}`, borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#e91e63", marginBottom: 12 }}>📋 Required Certifications</div>
-              {[{cert:"FDA",region:"USA",status:"Required",color:T.err},{cert:"CPNP",region:"EU",status:"Required",color:T.acc},{cert:"PMDA",region:"Japan",status:"Recommended",color:T.w40}].map((c,i) => (
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#e91e63", marginBottom: 12 }}>📋 필수 인증</div>
+              {[{cert:"FDA",region:"미국",status:"필수",color:T.err},{cert:"CPNP",region:"유럽",status:"필수",color:T.acc},{cert:"PMDA",region:"일본",status:"권장",color:T.w40}].map((c,i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: T.w08, borderRadius: 8, marginBottom: 6 }}>
                   <div><div style={{ fontSize: 13, fontWeight: 700, color: T.w90 }}>{c.cert}</div><div style={{ fontSize: 10, color: T.w20 }}>{c.region}</div></div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: c.color, background: `${c.color}15`, padding: "2px 8px", borderRadius: 4 }}>{c.status}</span>
@@ -1122,16 +1145,16 @@ function App() {
             </div>
             {/* Competitor & Price */}
             <div style={{ padding: "20px", borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.acc, marginBottom: 12 }}>💰 Price & Competition</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.acc, marginBottom: 12 }}>💰 가격 & 경쟁 분석</div>
               <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                {[{label:"FOB",val:"$5.20"},{label:"Retail",val:"$18~25"},{label:"Margin",val:"55%"}].map((p,i) => (
+                {[{label:"FOB",val:"₩7,800"},{label:"소비자가",val:"₩27,000~37,500"},{label:"마진",val:"55%"}].map((p,i) => (
                   <div key={i} style={{ flex: 1, padding: "8px 6px", background: T.w08, borderRadius: 8, textAlign: "center" }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.w }}>{p.val}</div>
                     <div style={{ fontSize: 9, color: T.w20, marginTop: 2 }}>{p.label}</div>
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 10, color: T.w40, lineHeight: 1.6 }}>COSRX Serum: $21.99<br/>Innisfree: $18.50<br/>Your position: Price competitive</div>
+              <div style={{ fontSize: 10, color: T.w40, lineHeight: 1.6 }}>COSRX 세럼: ₩33,000<br/>이니스프리: ₩27,750<br/>경쟁력: 가격 우위</div>
             </div>
           </div>
           <div style={{ padding: "14px 28px", background: T.w08, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -1270,7 +1293,7 @@ function App() {
                 <div style={{ padding: "14px 16px", background: `${T.pri}08`, borderRadius: 10, border: `1px solid ${T.pri}20`, marginBottom: 16 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: T.pri, marginBottom: 8 }}>🤖 AI가 자동으로 채운 정보</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {[["제품","스킨케어 세럼 30ml"],["HS코드","3304.99-1000"],["FOB 가격","$8.50 / 개"],["카테고리","뷰티 / 스킨케어"]].map(([k,v],i)=>(
+                    {[["제품","스킨케어 세럼 30ml"],["HS코드","3304.99-1000"],["FOB 가격","₩12,750 / 개"],["카테고리","뷰티 / 스킨케어"]].map(([k,v],i)=>(
                       <div key={i}><div style={{ fontSize: 10, color: T.w20 }}>{k}</div><div style={{ fontSize: 13, fontWeight: 600, color: T.w90 }}>{v}</div></div>
                     ))}
                   </div>
@@ -1295,14 +1318,14 @@ function App() {
                 </div>
                 <div style={{ padding: "16px", background: T.w08, borderRadius: 10, marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.w60, marginBottom: 12 }}>비용 내역 (1,000개 기준)</div>
-                  {[["제품 원가 (FOB)","$8,500"],["해상 운송비","$480"],["보험료","$85"],["미국 관세 (6.5%)","$553"],["통관 수수료","$150"],["알리바바 수수료","$340"]].map(([item,cost],i)=>(
+                  {[["제품 원가 (FOB)","₩12,750,000"],["해상 운송비","₩720,000"],["보험료","₩128,000"],["미국 관세 (6.5%)","₩830,000"],["통관 수수료","₩225,000"],["플랫폼 수수료","₩510,000"]].map(([item,cost],i)=>(
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${T.border}` }}><span style={{ fontSize: 12, color: T.w60 }}>{item}</span><span style={{ fontSize: 12, fontWeight: 600, color: T.w90 }}>{cost}</span></div>
                   ))}
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0", marginTop: 4 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.w }}>총 수출 비용</span><span style={{ fontSize: 13, fontWeight: 800, color: T.w }}>$10,108</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0 0", marginTop: 4 }}><span style={{ fontSize: 13, fontWeight: 800, color: T.w }}>총 수출 비용</span><span style={{ fontSize: 13, fontWeight: 800, color: T.w }}>₩15,163,000</span></div>
                 </div>
                 <div style={{ padding: "16px", background: `${T.ok}08`, borderRadius: 10, border: `1px solid ${T.ok}20`, marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: T.ok, marginBottom: 10 }}>📊 마진 시뮬레이션</div>
-                  {[["바이어 판매가 $15일 때","$4,892","32.6%",T.ok],["바이어 판매가 $12일 때","$1,892","15.8%",T.acc],["바이어 판매가 $10일 때","-$108","-1.1%",T.err]].map(([s2,profit,rate,color],i)=>(
+                  {[["판매가 ₩22,500일 때","₩7,337,000","32.6%",T.ok],["판매가 ₩18,000일 때","₩2,837,000","15.7%",T.acc],["판매가 ₩15,000일 때","-₩163,000","-1.1%",T.err]].map(([s2,profit,rate,color],i)=>(
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < 2 ? `1px solid ${T.border}` : "none" }}>
                       <span style={{ fontSize: 12, color: T.w60 }}>{s2}</span>
                       <div style={{ textAlign: "right" }}><span style={{ fontSize: 13, fontWeight: 700, color }}>{profit}</span><span style={{ fontSize: 10, color, marginLeft: 6 }}>({rate})</span></div>
@@ -1311,7 +1334,7 @@ function App() {
                 </div>
                 <div style={{ padding: "12px 14px", background: `${T.pri}08`, borderRadius: 8, border: `1px solid ${T.pri}20`, display: "flex", gap: 8 }}>
                   <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
-                  <span style={{ fontSize: 11, color: T.pri, lineHeight: 1.5 }}><strong>AI 추천:</strong> 바이어 판매가 $13~$15 범위가 적정. 미국 시장 유사 제품 평균가 $14.90 대비 경쟁력 있음.</span>
+                  <span style={{ fontSize: 11, color: T.pri, lineHeight: 1.5 }}><strong>AI 추천:</strong> 바이어 판매가 ₩19,500~22,500 범위가 적정. 미국 시장 유사 제품 평균가 ₩22,350 대비 경쟁력 있음.</span>
                 </div>
               </div>
             </div>
@@ -1325,7 +1348,7 @@ function App() {
   const platformFeatures = (
     <div id="platform" style={{ ...s.section }}>
       <Fade><h2 style={s.heading}>수출의 모든 과정이<br /><span style={{ background: T.priG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Whistle 안에서</span> 진행됩니다</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>채팅, 이메일, 화상미팅, 견적서, 수출 서류, 정산까지 — 플랫폼 밖으로 나갈 필요 없습니다</p></Fade>
+      <Fade delay={0.1}><p style={s.sub}>채팅, 화상미팅, 견적서, 수출 서류, 결제, 정산까지 — 플랫폼 밖으로 나갈 필요 없습니다</p></Fade>
       <Fade delay={0.15}><div style={{ margin: "32px auto 0", maxWidth: 720, padding: "16px 24px", background: `linear-gradient(135deg, ${T.pri}12, ${T.acc}08)`, borderRadius: 12, border: `1px solid ${T.pri}20`, display: "flex", alignItems: "center", gap: 16 }}>
         <span style={{ fontSize: 32 }}>💬</span>
         <div>
@@ -1334,20 +1357,20 @@ function App() {
         </div>
       </div></Fade>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16, marginTop: 24 }}>
-        {/* Email Hub */}
+        {/* Buyer Chat */}
         <Fade delay={0.06}><div style={{ ...s.card, padding: 0, height: "100%" }}>
-          <div style={{ padding: "6px 16px", background: `${T.pri}10`, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 12 }}>📧</span><span style={{ fontSize: 11, fontWeight: 700, color: T.pri }}>이메일 허브</span><span style={{ fontSize: 9, fontWeight: 700, background: T.ok, color: T.bg, padding: "1px 6px", borderRadius: 4, marginLeft: "auto" }}>핵심</span></div>
+          <div style={{ padding: "6px 16px", background: `${T.pri}10`, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 12 }}>💬</span><span style={{ fontSize: 11, fontWeight: 700, color: T.pri }}>바이어 실시간 채팅</span><span style={{ fontSize: 9, fontWeight: 700, background: T.ok, color: T.bg, padding: "1px 6px", borderRadius: 4, marginLeft: "auto" }}>핵심</span></div>
           <div style={{ padding: "18px 16px" }}>
             <div style={{ padding: "10px 12px", background: T.w08, borderRadius: 8, marginBottom: 8, border: `1px solid ${T.border}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontSize: 10, fontWeight: 700, color: T.w90 }}>🇺🇸 John Smith — LA Cosmetics</span><span style={{ fontSize: 9, color: T.w20 }}>2분 전</span></div>
-              <div style={{ fontSize: 10, color: T.w40, lineHeight: 1.4 }}>Hi, I'm interested in your serum products. Could you provide MOQ and...</div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span style={{ fontSize: 10, fontWeight: 700, color: T.w90 }}>🇺🇸 John Smith — LA Cosmetics</span><span style={{ fontSize: 9, color: T.w20 }}>방금</span></div>
+              <div style={{ fontSize: 10, color: T.w40, lineHeight: 1.4 }}>Hi, I'm interested in your serum products. Could you provide MOQ and pricing?</div>
             </div>
             <div style={{ padding: "8px 10px", background: `${T.pri}08`, borderRadius: 6, border: `1px solid ${T.pri}15`, marginBottom: 8 }}>
-              <div style={{ fontSize: 9, fontWeight: 700, color: T.pri, marginBottom: 4 }}>🤖 AI 자동 번역</div>
+              <div style={{ fontSize: 9, fontWeight: 700, color: T.pri, marginBottom: 4 }}>🤖 AI 실시간 번역</div>
               <div style={{ fontSize: 10, color: T.w60, lineHeight: 1.4 }}>안녕하세요, 세럼 제품에 관심이 있습니다. MOQ와 가격을 알려주실 수 있나요?</div>
             </div>
-            <div style={{ flex: 1, padding: "6px 8px", background: T.w08, borderRadius: 6, fontSize: 10, color: T.w40 }}>한국어로 답장 → AI가 영어로 변환</div>
-            <div style={{ marginTop: 10, display: "flex", gap: 4, flexWrap: "wrap" }}>{["바이어별 자동 분류","언어 자동 감지","답장 AI 번역","Gmail 연동"].map((t,i)=>(<span key={i} style={{ fontSize: 9, padding: "2px 6px", background: T.w08, borderRadius: 4, color: T.w20 }}>{t}</span>))}</div>
+            <div style={{ flex: 1, padding: "6px 8px", background: T.w08, borderRadius: 6, fontSize: 10, color: T.w40 }}>한국어로 답장 → AI가 영어로 자동 변환</div>
+            <div style={{ marginTop: 10, display: "flex", gap: 4, flexWrap: "wrap" }}>{["실시간 알림","AI 자동 번역","견적서 즉시 발송","딜 상태 추적"].map((t,i)=>(<span key={i} style={{ fontSize: 9, padding: "2px 6px", background: T.w08, borderRadius: 4, color: T.w20 }}>{t}</span>))}</div>
           </div>
         </div></Fade>
         {/* Video Meeting */}
@@ -1375,7 +1398,7 @@ function App() {
           <div style={{ padding: "18px 16px" }}>
             <div style={{ padding: "12px", background: T.w08, borderRadius: 8, marginBottom: 10, border: `1px solid ${T.border}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ fontSize: 10, fontWeight: 700, color: T.w90 }}>PROFORMA INVOICE</span><span style={{ fontSize: 9, color: T.w20 }}>#WH-2026-0042</span></div>
-              {[["Product","Hydra Serum 30ml"],["MOQ","1,000 units"],["FOB Price","$8.50/unit"],["Total","$8,500"]].map(([k,v],i)=>(
+              {[["제품명","Hydra Serum 30ml"],["최소 주문","1,000개"],["FOB 단가","₩12,750/개"],["합계","₩12,750,000"]].map(([k,v],i)=>(
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: `1px solid ${T.border}` }}><span style={{ fontSize: 10, color: T.w40 }}>{k}</span><span style={{ fontSize: 10, fontWeight: 600, color: i===3?T.acc:T.w90 }}>{v}</span></div>
               ))}
             </div>
@@ -1422,19 +1445,19 @@ function App() {
 
   /* ═══ 8. PRICING (₩299,000 + SaaS/알리바바 분리 설명) ═══ */
   const [billCycle, setBillCycle] = useState("m"); // m, s, a
-  const cyclePrices = { starter: { m: "$29", s: "$26.10", a: "$23.20" }, pro: { m: "$79", s: "$71.10", a: "$63.20" }, enterprise: { m: "$199", s: "$179.10", a: "$159.20" } };
-  const regularPrices = { starter: "$59", pro: "$159", enterprise: "$399" };
+  const cyclePrices = { starter: { m: "₩43,500", s: "₩39,000", a: "₩35,000" }, pro: { m: "₩118,500", s: "₩107,000", a: "₩95,000" }, enterprise: { m: "₩299,000", s: "₩269,000", a: "₩239,000" } };
+  const regularPrices = { starter: "₩89,000", pro: "₩239,000", enterprise: "₩599,000" };
   const cycleLabel = { m: "/월", s: "/월 (6개월)", a: "/월 (연간)" };
   const cycleSave = { m: "", s: "10% 할인", a: "20% 할인" };
   const plans = [
     { name: "Free", price: "무료", period: "", vPrice: "무료", desc: "수출 가능성 확인", cta: "무료로 시작하기", planId: "free",
-      features: [["AI 수출 분석 1회 (최초 무료)",true],["제품 등록 5개",true],["프로젝트 1건",true],["원가 계산기",true],["수출 로드맵 가이드",true],["서류 템플릿 생성",false],["이메일 허브",false]], hi: false },
-    { name: "Starter", price: cyclePrices.starter[billCycle], regPrice: regularPrices.starter, period: cycleLabel[billCycle], vPrice: "$8.70", vRate: "70%", desc: "본격 수출 준비", cta: "Starter 구독하기", planId: "starter", save: cycleSave[billCycle],
-      features: [["AI 분석 10회/월",true],["제품 등록 20개",true],["프로젝트 5건",true],["서류 템플릿 생성 무제한",true],["이메일 허브 50건/월",true],["수출 체크리스트",true],["카테고리별 로드맵",true]], hi: true },
-    { name: "Pro", price: cyclePrices.pro[billCycle], regPrice: regularPrices.pro, period: cycleLabel[billCycle], vPrice: "$23.70", vRate: "70%", desc: "프리미엄 + 풀 플랫폼", cta: "Pro 구독하기", planId: "pro", save: cycleSave[billCycle],
+      features: [["AI 수출 분석 1회 (최초 무료)",true],["제품 등록 5개",true],["프로젝트 1건",true],["원가 계산기",true],["수출 로드맵 가이드",true],["서류 템플릿 생성",false],["바이어 채팅",false]], hi: false },
+    { name: "Starter", price: cyclePrices.starter[billCycle], regPrice: regularPrices.starter, period: cycleLabel[billCycle], vPrice: "₩13,000", vRate: "70%", desc: "본격 수출 준비", cta: "Starter 구독하기", planId: "starter", save: cycleSave[billCycle],
+      features: [["AI 분석 10회/월",true],["제품 등록 20개",true],["프로젝트 5건",true],["서류 템플릿 생성 무제한",true],["바이어 채팅 무제한",true],["수출 체크리스트",true],["카테고리별 로드맵",true]], hi: true },
+    { name: "Pro", price: cyclePrices.pro[billCycle], regPrice: regularPrices.pro, period: cycleLabel[billCycle], vPrice: "₩36,000", vRate: "70%", desc: "프리미엄 + 풀 플랫폼", cta: "Pro 구독하기", planId: "pro", save: cycleSave[billCycle],
       features: [["AI 분석 50회/월",true],["제품/프로젝트 무제한",true],["바이어 매칭 1건/월",true],["에스크로 거래 지원",true],["우선 기술 지원",true],["모든 기능 무제한",true]], hi: false },
     { name: "Enterprise", price: cyclePrices.enterprise[billCycle], regPrice: regularPrices.enterprise, period: cycleLabel[billCycle], desc: "대기업·대량 수출", cta: "Enterprise 구독하기", planId: "enterprise", save: cycleSave[billCycle],
-      features: [["Pro 전체 기능 포함",true],["우선 이메일 지원",true],["대량 할인",true],["바이어 매칭 무제한",true],["맞춤 온보딩",true],["맞춤 교육",true],["전담 성공 팀",true]], hi: false },
+      features: [["Pro 전체 기능 포함",true],["우선 기술 지원",true],["대량 할인",true],["바이어 매칭 무제한",true],["맞춤 온보딩",true],["맞춤 교육",true],["전담 성공 팀",true]], hi: false },
   ];
 
   const pricing = (
@@ -1443,7 +1466,7 @@ function App() {
         <Fade><h2 style={s.heading}>요금제</h2></Fade>
         <Fade delay={0.1}><p style={s.sub}>Whistle AI는 <strong style={{ color: T.pri }}>SaaS 구독</strong>(AI 분석·소통·관리)과 <strong style={{ color: T.acc }}>알리바바 입점 서비스</strong>(별도)로 구성됩니다</p></Fade>
         <Fade delay={0.12} style={{ textAlign: "center", marginTop: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 13, color: T.w20 }}>아래는 SaaS 구독 요금입니다. 알리바바 입점이 필요하면 하단 패키지를 추가하세요.</span>
+          <span style={{ fontSize: 13, color: T.w20 }}>아래는 SaaS 구독 요금입니다. 알리바바 입점이 필요하면 하단 패키지를 추가하세요.<br/><span style={{ fontSize: 11, color: T.w12 }}>* 원화 표시 금액은 참고용이며, 실제 결제는 USD 기준으로 처리됩니다</span></span>
         </Fade>
         <Fade delay={0.13} style={{ textAlign: "center", marginTop: 16, marginBottom: 8 }}>
           <div style={{ display: "inline-flex", borderRadius: 10, overflow: "visible", border: `1px solid ${T.border}` }}>
@@ -1467,8 +1490,8 @@ function App() {
               <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: T.acc, color: T.bg, fontSize: 11, fontWeight: 800, padding: "4px 16px", borderRadius: 20, whiteSpace: "nowrap" }}>건별 구매</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.acc, marginBottom: 4 }}>AI 수출 상품분석</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 2 }}>
-                <span style={{ fontSize: 14, color: T.w20, textDecoration: "line-through", marginRight: 4 }}>$40.00</span>
-                <span style={{ fontSize: 28, fontWeight: 800, color: T.w, whiteSpace: "nowrap" }}>$9.90</span>
+                <span style={{ fontSize: 14, color: T.w20, textDecoration: "line-through", marginRight: 4 }}>₩60,000</span>
+                <span style={{ fontSize: 28, fontWeight: 800, color: T.w, whiteSpace: "nowrap" }}>₩14,900</span>
                 <span style={{ fontSize: 13, color: T.w40 }}>/건</span>
               </div>
               <div style={{ fontSize: 10, fontWeight: 700, color: T.ok, background: `${T.ok}15`, padding: "2px 8px", borderRadius: 6, display: "inline-block", marginBottom: 4, alignSelf: "flex-start" }}>런칭 특가 75% OFF</div>
@@ -1547,7 +1570,7 @@ function App() {
           </div>
           <div style={{ padding: "24px 28px" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4 }}><span style={{ fontSize: 28, fontWeight: 800, color: T.w }}>₩5,000,000</span><span style={{ fontSize: 13, color: T.w40 }}>셋업비 (1회)</span></div>
-            <div style={{ padding: "6px 10px", background: `${T.err}10`, borderRadius: 6, display: "inline-block", marginBottom: 16 }}><span style={{ fontSize: 11, color: T.err }}>⚠️ 알리바바 계정 비용 별도 (연 $4,999~$8,799)</span></div>
+            <div style={{ padding: "6px 10px", background: `${T.err}10`, borderRadius: 6, display: "inline-block", marginBottom: 16 }}><span style={{ fontSize: 11, color: T.err }}>⚠️ 알리바바 계정 비용 별도 (연 ₩750만~₩1,320만)</span></div>
             {showVP && <div style={{ padding: "8px 14px", background: `${T.purple}15`, borderRadius: 8, marginBottom: 16, display: "block" }}><span style={{ fontSize: 11, color: T.purple }}>수출바우처 70% → </span><span style={{ fontSize: 16, fontWeight: 800, color: T.w }}>₩1,500,000</span></div>}
             <div style={{ fontSize: 12, fontWeight: 700, color: T.w60, marginBottom: 10 }}>포함 내역</div>
             {["전용 알리바바 계정 개설 지원","브랜드 스토어 페이지 구축","상품 5개 영문 등록 + 촬영 가이드","HS코드 확인 + 인증 로드맵","FOB 가격 산정 + 견적서 템플릿","KWA 광고 초기 셋팅","바이어 응대 매뉴얼 + 교육 (2시간)","3개월 팔로업 지원"].map((t,i)=>(<div key={i} style={{ display: "flex", alignItems: "center", padding: "4px 0", fontSize: 12, color: T.w60 }}><span style={{ color: T.ok, marginRight: 8, fontSize: 13 }}>✓</span>{t}</div>))}
@@ -1560,7 +1583,7 @@ function App() {
         <div style={{ fontSize: 14, fontWeight: 700, color: T.w, marginBottom: 12 }}>어떤 모델이 맞을까요?</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
           <div><div style={{ fontSize: 12, fontWeight: 700, color: T.pri, marginBottom: 6 }}>총판 운영을 추천합니다</div><div style={{ fontSize: 12, color: T.w40, lineHeight: 1.6 }}>• 수출 경험이 전혀 없는 기업<br/>• 초기 비용을 최소화하고 싶은 기업<br/>• 알리바바 운영을 위탁하고 본업에 집중하고 싶은 기업</div></div>
-          <div><div style={{ fontSize: 12, fontWeight: 700, color: T.acc, marginBottom: 6 }}>독립 운영을 추천합니다</div><div style={{ fontSize: 12, color: T.w40, lineHeight: 1.6 }}>• 자체 브랜드로 해외 시장을 키우려는 기업<br/>• 연 수출 규모가 $100K 이상 예상되는 기업<br/>• 장기적으로 수출팀을 구축할 계획인 기업</div></div>
+          <div><div style={{ fontSize: 12, fontWeight: 700, color: T.acc, marginBottom: 6 }}>독립 운영을 추천합니다</div><div style={{ fontSize: 12, color: T.w40, lineHeight: 1.6 }}>• 자체 브랜드로 해외 시장을 키우려는 기업<br/>• 연 수출 규모가 1.5억원 이상 예상되는 기업<br/>• 장기적으로 수출팀을 구축할 계획인 기업</div></div>
         </div>
       </div></Fade>
     </div>
@@ -1588,9 +1611,9 @@ function App() {
   const faqs = [
     ["AI 분석이 정말 정확한가요?", "최신 AI 기술과 글로벌 무역 데이터를 활용해 분석합니다. 공장 규모, MOQ, 보유 인증 등 추가 정보를 입력하면 정확도가 크게 향상됩니다."],
     ["바우처로 Whistle AI를 쓸 수 있나요?", "네. Whistle AI는 수출바우처 · 제조혁신바우처 공식 수행기관입니다. 정부가 비용의 50~85%를 부담합니다. SaaS 구독료와 알리바바 셋업비 모두 바우처 정산 가능합니다."],
-    ["SaaS 구독과 알리바바 입점은 별도인가요?", "네. SaaS(Free/Starter/Pro)는 AI 분석, 이메일 허브, 견적서 등 플랫폼 기능입니다. 알리바바 실제 입점이 필요하면 별도 알리바바 패키지를 추가합니다. 가장 인기 있는 조합은 Starter + 총판입니다."],
-    ["총판 모델과 독립 모델 중 어떤 게 낫나요?", "수출 초기에는 총판 모델(셋업비 ₩200만원, 알리바바 계정 무료)이 유리합니다. 연 수출 $100K 이상이 예상되면 커미션이 없는 독립 모델이 장기적으로 유리합니다."],
-    ["알리바바 계정 비용은 얼마인가요?", "총판 모델은 Whistle이 부담하므로 무료입니다. 독립 모델은 알리바바에 직접 결제하며, 연간 $4,999~$8,799입니다 (등급에 따라 차이)."],
+    ["SaaS 구독과 알리바바 입점은 별도인가요?", "네. SaaS(Free/Starter/Pro)는 AI 분석, 바이어 채팅, 견적서 등 플랫폼 기능입니다. 알리바바 실제 입점이 필요하면 별도 알리바바 패키지를 추가합니다. 가장 인기 있는 조합은 Starter + 총판입니다."],
+    ["총판 모델과 독립 모델 중 어떤 게 낫나요?", "수출 초기에는 총판 모델(셋업비 ₩200만원, 알리바바 계정 무료)이 유리합니다. 연 수출 1.5억원 이상이 예상되면 커미션이 없는 독립 모델이 장기적으로 유리합니다."],
+    ["알리바바 계정 비용은 얼마인가요?", "총판 모델은 Whistle이 부담하므로 무료입니다. 독립 모델은 알리바바에 직접 결제하며, 연간 ₩750만~₩1,320만원입니다 (등급에 따라 차이)."],
     ["수출 경험이 전혀 없어도 가능한가요?", "Whistle AI의 핵심 가치가 바로 그것입니다. AI가 단계별로 안내하고, 이메일 자동 번역으로 바이어와 소통하며, 견적서 템플릿도 자동 생성됩니다. Pro 플랜은 바이어 매칭과 에스크로 거래를 지원하고, 알리바바 패키지를 선택하면 전담 매니저가 함께합니다."],
   ];
 
