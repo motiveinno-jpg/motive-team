@@ -260,10 +260,6 @@
   /* ── Orchestrator ── */
 
   function createDemo(scenes, animators, id, kr, labels) {
-    // Register animators globally so inline boot script can access them
-    var registryKey = '__wd_' + id;
-    global[registryKey] = animators;
-
     var html = baseStyles(id);
     html += '<div class="' + id + '-wrap" data-kr="' + (kr ? '1' : '0') + '">';
     html += '<div class="' + id + '-cursor" style="left:50%;top:80%;"></div>';
@@ -276,28 +272,31 @@
     for (var j = 0; j < scenes.length; j++) { html += scenes[j]; }
     html += '</div>';
 
-    // Boot script — uses globally registered animators instead of new Function()
-    html += '<script>\
-(function(){\
-var root=document.querySelector(".' + id + '-wrap");\
-if(!root)return;\
-var scenes=root.querySelectorAll(".' + id + '-scene");\
-var dots=root.querySelectorAll(".' + id + '-dot");\
-var label=root.querySelector(".' + id + '-label");\
-var labels=' + JSON.stringify(labels) + ';\
-var animators=window["' + registryKey + '"];\
-if(!animators)return;\
-var current=0;\
-function show(idx){\
-for(var i=0;i<scenes.length;i++){scenes[i].classList.remove("wd-active");dots[i].classList.remove("wd-on");}\
-scenes[idx].classList.add("wd-active");dots[idx].classList.add("wd-on");\
-label.textContent=labels[idx];\
-try{animators[idx](root,"' + id + '");}catch(e){}\
-}\
-show(0);\
-setInterval(function(){current=(current+1)%scenes.length;show(current);},' + CYCLE_MS + ');\
-})();\
-<\/script>';
+    // Register boot function globally — caller must invoke after innerHTML insertion
+    // (inline <script> tags do NOT execute when inserted via innerHTML)
+    global['__wdBoot_' + id] = function () {
+      var root = document.querySelector('.' + id + '-wrap');
+      if (!root) return;
+      var sceneEls = root.querySelectorAll('.' + id + '-scene');
+      var dots = root.querySelectorAll('.' + id + '-dot');
+      var labelEl = root.querySelector('.' + id + '-label');
+      var current = 0;
+      function show(idx) {
+        for (var i = 0; i < sceneEls.length; i++) {
+          sceneEls[i].classList.remove('wd-active');
+          dots[i].classList.remove('wd-on');
+        }
+        sceneEls[idx].classList.add('wd-active');
+        dots[idx].classList.add('wd-on');
+        labelEl.textContent = labels[idx];
+        try { animators[idx](root, id); } catch (e) {}
+      }
+      show(0);
+      setInterval(function () {
+        current = (current + 1) % sceneEls.length;
+        show(current);
+      }, CYCLE_MS);
+    };
 
     return html;
   }
