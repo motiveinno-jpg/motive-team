@@ -382,315 +382,347 @@ serve(async (req: Request) => {
       .eq("id", analysis_id)
       .eq("user_id", user.id);
 
-    const prompt = buildPrompt({
-      product_name,
-      product_name_en,
-      category,
-      fob_price,
-      moq,
-      description,
-      urls,
-      file_urls,
-      selling_points,
-      target_markets,
-      existing_certs,
-      brand_name,
-      manufacturer,
-      export_experience,
-      annual_capacity,
-      special_requirements,
-      known_hs_code,
-      weight_kg,
-      package_dimensions,
-      units_per_carton,
-      marketList,
-      crawledText,
-      language,
-      highRiskTargets,
-    });
+    // ─── Parallel 3-Call Architecture ───
+    // Call 1: Scores + HS Code + FTA (~25s)
+    // Call 2: Market + Competition + Certification (~25s)
+    // Call 3: Pricing + Action Plan + Summary (~20s)
+    // All run in parallel → total ~30s instead of 120s+
+
+    const isEn = language === "en";
+    const na = isEn ? "N/A" : "미입력";
+    const none = isEn ? "None" : "없음";
+
+    const productContext = isEn
+      ? `Product: ${product_name}
+English Name: ${product_name_en || na}
+Category: ${category || na}
+FOB Price: ${fob_price || na}
+MOQ: ${moq || na}
+Brand: ${brand_name || na}
+Manufacturer: ${manufacturer || na}
+Export Experience: ${export_experience || na}
+Annual Capacity: ${annual_capacity || na}
+Weight: ${weight_kg || na} kg
+Selling Points: ${selling_points.filter(Boolean).join(", ") || na}
+Existing Certs: ${existing_certs.join(", ") || none}
+Known HS Code: ${known_hs_code || na}
+Description: ${description || na}
+Target Markets: ${marketList}`
+      : `제품명: ${product_name}
+영문명: ${product_name_en || na}
+카테고리: ${category || "미지정"}
+FOB가격: ${fob_price || na}
+MOQ: ${moq || na}
+브랜드: ${brand_name || na}
+제조사: ${manufacturer || na}
+수출경험: ${export_experience || na}
+연간생산능력: ${annual_capacity || na}
+중량: ${weight_kg || na} kg
+셀링포인트: ${selling_points.filter(Boolean).join(", ") || na}
+보유인증: ${existing_certs.join(", ") || none}
+알려진 HS코드: ${known_hs_code || na}
+설명: ${description || na}
+타겟시장: ${marketList}`;
+
+    const crawlCtx = crawledText ? (isEn
+      ? `\n## Crawled Product Data\n${crawledText}`
+      : `\n## 크롤링 제품 데이터\n${crawledText}`) : "";
+
+    const hrWarning = highRiskTargets.length > 0
+      ? `\n⚠️ HIGH-RISK: ${highRiskTargets.join(", ")} — include sanctions/ECCN/EAR warnings.\n` : "";
+
+    const toneRule = isEn
+      ? `TONE: Warm consulting tone. Example: "You don't have FDA yet, but positioning as a wellness device is a smart workaround." Never telegraphic. 2-4 complete sentences per field.`
+      : `톤: 친절한 존댓말 컨설팅 톤. 예: "현재 FDA가 아직 없으시기 때문에 의료기기 판매는 어렵지만, 웰니스 기기로 포지셔닝하시면 충분히 가능합니다." 딱딱한 보고서체 금지. 필드당 2~4문장.`;
+
+    const sysMsg = isEn
+      ? "You are an export intelligence engine. Output ONLY valid JSON. No markdown. Start with { end with }."
+      : "수출 인텔리전스 엔진. JSON만 출력. 마크다운 금지. {로 시작 }로 끝내세요.";
+
+    // Helper: non-streaming AI call with timeout and retry
+    async function callAI(prompt: string, maxTokens: number, retryWithHaiku = true): Promise<{ result: any; model: string }> {
+      const doCall = async (model: string): Promise<{ result: any; model: string }> => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 55000); // 55s timeout per call
+        try {
+          const resp = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-api-key": anthropicKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model,
+              max_tokens: maxTokens,
+              system: sysMsg,
+              messages: [{ role: "user", content: prompt }],
+            }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (!resp.ok) throw new Error(`API ${resp.status}`);
+          const data = await resp.json();
+          const text = data.content?.[0]?.text || "";
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) throw new Error("No JSON in response");
+          return { result: JSON.parse(jsonMatch[0]), model };
+        } catch (err) {
+          clearTimeout(timer);
+          throw err;
+        }
+      };
+
+      try {
+        return await doCall("claude-sonnet-4-6");
+      } catch (err) {
+        console.warn("Sonnet call failed:", err, "retrying with Haiku...");
+        if (retryWithHaiku) {
+          return await doCall("claude-haiku-4-5-20251001");
+        }
+        throw err;
+      }
+    }
 
     // Progressive update: AI analysis started
     await sbAdmin
       .from("analyses")
       .update({
         ai_result: {
-          _progress: "ai_started",
-          _progress_pct: 25,
+          _progress: "ai_parallel_started",
+          _progress_pct: 20,
           crawl_results: crawlMeta,
         },
       })
       .eq("id", analysis_id)
       .eq("user_id", user.id);
 
-    const aiController = new AbortController();
-    const aiTimer = setTimeout(() => aiController.abort(), 120000);
+    // ─── CALL 1: Core (Scores + HS + FTA) ───
+    const prompt1 = `${isEn ? "# Export Analysis — Core Scores & Trade Classification" : "# 수출 분석 — 핵심 점수 & 통관 분류"}
 
-    const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": anthropicKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 16000,
-        stream: true,
-        system: language === "en"
-          ? "You are an export intelligence engine. Output ONLY valid JSON in English. No markdown code fences, no explanation text before or after the JSON. Start with { and end with }."
-          : "You are an export intelligence engine. Output ONLY valid JSON. No markdown code fences, no explanation text before or after the JSON. Start with { and end with }.",
-        messages: [{ role: "user", content: prompt }],
+${productContext}
+${crawlCtx}
+${hrWarning}
+${toneRule}
+
+${isEn ? "Analyze this product and output JSON:" : "이 제품을 분석하고 JSON으로 출력하세요:"}
+{
+  "overall_score": 0~100,
+  "market_fit": 0~100,
+  "competition": 0~100,
+  "regulatory": 0~100,
+  "price_competitiveness": 0~100,
+  "brand_power": 0~100,
+  "logistics_score": 0~100,
+  "score_details": {
+    "overall_reason": "2~4${isEn ? " sentences" : "문장"}",
+    "market_fit_reason": "2~4${isEn ? " sentences" : "문장"}",
+    "price_reason": "2~4${isEn ? " sentences" : "문장"}",
+    "brand_reason": "2~4${isEn ? " sentences" : "문장"}",
+    "competition_reason": "2~4${isEn ? " sentences" : "문장"}",
+    "regulatory_reason": "2~4${isEn ? " sentences" : "문장"}",
+    "logistics_reason": "2~4${isEn ? " sentences" : "문장"}"
+  },
+  "product_detail": {"actual_name": "", "image": "", "retail_price": ""},
+  "estimated_fob": "$X.X~$X.X",
+  "estimated_retail": {"US": "$XX~$XX"},
+  "hs_code": "XXXX.XX",
+  "hs_description": "2~4${isEn ? " sentences" : "문장"}",
+  "hs_code_detail": {
+    "hs2": "XX", "hs2_desc": "", "hs4": "XXXX", "hs4_desc": "",
+    "hs6": "XXXX.XX", "hs6_desc": "", "hs10": "XXXX.XX.XXXX", "hs10_desc": "",
+    "basis": "${isEn ? "GIR rule basis" : "통칙 분류 근거"}", "alts": []
+  },
+  "hs_alternatives": [],
+  "fta_tariff_table": [{"mkt": "", "fta": "", "mfn": "", "pref": "", "save": "", "rule": "", "fta_name": ""}],
+  "duty_savings_estimate": {"annual_volume": "", "fob_per_unit": "", "avg_mfn": "", "avg_fta": "", "estimated_annual_saving": ""},
+  "summary": "3~4${isEn ? " sentences with key figures" : "문장, 핵심 수치 포함"}",
+  "executive_summary": {"situation": "", "complication": "", "resolution": ""}
+}
+${isEn ? "Rules: Specific HS code with GIR basis. Real FTA rates. Conservative scoring when info lacking." : "규칙: GIR 근거 포함한 HS코드. 실제 FTA 양허율. 정보 부족 시 보수적 채점. 존댓말 필수."}`;
+
+    // ─── CALL 2: Market & Competition & Certs ───
+    const prompt2 = `${isEn ? "# Export Analysis — Market Intelligence & Certification" : "# 수출 분석 — 시장 인텔리전스 & 인증"}
+
+${productContext}
+${crawlCtx}
+${toneRule}
+
+${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시장, 경쟁환경, 인증을 분석하세요. JSON 출력:"}
+{
+  "required_certs": ["cert1"],
+  "existing_certs": ${JSON.stringify(existing_certs)},
+  "cert_details": [
+    {
+      "name": "", "market": "", "duration": "", "cost": "", "priority": "${isEn ? "Required/Recommended" : "필수/권장"}",
+      "note": "${isEn ? "Step-by-step: (1) agency+website, (2) required docs, (3) Korean labs (KTL/KTC/KOTITI), (4) tips. 3-5 sentences." : "단계별: (1) 기관+웹사이트, (2) 필요서류, (3) 한국 시험기관(KTL/KTC/KOTITI), (4) 팁. 3~5문장."}"
+    }
+  ],
+  "recommended_markets": ["US", "JP"],
+  "market_analysis": [
+    {"name": "", "size": "", "grow": "", "entry": "", "note": "2~4${isEn ? " sentences" : "문장"}", "gdp": "", "key_channel": "", "price_sensitivity": ""}
+  ],
+  "competitor_analysis": {
+    "overview": "2~4${isEn ? " sentences" : "문장"}",
+    "swot": {"strength": "", "weakness": "", "opportunity": "", "threat": ""},
+    "global_competitors": [{"name": "${isEn ? "Real brand" : "실제 브랜드"}", "price": "", "note": ""}],
+    "local_competitors": [{"name": "", "price": ""}],
+    "price_range": "",
+    "our_positioning": ""
+  },
+  "industry_trend": "3~4${isEn ? " sentences with figures" : "문장, 수치 포함"}",
+  "recommended_channels": ["${isEn ? "Specific channel" : "구체적 채널명"}"],
+  "opportunities": ["${isEn ? "With figures" : "수치 포함"}", "", ""],
+  "risks": ["${isEn ? "With mitigation" : "대응방안 포함"}", "", ""]
+}
+${isEn ? "Rules: Max 5 cert_details with ALL needed certs. Real competitor names. Max 3 global, 2 local competitors." : "규칙: cert_details 최대 5개, 필요인증 전부 포함. 경쟁사 실명. global 최대 3, local 최대 2. 존댓말 필수."}`;
+
+    // ─── CALL 3: Pricing & Action Plan ───
+    const prompt3 = `${isEn ? "# Export Analysis — Pricing Strategy & Action Plan" : "# 수출 분석 — 가격 전략 & 실행 계획"}
+
+${productContext}
+${crawlCtx}
+${toneRule}
+
+${isEn ? "Analyze pricing strategy and create actionable export plan. Output JSON:" : "가격 전략 분석 및 실행 가능한 수출 계획을 작성하세요. JSON 출력:"}
+{
+  "pricing_strategy": {
+    "recommended_fob": "$X.X",
+    "recommended_retail": "$XX~$XX",
+    "margin_structure": "${isEn ? "FOB→CIF→Wholesale→Retail" : "FOB→CIF→도매→소매"} margin",
+    "strategy": "2~3${isEn ? " sentences" : "문장"}"
+  },
+  "action_plan": [
+    {
+      "phase": "${isEn ? "Phase 1 (1-3 months)" : "1단계 (1~3개월)"}",
+      "title": "${isEn ? "Export Preparation" : "수출 준비"}",
+      "items": ["${isEn ? "Specific action (agency/cost/timeline)" : "구체적 액션 (기관/비용/기간)"}"]
+    },
+    {
+      "phase": "${isEn ? "Phase 2 (3-6 months)" : "2단계 (3~6개월)"}",
+      "title": "${isEn ? "Market Entry" : "시장 진입"}",
+      "items": [""]
+    }
+  ],
+  "alibaba_suitability": {
+    "score": 0~100,
+    "grade": "${isEn ? "Recommended/Average/Not Recommended" : "추천/보통/비추천"}",
+    "verdict": "",
+    "reasons": ["", ""],
+    "tips": ["", ""]
+  }
+}
+${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic advice." : "규칙: 실무 수준 액션 (기관명/URL/비용/기간). 일반론 금지. 존댓말 필수."}`;
+
+    // ─── Run all 3 calls in parallel ───
+    console.log("[parallel] Starting 3 AI calls simultaneously...");
+    const startTime = Date.now();
+
+    const [r1, r2, r3] = await Promise.allSettled([
+      callAI(prompt1, 5000).then(async (res) => {
+        // Call 1 done → update DB immediately with core results
+        console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
+        await sbAdmin.from("analyses").update({
+          ai_result: {
+            ...res.result,
+            _progress: "core_done",
+            _progress_pct: 50,
+            _partial: res.result,
+            crawl_results: crawlMeta,
+          },
+        }).eq("id", analysis_id).eq("user_id", user.id);
+        return res;
       }),
-      signal: aiController.signal,
-    });
-    clearTimeout(aiTimer);
+      callAI(prompt2, 5000).then(async (res) => {
+        console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
+        await sbAdmin.from("analyses").update({
+          ai_result: {
+            _progress: "market_done",
+            _progress_pct: 75,
+            crawl_results: crawlMeta,
+          },
+        }).eq("id", analysis_id).eq("user_id", user.id);
+        return res;
+      }),
+      callAI(prompt3, 3000).then(async (res) => {
+        console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
+        return res;
+      }),
+    ]);
 
-    if (!aiResp.ok) {
-      const errText = await aiResp.text();
-      console.error("Anthropic API error:", aiResp.status, errText);
-      await sbAdmin
-        .from("analyses")
-        .update({
-          status: "failed",
-          ai_result: { error: `AI API ${aiResp.status}` },
-        })
-        .eq("id", analysis_id)
-        .eq("user_id", user.id);
+    const totalTime = Date.now() - startTime;
+    console.log("[parallel] All calls settled in", totalTime, "ms");
+
+    // ─── Merge results ───
+    const result: any = {};
+    const usedModels: string[] = [];
+    let failedCalls = 0;
+
+    if (r1.status === "fulfilled") {
+      Object.assign(result, r1.value.result);
+      usedModels.push(r1.value.model);
+    } else {
+      console.error("[call1] FAILED:", r1.reason);
+      failedCalls++;
+    }
+
+    if (r2.status === "fulfilled") {
+      Object.assign(result, r2.value.result);
+      usedModels.push(r2.value.model);
+    } else {
+      console.error("[call2] FAILED:", r2.reason);
+      failedCalls++;
+    }
+
+    if (r3.status === "fulfilled") {
+      Object.assign(result, r3.value.result);
+      usedModels.push(r3.value.model);
+    } else {
+      console.error("[call3] FAILED:", r3.reason);
+      failedCalls++;
+    }
+
+    // If ALL 3 failed, report failure
+    if (failedCalls === 3) {
+      await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
+      await sbAdmin.from("analyses").update({
+        status: "failed",
+        ai_result: { error: "All 3 parallel AI calls failed" },
+      }).eq("id", analysis_id).eq("user_id", user.id);
       return new Response(
-        JSON.stringify({
-          ok: false,
-          error: `AI API 오류 (${aiResp.status})`,
-        }),
+        JSON.stringify({ ok: false, error: "AI 분석 서버 오류" }),
         { status: 502, headers },
       );
     }
 
-    // Stream response and collect text + progressive DB updates
-    let rawText = "";
-    let stopReason = "end_turn";
-    let aiModel = "claude-sonnet-4-6";
-    let aiUsage: any = {};
-    const reader = aiResp.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let lastProgressUpdate = 0;
-    let lastReportedPct = 0;
-    const progressSections = [
-      { key: "hs_code", pct: 40, label: "hs_code" },
-      { key: "fta_analysis", pct: 55, label: "fta_analysis" },
-      { key: "market_analysis", pct: 65, label: "market_analysis" },
-      { key: "competitive_landscape", pct: 75, label: "competitive" },
-      { key: "price_competitiveness", pct: 85, label: "pricing" },
-      { key: "action_plan", pct: 92, label: "action_plan" },
-    ];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        const data = line.slice(6).trim();
-        if (data === "[DONE]") continue;
-        try {
-          const evt = JSON.parse(data);
-          if (evt.type === "content_block_delta" && evt.delta?.text) {
-            rawText += evt.delta.text;
-          } else if (evt.type === "message_delta") {
-            stopReason = evt.delta?.stop_reason || stopReason;
-            if (evt.usage) aiUsage = { ...aiUsage, ...evt.usage };
-          } else if (evt.type === "message_start" && evt.message) {
-            aiModel = evt.message.model || aiModel;
-            if (evt.message.usage) aiUsage = evt.message.usage;
-          }
-        } catch { /* skip malformed events */ }
-      }
-      // Progressive DB update when new sections detected (throttle to every 3s)
-      // Include partial results so the client can show real data behind the overlay
-      const now = Date.now();
-      if (now - lastProgressUpdate > 3000) {
-        for (const ps of progressSections) {
-          if (rawText.includes(`"${ps.key}"`) && ps.pct > lastReportedPct) {
-            // Extract partial results from rawText for live preview
-            const partial: Record<string, unknown> = {};
-            const partialKeys = [
-              "executive_summary", "product_name", "hs_code", "hs_description",
-              "overall_score", "market_fit", "price_competitiveness", "brand_power",
-              "competition", "regulatory", "estimated_fob", "target_markets",
-              "fta_analysis", "market_analysis", "competitive_landscape",
-              "cert_requirements", "price_competitiveness_detail", "action_plan",
-            ];
-            for (const pk of partialKeys) {
-              // Try to extract completed JSON values for each key
-              const keyPattern = new RegExp(`"${pk}"\\s*:\\s*`);
-              const match = rawText.match(keyPattern);
-              if (match && match.index !== undefined) {
-                const startIdx = match.index + match[0].length;
-                try {
-                  // Attempt to parse the value starting at this position
-                  const sub = rawText.slice(startIdx);
-                  // Simple extraction: find the value end
-                  if (sub[0] === '"') {
-                    const endQ = sub.indexOf('"', 1);
-                    if (endQ > 0) partial[pk] = sub.slice(1, endQ);
-                  } else if (sub[0] === '[' || sub[0] === '{') {
-                    // Try to parse array/object — may be incomplete
-                    let depth = 0; let inStr = false; let esc = false; let end = -1;
-                    const open = sub[0]; const close = open === '[' ? ']' : '}';
-                    for (let ci = 0; ci < sub.length && ci < 8000; ci++) {
-                      const ch = sub[ci];
-                      if (esc) { esc = false; continue; }
-                      if (ch === '\\') { esc = true; continue; }
-                      if (ch === '"') { inStr = !inStr; continue; }
-                      if (inStr) continue;
-                      if (ch === open || ch === '{' || ch === '[') depth++;
-                      if (ch === close || ch === '}' || ch === ']') depth--;
-                      if (depth === 0) { end = ci + 1; break; }
-                    }
-                    if (end > 0) {
-                      try { partial[pk] = JSON.parse(sub.slice(0, end)); } catch { /* skip */ }
-                    }
-                  } else {
-                    // number or boolean
-                    const numMatch = sub.match(/^(-?\d+\.?\d*)/);
-                    if (numMatch) partial[pk] = Number(numMatch[1]);
-                  }
-                } catch { /* skip unparseable */ }
-              }
-            }
-            await sbAdmin
-              .from("analyses")
-              .update({
-                ai_result: {
-                  _progress: ps.label,
-                  _progress_pct: ps.pct,
-                  _partial: partial,
-                  crawl_results: crawlMeta,
-                },
-              })
-              .eq("id", analysis_id)
-              .eq("user_id", user.id);
-            lastReportedPct = ps.pct;
-            lastProgressUpdate = now;
-            break;
-          }
-        }
-        if (lastProgressUpdate !== now) lastProgressUpdate = now;
-      }
-    }
-    console.log("AI response - model:", aiModel, "stop_reason:", stopReason, "text_length:", rawText.length, "usage:", JSON.stringify(aiUsage));
-
-    let result;
-    try {
-      // Try direct JSON parse first
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("JSON not found in response");
-      result = JSON.parse(jsonMatch[0]);
-    } catch (parseErr) {
-      // If truncated (max_tokens hit), try to fix incomplete JSON
-      const _stopReason = stopReason;
-      console.error("JSON parse error:", parseErr, "stop_reason:", stopReason, "Raw tail:", rawText.slice(-200));
-
-      if (_stopReason === "max_tokens") {
-        // Try to salvage truncated JSON by closing brackets
-        try {
-          let jsonStr = rawText.match(/\{[\s\S]*/)?.[0] || "";
-          // Count unclosed braces/brackets and close them
-          let braces = 0, brackets = 0;
-          let inString = false, escape = false;
-          for (const ch of jsonStr) {
-            if (escape) { escape = false; continue; }
-            if (ch === '\\') { escape = true; continue; }
-            if (ch === '"') { inString = !inString; continue; }
-            if (inString) continue;
-            if (ch === '{') braces++;
-            if (ch === '}') braces--;
-            if (ch === '[') brackets++;
-            if (ch === ']') brackets--;
-          }
-          // Close any open strings, brackets, braces
-          if (inString) jsonStr += '"';
-          for (let i = 0; i < brackets; i++) jsonStr += ']';
-          for (let i = 0; i < braces; i++) jsonStr += '}';
-          result = JSON.parse(jsonStr);
-          console.log("Salvaged truncated JSON successfully");
-        } catch (salvageErr) {
-          console.error("Salvage also failed:", salvageErr);
-          // Refund single credit on failure
-          await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
-          await sbAdmin
-            .from("analyses")
-            .update({
-              status: "failed",
-              ai_result: { error: "AI response truncated and parse failed", raw: rawText.slice(0, 500) },
-            })
-            .eq("id", analysis_id)
-            .eq("user_id", user.id);
-          return new Response(
-            JSON.stringify({ ok: false, error: "AI 응답 파싱 실패 (응답 길이 초과)" }),
-            { status: 500, headers },
-          );
-        }
-      } else {
-        // Refund single credit on failure
-        await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
-        await sbAdmin
-          .from("analyses")
-          .update({
-            status: "failed",
-            ai_result: { error: "AI response parse failed", raw: rawText.slice(0, 500) },
-          })
-          .eq("id", analysis_id)
-          .eq("user_id", user.id);
-        return new Response(
-          JSON.stringify({ ok: false, error: "AI 응답 파싱 실패" }),
-          { status: 500, headers },
-        );
-      }
-    }
-
-    // Attach crawl metadata (include image for thumbnail)
-    result.crawl_results = crawlResults.map((cr) => ({
-      url: cr.url,
-      success: cr.success,
-      title: cr.title || "",
-      image: cr.image || "",
-      error: cr.error || "",
-    }));
-    // Set thumbnail from first successful crawl with og:image
+    // Attach metadata
     const firstImage = crawlResults.find((cr) => cr.success && cr.image);
-    if (firstImage?.image) {
-      result.thumbnail = firstImage.image;
-    }
+    result.crawl_results = crawlMeta;
+    if (firstImage?.image) result.thumbnail = firstImage.image;
     result.language = language;
-    result.analysis_version = "EF-v8-friendly";
-    result.model_used = aiModel;
+    result.analysis_version = "EF-v9-parallel";
+    result.model_used = usedModels.join("+");
     result.analyzed_at = new Date().toISOString();
+    result.processing_time_ms = totalTime;
     result.input_data = {
-      product_name_en,
-      category,
-      fob_price,
-      moq,
-      description,
-      urls,
-      file_urls,
-      selling_points: selling_points.filter(Boolean),
-      target_markets,
-      existing_certs,
-      brand_name,
-      manufacturer,
+      product_name_en, category, fob_price, moq, description,
+      urls, file_urls, selling_points: selling_points.filter(Boolean),
+      target_markets, existing_certs, brand_name, manufacturer,
       thumbnail: firstImage?.image || "",
     };
+    if (failedCalls > 0) {
+      result._partial_failure = true;
+      result._failed_calls = failedCalls;
+    }
 
+    // Save final merged result
     await sbAdmin
       .from("analyses")
       .update({ status: "completed", ai_result: result })
       .eq("id", analysis_id)
       .eq("user_id", user.id);
 
-    // Send analysis completion email to user
+    // Send analysis completion email
     try {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       await fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
@@ -705,13 +737,13 @@ serve(async (req: Request) => {
           data: {
             product_name: product_name || product_name_en || "Product",
             hs_code: result.hs_code || "",
-            target_markets: Array.isArray(result.target_markets) ? result.target_markets.join(", ") : "",
-            export_score: result.export_score || "",
+            target_markets: Array.isArray(result.recommended_markets) ? result.recommended_markets.join(", ") : "",
+            export_score: result.overall_score || "",
           },
         }),
       });
     } catch (emailErr) {
-      console.error("Analysis email notification failed:", emailErr);
+      console.error("Email notification failed:", emailErr);
     }
 
     return new Response(
