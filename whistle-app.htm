@@ -392,9 +392,10 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 <body>
 <div id="app"></div>
 <script>
-// Global error handler — catch unhandled errors
-window.onerror=function(msg,src,line,col,err){console.error('[GlobalError]',msg,src,line,col,err);try{if(typeof UI!=='undefined'&&UI.toast)UI.toast('An unexpected error occurred.','error');}catch(e){}return false;};
-window.addEventListener('unhandledrejection',function(e){console.error('[UnhandledRejection]',e.reason);});
+// Global error handler — catch unhandled errors + log to Supabase client_errors
+window._errLog=function(t,m,x){try{var s=window._sb;if(!s)return;var u=window.S&&window.S.user;s.from('client_errors').insert({user_id:u?u.id:null,error_type:t,message:String(m).substring(0,500),stack:x?String(x).substring(0,1000):'',url:location.href,page:(window.S&&window.S.page)||'',portal:'whistle'}).then(function(){});}catch(e){}};
+window.onerror=function(msg,src,line,col,err){console.error('[GlobalError]',msg,src,line,col,err);window._errLog('js_error',msg,(err&&err.stack)||src+':'+line);try{if(typeof UI!=='undefined'&&UI.toast)UI.toast('An unexpected error occurred.','error');}catch(e){}return false;};
+window.addEventListener('unhandledrejection',function(e){console.error('[UnhandledRejection]',e.reason);window._errLog('unhandled_rejection',e.reason&&e.reason.message||String(e.reason),(e.reason&&e.reason.stack)||'');});
 (function(){
 "use strict";
 /* Global error handler — catches uncaught errors that freeze the page */
@@ -543,7 +544,7 @@ function btnLoad(btn,loading){
 
 var SB_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
 var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
-var sb=window.supabase.createClient(SB_URL,SB_ANON_KEY);
+var sb=window.supabase.createClient(SB_URL,SB_ANON_KEY);window._sb=sb;
 var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'https://api.whistle-ai.com';window.RELAY_URL=RELAY_URL;
 var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://')){RELAY_URL=t;window.RELAY_URL=t;}}}).catch(function(){})})();
 function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetry(url,opts,retries,delay);});}
@@ -683,7 +684,7 @@ function _isStripeReady(){return !!STRIPE_CONFIG.pk;}
 /* === TOSS REMOVED — ALL PAYMENTS VIA STRIPE === */
 
 /* === WIRE TRANSFER TOGGLE — set to true when Mercury Bank is active === */
-var _wireTransferEnabled = false;
+var _wireTransferEnabled = true;
 
 /* === PLAN GATE === */
 function _planGate(feature){
@@ -909,6 +910,28 @@ function reqExpertReview(docIdOrType,detail){
 var S={user:null,company:null,page:'dashboard',authMode:'login',authError:'',loading:true,analyses:[],products:[],projects:[],serviceRequests:[],buyers:[],emailLogs:[],shippingRates:[],tariffRates:[],orders:[],notifications:[],meetings:[],samples:[],shipments:[],paymentMilestones:[],alibabaStores:[],alibabaInquiries:[],savedDocs:[],receivedReviews:[],notifOpen:false,currentAnalysis:null,analysisStep:0,analysisData:null,currentProject:null,docType:null,docItems:[],docData:null,currency:'KRW',exchangeRate:1400,_searchCache:{},_docPrefill:null,_actFilter:'all',_aiStartTime:null,_costCurrency:'USD',_showVoucher:false,_companyDocs:[],_chatBuyer:null,_chatMessages:[],_chatLastMsgs:{},_chatUnread:{},_chatBuyerFilter:'',marketplaceRequests:[],_myProposals:{},_marketFilter:'open',_viewMarketRequest:null,_loggingIn:false,_trendData:[],_trendDaily:[],_trendCountry:'all',_trendCategory:'all',_trendPeriod:'7d',_trendLoading:false,_trendLoaded:false,matchings:[],_sharedDocs:[],_deals:[],_dealFilter:'all',_currentDeal:null,_dealChatMsgs:[],_dealDocForm:null,_dealSampleAction:null,_dealOrderForm:false,_dealShipForm:false,_trendAutoFreq:'off',_trendReport:null,_trendReports:[],_trendReportLoading:false,_chatTranslations:{},_dealRoomDealId:null,_dealRoomCleanup:null,_dealRoomDeals:[],_dealRoomDealsLoaded:false,_pjExpandedStage:null,_analysisCtx:null};
 window._exRate=1400;
 function _getAccessToken(){return sb.auth.getSession().then(function(r){if(r.data&&r.data.session)return r.data.session.access_token;console.warn('Session expired');S.user=null;render();return null;});}
+
+/* === Throttled email notification for new chat messages === */
+var _msgEmailThrottle = {};
+var MSG_EMAIL_THROTTLE_MS = 1800000; /* 30 minutes */
+function _shouldSendMsgEmail(convId) {
+  var now = Date.now();
+  if (_msgEmailThrottle[convId] && now - _msgEmailThrottle[convId] < MSG_EMAIL_THROTTLE_MS) return false;
+  _msgEmailThrottle[convId] = now;
+  return true;
+}
+function _sendNewMsgEmail(buyerId, msgBody) {
+  if (!S.user || !S.user.email) return;
+  if (!_shouldSendMsgEmail(buyerId)) return;
+  _getAccessToken().then(function(tk) {
+    if (!tk) return;
+    fetch(SB_URL + '/functions/v1/send-transactional-email', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tk, 'apikey': SB_ANON_KEY},
+      body: JSON.stringify({to: S.user.email, type: 'new_message', data: {buyer_id: buyerId, preview: (msgBody || '').substring(0, 200)}, lang: _isKorean ? 'ko' : 'en'})
+    }).catch(function(e) { console.error('[msgEmail]', e); });
+  });
+}
 
 /* Detect user locale for UI adjustments — multi-language support */
 var _userLang = (function() {
@@ -1398,6 +1421,11 @@ function doSignup(e){e.preventDefault();var f=e.target;
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:(_isKorean?'이미 등록된 이메일입니다. 로그인해주세요.':'This email is already registered. Please sign in.')});
     UI.toast(T('toast_signup_done'),'ok');set({authMode:'login'});
+    // Send welcome email
+    fetch(SB_URL+'/functions/v1/send-transactional-email',{
+      method:'POST',headers:{'Content-Type':'application/json','apikey':SB_ANON_KEY},
+      body:JSON.stringify({to:f.email.value,type:'welcome',data:{name:f.company_name.value},lang:_isKorean?'ko':'en'})
+    }).catch(function(){});
   }).catch(function(){set({authError:(_isKorean?'네트워크 오류. 다시 시도해주세요.':'Network error. Please try again.')});});
 }
 function _acceptInvite(userId){
@@ -1673,7 +1701,7 @@ function pgDash(){
     h+='<div class="card" style="margin-bottom:16px;border-color:'+(_pf.score>=80?'rgba(0,230,118,.15)':_pf.score>=50?'rgba(255,184,0,.15)':'rgba(0,212,255,.15)')+'"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><div style="position:relative;width:52px;height:52px;flex-shrink:0"><svg viewBox="0 0 36 36" style="width:52px;height:52px;transform:rotate(-90deg)"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--w08)" stroke-width="3"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="'+(_pf.score>=80?'var(--ok)':_pf.score>=50?'var(--acc)':'var(--pri)')+'" stroke-width="3" stroke-dasharray="'+Math.round(_pf.score*0.974)+' 97.4" stroke-linecap="round"/></svg><div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">'+_pf.score+'%</div></div><div style="flex:1;min-width:150px"><div style="font-size:14px;font-weight:700;margin-bottom:2px">'+T('dash_profile')+'</div><div style="font-size:12px;color:var(--w40)">'+T('dash_profile_tip')+'</div>'+(_pf.missing.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'+_pf.missing.slice(0,4).map(function(m){return '<span style="font-size:10px;padding:3px 10px;border-radius:10px;background:rgba(255,184,0,.08);color:var(--acc);font-weight:600">'+m.label+'</span>';}).join('')+(_pf.missing.length>4?'<span style="font-size:10px;padding:3px 8px;color:var(--w30)">+'+(_pf.missing.length-4)+'</span>':'')+'</div>':'')+'</div><button class="btn btn-pri btn-sm" onclick="App.nav(\'settings\')" style="flex-shrink:0;font-size:13px">'+T('dash_profile_btn')+'</button></div></div>';
   }
   /* ③ Hero — 안녕하세요 + 퀵 액션 */
-  h+='<div class="dash-hero"><div class="dash-welcome">'+T('dash_welcome')+(u.company_name||u.display_name||T('dash_default_name'))+T('dash_welcome_suffix')+'</div><div class="dash-company" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+(S.company?(_isKorean?S.company.name_ko:S.company.name_en||S.company.name_ko):T('dash_set_company'))+' '+UI.pb(cur)+'</div>'+quotaHtml;
+  h+='<div class="dash-hero"><div class="dash-welcome">'+T('dash_welcome')+U.esc(u.company_name||u.display_name||T('dash_default_name'))+T('dash_welcome_suffix')+'</div><div class="dash-company" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+U.esc(S.company?(_isKorean?S.company.name_ko:S.company.name_en||S.company.name_ko):T('dash_set_company'))+' '+UI.pb(cur)+'</div>'+quotaHtml;
   h+='<div class="quick-grid"><div class="quick-card" onclick="App.nav(\'analysis\')"><div class="quick-icon">🔬</div><div class="quick-label">'+T('quick_ai')+'</div></div><div class="quick-card" onclick="App.nav(\'products\')"><div class="quick-icon">📦</div><div class="quick-label">'+T('quick_products')+'</div></div><div class="quick-card" onclick="App.nav(\'buyers\')"><div class="quick-icon">🤝</div><div class="quick-label">'+T('quick_buyers')+'</div></div><div class="quick-card" onclick="App.nav(\'orders\')"><div class="quick-icon">📋</div><div class="quick-label">'+T('quick_orders')+'</div></div></div></div>';
   /* 바우처 기업 배너 */
   var _hasV=u.user_metadata&&u.user_metadata.has_voucher;
@@ -1914,7 +1942,7 @@ function pgDash(){
     var isToday=mt.toDateString()===now.toDateString();
     var dtStr=isToday?(_isKorean?'오늘 ':'Today ')+mt.toLocaleTimeString(_isKorean?'ko-KR':'en-US',{hour:'2-digit',minute:'2-digit'}):U.fd(m.scheduled_at,'short');
     var typeIcon={video_call:'🖥️',phone:'📞',in_person:'🤝',trade_show:'🏢',online_demo:'💻'}[m.type]||'📅';
-    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')"><span style="font-size:16px">'+typeIcon+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(m.title,25)+'</div><div style="font-size:11px;color:var(--w40)">'+(buyer?buyer.company_name:'—')+' · '+dtStr+'</div></div>'+(isToday?'<span class="badge badge-acc" style="font-size:10px">오늘</span>':'')+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--w08);cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')"><span style="font-size:16px">'+typeIcon+'</span><div style="flex:1"><div style="font-size:13px;font-weight:600">'+U.tr(m.title,25)+'</div><div style="font-size:11px;color:var(--w40)">'+(buyer?U.esc(buyer.company_name):'—')+' · '+dtStr+'</div></div>'+(isToday?'<span class="badge badge-acc" style="font-size:10px">오늘</span>':'')+'</div>';
   });}
   h+='</div></div></div>';
   /* 받은 리뷰 위젯 */
@@ -4096,6 +4124,7 @@ function openPjChat(buyerId){
       sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(){});
       /* 수신 메시지 자동 번역 */
       if(S._pjAutoTranslate!==false&&m.message_type!=='system'&&(!m.metadata||!m.metadata.translated)){_autoTranslateBuyerMsg(m.id,m.body);}
+      _sendNewMsgEmail(m.buyer_id,m.body);
     }
   }).subscribe();
 }
@@ -7794,8 +7823,8 @@ function genDocPDF(){
     +'</table>'
     +scHTML+coHTML
     +'<div style="margin-top:20px;display:flex;justify-content:space-between">'
-    +'<div style="width:40%;text-align:center">'+(d.sellerSig?'<img src="'+d.sellerSig+'" style="max-width:160px;max-height:50px;display:block;margin:0 auto 4px auto">':'<div style="border-bottom:1px solid #000;height:30px"></div>')+'<div style="font-size:9px;font-weight:bold;margin-top:4px">'+(d.company.name_en||'SELLER')+'</div></div>'
-    +'<div style="width:40%;text-align:center">'+(d.buyerSig?'<img src="'+d.buyerSig+'" style="max-width:160px;max-height:50px;display:block;margin:0 auto 4px auto">':'<div style="border-bottom:1px solid #000;height:30px"></div>')+'<div style="font-size:9px;font-weight:bold;margin-top:4px">'+d.buyer.buyer_company+'</div></div>'
+    +'<div style="width:40%;text-align:center">'+(d.sellerSig?'<img src="'+U.esc(d.sellerSig)+'" style="max-width:160px;max-height:50px;display:block;margin:0 auto 4px auto">':'<div style="border-bottom:1px solid #000;height:30px"></div>')+'<div style="font-size:9px;font-weight:bold;margin-top:4px">'+U.esc(d.company.name_en||'SELLER')+'</div></div>'
+    +'<div style="width:40%;text-align:center">'+(d.buyerSig?'<img src="'+U.esc(d.buyerSig)+'" style="max-width:160px;max-height:50px;display:block;margin:0 auto 4px auto">':'<div style="border-bottom:1px solid #000;height:30px"></div>')+'<div style="font-size:9px;font-weight:bold;margin-top:4px">'+U.esc(d.buyer.buyer_company)+'</div></div>'
     +'</div>'
     +bankHTML
     +'<div style="background:#FFF8E1;padding:4px 8px;margin-top:12px;font-size:7px;color:#6D4C00">'+DISCLAIMER.en.substring(0,120)+'...</div>'
@@ -7856,8 +7885,8 @@ function pgEmail(){
   var gate=_planGate('emailhub');
   var ts=[{t:'intro',n:'🤝 제품 소개',d:'첫 제품 소개 메일'},{t:'quote',n:'💰 견적 회신',d:'가격/조건 회신'},{t:'sample',n:'📦 샘플 발송',d:'샘플 안내/추적번호'},{t:'followup',n:'🔄 팔로업',d:'후속 연락'},{t:'shipping',n:'🚢 선적 통보',d:'B/L 및 도착일'},{t:'thankyou',n:'🙏 감사/리오더',d:'거래 감사'}];
   var logs=S.emailLogs||[];var esr=SF.read('emails');var fLogs=SF.filter(logs,esr.q,['to_email','subject']);
-  var logSection=logs.length?'<div class="card" style="margin-top:16px"><div class="card-h"><span>📬 발송 이력</span>'+UI.badge(logs.length+'건','pri')+'</div><div class="card-b">'+SF.bar('emails',{placeholder:'수신자, 제목 검색…'})+'<div style="padding:0"><table class="tbl tbl-r"><thead><tr><th>수신</th><th>'+(_isKorean?'제목':'Title')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'날짜':'Date')+'</th></tr></thead><tbody>'+fLogs.slice(0,20).map(function(l){var sc={sent:'발송',delivered:'수신',opened:'열람',failed:'실패',bounced:'반송'};var tc={sent:'pri',delivered:'ok',opened:'ok',failed:'err',bounced:'err'};return '<tr><td data-label="수신" style="font-size:12px">'+l.to_email+'</td><td data-label="제목" style="font-size:12px">'+U.tr(l.subject,40)+'</td><td data-label="상태">'+UI.badge(sc[l.status]||l.status,tc[l.status]||'ghost')+'</td><td data-label="날짜" style="font-size:11px;color:var(--w40)">'+U.fd(l.created_at,'rel')+'</td></tr>';}).join('')+'</tbody></table></div></div>':'';
-  var content='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">✉️ 이메일 허브</h2><p style="font-size:13px;color:var(--w40);margin-top:4px">상황별 영문 이메일 자동 생성 + 발송</p></div><div class="grid-3" style="margin-bottom:20px">'+ts.map(function(t){return '<div class="svc-card" style="padding:16px" onclick="App.composeE(\''+t.t+'\')"><div style="font-size:14px;font-weight:700;margin-bottom:4px">'+t.n+'</div><div style="font-size:12px;color:var(--w40)">'+t.d+'</div></div>';}).join('')+'</div>'+(S.buyers.length?'<div class="card"><div class="card-h">📇 바이어 선택 발송</div><div class="card-b"><div style="display:flex;flex-wrap:wrap;gap:8px">'+S.buyers.slice(0,10).map(function(b){return '<div style="padding:8px 14px;border-radius:10px;background:var(--w08);cursor:pointer;font-size:12px" onclick="App.composeE(\'intro\',\''+b.id+'\')"><b>'+b.company_name+'</b> '+U.cl(b.country)+'</div>';}).join('')+'</div></div></div>':'')+logSection;
+  var logSection=logs.length?'<div class="card" style="margin-top:16px"><div class="card-h"><span>📬 발송 이력</span>'+UI.badge(logs.length+'건','pri')+'</div><div class="card-b">'+SF.bar('emails',{placeholder:'수신자, 제목 검색…'})+'<div style="padding:0"><table class="tbl tbl-r"><thead><tr><th>수신</th><th>'+(_isKorean?'제목':'Title')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'날짜':'Date')+'</th></tr></thead><tbody>'+fLogs.slice(0,20).map(function(l){var sc={sent:'발송',delivered:'수신',opened:'열람',failed:'실패',bounced:'반송'};var tc={sent:'pri',delivered:'ok',opened:'ok',failed:'err',bounced:'err'};return '<tr><td data-label="수신" style="font-size:12px">'+U.esc(l.to_email)+'</td><td data-label="제목" style="font-size:12px">'+U.esc(U.tr(l.subject,40))+'</td><td data-label="상태">'+UI.badge(sc[l.status]||l.status,tc[l.status]||'ghost')+'</td><td data-label="날짜" style="font-size:11px;color:var(--w40)">'+U.fd(l.created_at,'rel')+'</td></tr>';}).join('')+'</tbody></table></div></div>':'';
+  var content='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">✉️ 이메일 허브</h2><p style="font-size:13px;color:var(--w40);margin-top:4px">상황별 영문 이메일 자동 생성 + 발송</p></div><div class="grid-3" style="margin-bottom:20px">'+ts.map(function(t){return '<div class="svc-card" style="padding:16px" onclick="App.composeE(\''+t.t+'\')"><div style="font-size:14px;font-weight:700;margin-bottom:4px">'+t.n+'</div><div style="font-size:12px;color:var(--w40)">'+t.d+'</div></div>';}).join('')+'</div>'+(S.buyers.length?'<div class="card"><div class="card-h">📇 바이어 선택 발송</div><div class="card-b"><div style="display:flex;flex-wrap:wrap;gap:8px">'+S.buyers.slice(0,10).map(function(b){return '<div style="padding:8px 14px;border-radius:10px;background:var(--w08);cursor:pointer;font-size:12px" onclick="App.composeE(\'intro\',\''+b.id+'\')"><b>'+U.esc(b.company_name)+'</b> '+U.cl(b.country)+'</div>';}).join('')+'</div></div></div>':'')+logSection;
   if(gate.blocked)return _lockOverlay(gate)+content+_lockOverlayEnd(gate);
   return content;
 }
@@ -7886,7 +7915,7 @@ function composeE(type,buyerId){
   var bEmail=buyer?buyer.email||'':'';
   var prod=S.products.length?S.products[0].name_en||S.products[0].name_ko:'our products';
   var tpl=emailTpl(type,bName,prod);
-  var body='<form id="ef">'+UI.inp('to',(_isKorean?'받는 사람':'To'),{placeholder:'buyer@company.com',value:bEmail})+(S.buyers.length?'<div class="form-group"><label class="form-label">바이어</label><select class="form-select" name="bsel" onchange="App.selEB(this.value,\''+type+'\')"><option value="">직접 입력</option>'+S.buyers.map(function(b){return '<option value="'+b.id+'" '+(b.id===buyerId?'selected':'')+'>'+b.company_name+' ('+(b.email||'-')+')</option>';}).join('')+'</select></div>':'')+'<hr style="border:none;border-top:1px solid var(--bd);margin:8px 0">'+UI.inp('subject',(_isKorean?'제목':'Subject'),{value:tpl.subj})+UI.ta('body',(_isKorean?'내용':'Body'),{rows:14,value:tpl.body})+(S.products.length>1?'<div class="form-group"><label class="form-label">제품 변경</label><select class="form-select" onchange="App.chgEP(\''+type+'\',this.value)">'+S.products.map(function(p){return '<option value="'+(p.name_en||p.name_ko)+'">'+p.name_ko+'</option>';}).join('')+'</select></div>':'')+'</form>';
+  var body='<form id="ef">'+UI.inp('to',(_isKorean?'받는 사람':'To'),{placeholder:'buyer@company.com',value:bEmail})+(S.buyers.length?'<div class="form-group"><label class="form-label">바이어</label><select class="form-select" name="bsel" onchange="App.selEB(this.value,\''+type+'\')"><option value="">직접 입력</option>'+S.buyers.map(function(b){return '<option value="'+b.id+'" '+(b.id===buyerId?'selected':'')+'>'+U.esc(b.company_name)+' ('+U.esc(b.email||'-')+')</option>';}).join('')+'</select></div>':'')+'<hr style="border:none;border-top:1px solid var(--bd);margin:8px 0">'+UI.inp('subject',(_isKorean?'제목':'Subject'),{value:tpl.subj})+UI.ta('body',(_isKorean?'내용':'Body'),{rows:14,value:tpl.body})+(S.products.length>1?'<div class="form-group"><label class="form-label">제품 변경</label><select class="form-select" onchange="App.chgEP(\''+type+'\',this.value)">'+S.products.map(function(p){return '<option value="'+U.esc(p.name_en||p.name_ko)+'">'+U.esc(p.name_ko)+'</option>';}).join('')+'</select></div>':'')+'</form>';
   /* Check for unresolved placeholders */
   var _ph=(tpl.body.match(/\[[A-Z\/]+\]/g)||[]);var _phHint=_ph.length?'<div style="padding:8px 12px;background:rgba(255,190,0,.1);border:1px solid rgba(255,190,0,.3);border-radius:8px;margin-bottom:12px;font-size:12px;color:var(--acc)">⚠️ <b>'+_ph.length+'개 항목</b> 직접 입력 필요: '+_ph.join(', ')+'</div>':'';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'em',title:(_isKorean?'✉️ 이메일 작성':'✉️ Compose Email'),body:_phHint+body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'em\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-ghost" onclick="App.translateEmail(\'en\')" title="한국어→영어 자동번역">🌐 한→영</button><button class="btn btn-ghost" onclick="App.translateEmail(\'ko\')" title="영어→한국어 자동번역">🌐 영→한</button><button class="btn btn-ghost" onclick="App.cpEmail()">📋 '+(_isKorean?'복사':'Copy')+'</button><button class="btn btn-pri" onclick="App.sendE()">📧 발송</button>',width:'640px'}));UI.showModal('em');
@@ -8052,7 +8081,7 @@ function pgChat(){
       var lastMsg=S._chatLastMsgs[b.id];
       var unread=S._chatUnread[b.id]||0;
       var active=selId===b.id;
-      var _bAv=b.avatar_url?'<img src="'+U.esc(b.avatar_url)+'" style="width:36px;height:36px;border-radius:10px;object-fit:cover;flex-shrink:0">':'<div style="width:36px;height:36px;border-radius:10px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--bg);flex-shrink:0">'+((b.company_name||'?').charAt(0).toUpperCase())+'</div>';
+      var _bAv=b.avatar_url?'<img src="'+U.esc(b.avatar_url)+'" style="width:36px;height:36px;border-radius:10px;object-fit:cover;flex-shrink:0">':'<div style="width:36px;height:36px;border-radius:10px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc((b.company_name||'?').charAt(0).toUpperCase())+'</div>';
       var _bFlag=(_countryFlags[b.country]||'');
       var _isPinned=_pins.indexOf(b.id)>=0;
       left+='<div onclick="App.openChatRoom(\''+b.id+'\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--w04);background:'+(active?'rgba(0,212,255,.08)':_isPinned?'rgba(255,184,0,.04)':'transparent')+';transition:background .2s"><div style="display:flex;align-items:center;gap:10px">'+_bAv+'<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px">'+(_isPinned?'<span style="font-size:10px" title="고정됨">📌</span> ':'')+U.esc(b.company_name||'Unknown')+'</span>'+(unread?'<span style="font-size:9px;background:var(--pri);color:var(--bg);padding:1px 6px;border-radius:8px;font-weight:700;min-width:16px;text-align:center">'+unread+'</span>':'')+'</div><div style="font-size:10px;color:var(--w30);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(_bFlag?_bFlag+' ':'')+(_countryNames[b.country]||'')+(lastMsg?' · '+U.esc((lastMsg.body||'').substring(0,20)):'')+'</div></div></div></div>';
@@ -8066,7 +8095,7 @@ function pgChat(){
     right='<div class="chat-empty-state" style="flex:1;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--w20)"><div><div style="font-size:48px;margin-bottom:12px">💬</div><div style="font-size:14px;font-weight:600;margin-bottom:4px">바이어를 선택하세요</div><div style="font-size:12px">좌측 목록에서 대화할 바이어를 선택하면<br>채팅을 시작할 수 있습니다</div></div></div>';
   }else{
     /* Header */
-    var _selAvatar=selB.avatar_url?'<img src="'+U.esc(selB.avatar_url)+'" style="width:32px;height:32px;border-radius:8px;object-fit:cover">':'<div style="width:32px;height:32px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+((selB.company_name||'?').charAt(0).toUpperCase())+'</div>';
+    var _selAvatar=selB.avatar_url?'<img src="'+U.esc(selB.avatar_url)+'" style="width:32px;height:32px;border-radius:8px;object-fit:cover">':'<div style="width:32px;height:32px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+U.esc((selB.company_name||'?').charAt(0).toUpperCase())+'</div>';
     var _selFlag=(_countryFlags[selB.country]||'🌐')+' '+(_countryNames[selB.country]||selB.country||'');
     right+='<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">'+_selAvatar+'<div style="flex:1"><div style="font-size:13px;font-weight:700">'+U.esc(selB.company_name||'')+'</div><div style="font-size:10px;color:var(--w40)">'+(selB.contact_name?U.esc(selB.contact_name)+' · ':'')+_selFlag+'</div></div>'+
     '<div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="App.togglePinChat(\''+selB.id+'\')" title="'+(_pins.indexOf(selB.id)>=0?'고정 해제':'상단 고정')+'" style="font-size:13px">'+(_pins.indexOf(selB.id)>=0?'📌':'📍')+'</button><button class="btn btn-ghost btn-sm" onclick="App.composeE(\'intro\',\''+selB.id+'\')" title="이메일 보내기">✉️</button><button class="btn btn-ghost btn-sm" onclick="App.chatSendDoc()" title="서류 전송">📎</button></div></div>';
@@ -8295,7 +8324,7 @@ function initChatRealtime(){
       if(!exists){S._chatMessages.push(msg);render();setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},50);}
     }
     S._chatLastMsgs[msg.buyer_id]=msg;
-    if(msg.sender_type==='buyer')S._chatUnread[msg.buyer_id]=(S._chatUnread[msg.buyer_id]||0)+1;
+    if(msg.sender_type==='buyer'){S._chatUnread[msg.buyer_id]=(S._chatUnread[msg.buyer_id]||0)+1;_sendNewMsgEmail(msg.buyer_id,msg.body);}
   }).subscribe();
 }
 
@@ -10918,7 +10947,7 @@ function saveAIBuyer(idx){
     if(r.error){_toastE(r.error,(_isKorean?'저장':'Save'));return;}
     var el=document.getElementById('ai-b-'+idx);
     if(el)el.style.opacity='0.5';
-    loadB().then(function(){UI.toast(b.company_name+' 저장!','ok');});
+    loadB().then(function(){UI.toast(U.esc(b.company_name)+' 저장!','ok');});
   });
 }
 
@@ -11118,7 +11147,7 @@ function _pgMeetingCalendar(){
 }
 function showMeetingForm(prefill){
   var pf=prefill||{};
-  var buyerOpts=S.buyers.map(function(b){return {value:b.id,label:b.company_name+' ('+(b.country||'')+')'};});
+  var buyerOpts=S.buyers.map(function(b){return {value:b.id,label:U.esc(b.company_name)+' ('+(b.country||'')+')'};});
   buyerOpts.unshift({value:'',label:'-- 바이어 선택 --'});
   var pjOpts=S.projects.map(function(p,i){return {value:p.id,label:U.pjNum(p,i)+' '+p.name};});
   pjOpts.unshift({value:'',label:'-- 프로젝트 --'});
@@ -11632,6 +11661,11 @@ function respondInquiry(iqId){
         if(iq.buyer_user_id){
           _sendNotification(iq.buyer_user_id,'deal','Your inquiry got a response!',(S.company?S.company.name_en||S.company.name_ko:'Manufacturer')+' responded to your product inquiry.',{link_page:'deals',link_id:mr.data.id});
         }
+        /* 5-b) 제조사에게 매칭 이메일 알림 */
+        fetch(SB_URL+'/functions/v1/send-transactional-email',{
+          method:'POST',headers:{'Content-Type':'application/json','apikey':SB_ANON_KEY},
+          body:JSON.stringify({to:S.user.email,type:'buyer_matching',data:{buyerName:iq.company_name||iq.contact_name||'Unknown Buyer',productName:(S.products||[]).find(function(p){return p.id===iq.product_id;})?((S.products||[]).find(function(p){return p.id===iq.product_id;}).name_en||(S.products||[]).find(function(p){return p.id===iq.product_id;}).name_ko):'',dealId:mr.data.id},lang:_isKorean?'ko':'en'})
+        }).catch(function(){});
         /* 5) 시스템 메시지 전송 */
         sb.from('messages').insert({buyer_id:buyerId,user_id:S.user.id,sender_type:'seller',body:'[문의 응답] 제품 문의에 대해 응답드립니다. 딜이 생성되었습니다!',message_type:'system',channel:'platform',direction:'outbound'}).then(function(){}).catch(function(e){console.error('[whistle]',e);UI.toast(_isKorean?'오류가 발생했습니다':'An error occurred','err');});
         UI.toast(_isKorean?'딜이 생성되었습니다! 딜 관리에서 확인하세요.':'Deal created! Check in Deal Management.','ok');
@@ -12787,7 +12821,7 @@ function _renderExportCertificate(){
     h+='<tr><td>'+U.esc(o.order_number||'—')+'</td><td>'+U.esc(b?b.company_name:'—')+'</td><td>'+(b?U.cl(b.country):'—')+'</td><td style="font-weight:600">'+U.fmtUSD(o.total_amount)+'</td><td>'+new Date(o.updated_at||o.created_at).toLocaleDateString('ko-KR')+'</td></tr>';
   });
   h+='</tbody></table>';
-  h+='<div style="margin-top:12px;padding:8px;border-radius:6px;background:var(--w04);font-size:10px;color:var(--w40);text-align:center">본 자료는 Whistle AI 플랫폼 데이터를 기반으로 자동 생성되었습니다. | '+(S.company?S.company.name_ko:'')+'</div>';
+  h+='<div style="margin-top:12px;padding:8px;border-radius:6px;background:var(--w04);font-size:10px;color:var(--w40);text-align:center">본 자료는 Whistle AI 플랫폼 데이터를 기반으로 자동 생성되었습니다. | '+U.esc(S.company?S.company.name_ko:'')+'</div>';
   h+='</div></div></div>';
   return h;
 }
@@ -12816,8 +12850,8 @@ function genVoucherReport(){
   h+='<div class="ttl">'+(_isKorean?'수출바우처 사업결과보고서':'Export Voucher Report')+'</div>';
   /* 기본정보 */
   h+='<table><tr><th width="25%">'+(_isKorean?'수행기관':'Service Provider')+'</th><td>(주)모티브이노베이션</td><th width="25%">'+(_isKorean?'보고 기간':'Report Period')+'</th><td>'+period+'</td></tr>';
-  h+='<tr><th>'+(_isKorean?'수혜기업':'Beneficiary')+'</th><td>'+(c.name_ko||S.user.company_name||'-')+'</td><th>'+(_isKorean?'사업자번호':'Business No.')+'</th><td>'+(c.biz_number||'-')+'</td></tr>';
-  h+='<tr><th>'+(_isKorean?'대표자':'CEO')+'</th><td>'+(c.ceo_name_ko||c.ceo_name||'-')+'</td><th>'+(_isKorean?'작성일':'Date')+'</th><td>'+now.toISOString().split('T')[0]+'</td></tr>';
+  h+='<tr><th>'+(_isKorean?'수혜기업':'Beneficiary')+'</th><td>'+U.esc(c.name_ko||S.user.company_name||'-')+'</td><th>'+(_isKorean?'사업자번호':'Business No.')+'</th><td>'+U.esc(c.biz_number||'-')+'</td></tr>';
+  h+='<tr><th>'+(_isKorean?'대표자':'CEO')+'</th><td>'+U.esc(c.ceo_name_ko||c.ceo_name||'-')+'</td><th>'+(_isKorean?'작성일':'Date')+'</th><td>'+now.toISOString().split('T')[0]+'</td></tr>';
   h+='<tr><th>'+(_isKorean?'서비스 분야':'Service Area')+'</th><td>'+(_isKorean?'조사/일반 컨설팅, 서류대행':'Research/Consulting, Doc Processing')+'</td><th>'+(_isKorean?'담당자':'Manager')+'</th><td>'+(_isKorean?'AI 수출분석팀':'AI Export Analysis Team')+'</td></tr></table>';
   /* 1. 서비스 수행 개요 */
   h+='<div class="subtitle">'+(_isKorean?'1. 서비스 수행 개요':'1. Service Overview')+'</div>';
@@ -12890,7 +12924,7 @@ function genVoucherReport(){
   h+='<tr><th>'+(_isKorean?'합계':'Total')+'</th><td style="font-weight:700">₩'+Math.round(billingTotal*1.1).toLocaleString()+'</td><th>전자세금계산서</th><td>서비스 완료 확인 시 발행</td></tr></table>';
   h+='<p class="note">* 바우처 지원금과 수혜기업 자부담금은 exportvoucher.com 포털 정산 기준에 따름</p>';
   /* 서명 */
-  h+='<div style="margin-top:60px;display:flex;justify-content:space-between"><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수행기관</div><div style="font-size:12px;margin-top:4px">(주)모티브이노베이션</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 채희웅</div></div><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수혜기업</div><div style="font-size:12px;margin-top:4px">'+(c.name_ko||'-')+'</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 '+(c.ceo_name_ko||c.ceo_name||'_______')+'</div></div></div>';
+  h+='<div style="margin-top:60px;display:flex;justify-content:space-between"><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수행기관</div><div style="font-size:12px;margin-top:4px">(주)모티브이노베이션</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 채희웅</div></div><div style="text-align:center;width:45%;border-top:2px solid #333;padding-top:12px"><div style="font-size:13px;font-weight:700">수혜기업</div><div style="font-size:12px;margin-top:4px">'+U.esc(c.name_ko||'-')+'</div><div style="font-size:11px;color:#666;margin-top:2px">대표이사 '+U.esc(c.ceo_name_ko||c.ceo_name||'_______')+'</div></div></div>';
   h+='<div style="margin-top:20px;text-align:center;font-size:10px;color:#999">본 보고서는 Whistle AI (휘슬 AI) 플랫폼에서 자동 생성되었습니다. | '+now.toISOString().split('T')[0]+'</div>';
   h+='</body></html>';
   var w=window.open('','_blank','width=850,height=700');
@@ -13063,7 +13097,7 @@ function genSettlementChecklist(){
     {label:'4대보험 가입자 명부 (수혜기업)',done:false,note:'최근 30일 이내 발급분'}
   ];
   var h='<div style="padding:20px"><h3 style="font-size:16px;font-weight:800;margin-bottom:16px">📋 바우처 정산 체크리스트</h3>';
-  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:16px">'+yy+'년 '+(mm+1)+'월 | 수행기관: (주)모티브이노베이션 | 수혜기업: '+(c.name_ko||'-')+'</div>';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:16px">'+yy+'년 '+(mm+1)+'월 | 수행기관: (주)모티브이노베이션 | 수혜기업: '+U.esc(c.name_ko||'-')+'</div>';
   items.forEach(function(it,i){
     h+='<div style="display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:10px;background:'+(it.done?'rgba(0,200,100,.04)':'var(--w04)')+';margin-bottom:6px;border:1px solid '+(it.done?'rgba(0,200,100,.15)':'var(--w08)')+'">';
     h+='<span style="font-size:16px;margin-top:2px">'+(it.done?'✅':'⬜')+'</span>';
@@ -13385,7 +13419,7 @@ function openDeal(dealId){
     if(!S._dealChatMsgs.find(function(x){return x.id===m.id;})){S._dealChatMsgs.push(m);render();setTimeout(function(){var mc=document.getElementById('deal-chat-scroll');if(mc)mc.scrollTop=mc.scrollHeight;},50);
       if(S._autoTranslate&&m.sender_type==='buyer'&&m.message_type!=='system')translateChatMsg(m.id,_getUserLang());
     }
-    if(m.sender_type==='buyer'&&S.user)sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(){});
+    if(m.sender_type==='buyer'&&S.user){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(){});_sendNewMsgEmail(m.buyer_id,m.body);}
   }).subscribe();
   render();
 }

@@ -188,6 +188,11 @@ serve(async (req) => {
 
         verifiedAmountDollars = clientAmount;
         verifiedCurrency = (currency || "USD").toLowerCase();
+
+        // Alert: client-provided amount used without DB verification
+        console.warn(
+          `[checkout] ALERT: Escrow using client amount $${clientAmount} ${verifiedCurrency} for deal ${deal_id}, user ${user.id}`,
+        );
       }
 
       if (!ALLOWED_CURRENCIES.includes(verifiedCurrency)) {
