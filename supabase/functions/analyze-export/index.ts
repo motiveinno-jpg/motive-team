@@ -26,6 +26,7 @@ interface CrawlResult {
   success: boolean;
   title?: string;
   text?: string;
+  image?: string;
   error?: string;
 }
 
@@ -137,7 +138,7 @@ async function crawlUrl(url: string): Promise<CrawlResult> {
 
     const finalText = (metaInfo + extractedText).slice(0, MAX_CRAWL_TEXT_LENGTH);
 
-    return { url, success: true, title, text: finalText };
+    return { url, success: true, title, text: finalText, image: ogImage || undefined };
   } catch (err) {
     const msg = (err as Error).message || "Unknown error";
     if (msg.includes("abort")) {
@@ -350,6 +351,7 @@ serve(async (req: Request) => {
       url: cr.url,
       success: cr.success,
       title: cr.title || "",
+      image: cr.image || "",
       error: cr.error || "",
     }));
     await sbAdmin
@@ -581,15 +583,21 @@ serve(async (req: Request) => {
       }
     }
 
-    // Attach crawl metadata
+    // Attach crawl metadata (include image for thumbnail)
     result.crawl_results = crawlResults.map((cr) => ({
       url: cr.url,
       success: cr.success,
       title: cr.title || "",
+      image: cr.image || "",
       error: cr.error || "",
     }));
+    // Set thumbnail from first successful crawl with og:image
+    const firstImage = crawlResults.find((cr) => cr.success && cr.image);
+    if (firstImage?.image) {
+      result.thumbnail = firstImage.image;
+    }
     result.language = language;
-    result.analysis_version = "EF-v7-stream";
+    result.analysis_version = "EF-v8-friendly";
     result.model_used = aiModel;
     result.analyzed_at = new Date().toISOString();
     result.input_data = {
@@ -599,11 +607,13 @@ serve(async (req: Request) => {
       moq,
       description,
       urls,
+      file_urls,
       selling_points: selling_points.filter(Boolean),
       target_markets,
       existing_certs,
       brand_name,
       manufacturer,
+      thumbnail: firstImage?.image || "",
     };
 
     await sbAdmin
@@ -731,7 +741,12 @@ Never write generalities, obvious statements, or generic advice. All content mus
 5. Markets: specific analysis limited to the relevant category
 6. Pricing: number-based comparisons
 7. Action plan: practical level (agencies/URLs/costs/timelines)
-**IMPORTANT: Keep each text field to 1-2 sentences. No lengthy paragraphs.**`
+**IMPORTANT - Tone & Length:**
+- Write in a friendly, professional consulting tone — as if advising a client in person.
+- Each text field should be 2-4 sentences: enough to explain WHY, not just WHAT.
+- Use clear explanations a non-expert manufacturer can understand. Avoid jargon without context.
+- For score reasons: explain the logic behind the score, what factors helped/hurt, and what could improve it.
+- Never use telegraphic fragments like "bottleneck high. needed." — always write complete, readable sentences.`
     : `## 핵심 원칙
 1. 점수마다 구체적 이유 기재 (일반론 금지)
 2. HS코드: 통칙에 따라 분류 근거 명시
@@ -740,7 +755,12 @@ Never write generalities, obvious statements, or generic advice. All content mus
 5. 시장: 해당 카테고리 한정 구체적 분석
 6. 가격: 숫자 기반 비교
 7. 행동계획: 실무 수준 (기관/URL/비용/기간)
-**중요: 각 텍스트 필드는 1~2문장으로 간결하게. 장문 금지.**`;
+**중요 - 톤 & 길이:**
+- 친절하고 전문적인 컨설팅 톤으로 작성하세요. 고객에게 직접 조언하듯 설명합니다.
+- 각 텍스트 필드는 2~4문장: "왜"를 충분히 설명하되 핵심을 놓치지 마세요.
+- 수출 비전문가인 제조사도 이해할 수 있는 쉬운 말로 작성하세요. 전문 용어는 반드시 풀어서 설명합니다.
+- 점수 근거: 어떤 요인이 점수에 긍정적/부정적 영향을 줬는지, 개선 방법은 무엇인지 설명합니다.
+- "병목이다 높다. 필요하다." 같은 단편적 서술 금지 — 반드시 완전한 문장으로 읽기 쉽게 작성합니다.`;
 
   return `${intro}
 
@@ -759,18 +779,23 @@ ${principles}
   "brand_power": 0~100,
   "logistics_score": 0~100,
   "score_details": {
-    "overall_reason": "${isEn ? "Overall score rationale (2 sentences)" : "종합 점수 근거 (2문장)"}",
-    "market_fit_reason": "${isEn ? "Market fit rationale (1-2 sentences)" : "시장 적합성 근거 (1~2문장)"}",
-    "price_reason": "${isEn ? "Price competitiveness rationale (1-2 sentences)" : "가격 경쟁력 근거 (1~2문장)"}",
-    "brand_reason": "${isEn ? "Brand power rationale (1-2 sentences)" : "브랜드 파워 근거 (1~2문장)"}",
-    "competition_reason": "${isEn ? "Competitive landscape rationale (1-2 sentences)" : "경쟁 환경 근거 (1~2문장)"}",
-    "regulatory_reason": "${isEn ? "Regulatory compliance rationale (1-2 sentences)" : "규제 대응 근거 (1~2문장)"}",
-    "logistics_reason": "${isEn ? "Logistics suitability rationale (1-2 sentences)" : "물류 적합성 근거 (1~2문장)"}"
+    "overall_reason": "${isEn ? "Overall score rationale — explain key factors and what could improve it (2-4 sentences)" : "종합 점수 근거 — 주요 요인과 개선 가능한 부분을 설명 (2~4문장)"}",
+    "market_fit_reason": "${isEn ? "Market fit rationale (2-4 sentences, friendly professional tone)" : "시장 적합성 근거 (2~4문장, 친절한 전문가 톤)"}",
+    "price_reason": "${isEn ? "Price competitiveness rationale (2-4 sentences, friendly professional tone)" : "가격 경쟁력 근거 (2~4문장, 친절한 전문가 톤)"}",
+    "brand_reason": "${isEn ? "Brand power rationale (2-4 sentences, friendly professional tone)" : "브랜드 파워 근거 (2~4문장, 친절한 전문가 톤)"}",
+    "competition_reason": "${isEn ? "Competitive landscape rationale (2-4 sentences, friendly professional tone)" : "경쟁 환경 근거 (2~4문장, 친절한 전문가 톤)"}",
+    "regulatory_reason": "${isEn ? "Regulatory compliance rationale (2-4 sentences, friendly professional tone)" : "규제 대응 근거 (2~4문장, 친절한 전문가 톤)"}",
+    "logistics_reason": "${isEn ? "Logistics suitability rationale (2-4 sentences, friendly professional tone)" : "물류 적합성 근거 (2~4문장, 친절한 전문가 톤)"}"
+  },
+  "product_detail": {
+    "actual_name": "${isEn ? "Actual product name from crawled data or input" : "크롤링/입력에서 확인된 실제 제품명"}",
+    "image": "${isEn ? "Product image URL from crawled og:image or provided image URL (empty string if none)" : "크롤링 og:image 또는 제공된 이미지 URL (없으면 빈 문자열)"}",
+    "retail_price": "${isEn ? "Retail price found from crawled data" : "크롤링에서 확인된 소비자가"}"
   },
   "estimated_fob": "$X.X~$X.X",
   "estimated_retail": {"US": "$XX~$XX", "JP": "¥X,XXX~¥X,XXX"},
   "hs_code": "XXXX.XX",
-  "hs_description": "${isEn ? "HS code classification summary for this product (1-2 sentences)" : "이 제품에 대한 HS코드 분류 요약 (1~2문장)"}",
+  "hs_description": "${isEn ? "HS code classification summary for this product (2-4 sentences, friendly professional tone)" : "이 제품에 대한 HS코드 분류 요약 (2~4문장, 친절한 전문가 톤)"}",
   "hs_code_detail": {
     "hs2": "XX", "hs2_desc": "${isEn ? "Chapter description" : "류 설명"}",
     "hs4": "XXXX", "hs4_desc": "${isEn ? "Heading description" : "호 설명"}",
@@ -817,14 +842,14 @@ ${principles}
       "size": "${isEn ? "Category market size" : "해당 카테고리 시장 규모"}",
       "grow": "${isEn ? "Growth rate" : "성장률"}",
       "entry": "${isEn ? "Entry barrier level" : "진입장벽 수준"}",
-      "note": "${isEn ? "Product-specific market entry advice (1-2 sentences)" : "이 제품에 특화된 진출 조언 (1~2문장)"}",
+      "note": "${isEn ? "Product-specific market entry advice (2-4 sentences, friendly professional tone)" : "이 제품에 특화된 진출 조언 (2~4문장, 친절한 전문가 톤)"}",
       "gdp": "GDP",
       "key_channel": "${isEn ? "Key distribution channel" : "주력 유통 채널명"}",
       "price_sensitivity": "${isEn ? "Price sensitivity" : "가격 민감도"}"
     }
   ],
   "competitor_analysis": {
-    "overview": "${isEn ? "Competitive landscape overview (1-2 sentences)" : "경쟁 환경 개요 (1~2문장)"}",
+    "overview": "${isEn ? "Competitive landscape overview (2-4 sentences, friendly professional tone)" : "경쟁 환경 개요 (2~4문장, 친절한 전문가 톤)"}",
     "swot": {
       "strength": "${isEn ? "Specific strengths of this product" : "이 제품의 구체적 강점"}",
       "weakness": "${isEn ? "Specific weaknesses of this product" : "이 제품의 구체적 약점"}",
@@ -850,9 +875,9 @@ ${principles}
   "recommended_channels": ["${isEn ? "Specific channel name (e.g., Amazon FBA US, Qoo10 Japan)" : "구체적 채널명 (예: Amazon FBA US, Qoo10 Japan)"}"],
   "summary": "${isEn ? "Comprehensive export suitability summary (3-4 sentences with key figures)" : "이 제품의 수출 적합도 종합 요약 (3~4문장, 핵심 수치 포함)"}",
   "executive_summary": {
-    "situation": "${isEn ? "Current situation (1-2 sentences)" : "현재 상황 (1~2문장)"}",
-    "complication": "${isEn ? "Key challenges (1-2 sentences)" : "핵심 과제 (1~2문장)"}",
-    "resolution": "${isEn ? "Resolution direction (1-2 sentences)" : "해결 방향 (1~2문장)"}"
+    "situation": "${isEn ? "Current situation (2-4 sentences, friendly professional tone)" : "현재 상황 (2~4문장, 친절한 전문가 톤)"}",
+    "complication": "${isEn ? "Key challenges (2-4 sentences, friendly professional tone)" : "핵심 과제 (2~4문장, 친절한 전문가 톤)"}",
+    "resolution": "${isEn ? "Resolution direction (2-4 sentences, friendly professional tone)" : "해결 방향 (2~4문장, 친절한 전문가 톤)"}"
   },
   "opportunities": ["${isEn ? "Opportunity 1 (with figures)" : "기회 1 (수치 포함)"}", "${isEn ? "Opportunity 2" : "기회 2"}", "${isEn ? "Opportunity 3" : "기회 3"}"],
   "risks": ["${isEn ? "Risk 1 (with mitigation)" : "리스크 1 (대응 방안 포함)"}", "${isEn ? "Risk 2" : "리스크 2"}", "${isEn ? "Risk 3" : "리스크 3"}"],
@@ -878,7 +903,7 @@ ${principles}
 }
 
 ## ${isEn ? "Rules" : "규칙"}
-- ${isEn ? "ALL text fields must be in English. Output JSON only. Use real competitor names. No generalities or lengthy text." : "한국어로 작성. JSON만 출력. 경쟁사 실명 사용. 일반론/장문 금지."}
+- ${isEn ? "ALL text fields must be in English. Output JSON only. Use real competitor names. No generalities. Write in friendly, clear consulting tone." : "한국어로 작성. JSON만 출력. 경쟁사 실명 사용. 일반론 금지. 친절하고 명확한 컨설팅 톤으로 작성."}
 - ${isEn ? "Conservative scoring when information is insufficient. Max 3 global_competitors. Max 2 local_competitors." : "정보 부족 시 보수적 채점. global_competitors 최대 3개. local_competitors 최대 2개."}
 - ${isEn ? "Max 3 cert_details. market_analysis only for requested target markets." : "cert_details 최대 3개. market_analysis는 요청된 타겟 시장만."}`;
 }
