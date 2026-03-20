@@ -371,6 +371,6 @@ serve(async (req) => {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("process-refund error:", errMsg);
-    return jsonResponse({ error: errMsg || "Internal error" }, 500);
+    return jsonResponse({ error: "An error occurred. Please try again." }, 500);
   }
 });

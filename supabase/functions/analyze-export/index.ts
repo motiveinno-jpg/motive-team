@@ -622,6 +622,30 @@ serve(async (req: Request) => {
       .eq("id", analysis_id)
       .eq("user_id", user.id);
 
+    // Send analysis completion email to user
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      await fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          type: "analysis_complete",
+          data: {
+            product_name: product_name || product_name_en || "Product",
+            hs_code: result.hs_code || "",
+            target_markets: Array.isArray(result.target_markets) ? result.target_markets.join(", ") : "",
+            export_score: result.export_score || "",
+          },
+        }),
+      });
+    } catch (emailErr) {
+      console.error("Analysis email notification failed:", emailErr);
+    }
+
     return new Response(
       JSON.stringify({ ok: true, result }),
       { status: 200, headers },

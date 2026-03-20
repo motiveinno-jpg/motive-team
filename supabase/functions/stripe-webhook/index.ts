@@ -7,6 +7,48 @@ const PLATFORM_FEE_RATE = 0.025; // 2.5%
 // CEO 결제 알림 (모든 결제 이벤트 시 이메일 발송)
 const CEO_NOTIFY_EMAIL = "hee@motiveinno.com";
 
+// 사용자 트랜잭션 이메일 발송 (Resend 직접 호출)
+async function notifyUser(
+  supabase: any,
+  userId: string,
+  type: string,
+  data: Record<string, string>
+) {
+  try {
+    const resendKey = Deno.env.get("RESEND_API_KEY");
+    if (!resendKey) return;
+
+    // Get user email and language preference
+    const { data: user } = await supabase
+      .from("users")
+      .select("email, display_name, preferred_language")
+      .eq("id", userId)
+      .single();
+    if (!user?.email) return;
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+
+    // Call the transactional email Edge Function internally
+    await fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Secret": Deno.env.get("INTERNAL_SERVICE_SECRET") || "",
+        "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+      },
+      body: JSON.stringify({
+        to: user.email,
+        user_id: userId,
+        type,
+        data: { ...data, name: user.display_name || "" },
+        lang: user.preferred_language || "en",
+      }),
+    });
+  } catch (e) {
+    console.error("notifyUser failed:", e instanceof Error ? e.message : String(e));
+  }
+}
+
 async function notifyCEO(subject: string, body: string, supabase?: any) {
   // DB 알림 (항상 실행 — 앱 내 알림)
   if (supabase) {
@@ -196,6 +238,16 @@ serve(async (req) => {
               });
             }
           }
+          // Email buyer: escrow payment confirmation
+          if (meta.user_id) {
+            await notifyUser(supabase, meta.user_id, "payment_confirmation", {
+              amount: paymentAmt.toFixed(2),
+              currency: paymentCur,
+              payment_type: paymentType === "sample" ? "Sample Payment (Escrow)" :
+                            paymentType === "deposit" ? "Deposit Payment (Escrow)" : "Full Payment (Escrow)",
+              date: new Date().toISOString().split("T")[0],
+            });
+          }
         } else if (meta.type === "one_analysis") {
           await supabase.from("payments").insert({
             user_id: meta.user_id,
@@ -212,6 +264,16 @@ serve(async (req) => {
             uid: meta.user_id,
             credits: 1,
           });
+
+          // Email user: single analysis purchased
+          if (meta.user_id) {
+            await notifyUser(supabase, meta.user_id, "payment_confirmation", {
+              amount: ((session.amount_total || 0) / 100).toFixed(2),
+              currency: session.currency?.toUpperCase() || "USD",
+              payment_type: "Single AI Analysis",
+              date: new Date().toISOString().split("T")[0],
+            });
+          }
         } else if (meta.type === "subscription") {
           // Subscription created via checkout
           await supabase
@@ -223,6 +285,18 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             })
             .eq("id", meta.user_id);
+
+          // Email user: subscription confirmed
+          if (meta.user_id) {
+            const planName = (meta.plan || "starter").charAt(0).toUpperCase() + (meta.plan || "starter").slice(1);
+            await notifyUser(supabase, meta.user_id, "payment_confirmation", {
+              amount: amt,
+              currency: cur,
+              payment_type: `${planName} Plan Subscription`,
+              plan: planName,
+              date: new Date().toISOString().split("T")[0],
+            });
+          }
         }
         break;
       }
@@ -309,6 +383,13 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             })
             .eq("id", userId);
+
+          // Email user: subscription canceled
+          await notifyUser(supabase, userId, "subscription_change", {
+            action: "Canceled",
+            details: "Your subscription has been canceled. You are now on the Free plan.",
+            new_plan: "Free",
+          });
         }
         break;
       }
@@ -348,6 +429,12 @@ serve(async (req) => {
               title: "Subscription Payment Failed",
               body: "Your subscription payment failed. Please update your payment method.",
               is_read: false,
+            });
+
+            // Email user: payment failed
+            await notifyUser(supabase, userId, "subscription_change", {
+              action: "Payment Failed",
+              details: "Your subscription payment failed. Please update your payment method to avoid service interruption.",
             });
           }
         }

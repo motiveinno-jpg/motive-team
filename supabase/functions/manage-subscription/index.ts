@@ -436,7 +436,7 @@ serve(async (req) => {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("manage-subscription error:", errMsg);
     return new Response(
-      JSON.stringify({ error: errMsg || "Internal error" }),
+      JSON.stringify({ error: "An error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
