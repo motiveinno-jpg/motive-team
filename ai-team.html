@@ -325,8 +325,20 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .task-btn{font-size:11px;padding:8px 20px;border-radius:10px;border:none;cursor:pointer;font-weight:600;transition:all .2s}
 .task-btn:hover{opacity:.85}
 .task-btn.approve{background:var(--green);color:#fff}
+.task-btn.revision{background:rgba(234,179,8,.15);color:var(--yellow);border:1px solid rgba(234,179,8,.3)}
 .task-btn.reject{background:transparent;color:var(--dim);border:1px solid var(--border)}
 .task-btn.detail{background:transparent;color:var(--accent);border:1px solid rgba(139,92,246,.2)}
+.task-cost{font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600}
+.task-cost.cost-free{background:rgba(34,197,94,.1);color:var(--green)}
+.task-cost.cost-paid{background:rgba(249,115,22,.1);color:var(--orange)}
+.task-decision{font-size:9px;padding:2px 6px;border-radius:4px;font-weight:600}
+.task-decision.approved{background:rgba(34,197,94,.15);color:var(--green)}
+.task-decision.rejected{background:rgba(239,68,68,.15);color:var(--red)}
+.task-decision.revision{background:rgba(234,179,8,.15);color:var(--yellow)}
+.task-comment{font-size:11px;padding:6px 10px;margin-bottom:4px;border-radius:8px;background:var(--bg2);border:1px solid var(--border)}
+.task-comment .tc-author{font-size:9px;color:var(--accent);font-weight:600;margin-bottom:2px}
+.task-comment .tc-text{color:var(--text);line-height:1.5}
+.task-comment .tc-time{font-size:9px;color:var(--dim);margin-top:2px}
 .task-status-badge{font-size:10px;padding:3px 10px;border-radius:8px;font-weight:500}
 .task-status-badge.done{background:rgba(34,197,94,.1);color:var(--green)}
 .task-status-badge.in_progress{background:rgba(59,130,246,.1);color:var(--blue)}
@@ -628,9 +640,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <div class="cmd-center">
       <div class="cmd-tabs">
         <div class="cmd-tab active" data-cmd="goals" onclick="switchCmd('goals')">📊 팀 목표</div>
-        <div class="cmd-tab" data-cmd="approval" onclick="switchCmd('approval')">⚡ 승인 대기 <span class="tab-cnt orange" id="approvalCnt">0</span></div>
-        <div class="cmd-tab" data-cmd="bugs" onclick="switchCmd('bugs')">🐛 버그/오류 <span class="tab-cnt red" id="bugCnt">0</span></div>
-        <div class="cmd-tab" data-cmd="proposals" onclick="switchCmd('proposals')">💡 개발 제안 <span class="tab-cnt blue" id="proposalCnt">0</span></div>
+        <div class="cmd-tab" data-cmd="approval" onclick="switchCmd('approval')">전체 제안 <span class="tab-cnt orange" id="approvalCnt">0</span></div>
+        <div class="cmd-tab" data-cmd="bugs" onclick="switchCmd('bugs')">버그/보안 <span class="tab-cnt red" id="bugCnt">0</span></div>
+        <div class="cmd-tab" data-cmd="proposals" onclick="switchCmd('proposals')">마케팅/성장 <span class="tab-cnt blue" id="proposalCnt">0</span></div>
         <div class="cmd-tab" data-cmd="inprogress" onclick="switchCmd('inprogress')">🔄 진행 중 <span class="tab-cnt blue" id="inProgressCnt">0</span></div>
         <div class="cmd-tab" data-cmd="done" onclick="switchCmd('done')">✅ 처리 완료 <span class="tab-cnt green" id="doneCnt">0</span></div>
         <div class="cmd-tab" data-cmd="outputs" onclick="switchCmd('outputs')">📁 결과물 <span class="tab-cnt blue" id="outputCnt">0</span></div>
@@ -941,7 +953,7 @@ function fetchActivity(){
 }
 
 function fetchTasks(){
-  return fetch(SUPABASE_URL+'/rest/v1/ai_team_tasks?select=*&order=created_at.desc&limit=50',{
+  return fetch(SUPABASE_URL+'/rest/v1/ai_team_tasks?select=*&order=priority.desc,created_at.desc&limit=100',{
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   }).then(function(r){return r.json()}).then(function(rows){
     allTasks=rows;
@@ -1094,10 +1106,10 @@ function renderAllTasks(){
   // Don't re-render while user is typing/interacting with a task card
   if(taskInteracting) return;
 
-  var pending=allTasks.filter(function(t){return t.status==='pending'});
+  var pending=allTasks.filter(function(t){return t.status==='pending'||t.status==='proposal'});
   var approved=allTasks.filter(function(t){return t.status==='approved'||t.status==='in_progress'});
-  var bugs=pending.filter(function(t){return t.category==='bug'||t.category==='qa'});
-  var proposals=pending.filter(function(t){return t.category==='feature'||t.category==='improvement'||t.category==='marketing'});
+  var bugs=pending.filter(function(t){return (t.category||'').match(/bug|qa|security/)});
+  var proposals=pending.filter(function(t){return !(t.category||'').match(/bug|qa|security/)});
   var done=allTasks.filter(function(t){return t.status==='done'});
   var rejected=allTasks.filter(function(t){return t.status==='rejected'});
 
@@ -1147,15 +1159,23 @@ function renderTaskList(panelId, tasks, showActions){
 
   var html='<div class="task-list">';
   tasks.forEach(function(t){
-    var catLabel={bug:'버그',feature:'기능제안',improvement:'개선',marketing:'마케팅',qa:'QA'}[t.category]||t.category;
+    var catLabel={bug:'버그','bug/security':'보안','bug/content':'콘텐츠/버그','bug/architecture':'아키텍처',feature:'기능제안',improvement:'개선',marketing:'마케팅',qa:'QA',ux:'UX',performance:'성능','performance/architecture':'아키텍처','content':'콘텐츠','content/bug':'콘텐츠/버그','db-acquisition':'DB확보',automation:'자동화'}[t.category]||t.category;
     var priorityLabel=(t.priority||'medium').toUpperCase();
     var sections=parseTaskSections(t.description);
-    var hasRichDetail=!!sections;
+    var hasNewCols=!!(t.current_state||t.improvement||t.expected_effect);
+    var hasRichDetail=!!sections||hasNewCols;
 
     html+='<div class="task-card" id="task-'+t.id+'" onclick="toggleTaskDetail('+t.id+')">';
     html+='<div class="task-header">';
-    html+='<span class="task-cat '+(t.category||'')+'">'+catLabel+'</span>';
+    html+='<span class="task-cat '+(t.category||'').replace(/\//g,'-')+'">'+catLabel+'</span>';
     html+='<span class="task-priority '+(t.priority||'medium')+'">'+priorityLabel+'</span>';
+    if(t.cost_type){
+      html+='<span class="task-cost '+(t.cost_type==='free'?'cost-free':'cost-paid')+'">'+(t.cost_type==='free'?'무료':'유료')+'</span>';
+    }
+    if(t.ceo_decision && t.ceo_decision!=='pending'){
+      var decLabel={approved:'승인',rejected:'반려',revision:'수정요청'}[t.ceo_decision]||t.ceo_decision;
+      html+='<span class="task-decision '+t.ceo_decision+'">'+decLabel+'</span>';
+    }
 
     if(t.status!=='pending'){
       var statusLabel={approved:'승인됨',in_progress:'진행 중',done:'완료',rejected:'반려'}[t.status]||t.status;
@@ -1225,15 +1245,43 @@ function renderTaskList(panelId, tasks, showActions){
       html+='</div></div>';
 
       html+='</div>'; // end task-detail
+    } else if(hasNewCols){
+      // New column-based detail rendering
+      if(t.description) html+='<div class="task-summary">'+esc(t.description)+'</div>';
+      html+='<div class="task-expand-hint">▼ 클릭하여 상세 내용 보기</div>';
+      html+='<div class="task-detail" onclick="event.stopPropagation()">';
+      html+='<div class="task-detail-grid">';
+      if(t.current_state){
+        html+='<div class="task-detail-item full"><div class="tdi-label">현재 상태</div><div class="tdi-value">'+esc(t.current_state)+'</div></div>';
+      }
+      if(t.improvement){
+        html+='<div class="task-detail-item full"><div class="tdi-label">개선안</div><div class="tdi-value" style="color:var(--green)">'+esc(t.improvement)+'</div></div>';
+      }
+      if(t.expected_effect){
+        html+='<div class="task-detail-item full"><div class="tdi-label">기대 효과</div><div class="tdi-value" style="color:var(--cyan)">'+esc(t.expected_effect)+'</div></div>';
+      }
+      html+='</div>';
+
+      // Comment section for new-style cards
+      html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
+      html+='<div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-weight:600">CEO 코멘트</div>';
+      html+='<div id="task-comments-'+t.id+'" style="margin-bottom:8px"></div>';
+      html+='<div style="display:flex;gap:6px">';
+      html+='<input type="text" id="task-comment-input-'+t.id+'" placeholder="코멘트 작성..." onfocus="markTaskInteracting()" oninput="markTaskInteracting()" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
+      html+='<button onclick="postTaskComment('+t.id+')" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='</div></div>';
+
+      html+='</div>'; // end task-detail
     } else {
       // Fallback: plain description
       if(t.description) html+='<div class="task-desc">'+esc(t.description)+'</div>';
     }
 
-    if(showActions && t.status==='pending'){
+    if(showActions && (t.status==='pending'||t.status==='proposal')){
       html+='<div class="task-actions" onclick="event.stopPropagation()">';
-      html+='<button class="task-btn approve" onclick="approveTask('+t.id+')">✓ 승인 — 실행</button>';
-      html+='<button class="task-btn reject" onclick="rejectTask('+t.id+')">✕ 반려</button>';
+      html+='<button class="task-btn approve" onclick="approveTask('+t.id+')">승인</button>';
+      html+='<button class="task-btn revision" onclick="revisionTask('+t.id+')">수정요청</button>';
+      html+='<button class="task-btn reject" onclick="rejectTask('+t.id+')">반려</button>';
       html+='</div>';
     }
     html+='</div>';
@@ -1521,10 +1569,39 @@ window.rejectTask=function(id){
   fetch(SUPABASE_URL+'/rest/v1/ai_team_tasks?id=eq.'+id,{
     method:'PATCH',
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-    body:JSON.stringify({status:'rejected'})
+    body:JSON.stringify({status:'rejected',ceo_decision:'rejected'})
   }).then(function(){
-    allTasks.forEach(function(t){if(t.id===id){t.status='rejected'}});
+    allTasks.forEach(function(t){if(t.id===id){t.status='rejected';t.ceo_decision='rejected'}});
     renderAllTasks();
+  });
+};
+
+window.revisionTask=function(id){
+  event.stopPropagation();
+  var reason=prompt('수정 요청 사항을 입력하세요:');
+  if(!reason) return;
+  // Update task decision
+  fetch(SUPABASE_URL+'/rest/v1/ai_team_tasks?id=eq.'+id,{
+    method:'PATCH',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({ceo_decision:'revision'})
+  }).then(function(){
+    allTasks.forEach(function(t){if(t.id===id){t.ceo_decision='revision'}});
+    // Save comment to ai_team_comments
+    return fetch(SUPABASE_URL+'/rest/v1/ai_team_comments',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
+      body:JSON.stringify({task_id:id,author:'ceo',content:reason,decision:'revision'})
+    });
+  }).then(function(r){return r.json()}).then(function(){
+    renderAllTasks();
+    loadTaskComments(id);
+    // Also post to chat
+    fetch(SUPABASE_URL+'/rest/v1/ai_team_chat',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({from_agent:'ceo',message:'[수정요청 #'+id+'] '+reason,msg_type:'task'})
+    });
   });
 };
 
@@ -1533,27 +1610,61 @@ window.postTaskComment=function(id){
   if(!input) return;
   var comment=input.value.trim();
   if(!comment) return;
-  // Post as CEO chat message referencing the task
-  fetch(SUPABASE_URL+'/rest/v1/ai_team_chat',{
+  // Save to ai_team_comments table
+  fetch(SUPABASE_URL+'/rest/v1/ai_team_comments',{
     method:'POST',
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-    body:JSON.stringify({from_agent:'ceo',message:'[태스크 #'+id+' 코멘트] '+comment,msg_type:'task'})
+    body:JSON.stringify({task_id:id,author:'ceo',content:comment,decision:'comment'})
   }).then(function(r){return r.json()}).then(function(rows){
-    if(rows&&rows.length>0){
-      if(!chatMessages.some(function(m){return m.id===rows[0].id})){
-        chatMessages.push(rows[0]);renderChat();
-      }
-    }
     input.value='';
     // Show comment in the task card
     var commentsEl=qs('#task-comments-'+id);
     if(commentsEl){
       var div=document.createElement('div');
-      div.style.cssText='font-size:11px;padding:6px 10px;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.12);border-radius:8px;margin-bottom:6px';
-      div.innerHTML='<span style="color:var(--accent);font-weight:600;font-size:10px">CEO</span> <span style="color:var(--muted)">'+esc(comment)+'</span> <span style="font-size:9px;color:var(--dim)">방금</span>';
+      div.className='task-comment';
+      div.innerHTML='<div class="tc-author">CEO</div><div class="tc-text">'+esc(comment)+'</div><div class="tc-time">방금</div>';
       commentsEl.appendChild(div);
     }
+    // Also post to chat
+    fetch(SUPABASE_URL+'/rest/v1/ai_team_chat',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({from_agent:'ceo',message:'[#'+id+' 코멘트] '+comment,msg_type:'task'})
+    });
   });
+};
+
+/* Load comments for a task from ai_team_comments */
+function loadTaskComments(taskId){
+  fetch(SUPABASE_URL+'/rest/v1/ai_team_comments?task_id=eq.'+taskId+'&order=created_at.asc',{
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
+  }).then(function(r){return r.json()}).then(function(comments){
+    var el=qs('#task-comments-'+taskId);
+    if(!el) return;
+    el.innerHTML='';
+    comments.forEach(function(c){
+      var div=document.createElement('div');
+      div.className='task-comment';
+      var decBadge='';
+      if(c.decision==='revision') decBadge='<span style="background:rgba(234,179,8,.15);color:var(--yellow);padding:1px 5px;border-radius:3px;font-size:9px;margin-left:4px">수정요청</span>';
+      else if(c.decision==='approved') decBadge='<span style="background:rgba(34,197,94,.15);color:var(--green);padding:1px 5px;border-radius:3px;font-size:9px;margin-left:4px">승인</span>';
+      div.innerHTML='<div class="tc-author">'+esc(c.author==='ceo'?'CEO':c.author)+decBadge+'</div><div class="tc-text">'+esc(c.content)+'</div><div class="tc-time">'+relTime(c.created_at)+'</div>';
+      el.appendChild(div);
+    });
+  });
+}
+
+/* When task card is expanded, load its comments */
+var _origToggle=window.toggleTaskDetail;
+window.toggleTaskDetail=function(id){
+  var card=qs('#task-'+id);
+  if(card){
+    card.classList.toggle('expanded');
+    expandedTasks[id]=card.classList.contains('expanded');
+    if(card.classList.contains('expanded')){
+      loadTaskComments(id);
+    }
+  }
 };
 
 /* ══════════════════════════════════════════ */
