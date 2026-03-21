@@ -341,6 +341,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .task-comment .tc-author{font-size:9px;color:var(--accent);font-weight:600;margin-bottom:2px}
 .task-comment .tc-text{color:var(--text);line-height:1.5}
 .task-comment .tc-time{font-size:9px;color:var(--dim);margin-top:2px}
+.comment-drop-zone{border:2px dashed transparent;border-radius:10px;padding:4px;transition:all .2s}
+.comment-drop-zone.drag-over{border-color:var(--accent);background:rgba(99,102,241,.06)}
+.comment-drop-preview{margin-bottom:6px}
+.comment-drop-preview:empty{display:none}
+.comment-drop-preview img{max-width:200px;max-height:150px;border-radius:8px;border:1px solid var(--border)}
 .task-status-badge{font-size:10px;padding:3px 10px;border-radius:8px;font-weight:500}
 .task-status-badge.done{background:rgba(34,197,94,.1);color:var(--green)}
 .task-status-badge.in_progress{background:rgba(59,130,246,.1);color:var(--blue)}
@@ -937,7 +942,14 @@ function fetchChat(){
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   }).then(function(r){return r.json()}).then(function(rows){
     chatMessages=[];ceoMessages=[];
+    /* Filter out empty status reports from PC agents */
+    var emptyPatterns=[/검토하고 있습니다/,/분석을 시작했습니다/,/진행 중입니다/,/정리되면 승인/,/보고드리겠습니다/,/공유드릴게요/,/작업을 진행/,/정리 중입니다/,/최적화 작업을 진행/];
     rows.reverse().forEach(function(row){
+      /* Skip empty PC agent reports */
+      if(['atlas','pixel','nova'].indexOf(row.from_agent)>=0 && row.msg_type==='suggestion'){
+        var isEmpty=emptyPatterns.some(function(p){return p.test(row.message)});
+        if(isEmpty) return;
+      }
       if(row.to_agent==='ceo') ceoMessages.push(row);
       else chatMessages.push(row);
     });
@@ -1249,11 +1261,15 @@ function renderTaskList(panelId, tasks, showActions){
       // Comment section
       html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
       html+='<div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-weight:600">💬 CEO 코멘트</div>';
-      html+='<div id="task-comments-'+t.id+'" style="margin-bottom:8px"></div>';
+      html+='<div class="task-comments-box" data-task-id="'+t.id+'" style="margin-bottom:8px"></div>';
       html+='<div style="display:flex;gap:6px">';
-      html+='<input type="text" id="task-comment-input-'+t.id+'" placeholder="코멘트 작성... (이미지/YouTube/Loom 링크 첨부 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
-      html+='<button onclick="postTaskComment('+t.id+')" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='<div class="comment-drop-zone" data-task-id="'+t.id+'" ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ondragleave="this.classList.remove(\'drag-over\')" ondrop="handleCommentDrop(event,'+t.id+')">';
+      html+='<div class="comment-drop-preview" data-task-id="'+t.id+'"></div>';
+      html+='<div style="display:flex;gap:6px">';
+      html+='<input type="text" class="comment-input" data-task-id="'+t.id+'" placeholder="코멘트 작성... (이미지 드래그&드롭 또는 붙여넣기 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" onpaste="handleCommentPaste(event,'+t.id+')" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
+      html+='<button onclick="postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
+      html+='</div>';
 
       html+='</div>'; // end task-detail
     } else if(hasNewCols){
@@ -1276,11 +1292,15 @@ function renderTaskList(panelId, tasks, showActions){
       // Comment section for new-style cards
       html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
       html+='<div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-weight:600">CEO 코멘트</div>';
-      html+='<div id="task-comments-'+t.id+'" style="margin-bottom:8px"></div>';
+      html+='<div class="task-comments-box" data-task-id="'+t.id+'" style="margin-bottom:8px"></div>';
       html+='<div style="display:flex;gap:6px">';
-      html+='<input type="text" id="task-comment-input-'+t.id+'" placeholder="코멘트 작성... (이미지/YouTube/Loom 링크 첨부 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
-      html+='<button onclick="postTaskComment('+t.id+')" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='<div class="comment-drop-zone" data-task-id="'+t.id+'" ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ondragleave="this.classList.remove(\'drag-over\')" ondrop="handleCommentDrop(event,'+t.id+')">';
+      html+='<div class="comment-drop-preview" data-task-id="'+t.id+'"></div>';
+      html+='<div style="display:flex;gap:6px">';
+      html+='<input type="text" class="comment-input" data-task-id="'+t.id+'" placeholder="코멘트 작성... (이미지 드래그&드롭 또는 붙여넣기 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" onpaste="handleCommentPaste(event,'+t.id+')" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
+      html+='<button onclick="postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
+      html+='</div>';
 
       html+='</div>'; // end task-detail
     } else {
@@ -1291,11 +1311,15 @@ function renderTaskList(panelId, tasks, showActions){
       if(t.description) html+='<div class="task-detail-grid"><div class="task-detail-item full"><div class="tdi-label">설명</div><div class="tdi-value">'+esc(t.description)+'</div></div></div>';
       html+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">';
       html+='<div style="font-size:10px;color:var(--dim);margin-bottom:8px;font-weight:600">💬 CEO 코멘트</div>';
-      html+='<div id="task-comments-'+t.id+'" style="margin-bottom:8px"></div>';
+      html+='<div class="task-comments-box" data-task-id="'+t.id+'" style="margin-bottom:8px"></div>';
       html+='<div style="display:flex;gap:6px">';
-      html+='<input type="text" id="task-comment-input-'+t.id+'" placeholder="코멘트 작성... (이미지/YouTube/Loom 링크 첨부 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
-      html+='<button onclick="postTaskComment('+t.id+')" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='<div class="comment-drop-zone" data-task-id="'+t.id+'" ondragover="event.preventDefault();this.classList.add(\'drag-over\')" ondragleave="this.classList.remove(\'drag-over\')" ondrop="handleCommentDrop(event,'+t.id+')">';
+      html+='<div class="comment-drop-preview" data-task-id="'+t.id+'"></div>';
+      html+='<div style="display:flex;gap:6px">';
+      html+='<input type="text" class="comment-input" data-task-id="'+t.id+'" placeholder="코멘트 작성... (이미지 드래그&드롭 또는 붙여넣기 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" onpaste="handleCommentPaste(event,'+t.id+')" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
+      html+='<button onclick="postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
+      html+='</div>';
       html+='</div>';
     }
 
@@ -1626,33 +1650,108 @@ window.revisionTask=function(id){
   });
 };
 
-window.postTaskComment=function(id){
-  var input=qs('#task-comment-input-'+id);
+/* Pending image attachments per task */
+var _pendingImages={};
+
+window.postTaskComment=function(id,btnEl){
+  /* Find the input closest to the clicked button */
+  var container=btnEl?btnEl.closest('.comment-drop-zone'):null;
+  var input=container?container.querySelector('.comment-input'):document.querySelector('.comment-input[data-task-id="'+id+'"]');
+  /* Try visible panel first */
+  if(!input||!input.offsetWidth){
+    var activePanel=document.querySelector('.cmd-panel.active');
+    if(activePanel) input=activePanel.querySelector('.comment-input[data-task-id="'+id+'"]');
+  }
   if(!input) return;
   var comment=input.value.trim();
-  if(!comment) return;
+  var imageUrl=_pendingImages[id]||'';
+  if(!comment&&!imageUrl) return;
+  var fullComment=comment+(imageUrl?'\n'+imageUrl:'');
   // Save to ai_team_comments table
   fetch(SUPABASE_URL+'/rest/v1/ai_team_comments',{
     method:'POST',
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
-    body:JSON.stringify({task_id:id,author:'ceo',content:comment,decision:'comment'})
-  }).then(function(r){return r.json()}).then(function(rows){
+    body:JSON.stringify({task_id:id,author:'ceo',content:fullComment,decision:'comment'})
+  }).then(function(r){return r.json()}).then(function(){
     input.value='';
-    // Show comment in the task card
-    var commentsEl=qs('#task-comments-'+id);
-    if(commentsEl){
-      var div=document.createElement('div');
-      div.className='task-comment';
-      div.innerHTML='<div class="tc-author">CEO</div><div class="tc-text">'+richText(comment)+'</div><div class="tc-time">방금</div>';
-      commentsEl.appendChild(div);
-    }
+    delete _pendingImages[id];
+    /* Clear preview */
+    var previews=document.querySelectorAll('.comment-drop-preview[data-task-id="'+id+'"]');
+    previews.forEach(function(p){p.innerHTML='';});
+    /* Reload comments for all instances */
+    window.loadTaskComments(id);
     // Also post to chat
     fetch(SUPABASE_URL+'/rest/v1/ai_team_chat',{
       method:'POST',
       headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify({from_agent:'ceo',message:'[#'+id+' 코멘트] '+comment,msg_type:'task'})
+      body:JSON.stringify({from_agent:'ceo',message:'[#'+id+' 코멘트] '+fullComment,msg_type:'task'})
     });
   });
+};
+
+/* Upload image to Supabase Storage and return public URL */
+function uploadCommentImage(file,taskId,callback){
+  var ext=file.name.split('.').pop()||'png';
+  var path='comment-images/'+taskId+'-'+Date.now()+'.'+ext;
+  fetch(SUPABASE_URL+'/storage/v1/object/public-assets/'+path,{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':file.type},
+    body:file
+  }).then(function(r){
+    if(r.ok){
+      var url=SUPABASE_URL+'/storage/v1/object/public/public-assets/'+path;
+      callback(url);
+    }else{
+      /* Fallback: use data URL */
+      var reader=new FileReader();
+      reader.onload=function(){callback(reader.result);};
+      reader.readAsDataURL(file);
+    }
+  }).catch(function(){
+    var reader=new FileReader();
+    reader.onload=function(){callback(reader.result);};
+    reader.readAsDataURL(file);
+  });
+}
+
+/* Drag & drop handler */
+window.handleCommentDrop=function(e,taskId){
+  e.preventDefault();
+  var zone=e.currentTarget;
+  zone.classList.remove('drag-over');
+  var files=e.dataTransfer.files;
+  if(!files.length) return;
+  var file=files[0];
+  if(!file.type.startsWith('image/')) return;
+  markTaskInteracting();
+  uploadCommentImage(file,taskId,function(url){
+    _pendingImages[taskId]=url;
+    var previews=document.querySelectorAll('.comment-drop-preview[data-task-id="'+taskId+'"]');
+    previews.forEach(function(p){
+      p.innerHTML='<img src="'+url+'" alt="첨부"><span onclick="delete _pendingImages['+taskId+'];this.parentElement.innerHTML=\'\'" style="cursor:pointer;color:var(--red);margin-left:6px;font-size:10px">✕ 제거</span>';
+    });
+  });
+};
+
+/* Paste handler */
+window.handleCommentPaste=function(e,taskId){
+  var items=e.clipboardData&&e.clipboardData.items;
+  if(!items) return;
+  for(var i=0;i<items.length;i++){
+    if(items[i].type.indexOf('image')>=0){
+      e.preventDefault();
+      var file=items[i].getAsFile();
+      markTaskInteracting();
+      uploadCommentImage(file,taskId,function(url){
+        _pendingImages[taskId]=url;
+        var previews=document.querySelectorAll('.comment-drop-preview[data-task-id="'+taskId+'"]');
+        previews.forEach(function(p){
+          p.innerHTML='<img src="'+url+'" alt="첨부"><span onclick="delete _pendingImages['+taskId+'];this.parentElement.innerHTML=\'\'" style="cursor:pointer;color:var(--red);margin-left:6px;font-size:10px">✕ 제거</span>';
+        });
+      });
+      break;
+    }
+  }
 };
 
 /* Load comments for a task from ai_team_comments */
@@ -1686,7 +1785,7 @@ window.loadTaskComments=function(taskId){
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}
   }).then(function(r){return r.json()}).then(function(comments){
     /* Update ALL comment containers for this task (may exist in multiple panels) */
-    var els=document.querySelectorAll('#task-comments-'+taskId);
+    var els=document.querySelectorAll('.task-comments-box[data-task-id="'+taskId+'"]');
     els.forEach(function(el){
       el.innerHTML='';
       comments.forEach(function(c){
