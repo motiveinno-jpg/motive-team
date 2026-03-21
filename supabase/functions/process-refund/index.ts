@@ -3,17 +3,32 @@ import Stripe from "https://esm.sh/stripe@14.14.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const COOLING_PERIOD_DAYS = 7;
-const PLATFORM_FEE_RATE = 0.025;
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "http://localhost",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:8080",
+];
+
+function getCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") || "";
+  const isAllowed = ALLOWED_ORIGINS.some((allowed) =>
+    origin === allowed || origin.startsWith(allowed)
+  );
+  return {
+    "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS[0],
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 function jsonResponse(
   body: Record<string, unknown>,
-  status = 200,
+  status: number,
+  corsHeaders: Record<string, string>,
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -22,6 +37,8 @@ function jsonResponse(
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -29,7 +46,7 @@ serve(async (req) => {
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      return jsonResponse({ error: "Payment service unavailable" }, 500);
+      return jsonResponse({ error: "Payment service unavailable" }, 500, corsHeaders);
     }
 
     const stripe = new Stripe(stripeKey, {
@@ -57,7 +74,7 @@ serve(async (req) => {
         error,
       } = await sbAdmin.auth.getUser(token);
       if (error || !user) {
-        return jsonResponse({ error: "Unauthorized" }, 401);
+        return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
       }
       callerUserId = user.id;
       const { data: userData } = await sbAdmin
@@ -67,7 +84,7 @@ serve(async (req) => {
         .single();
       isAdmin = userData?.role === "admin";
     } else {
-      return jsonResponse({ error: "Unauthorized" }, 401);
+      return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
     }
 
     const body = await req.json();
@@ -76,27 +93,38 @@ serve(async (req) => {
     switch (refund_type) {
       /* ─── SUBSCRIPTION COOLING PERIOD REFUND ─── */
       case "subscription_cooling": {
-        const { payment_intent_id } = body;
-        if (!payment_intent_id) {
+        const { reason } = body;
+
+        // Auto-lookup: find the user's latest subscription payment
+        if (!callerUserId && !isAdmin) {
+          return jsonResponse({ error: "User authentication required" }, 401, corsHeaders);
+        }
+
+        const targetUserId = callerUserId;
+        if (!targetUserId) {
           return jsonResponse(
-            { error: "payment_intent_id required" },
+            { error: "User ID required for subscription refund" },
             400,
+            corsHeaders,
           );
         }
 
-        const { data: payment } = await sbAdmin
+        const { data: payment, error: paymentError } = await sbAdmin
           .from("payments")
           .select("*")
-          .eq("stripe_payment_intent", payment_intent_id)
+          .eq("user_id", targetUserId)
+          .eq("type", "subscription")
+          .eq("status", "succeeded")
+          .order("created_at", { ascending: false })
+          .limit(1)
           .single();
 
-        if (!payment) {
-          return jsonResponse({ error: "Payment not found" }, 404);
-        }
-
-        // Only the payment owner or admin can request
-        if (!isAdmin && payment.user_id !== callerUserId) {
-          return jsonResponse({ error: "Not authorized" }, 403);
+        if (paymentError || !payment) {
+          return jsonResponse(
+            { error: "No eligible subscription payment found" },
+            404,
+            corsHeaders,
+          );
         }
 
         // Check cooling period
@@ -106,19 +134,29 @@ serve(async (req) => {
         if (daysSince > COOLING_PERIOD_DAYS) {
           return jsonResponse(
             {
-              error: `Cooling period expired. Refund available within ${COOLING_PERIOD_DAYS} days only.`,
+              error: `Cooling period expired. Refund available within ${COOLING_PERIOD_DAYS} days of payment only.`,
             },
             400,
+            corsHeaders,
+          );
+        }
+
+        if (!payment.stripe_payment_intent) {
+          return jsonResponse(
+            { error: "Payment record missing Stripe reference" },
+            400,
+            corsHeaders,
           );
         }
 
         // Process Stripe refund
         const refund = await stripe.refunds.create({
-          payment_intent: payment_intent_id,
+          payment_intent: payment.stripe_payment_intent,
           reason: "requested_by_customer",
           metadata: {
             user_id: payment.user_id,
             refund_type: "subscription_cooling",
+            reason: reason || "cooling_period",
           },
         });
 
@@ -135,16 +173,17 @@ serve(async (req) => {
           );
         }
 
-        // Update records
+        // Update payment record
         await sbAdmin
           .from("payments")
           .update({
             status: "refunded",
             refunded_at: new Date().toISOString(),
-            refund_reason: "subscription_cooling_period",
+            refund_reason: reason || "subscription_cooling_period",
           })
-          .eq("stripe_payment_intent", payment_intent_id);
+          .eq("id", payment.id);
 
+        // Downgrade user to free plan
         await sbAdmin
           .from("users")
           .update({
@@ -168,7 +207,7 @@ serve(async (req) => {
           refund_id: refund.id,
           amount: payment.amount,
           currency: payment.currency,
-        });
+        }, 200, corsHeaders);
       }
 
       /* ─── ESCROW DISPUTE REFUND ─── */
@@ -178,6 +217,7 @@ serve(async (req) => {
           return jsonResponse(
             { error: "payment_intent_id required" },
             400,
+            corsHeaders,
           );
         }
 
@@ -192,6 +232,7 @@ serve(async (req) => {
           return jsonResponse(
             { error: "Escrow payment not found" },
             404,
+            corsHeaders,
           );
         }
 
@@ -199,12 +240,13 @@ serve(async (req) => {
           return jsonResponse(
             { error: "Payment already settled or refunded" },
             400,
+            corsHeaders,
           );
         }
 
         // Only buyer (payment owner) or admin can dispute
         if (!isAdmin && payment.user_id !== callerUserId) {
-          return jsonResponse({ error: "Not authorized" }, 403);
+          return jsonResponse({ error: "Not authorized" }, 403, corsHeaders);
         }
 
         // Process full refund
@@ -277,100 +319,27 @@ serve(async (req) => {
           refund_id: refund.id,
           amount: payment.amount,
           currency: payment.currency,
-        });
-      }
-
-      /* ─── SINGLE ANALYSIS REFUND (fallback data served) ─── */
-      case "analysis_fallback": {
-        const { payment_intent_id, analysis_id } = body;
-        if (!payment_intent_id) {
-          return jsonResponse(
-            { error: "payment_intent_id required" },
-            400,
-          );
-        }
-
-        const { data: payment } = await sbAdmin
-          .from("payments")
-          .select("*")
-          .eq("stripe_payment_intent", payment_intent_id)
-          .eq("type", "one_analysis")
-          .single();
-
-        if (!payment) {
-          return jsonResponse(
-            { error: "Analysis payment not found" },
-            404,
-          );
-        }
-
-        if (payment.status === "refunded") {
-          return jsonResponse(
-            { error: "Already refunded" },
-            400,
-          );
-        }
-
-        // Only payment owner or admin
-        if (!isAdmin && payment.user_id !== callerUserId) {
-          return jsonResponse({ error: "Not authorized" }, 403);
-        }
-
-        // Process refund
-        const refund = await stripe.refunds.create({
-          payment_intent: payment_intent_id,
-          reason: "requested_by_customer",
-          metadata: {
-            user_id: payment.user_id,
-            refund_type: "analysis_fallback",
-            analysis_id: analysis_id || "",
-          },
-        });
-
-        await sbAdmin
-          .from("payments")
-          .update({
-            status: "refunded",
-            refunded_at: new Date().toISOString(),
-            refund_reason: "analysis_fallback_data",
-          })
-          .eq("stripe_payment_intent", payment_intent_id);
-
-        // Re-grant the analysis credit since data was bad
-        await sbAdmin.rpc("increment_analysis_credits", {
-          uid: payment.user_id,
-          credits: 1,
-        });
-
-        await sbAdmin.from("notifications").insert({
-          user_id: payment.user_id,
-          type: "payment",
-          title: "Analysis Refund Processed",
-          body: `Your analysis payment of ${payment.currency} ${payment.amount.toFixed(2)} has been refunded due to incomplete data. An analysis credit has been restored.`,
-          is_read: false,
-        });
-
-        return jsonResponse({
-          ok: true,
-          refund_id: refund.id,
-          amount: payment.amount,
-          currency: payment.currency,
-          credit_restored: true,
-        });
+        }, 200, corsHeaders);
       }
 
       default:
         return jsonResponse(
           {
             error:
-              "Invalid refund_type. Use: subscription_cooling, escrow_dispute, or analysis_fallback",
+              "Invalid refund_type. Use: subscription_cooling or escrow_dispute",
           },
           400,
+          corsHeaders,
         );
     }
   } catch (err: unknown) {
+    const corsHeaders = getCorsHeaders(req);
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("process-refund error:", errMsg);
-    return jsonResponse({ error: "An error occurred. Please try again." }, 500);
+    return jsonResponse(
+      { error: "An error occurred. Please try again." },
+      500,
+      corsHeaders,
+    );
   }
 });
