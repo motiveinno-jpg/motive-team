@@ -1356,11 +1356,11 @@ function _loadExRateFallback(){
   if(cached){try{var c=JSON.parse(cached);if(c.rate&&c.time&&Date.now()-c.time<3600000){S.exchangeRate=c.rate;window._exRate=c.rate;}}catch(e){console.error('[whistle]',e);}}
   fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
-  }).catch(function(){});
+  }).catch(function(e){console.error('[whistle]',e);});
   /* 다통화 환율 로드 (KRW 기준 → 시장별 통화 표시용) */
   fetch('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB').then(function(r){return r.json();}).then(function(d){
     if(d&&d.rates){window._fxRates=d.rates;}
-  }).catch(function(){});
+  }).catch(function(e){console.error('[whistle]',e);});
 }
 function refreshExRate(){
   S._exRateLoading=true;render();
@@ -1393,7 +1393,7 @@ function _loadCountryData(){
     });
     /* World Bank GDP/수출입 데이터 로드 (주요 수출 대상국) */
     _loadWorldBankData();
-  }).catch(function(){});
+  }).catch(function(e){console.error('[whistle]',e);});
 }
 /* World Bank API — GDP + 수출 규모 (무료, 인증 불필요) */
 function _loadWorldBankData(){
@@ -1411,7 +1411,7 @@ function _loadWorldBankData(){
           window._wbData[iso3][ind]={value:row.value,year:row.date};
         }
       });
-    }).catch(function(){});
+    }).catch(function(e){console.error('[whistle]',e);});
   });
 }
 /* 사용자 국가 기반 현지 통화 결정 */
@@ -1436,7 +1436,7 @@ function toggleCurrency(){
   window.__trackError=function(opts){
     if(!opts||!opts.error_message)return;
     _errQueue.push({user_id:S.user?S.user.id:null,error_message:String(opts.error_message).slice(0,2000),error_stack:String(opts.error_stack||'').slice(0,5000),page:opts.page||location.hash,extra:opts.extra||{},user_agent:navigator.userAgent,url:location.href});
-    if(_errQueue.length>=5||!window._errTimer){window._errTimer=setTimeout(function(){var batch=_errQueue.splice(0,10);if(batch.length&&window.sb)sb.from('client_errors').insert(batch).then(function(){}).catch(function(){});window._errTimer=null;},2000);}
+    if(_errQueue.length>=5||!window._errTimer){window._errTimer=setTimeout(function(){var batch=_errQueue.splice(0,10);if(batch.length&&window.sb)sb.from('client_errors').insert(batch).then(function(){}).catch(function(e){console.error('[whistle]',e);});window._errTimer=null;},2000);}
   };
   window.addEventListener('error',function(e){window.__trackError({error_message:e.message||'Unknown',error_stack:e.error?e.error.stack:e.filename+':'+e.lineno});});
   window.addEventListener('unhandledrejection',function(e){window.__trackError({error_message:e.reason?e.reason.message||String(e.reason):'Unhandled rejection',error_stack:e.reason?e.reason.stack:''});});
@@ -1527,7 +1527,7 @@ function doSignup(e){e.preventDefault();var f=e.target;
     fetch(SB_URL+'/functions/v1/send-transactional-email',{
       method:'POST',headers:{'Content-Type':'application/json','apikey':SB_ANON_KEY},
       body:JSON.stringify({to:f.email.value,type:'welcome',data:{name:f.company_name.value},lang:_isKorean?'ko':'en'})
-    }).catch(function(){});
+    }).catch(function(e){console.error('[whistle]',e);});
   }).catch(function(){set({authError:(_isKorean?'네트워크 오류. 다시 시도해주세요.':'Network error. Please try again.')});});
 }
 function _acceptInvite(userId){
@@ -2536,7 +2536,7 @@ function autoCreateProduct(analysisId,res,productName){
 
 /* ── AI 영문 카탈로그 생성 ── */
 function genCatalogEN(productId){
-  var p=S.products.find(function(x){return x.id===productId;});if(!p){UI.toast(_isKorean?(_isKorean?'제품을 찾을 수 없습니다':'Product not found'):'Product not found','err');return;}
+  var p=S.products.find(function(x){return x.id===productId;});if(!p){UI.toast(_isKorean?'제품을 찾을 수 없습니다':'Product not found','err');return;}
   if(!RELAY_URL){UI.toast(_isKorean?'서버 연결이 필요합니다. 잠시 후 다시 시도해주세요.':'Server connection required. Please try again shortly.','warn');return;}
   UI.toast((_isKorean?'AI 영문 카탈로그 생성 중...':'Generating AI English catalog...'),'info');
   fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){return r.json();}).then(function(data){
@@ -3885,7 +3885,7 @@ function submitCloneProject(){
       var srcBuyers=(S.matchings||[]).filter(function(m){return m.project_id===src.id;});
       if(srcBuyers.length){
         var copies=srcBuyers.map(function(m){return{user_id:S.user.id,buyer_id:m.buyer_id,project_id:newPj.id,status:'proposed',source:'clone'};});
-        sb.from('matchings').insert(copies).catch(function(){});
+        sb.from('matchings').insert(copies).catch(function(e){console.error('[whistle]',e);});
       }
     }
     /* 서류 템플릿 복사 */
@@ -3893,7 +3893,7 @@ function submitCloneProject(){
       var srcDocs=(S.savedDocs||[]).filter(function(dc){return dc.project_id===src.id;});
       if(srcDocs.length){
         var docCopies=srcDocs.map(function(dc){return{user_id:S.user.id,project_id:newPj.id,doc_type:dc.doc_type,doc_number:dc.doc_type.toUpperCase()+'-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6),content:dc.content,status:'draft',buyer_id:dc.buyer_id||null};});
-        sb.from('documents').insert(docCopies).catch(function(){});
+        sb.from('documents').insert(docCopies).catch(function(e){console.error('[whistle]',e);});
       }
     }
     closeModal('clonepj');UI.toast(_isKorean?'프로젝트 복제 완료!':'Project cloned!','ok');
@@ -4063,7 +4063,7 @@ function saveP(id){
 
 function editP(id){var p=S.products.find(function(x){return x.id===id;});if(p)showPF(p);}
 
-function delP(id){if(!confirm(_isKorean?'이 제품을 삭제할까요?':'Delete this product?'))return;sb.from('products').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error,(_isKorean?'삭제':'Delete'));return;}loadP().then(function(){render();UI.toast(_isKorean?(_isKorean?'삭제 완료':'Deleted'):'Deleted','ok');});});}
+function delP(id){if(!confirm(_isKorean?'이 제품을 삭제할까요?':'Delete this product?'))return;sb.from('products').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error,(_isKorean?'삭제':'Delete'));return;}loadP().then(function(){render();UI.toast(_isKorean?'삭제 완료':'Deleted','ok');});});}
 
 function togglePublic(id,val){
   sb.from('products').update({is_public:val,updated_at:new Date().toISOString()}).eq('id',id).eq('user_id',S.user.id).then(function(r){
@@ -4076,12 +4076,12 @@ function togglePublic(id,val){
   });
 }
 
-function delA(id){if(!confirm(_isKorean?'이 분석을 삭제할까요?':'Delete this analysis?'))return;sb.from('analyses').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error,(_isKorean?'삭제':'Delete'));return;}loadA().then(function(){render();UI.toast(_isKorean?(_isKorean?'삭제 완료':'Deleted'):'Deleted','ok');});});}
+function delA(id){if(!confirm(_isKorean?'이 분석을 삭제할까요?':'Delete this analysis?'))return;sb.from('analyses').delete().eq('id',id).eq('user_id',S.user.id).then(function(r){if(r.error){_toastE(r.error,(_isKorean?'삭제':'Delete'));return;}loadA().then(function(){render();UI.toast(_isKorean?'삭제 완료':'Deleted','ok');});});}
 function rerunA(id){if(!confirm(_isKorean?'이 제품을 다시 분석할까요?':'Re-analyze this product?'))return;var a=S.analyses.find(function(x){return x.id===id;});if(!a)return;var inp=a.ai_result&&a.ai_result.input_data||{};S.analysisStep=1;S.analysisData={urls:inp.urls||[''],files:[],selling_points:inp.selling_points||[],target_markets:inp.target_markets||['US'],existing_certs:inp.existing_certs||[],price_krw:'',product_name:a.product_name,product_name_en:inp.product_name_en||'',category:inp.category||'',fob_price:inp.fob_price||'',moq:inp.moq||'',description:inp.description||'',brand_name:inp.brand_name||'',manufacturer:inp.manufacturer||''};set({currentAnalysis:null});nav('analysis');render();UI.toast(_isKorean?'이전 데이터로 새 분석을 시작합니다':'Starting new analysis with previous data','info');}
 
 function naverSearch(productId){
   var p=S.products.find(function(x){return x.id===productId;});
-  if(!p){UI.toast(_isKorean?(_isKorean?'제품을 찾을 수 없습니다':'Product not found'):'Product not found','warn');return;}
+  if(!p){UI.toast(_isKorean?'제품을 찾을 수 없습니다':'Product not found','warn');return;}
   var keyword=p.name_ko||p.name||'';
   if(!keyword){UI.toast(_isKorean?'제품명이 없습니다':'No product name','warn');return;}
   if(!RELAY_URL){UI.toast(_isKorean?'서버 연결이 필요합니다':'Server connection required','warn');return;}
@@ -4287,7 +4287,7 @@ function openPjChat(buyerId){
   S._pjChatChannel=sb.channel('pj-chat-'+buyerId).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:'buyer_id=eq.'+buyerId},function(payload){
     var m=payload.new;if(!S._pjChatMsgs.find(function(x){return x.id===m.id;})){S._pjChatMsgs.push(m);render();setTimeout(function(){var el=document.getElementById('pj-chat-scroll');if(el)el.scrollTop=el.scrollHeight;},50);}
     if(m.sender_type==='buyer'&&S.user){
-      sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(){});
+      sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(e){console.error('[whistle]',e);});
       /* 수신 메시지 자동 번역 */
       if(S._pjAutoTranslate!==false&&m.message_type!=='system'&&(!m.metadata||!m.metadata.translated)){_autoTranslateBuyerMsg(m.id,m.body);}
       _sendNewMsgEmail(m.buyer_id,m.body);
@@ -5578,7 +5578,7 @@ function _pjTabDocs(p){
 
 /* Project in-context document modal */
 function openPjDocModal(docType){
-  var p=S.currentProject;if(!p){UI.toast(_isKorean?(_isKorean?'프로젝트를 선택해주세요':'Please select a project'):'Please select a project','warn');return;}
+  var p=S.currentProject;if(!p){UI.toast(_isKorean?'프로젝트를 선택해주세요':'Please select a project','warn');return;}
   S._pjDocType=docType;
   try{
   var typeNames=_isKorean?{pi:'견적서 (Proforma Invoice)',ci:'상업송장 (Commercial Invoice)',pl:'포장명세서 (Packing List)',co:'원산지증명서 (Certificate of Origin)',sc:'매매계약서 (Sales Contract)'}:{pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract'};
@@ -6074,7 +6074,7 @@ function savePjDocDraft(){
 /* 화상미팅 — 플랫폼 선택형 허브 */
 function startVideoMeeting(){
   try{
-  var p=S.currentProject;if(!p){UI.toast(_isKorean?(_isKorean?'프로젝트를 선택해주세요':'Please select a project'):'Please select a project','warn');return;}if(!S.user){UI.toast(T('toast_login_required'),'warn');return;}
+  var p=S.currentProject;if(!p){UI.toast(_isKorean?'프로젝트를 선택해주세요':'Please select a project','warn');return;}if(!S.user){UI.toast(T('toast_login_required'),'warn');return;}
   var _ubs=_getPjBuyerIds(p);
   var buyerId=S._pjChatBuyer||(p.buyer_id)||(_ubs.length?_ubs[0]:'')||'';
   if(!buyerId){UI.toast(_isKorean?'먼저 바이어를 연결하세요':'Please connect a buyer first','warn');return;}
@@ -6402,7 +6402,7 @@ function cancelOrder(orderId){
     /* 채팅에 시스템 메시지 */
     var order=(S.orders||[]).find(function(o){return o.id===orderId;});
     if(order&&order.buyer_id){
-      sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[주문 취소] '+order.order_number,message_type:'system',channel:'platform',direction:'outbound'}).catch(function(){});
+      sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[주문 취소] '+order.order_number,message_type:'system',channel:'platform',direction:'outbound'}).catch(function(e){console.error('[whistle]',e);});
     }
   });
 }
@@ -7750,7 +7750,7 @@ function genDoc(){
   var _noItemTypes=['ic','cd','lc','hsc','cfs','fc','msds'];
   var _isNoItem=_noItemTypes.indexOf(S.docType)>=0;
   var bd=_isNoItem?{buyer_company:'',buyer_contact:'',buyer_address:''}:UI.fd('#docB');var rd=UI.fd('#docR');
-  if(!_isNoItem&&!bd.buyer_company){UI.toast(_isKorean?(_isKorean?'바이어 회사명을 입력해주세요':'Please enter buyer company name'):'Please enter buyer company name','warn');var _bc=document.querySelector('[name=buyer_company]');if(_bc){_bc.style.borderColor='var(--err)';_bc.scrollIntoView({behavior:'smooth',block:'center'});_bc.focus();_bc.addEventListener('input',function(){this.style.borderColor='';},{once:true});}return;}
+  if(!_isNoItem&&!bd.buyer_company){UI.toast(_isKorean?'바이어 회사명을 입력해주세요':'Please enter buyer company name','warn');var _bc=document.querySelector('[name=buyer_company]');if(_bc){_bc.style.borderColor='var(--err)';_bc.scrollIntoView({behavior:'smooth',block:'center'});_bc.focus();_bc.addEventListener('input',function(){this.style.borderColor='';},{once:true});}return;}
   var items=[];var isPL=S.docType==='pl';var isCO=S.docType==='co';var isSC=S.docType==='sc';var isBL=S.docType==='bl';
   var isIC=S.docType==='ic';var isCD=S.docType==='cd';var isLC=S.docType==='lc';var isISC=S.docType==='isc';var isHSC=S.docType==='hsc';var isCFS=S.docType==='cfs';var isFC=S.docType==='fc';var isMSDS=S.docType==='msds';var isNewDoc=isIC||isCD||isLC||isISC||isHSC||isCFS||isFC||isMSDS;
   for(var i=0;i<S.docItems.length;i++){
@@ -7914,7 +7914,7 @@ function _genDocInner(items,bd,rd,c){
   _iframe.contentDocument.open();_iframe.contentDocument.write(h);_iframe.contentDocument.close();
   var _docPrices={pi:5000,ci:5000,pl:3000,co:10000,sc:15000,bl:5000,ic:3000,cd:5000,lc:5000,isc:5000,hsc:5000,cfs:5000,fc:3000,msds:3000};
   var _curDocType=S.docType;
-  sb.from('documents').insert({user_id:S.user.id,doc_type:_curDocType,doc_number:rd.doc_no,buyer_id:S._docBuyerId||null,content:{buyer:bd,ref:rd,items:items,total:tA},status:'draft',disclaimer_shown:true}).select().then(function(r){DRAFT.clear('doc_'+_curDocType+'_ref');DRAFT.clear('doc_'+_curDocType+'_buyer');UI.toast(_isKorean?'서류 생성!':'Document created!','ok');if(r.data&&r.data[0]){_lastDoc.id=r.data[0].id;w._lastDocId=r.data[0].id;}loadDocs();sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'document_gen',quantity:1,metadata:{doc_type:_curDocType}}}).catch(function(){});
+  sb.from('documents').insert({user_id:S.user.id,doc_type:_curDocType,doc_number:rd.doc_no,buyer_id:S._docBuyerId||null,content:{buyer:bd,ref:rd,items:items,total:tA},status:'draft',disclaimer_shown:true}).select().then(function(r){DRAFT.clear('doc_'+_curDocType+'_ref');DRAFT.clear('doc_'+_curDocType+'_buyer');UI.toast(_isKorean?'서류 생성!':'Document created!','ok');if(r.data&&r.data[0]){_lastDoc.id=r.data[0].id;w._lastDocId=r.data[0].id;}loadDocs();sb.functions.invoke('manage-subscription',{body:{action:'record_usage',feature:'document_gen',quantity:1,metadata:{doc_type:_curDocType}}}).catch(function(e){console.error('[whistle]',e);});
     /* 서류 건당 과금 billing event 기록 */
     var _docPrice=_docPrices[_curDocType]||5000;
     var _sub=S.user||{};var _isFree=(!_sub.plan||_sub.plan==='free');
@@ -8235,7 +8235,7 @@ function enrichBuyerProfiles(){
       }
     });
     render();
-  }).catch(function(){});
+  }).catch(function(e){console.error('[whistle]',e);});
 }
 
 function computeSellerStage(deal){
@@ -8453,7 +8453,7 @@ function chatAttach(){
     var file=inp.files[0];if(!file)return;
     if(file.size>10*1024*1024){UI.toast((_isKorean?'10MB 이하 파일만 가능':'Files must be under 10MB'),'warn');return;}
     var path='chat/'+S.user.id+'/'+buyerId+'/'+Date.now()+'_'+file.name;
-    UI.toast(_isKorean?(_isKorean?'업로드 중...':'Uploading...'):'Uploading...','info');
+    UI.toast(_isKorean?'업로드 중...':'Uploading...','info');
     sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
       if(r.error){UI.toast(_isKorean?'업로드 실패':'Upload failed','err');return;}
       var url=sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;
@@ -8475,7 +8475,7 @@ function chatDrop(e){
   var ALLOWED_EXT=/\.(pdf|jpe?g|png|gif|webp|doc|docx|xls|xlsx|csv)$/i;
   if(!ALLOWED_EXT.test(file.name)){UI.toast(_isKorean?'지원하지 않는 파일 형식입니다. (PDF, 이미지, 문서, 엑셀만 가능)':'Unsupported file type. (PDF, images, documents, Excel only)','warn');return;}
   var path='chat/'+S.user.id+'/'+buyerId+'/'+Date.now()+'_'+file.name;
-  UI.toast(_isKorean?(_isKorean?'업로드 중...':'Uploading...'):'Uploading...','info');
+  UI.toast(_isKorean?'업로드 중...':'Uploading...','info');
   sb.storage.from('whistle-uploads').upload(path,file).then(function(r){
     if(r.error){UI.toast(_isKorean?'업로드 실패':'Upload failed','err');return;}
     var url=sb.storage.from('whistle-uploads').getPublicUrl(path).data.publicUrl;
@@ -10268,7 +10268,7 @@ function confirmCheckout(planId){
   UI.toast(_isKorean?'신청이 접수되었습니다. 확인 후 플랜이 활성화됩니다.':'Your request has been received. Your plan will be activated after confirmation.','ok');
 
   /* relay-server의 /api/chat 통해 텔레그램 알림 (best effort) */
-  fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'PAYMENT_NOTIFY: '+msg,userId:'system'})}).catch(function(){});
+  fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'PAYMENT_NOTIFY: '+msg,userId:'system'})}).catch(function(e){console.error('[whistle]',e);});
 
   /* 서비스 요청으로도 기록 */
   sb.from('service_requests').insert({user_id:S.user.id,service_type:'payment',description:msg,status:'pending'}).then(function(){loadSR();}).catch(function(e){console.error('[whistle]',e);UI.toast(_isKorean?'오류가 발생했습니다':'An error occurred','err');});
@@ -11894,7 +11894,7 @@ function syncShipment(shipId){
     UI.toast('✅ 상태 업데이트: '+(stL[nextStatus]||nextStatus),'ok');
     var order=(S.orders||[]).find(function(o){return o.id===ship.order_id;});
     if(order&&order.buyer_id){
-      sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[물류 알림] 배송 상태: '+(stL[nextStatus]||nextStatus)+' ('+trackNo+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(){});
+      sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[물류 알림] 배송 상태: '+(stL[nextStatus]||nextStatus)+' ('+trackNo+')',message_type:'system',channel:'platform',direction:'outbound'}).catch(function(e){console.error('[whistle]',e);});
     }
     loadShipments().then(function(){render();});
   });
@@ -11974,7 +11974,7 @@ function respondInquiry(iqId){
         fetch(SB_URL+'/functions/v1/send-transactional-email',{
           method:'POST',headers:{'Content-Type':'application/json','apikey':SB_ANON_KEY},
           body:JSON.stringify({to:S.user.email,type:'buyer_matching',data:{buyerName:iq.company_name||iq.contact_name||'Unknown Buyer',productName:(S.products||[]).find(function(p){return p.id===iq.product_id;})?((S.products||[]).find(function(p){return p.id===iq.product_id;}).name_en||(S.products||[]).find(function(p){return p.id===iq.product_id;}).name_ko):'',dealId:mr.data.id},lang:_isKorean?'ko':'en'})
-        }).catch(function(){});
+        }).catch(function(e){console.error('[whistle]',e);});
         /* 5) 시스템 메시지 전송 */
         sb.from('messages').insert({buyer_id:buyerId,user_id:S.user.id,sender_type:'seller',body:'[문의 응답] 제품 문의에 대해 응답드립니다. 딜이 생성되었습니다!',message_type:'system',channel:'platform',direction:'outbound'}).then(function(){}).catch(function(e){console.error('[whistle]',e);UI.toast(_isKorean?'오류가 발생했습니다':'An error occurred','err');});
         UI.toast(_isKorean?'딜이 생성되었습니다! 딜 관리에서 확인하세요.':'Deal created! Check in Deal Management.','ok');
@@ -12265,7 +12265,7 @@ function submitProposal(reqId){
     if(req){
       fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
         body:JSON.stringify({userId:req.buyer_user_id,type:'marketplace',title:'New proposal: '+req.title,body:(comp.name_en||comp.name_ko||S.user.company_name)+' submitted a proposal',linkPage:'marketplace',telegram:true})
-      }).catch(function(){});
+      }).catch(function(e){console.error('[whistle]',e);});
     }
   });
   };
@@ -13730,7 +13730,7 @@ function openDeal(dealId){
     if(!S._dealChatMsgs.find(function(x){return x.id===m.id;})){S._dealChatMsgs.push(m);render();setTimeout(function(){var mc=document.getElementById('deal-chat-scroll');if(mc)mc.scrollTop=mc.scrollHeight;},50);
       if(S._autoTranslate&&m.sender_type==='buyer'&&m.message_type!=='system')translateChatMsg(m.id,_getUserLang());
     }
-    if(m.sender_type==='buyer'&&S.user){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(){});_sendNewMsgEmail(m.buyer_id,m.body);}
+    if(m.sender_type==='buyer'&&S.user){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).eq('user_id',S.user.id).then(function(){}).catch(function(e){console.error('[whistle]',e);});_sendNewMsgEmail(m.buyer_id,m.body);}
   }).subscribe();
   render();
 }
@@ -14282,28 +14282,28 @@ function _setEscrow(dealId,data){
   var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays,method:data.method};
   if(S.user){
     sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('service_type','escrow_'+dealId).limit(1).then(function(r){
-      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(){});}
-      else{sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_'+dealId,status:data.status,details:_escDetails}).catch(function(){});}
-    }).catch(function(){});
+      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(e){console.error('[whistle]',e);});}
+      else{sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_'+dealId,status:data.status,details:_escDetails}).catch(function(e){console.error('[whistle]',e);});}
+    }).catch(function(e){console.error('[whistle]',e);});
     var _deal=S._currentDeal;var _buyerUserId=_deal&&_deal.buyer&&_deal.buyer.buyer_user_id;
     if(_buyerUserId){sb.from('service_requests').select('id').eq('user_id',_buyerUserId).eq('service_type','escrow_buyer_'+dealId).limit(1).then(function(r){
-      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(){});}
-      else{sb.from('service_requests').insert({user_id:_buyerUserId,service_type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails}).catch(function(){});}
-    }).catch(function(){});}
+      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(e){console.error('[whistle]',e);});}
+      else{sb.from('service_requests').insert({user_id:_buyerUserId,service_type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails}).catch(function(e){console.error('[whistle]',e);});}
+    }).catch(function(e){console.error('[whistle]',e);});}
   }
 }
 function _loadEscrowFromDB(dealId){
   if(!S.user)return Promise.resolve();
   return sb.from('service_requests').select('*').like('service_type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
     if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
-  }).catch(function(){});
+  }).catch(function(e){console.error('[whistle]',e);});
 }
 function _escrowLabel(st){if(_isKorean)return{none:'없음',requested:'요청됨',buyer_paid:'바이어 결제완료',secured:'결제 확인됨 (정산 대기)',shipping:'배송중',delivered:'수령 확인됨',release_requested:'정산 요청됨',released:'정산 완료'}[st]||st;return{none:'None',requested:'Requested',buyer_paid:'Buyer Paid',secured:'Secured (Pending Settlement)',shipping:'Shipping',delivered:'Delivered',release_requested:'Release Requested',released:'Settled'}[st]||st;}
 function _escrowColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
 
 /* === PAYMENT REQUEST (Chat-based B2B payments via Stripe) === */
 function requestPayment(){
-  var p=S.currentProject;if(!p){UI.toast(_isKorean?(_isKorean?'프로젝트를 선택해주세요':'Please select a project'):'Please select a project','warn');return;}
+  var p=S.currentProject;if(!p){UI.toast(_isKorean?'프로젝트를 선택해주세요':'Please select a project','warn');return;}
   var body='<div style="margin-bottom:14px;padding:12px;border-radius:10px;background:rgba(76,175,80,.06);border:1px solid rgba(76,175,80,.12)">'+
     '<div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:6px">💳 Stripe Secure Payment</div>'+
     '<div style="font-size:11px;color:var(--w50);line-height:1.6">'+(_isKorean?'바이어에게 결제 요청을 보냅니다.<br>바이어가 채팅에서 바로 카드 결제할 수 있습니다.<br>결제 금액은 Whistle이 안전하게 보관합니다.':'Send a payment request to the buyer.<br>The buyer can pay directly via card in chat.<br>Payment is securely held by Whistle.')+'</div></div>';
@@ -14433,7 +14433,7 @@ function submitCounterOffer(origMsgId){
   sb.from('messages').select('metadata').eq('id',origMsgId).single().then(function(sel){var prev=(sel.data&&sel.data.metadata)||{};return sb.from('messages').update({metadata:Object.assign({},prev,{status:'countered',counter_amount:amount,counter_currency:cur,counter_reason:reason,countered_at:new Date().toISOString()})}).eq('id',origMsgId);}).then(function(){});
   var buyerId=S._pjChatBuyer||null;
   if(buyerId){
-    sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:'[Counter Offer] '+cur+' '+amount.toFixed(2)+' — '+reason,sender_type:'seller',message_type:'system',channel:'platform',direction:'outbound',metadata:{type:'counter_offer',original_msg_id:origMsgId,amount:amount,currency:cur,reason:reason}}).catch(function(){});
+    sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:'[Counter Offer] '+cur+' '+amount.toFixed(2)+' — '+reason,sender_type:'seller',message_type:'system',channel:'platform',direction:'outbound',metadata:{type:'counter_offer',original_msg_id:origMsgId,amount:amount,currency:cur,reason:reason}}).catch(function(e){console.error('[whistle]',e);});
   }
   closeModal('cq-m');
   UI.toast(_isKorean?'재협상 요청을 보냈습니다':'Renegotiation request sent','ok');
@@ -14448,7 +14448,7 @@ function _sendPaymentAfterQuoteAccept(msgId){
     var total=m.total||0;var cur=m.currency||'USD';
     if(total<=0||!buyerId)return;
     var payMeta={type:'payment_request',pay_type:'sample',amount:total,currency:cur,description:'Sample payment (agreed quote)',deal_id:m.deal_id,quote_msg_id:msgId};
-    sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:'[Payment Ready] 견적 승인 완료. '+cur+' '+total.toFixed(2)+' 결제를 진행해주세요.',sender_type:'seller',message_type:'system',channel:'platform',direction:'outbound',metadata:payMeta}).catch(function(){});
+    sb.from('messages').insert({user_id:S.user.id,buyer_id:buyerId,body:'[Payment Ready] 견적 승인 완료. '+cur+' '+total.toFixed(2)+' 결제를 진행해주세요.',sender_type:'seller',message_type:'system',channel:'platform',direction:'outbound',metadata:payMeta}).catch(function(e){console.error('[whistle]',e);});
   });
 }
 /* Legacy alias */
@@ -14560,9 +14560,9 @@ function submitEscrowRequest(dealId){
   var _buyerAuthId=(deal.buyer&&deal.buyer.buyer_user_id)||deal.buyerId;
   sb.from('service_requests').select('id').eq('user_id',_buyerAuthId).eq('service_type','escrow_buyer_'+dealId).limit(1).then(function(r){
     var _d={status:escData.status,details:Object.assign({deal_id:dealId},escData)};
-    if(r.data&&r.data.length){sb.from('service_requests').update(_d).eq('id',r.data[0].id).catch(function(){});}
-    else{sb.from('service_requests').insert(Object.assign({user_id:_buyerAuthId,service_type:'escrow_buyer_'+dealId},_d)).catch(function(){});}
-  }).catch(function(){});
+    if(r.data&&r.data.length){sb.from('service_requests').update(_d).eq('id',r.data[0].id).catch(function(e){console.error('[whistle]',e);});}
+    else{sb.from('service_requests').insert(Object.assign({user_id:_buyerAuthId,service_type:'escrow_buyer_'+dealId},_d)).catch(function(e){console.error('[whistle]',e);});}
+  }).catch(function(e){console.error('[whistle]',e);});
   _sendNotification(_buyerAuthId,'deal','Payment Requested','$'+amt.toLocaleString()+' '+cur+' secure payment requested for your deal.',{link_page:'deals',link_id:dealId});
   closeModal('escrow-req');
   UI.toast(_isKorean?'안전결제 요청이 전송되었습니다.':'Secure payment request has been sent.','ok',4000);
@@ -16206,14 +16206,14 @@ function copyRefLink(type){
 function shareRef(){
   var refCode=S.user?(S.user.id||'').slice(0,8).toUpperCase():'';
   var link=window.location.origin+window.location.pathname+'?ref='+refCode;
-  if(navigator.share){navigator.share({title:'Whistle AI 초대',text:'AI 수출 통합 관리 플랫폼 Whistle AI에 초대합니다!',url:link}).catch(function(){});}
+  if(navigator.share){navigator.share({title:'Whistle AI 초대',text:'AI 수출 통합 관리 플랫폼 Whistle AI에 초대합니다!',url:link}).catch(function(e){console.error('[whistle]',e);});}
   else{navigator.clipboard.writeText(link).then(function(){UI.toast(_isKorean?'링크 복사됨':'Link copied','ok');});}
 }
 
 /* === #87 AI MARKETING CONTENT GENERATION === */
 function genMarketingContent(productId){
   var p=S.products.find(function(x){return x.id===productId;});
-  if(!p){UI.toast(_isKorean?(_isKorean?'제품을 찾을 수 없습니다':'Product not found'):'Product not found','err');return;}
+  if(!p){UI.toast(_isKorean?'제품을 찾을 수 없습니다':'Product not found','err');return;}
   var body='<div id="mkt-result" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:13px;color:var(--w40)">AI가 마케팅 소재를 생성 중입니다...</div></div>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'mkt-modal',title:'🎨 AI 마케팅 소재 생성 — '+U.esc(p.name_ko||''),body:body,width:'640px'}));
   UI.showModal('mkt-modal');
