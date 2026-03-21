@@ -6,17 +6,12 @@ const COOLING_PERIOD_DAYS = 7;
 
 const ALLOWED_ORIGINS = [
   "https://whistle-ai.com",
-  "http://localhost",
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://localhost:8080",
+  "https://www.whistle-ai.com",
 ];
 
 function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("Origin") || "";
-  const isAllowed = ALLOWED_ORIGINS.some((allowed) =>
-    origin === allowed || origin.startsWith(allowed)
-  );
+  const isAllowed = ALLOWED_ORIGINS.includes(origin);
   return {
     "Access-Control-Allow-Origin": isAllowed ? origin : ALLOWED_ORIGINS[0],
     "Access-Control-Allow-Headers":
@@ -114,7 +109,7 @@ serve(async (req) => {
           .select("*")
           .eq("user_id", targetUserId)
           .eq("type", "subscription")
-          .eq("status", "succeeded")
+          .eq("status", "completed")
           .order("created_at", { ascending: false })
           .limit(1)
           .single();

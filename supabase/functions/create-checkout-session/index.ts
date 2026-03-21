@@ -131,7 +131,7 @@ serve(async (req) => {
       const { data: escrowRecord, error: escrowErr } = await sbAdmin
         .from("service_requests")
         .select("details")
-        .eq("type", `escrow_${deal_id}`)
+        .eq("service_type", `escrow_${deal_id}`)
         .order("created_at", { ascending: false })
         .limit(1)
         .single();
@@ -199,7 +199,11 @@ serve(async (req) => {
         return jsonResponse({ error: "Unsupported currency" }, 400);
       }
 
-      const unitAmountCents = Math.round(verifiedAmountDollars * 100);
+      // Zero-decimal currencies (JPY, KRW) — amount is already in smallest unit
+      const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
+      const unitAmountCents = ZERO_DECIMAL_CURRENCIES.includes(verifiedCurrency)
+        ? Math.round(verifiedAmountDollars)
+        : Math.round(verifiedAmountDollars * 100);
 
       sessionConfig = {
         customer: customerId,
@@ -313,6 +317,7 @@ serve(async (req) => {
             unit_amount: unitAmount,
             recurring: {
               interval: billingInfo.interval as "month" | "year",
+              interval_count: billingInfo.count,
             },
           },
           quantity: 1,

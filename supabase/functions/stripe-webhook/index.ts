@@ -4,6 +4,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const PLATFORM_FEE_RATE = 0.025; // 2.5%
 
+// Zero-decimal currencies — Stripe amount is already in final units
+const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
+
+function toDisplayAmount(amountSmallest: number, currency: string): number {
+  return ZERO_DECIMAL_CURRENCIES.includes(currency?.toLowerCase())
+    ? amountSmallest
+    : amountSmallest / 100;
+}
+
 // CEO 결제 알림 (모든 결제 이벤트 시 이메일 발송)
 const CEO_NOTIFY_EMAIL = "hee@motiveinno.com";
 
@@ -144,11 +153,11 @@ serve(async (req) => {
     for (const secret of secrets) {
       try {
         event = await stripe.webhooks.constructEventAsync(body, sig, secret);
-        console.log(`[webhook] Signature verified with secret starting: ${secret.substring(0, 6)}...`);
+        console.log(`[webhook] Signature verified successfully`);
         break;
       } catch (err) {
         lastError = err.message || String(err);
-        console.log(`[webhook] Secret ${secret.substring(0, 6)}... failed: ${lastError}`);
+        console.log(`[webhook] Secret verification attempt failed`);
       }
     }
 
@@ -157,6 +166,20 @@ serve(async (req) => {
       return new Response("Invalid signature", { status: 400 });
     }
 
+    // Idempotency: skip if this event was already processed
+    const { data: existing } = await supabase
+      .from("webhook_debug_log")
+      .select("id")
+      .eq("message", event.id)
+      .maybeSingle();
+    if (existing) {
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    await supabase.from("webhook_debug_log").insert({ message: event.id, data: { type: event.type } });
+
     switch (event.type) {
       /* ─── ONE-TIME PAYMENT (escrow, analysis) ─── */
       case "checkout.session.completed": {
@@ -164,8 +187,8 @@ serve(async (req) => {
         const meta = session.metadata || {};
 
         // CEO 결제 알림 (모든 checkout 완료 시)
-        const amt = ((session.amount_total || 0) / 100).toFixed(2);
         const cur = session.currency?.toUpperCase() || "USD";
+        const amt = toDisplayAmount(session.amount_total || 0, session.currency || "usd").toFixed(2);
         await notifyCEO(
           `${cur} ${amt} — ${meta.type || "payment"}`,
           `<p><strong>Type:</strong> ${meta.type || "unknown"}</p>
@@ -178,7 +201,7 @@ serve(async (req) => {
         );
 
         if (meta.type === "escrow") {
-          const paymentAmt = (session.amount_total || 0) / 100;
+          const paymentAmt = toDisplayAmount(session.amount_total || 0, session.currency || "usd");
           const paymentCur = session.currency?.toUpperCase() || "USD";
           const paymentType = meta.payment_type || "sample"; // sample, deposit, full
 
@@ -235,7 +258,7 @@ serve(async (req) => {
                 status: "payment_held",
                 updated_at: new Date().toISOString(),
               })
-              .eq("type", "escrow_" + meta.deal_id);
+              .eq("service_type", "escrow_" + meta.deal_id);
           }
 
           // Notify seller that payment is held
@@ -273,7 +296,7 @@ serve(async (req) => {
           await supabase.from("payments").insert({
             user_id: meta.user_id,
             stripe_session_id: session.id,
-            amount: (session.amount_total || 0) / 100,
+            amount: toDisplayAmount(session.amount_total || 0, session.currency || "usd"),
             currency: session.currency?.toUpperCase() || "USD",
             status: "completed",
             type: "one_analysis",
@@ -289,14 +312,14 @@ serve(async (req) => {
           // Email user: single analysis purchased
           if (meta.user_id) {
             await notifyUser(supabase, meta.user_id, "payment_confirmation", {
-              amount: ((session.amount_total || 0) / 100).toFixed(2),
+              amount: toDisplayAmount(session.amount_total || 0, session.currency || "usd").toFixed(2),
               currency: session.currency?.toUpperCase() || "USD",
               payment_type: "Single AI Analysis",
               date: new Date().toISOString().split("T")[0],
             });
           }
         } else if (meta.type === "subscription") {
-          // Subscription created via checkout
+          // Subscription created via checkout — update user + record payment
           await supabase
             .from("users")
             .update({
@@ -306,6 +329,32 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             })
             .eq("id", meta.user_id);
+
+          // Record first subscription payment for refund eligibility
+          // session.payment_intent is null for subscriptions — get from latest invoice
+          let subPaymentIntent = session.payment_intent;
+          if (!subPaymentIntent && session.subscription) {
+            try {
+              const sub = await stripe.subscriptions.retrieve(session.subscription as string, {
+                expand: ["latest_invoice"],
+              });
+              const latestInvoice = sub.latest_invoice as Stripe.Invoice | null;
+              subPaymentIntent = latestInvoice?.payment_intent as string | null;
+            } catch (e) {
+              console.error("[webhook] Failed to retrieve subscription invoice:", e);
+            }
+          }
+
+          await supabase.from("payments").insert({
+            user_id: meta.user_id,
+            stripe_session_id: session.id,
+            stripe_payment_intent: subPaymentIntent,
+            amount: toDisplayAmount(session.amount_total || 0, session.currency || "usd"),
+            currency: session.currency?.toUpperCase() || "USD",
+            status: "completed",
+            type: "subscription",
+            created_at: new Date().toISOString(),
+          });
 
           // Email user: subscription confirmed
           if (meta.user_id) {
@@ -347,9 +396,9 @@ serve(async (req) => {
         const meta = pi.metadata || {};
 
         await notifyCEO(
-          `FAILED — ${pi.currency?.toUpperCase()} ${(pi.amount / 100).toFixed(2)}`,
+          `FAILED — ${pi.currency?.toUpperCase()} ${toDisplayAmount(pi.amount, pi.currency || "usd").toFixed(2)}`,
           `<p style="color:red"><strong>Payment FAILED</strong></p>
-           <p><strong>Amount:</strong> ${pi.currency?.toUpperCase()} ${(pi.amount / 100).toFixed(2)}</p>
+           <p><strong>Amount:</strong> ${pi.currency?.toUpperCase()} ${toDisplayAmount(pi.amount, pi.currency || "usd").toFixed(2)}</p>
            <p><strong>Error:</strong> ${(pi as any).last_payment_error?.message || "Unknown"}</p>
            <p><strong>User:</strong> ${meta.user_id || "N/A"}</p>`,
           supabase
@@ -426,7 +475,7 @@ serve(async (req) => {
             await supabase.from("payments").insert({
               user_id: userId,
               stripe_session_id: invoice.id,
-              amount: (invoice.amount_paid || 0) / 100,
+              amount: toDisplayAmount(invoice.amount_paid || 0, invoice.currency || "usd"),
               currency: invoice.currency?.toUpperCase() || "USD",
               status: "completed",
               type: "subscription_renewal",
