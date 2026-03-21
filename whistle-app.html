@@ -3169,7 +3169,7 @@ function downloadReportPDF(){
   var _raw=a.ai_result||{};var r=(typeof _raw==='string')?JSON.parse(_raw):_raw;
   var score=r.overall_score||0;var pName=a.product_name||(_isKorean?'제품':'Product');
   var date=new Date(a.created_at).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric'});
-  var company=S.company?(S.company.name_ko||S.company.name_en||S.company.name||''):'';
+  var company=S.company?(_isKorean?(S.company.name_ko||S.company.name_en):(S.company.name_en||S.company.name_ko)||''):'';
   var scoreColor=score>=80?'#22c55e':score>=60?'#f59e0b':'#ef4444';
   var grade=score>=85?'A+':score>=75?'A':score>=65?'B+':score>=55?'B':score>=45?'C':'D';
   var gradeLabel=score>=80?(_isKorean?'우수':'Excellent'):score>=60?(_isKorean?'양호':'Good'):(_isKorean?'보완필요':'Needs Work');
@@ -5444,7 +5444,7 @@ function openPjDocModal(docType){
   var typeNames=_isKorean?{pi:'견적서 (Proforma Invoice)',ci:'상업송장 (Commercial Invoice)',pl:'포장명세서 (Packing List)',co:'원산지증명서 (Certificate of Origin)',sc:'매매계약서 (Sales Contract)'}:{pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract'};
   var typeDescs=_isKorean?{pi:'바이어에게 제품 가격과 거래 조건을 제시하는 견적서입니다. 바이어가 승인하면 정식 거래가 시작됩니다.',ci:'세관 통관과 관세 산정에 사용되는 공식 송장입니다. 실제 선적 수량과 금액으로 작성합니다.',pl:'각 박스의 수량, 순중량, 총중량, 용적을 기재하는 포장 명세서입니다. 통관과 물류에 필수입니다.',co:'제품이 한국산임을 증명하여 FTA 관세 혜택을 받기 위한 서류입니다.',sc:'품질, 결제, 납기, 보증 등 거래의 모든 조건을 법적으로 규정하는 계약서입니다.'}:{pi:'A quotation presenting product prices and trade terms to the buyer.',ci:'An official invoice used for customs clearance and duty calculation.',pl:'A packing list detailing quantity, weight, and volume per box.',co:'A certificate proving Korean origin for FTA tariff benefits.',sc:'A contract legally defining all trade conditions including quality, payment, and delivery.'};
   var uniqueBuyers=_getPjBuyerIds(p);
-  var sellerComp=S.company?(S.company.name_ko||S.company.company_name||''):(_isKorean?'(회사명)':'(Company)');
+  var sellerComp=S.company?(_isKorean?(S.company.name_ko||S.company.name_en):(S.company.name_en||S.company.name_ko)||S.company.company_name||''):(_isKorean?'(회사명)':'(Company)');
   var sellerCompEN=S.company?(S.company.name_en||''):'';
   var prod=S.products.find(function(pr){return pr.id===p.product_id;})||S.products[0];
   var body='<div style="padding:10px 14px;border-radius:8px;background:var(--w04);margin-bottom:10px;font-size:11px;color:var(--w50);line-height:1.5">'+(typeDescs[docType]||'')+'</div><form id="pjDocForm">';
@@ -10231,7 +10231,7 @@ function calcProfileCompletion(){
   var c=S.company||{};var docs=S._companyDocs||[];var score=0;var missing=[];
   /* Basic info 30% */
   var basic=0;var basicMax=7;
-  if(c.name_ko)basic++;else missing.push({label:'회사명'});
+  if(_isKorean){if(c.name_ko)basic++;else missing.push({label:'회사명'});}else{if(c.name_en)basic++;else missing.push({label:'Company Name'});}
   if(c.biz_number)basic++;else missing.push({label:'사업자번호'});
   if(c.ceo_name_ko||c.ceo_name)basic++;else missing.push({label:'대표자명'});
   if(c.address_ko)basic++;else missing.push({label:'주소'});
@@ -10294,7 +10294,7 @@ function loadCompanyDocs(){
 function saveSt(){
   var d=UI.fd('#stf');
   /* P0-03: 필수 필드 검증 */
-  var _req=[{k:'name_ko',l:'회사명(한글)'},{k:'name_en',l:'Company Name(English)'},{k:'phone',l:'전화번호'}];
+  var _req=_isKorean?[{k:'name_ko',l:'회사명(한글)'},{k:'name_en',l:'Company Name(English)'},{k:'phone',l:'전화번호'}]:[{k:'name_en',l:'Company Name (English)'},{k:'phone',l:'Phone'}];
   for(var _ri=0;_ri<_req.length;_ri++){
     if(!d[_req[_ri].k]||!d[_req[_ri].k].trim()){
       UI.toast(_req[_ri].l+'을(를) 입력해주세요','warn');
@@ -10306,7 +10306,7 @@ function saveSt(){
   var q=S.company&&S.company.id?sb.from('companies').update(d).eq('id',S.company.id).eq('user_id',S.user.id):sb.from('companies').insert(Object.assign(d,{user_id:S.user.id}));
   q.then(function(r){
     if(r.error){UI.toast((_isKorean?'실패: ':'Failed: ')+r.error.message,'err');return;}
-    if(d.name_ko)sb.from('users').update({company_name:d.name_ko}).eq('id',S.user.id).then(function(){S.user.company_name=d.name_ko;});
+    var _dispName=d.name_en||d.name_ko;if(_dispName)sb.from('users').update({company_name:_dispName}).eq('id',S.user.id).then(function(){S.user.company_name=_dispName;});
     sb.from('companies').select('*').eq('user_id',S.user.id).maybeSingle().then(function(cr){S.company=cr.data;render();UI.toast(_isKorean?'저장!':'Saved!','ok');});
   });
 }
@@ -12006,7 +12006,7 @@ function submitProposal(reqId){
   var prop={
     request_id:reqId,
     seller_user_id:S.user.id,
-    seller_company:comp.name_ko||comp.name_en||S.user.company_name||S.user.email,
+    seller_company:(_isKorean?(comp.name_ko||comp.name_en):(comp.name_en||comp.name_ko))||S.user.company_name||S.user.email,
     message:msg,
     proposed_price:fd.get('proposed_price')||null,
     proposed_moq:fd.get('proposed_moq')||null,
@@ -12028,7 +12028,7 @@ function submitProposal(reqId){
     var req=S.marketplaceRequests.find(function(x){return x.id===reqId;});
     if(req){
       fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
-        body:JSON.stringify({userId:req.buyer_user_id,type:'marketplace',title:'New proposal: '+req.title,body:(comp.name_ko||S.user.company_name)+' submitted a proposal',linkPage:'marketplace',telegram:true})
+        body:JSON.stringify({userId:req.buyer_user_id,type:'marketplace',title:'New proposal: '+req.title,body:(comp.name_en||comp.name_ko||S.user.company_name)+' submitted a proposal',linkPage:'marketplace',telegram:true})
       }).catch(function(){});
     }
   });
@@ -12925,7 +12925,7 @@ function genVoucherReport(){
   h+='<div class="ttl">'+(_isKorean?'수출바우처 사업결과보고서':'Export Voucher Report')+'</div>';
   /* 기본정보 */
   h+='<table><tr><th width="25%">'+(_isKorean?'수행기관':'Service Provider')+'</th><td>(주)모티브이노베이션</td><th width="25%">'+(_isKorean?'보고 기간':'Report Period')+'</th><td>'+period+'</td></tr>';
-  h+='<tr><th>'+(_isKorean?'수혜기업':'Beneficiary')+'</th><td>'+U.esc(c.name_ko||S.user.company_name||'-')+'</td><th>'+(_isKorean?'사업자번호':'Business No.')+'</th><td>'+U.esc(c.biz_number||'-')+'</td></tr>';
+  h+='<tr><th>'+(_isKorean?'수혜기업':'Beneficiary')+'</th><td>'+U.esc((_isKorean?(c.name_ko||c.name_en):(c.name_en||c.name_ko))||S.user.company_name||'-')+'</td><th>'+(_isKorean?'사업자번호':'Business No.')+'</th><td>'+U.esc(c.biz_number||'-')+'</td></tr>';
   h+='<tr><th>'+(_isKorean?'대표자':'CEO')+'</th><td>'+U.esc(c.ceo_name_ko||c.ceo_name||'-')+'</td><th>'+(_isKorean?'작성일':'Date')+'</th><td>'+now.toISOString().split('T')[0]+'</td></tr>';
   h+='<tr><th>'+(_isKorean?'서비스 분야':'Service Area')+'</th><td>'+(_isKorean?'조사/일반 컨설팅, 서류대행':'Research/Consulting, Doc Processing')+'</td><th>'+(_isKorean?'담당자':'Manager')+'</th><td>'+(_isKorean?'AI 수출분석팀':'AI Export Analysis Team')+'</td></tr></table>';
   /* 1. 서비스 수행 개요 */
@@ -13214,7 +13214,7 @@ function pgOnboarding(){
   var body='';
   if(step===0){
     body='<div class="card"><div class="card-h">🏢 '+(_isKorean?'회사 정보':'Company Info')+'</div><div class="card-b"><form id="obf0">'+
-      UI.inp('name_ko','회사명',{placeholder:'(주)모티브이노베이션',required:true,value:(S.company&&S.company.name_ko)||''})+
+      (_isKorean?UI.inp('name_ko','회사명',{placeholder:'(주)모티브이노베이션',required:true,value:(S.company&&S.company.name_ko)||''}):UI.inp('name_en','Company Name',{placeholder:'Green Valley Foods Inc.',required:true,value:(S.company&&S.company.name_en)||''}))+
       '<div class="grid-2">'+UI.inp('ceo_name_ko',(_isKorean?'대표자명':'CEO Name'),{placeholder:'홍길동',value:(S.company&&(S.company.ceo_name_ko||S.company.ceo_name))||''})+UI.inp('phone',(_isKorean?'전화번호':'Phone'),{placeholder:'02-1234-5678',value:(S.company&&S.company.phone)||''})+'</div>'+
       '<div class="grid-2">'+UI.inp('biz_number',(_isKorean?'사업자번호':'Business Reg. No.'),{placeholder:'123-45-67890',value:(S.company&&S.company.biz_number)||''})+UI.sel('personal_id_type',(_isKorean?'기업 유형':'Company Type'),[{value:'',label:(_isKorean?'선택':'Select')},{value:'corporation',label:(_isKorean?'법인사업자':'Corporation')},{value:'individual',label:(_isKorean?'개인사업자':'Sole Proprietor')},{value:'individual_person',label:(_isKorean?'개인':'Individual')}],(S.company&&S.company.personal_id_type)||'')+'</div>'+
       '<div class="grid-2">'+UI.sel('category',(_isKorean?'카테고리':'Category'),[''].concat(U.CAT.map(function(c){return{value:c,label:U.catLabel(c)};})),( S.company&&S.company.category)||'')+UI.sel('manufacturing_type',(_isKorean?'제조유형':'Manufacturing Type'),[{value:'',label:(_isKorean?'선택':'Select')},{value:'direct',label:(_isKorean?'직접제조':'Direct Mfg')},{value:'oem',label:'OEM'},{value:'odm',label:'ODM'},{value:'trading',label:(_isKorean?'무역/유통':'Trading')}],(S.company&&S.company.manufacturing_type)||'')+'</div>'+
@@ -13246,9 +13246,9 @@ function pgOnboarding(){
 
 function nextOb(step){
   if(step===0){
-    var d=UI.fd('#obf0');if(!d.name_ko){UI.toast(_isKorean?'회사명을 입력하세요':'Please enter company name','warn');return;}
+    var d=UI.fd('#obf0');var _nameField=_isKorean?'name_ko':'name_en';if(!d[_nameField]){UI.toast(_isKorean?'회사명을 입력하세요':'Please enter company name','warn');return;}
     if(d.biz_number&&!/^\d{3}-\d{2}-\d{5}$/.test(d.biz_number)){UI.toast(_isKorean?'사업자번호 형식: 123-45-67890':'Business number format: 123-45-67890','warn');return;}
-    var companyData={user_id:S.user.id,name_ko:d.name_ko,ceo_name_ko:d.ceo_name_ko||null,phone:d.phone||null,address_ko:d.address_ko||null,biz_number:d.biz_number||null,personal_id_type:d.personal_id_type||null,category:d.category||null,manufacturing_type:d.manufacturing_type||null};
+    var companyData={user_id:S.user.id,ceo_name_ko:d.ceo_name_ko||null,phone:d.phone||null,address_ko:d.address_ko||null,biz_number:d.biz_number||null,personal_id_type:d.personal_id_type||null,category:d.category||null,manufacturing_type:d.manufacturing_type||null};if(_isKorean){companyData.name_ko=d.name_ko;}else{companyData.name_en=d.name_en;}
     if(S.company&&S.company.id){
       sb.from('companies').update(companyData).eq('id',S.company.id).eq('user_id',S.user.id).then(function(){
         S.company=Object.assign(S.company||{},companyData);
@@ -14527,7 +14527,7 @@ function renderDealDocForm(deal){
   h+='<button class="btn btn-ghost btn-sm" onclick="App.closeDealDocForm()">✕ 닫기</button></div>';
 
   // Auto-fill info
-  var sellerComp=S.company?S.company.name_ko:(_isKorean?'(회사명)':'(Company)');
+  var sellerComp=S.company?(_isKorean?(S.company.name_ko||S.company.name_en):(S.company.name_en||S.company.name_ko)):(_isKorean?'(회사명)':'(Company)');
   var buyerName=deal.buyer?(deal.buyer.company_name||deal.buyer.contact_name):'Buyer';
   h+='<div class="grid-2" style="gap:8px;margin-bottom:12px;font-size:11px">';
   h+='<div style="padding:8px;background:var(--w08);border-radius:var(--r-s)"><span style="color:var(--w40)">발신:</span> <strong>'+UI.esc(sellerComp)+'</strong></div>';
@@ -15770,7 +15770,7 @@ function submitPartnership(){
 /* 물류 파트너 제휴 문의 → service_requests 테이블 (관리자 어드민에 표시) */
 function requestLogisticsPartner(partnerName,partnerType){
   if(!S.user){UI.toast(T('toast_login_required'),'warn');return;}
-  var comp=S.company?S.company.name_ko||S.company.name_en:'';
+  var comp=S.company?(_isKorean?(S.company.name_ko||S.company.name_en):(S.company.name_en||S.company.name_ko))||'':'';
   if(!confirm(_isKorean?partnerName+'에 제휴 문의를 보내시겠습니까?':'Send a partnership inquiry to '+partnerName+'?'))return;
   sb.from('service_requests').insert({
     user_id:S.user.id,
@@ -15789,7 +15789,7 @@ function requestLogisticsPartner(partnerName,partnerType){
 
 function requestCustomsBroker(partnerName,partnerType){
   if(!S.user){UI.toast(T('toast_login_required'),'warn');return;}
-  var comp=S.company?S.company.name_ko||S.company.name_en:'';
+  var comp=S.company?(_isKorean?(S.company.name_ko||S.company.name_en):(S.company.name_en||S.company.name_ko))||'':'';
   if(!confirm(_isKorean?partnerName+'에 제휴 문의를 보내시겠습니까?':'Send a partnership inquiry to '+partnerName+'?'))return;
   sb.from('service_requests').insert({
     user_id:S.user.id,
