@@ -1267,7 +1267,7 @@ function renderTaskList(panelId, tasks, showActions){
       html+='<div class="comment-drop-preview" data-task-id="'+t.id+'"></div>';
       html+='<div style="display:flex;gap:6px">';
       html+='<input type="text" class="comment-input" data-task-id="'+t.id+'" placeholder="코멘트 작성... (이미지 드래그&드롭 또는 붙여넣기 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" onpaste="handleCommentPaste(event,'+t.id+')" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
-      html+='<button onclick="postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='<button onclick="event.stopPropagation();postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
       html+='</div>';
 
@@ -1298,7 +1298,7 @@ function renderTaskList(panelId, tasks, showActions){
       html+='<div class="comment-drop-preview" data-task-id="'+t.id+'"></div>';
       html+='<div style="display:flex;gap:6px">';
       html+='<input type="text" class="comment-input" data-task-id="'+t.id+'" placeholder="코멘트 작성... (이미지 드래그&드롭 또는 붙여넣기 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" onpaste="handleCommentPaste(event,'+t.id+')" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
-      html+='<button onclick="postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='<button onclick="event.stopPropagation();postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
       html+='</div>';
 
@@ -1317,7 +1317,7 @@ function renderTaskList(panelId, tasks, showActions){
       html+='<div class="comment-drop-preview" data-task-id="'+t.id+'"></div>';
       html+='<div style="display:flex;gap:6px">';
       html+='<input type="text" class="comment-input" data-task-id="'+t.id+'" placeholder="코멘트 작성... (이미지 드래그&드롭 또는 붙여넣기 가능)" onfocus="markTaskInteracting()" oninput="markTaskInteracting()" onpaste="handleCommentPaste(event,'+t.id+')" style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:11px;outline:none">';
-      html+='<button onclick="postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
+      html+='<button onclick="event.stopPropagation();postTaskComment('+t.id+',this)" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">전송</button>';
       html+='</div></div>';
       html+='</div>';
       html+='</div>';
@@ -1654,38 +1654,54 @@ window.revisionTask=function(id){
 var _pendingImages={};
 
 window.postTaskComment=function(id,btnEl){
-  /* Find the input closest to the clicked button */
-  var container=btnEl?btnEl.closest('.comment-drop-zone'):null;
-  var input=container?container.querySelector('.comment-input'):document.querySelector('.comment-input[data-task-id="'+id+'"]');
-  /* Try visible panel first */
-  if(!input||!input.offsetWidth){
-    var activePanel=document.querySelector('.cmd-panel.active');
-    if(activePanel) input=activePanel.querySelector('.comment-input[data-task-id="'+id+'"]');
+  if(event) event.stopPropagation();
+  /* Find the input: try button's container first, then active panel, then any visible */
+  var input=null;
+  if(btnEl){
+    var zone=btnEl.closest('.comment-drop-zone');
+    if(zone) input=zone.querySelector('.comment-input');
   }
-  if(!input) return;
+  if(!input){
+    var activePanel=document.querySelector('.cmd-panel.active');
+    if(activePanel){
+      var inputs=activePanel.querySelectorAll('.comment-input[data-task-id="'+id+'"]');
+      for(var i=0;i<inputs.length;i++){if(inputs[i].offsetParent!==null){input=inputs[i];break;}}
+    }
+  }
+  if(!input){
+    var allInputs=document.querySelectorAll('.comment-input[data-task-id="'+id+'"]');
+    for(var i=0;i<allInputs.length;i++){if(allInputs[i].offsetParent!==null){input=allInputs[i];break;}}
+  }
+  if(!input){console.error('postTaskComment: input not found for task',id);return;}
   var comment=input.value.trim();
   var imageUrl=_pendingImages[id]||'';
   if(!comment&&!imageUrl) return;
   var fullComment=comment+(imageUrl?'\n'+imageUrl:'');
-  // Save to ai_team_comments table
+  /* Disable button during submit */
+  if(btnEl){btnEl.disabled=true;btnEl.textContent='...';}
   fetch(SUPABASE_URL+'/rest/v1/ai_team_comments',{
     method:'POST',
     headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=representation'},
     body:JSON.stringify({task_id:id,author:'ceo',content:fullComment,decision:'comment'})
-  }).then(function(r){return r.json()}).then(function(){
+  }).then(function(r){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(function(){
     input.value='';
     delete _pendingImages[id];
-    /* Clear preview */
     var previews=document.querySelectorAll('.comment-drop-preview[data-task-id="'+id+'"]');
     previews.forEach(function(p){p.innerHTML='';});
-    /* Reload comments for all instances */
     window.loadTaskComments(id);
-    // Also post to chat
+    if(btnEl){btnEl.disabled=false;btnEl.textContent='전송';}
     fetch(SUPABASE_URL+'/rest/v1/ai_team_chat',{
       method:'POST',
       headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify({from_agent:'ceo',message:'[#'+id+' 코멘트] '+fullComment,msg_type:'task'})
     });
+  }).catch(function(err){
+    console.error('postTaskComment error:',err);
+    if(btnEl){btnEl.disabled=false;btnEl.textContent='전송';}
+    alert('코멘트 전송 실패: '+err.message);
   });
 };
 
