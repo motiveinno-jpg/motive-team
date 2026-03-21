@@ -109,7 +109,12 @@ serve(async (req) => {
   try {
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-    if (!stripeKey || !webhookSecret) {
+    const testWebhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET_TEST");
+
+    if (!stripeKey) {
+      return new Response("Webhook not configured", { status: 500 });
+    }
+    if (!webhookSecret && !testWebhookSecret) {
       return new Response("Webhook not configured", { status: 500 });
     }
 
@@ -128,11 +133,27 @@ serve(async (req) => {
       return new Response("Missing signature", { status: 400 });
     }
 
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
-    } catch (err) {
-      console.error("Webhook signature verification failed:", err.message);
+    // Try all available webhook secrets (live first, then test)
+    const secrets: string[] = [];
+    if (webhookSecret) secrets.push(webhookSecret);
+    if (testWebhookSecret) secrets.push(testWebhookSecret);
+
+    let event: Stripe.Event | null = null;
+    let lastError: string = "";
+
+    for (const secret of secrets) {
+      try {
+        event = await stripe.webhooks.constructEventAsync(body, sig, secret);
+        console.log(`[webhook] Signature verified with secret starting: ${secret.substring(0, 6)}...`);
+        break;
+      } catch (err) {
+        lastError = err.message || String(err);
+        console.log(`[webhook] Secret ${secret.substring(0, 6)}... failed: ${lastError}`);
+      }
+    }
+
+    if (!event) {
+      console.error(`[webhook] Signature verification failed: ${lastError}`);
       return new Response("Invalid signature", { status: 400 });
     }
 

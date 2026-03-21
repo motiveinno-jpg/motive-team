@@ -233,20 +233,18 @@ serve(async (req) => {
         metadata: { deal_id, user_id: user.id, type: "escrow" },
       };
     } else if (type === "one_analysis") {
-      // --- ONE-TIME ANALYSIS: Always use hardcoded price ---
-      const lineItem = price_id
-        ? { price: price_id, quantity: 1 }
-        : {
-            price_data: {
-              currency: "usd",
-              product_data: {
-                name: "Whistle AI — Export Analysis",
-                description: "One-time market analysis report",
-              },
-              unit_amount: ONE_ANALYSIS_AMOUNT_CENTS,
-            },
-            quantity: 1,
-          };
+      // --- ONE-TIME ANALYSIS: Always use price_data to avoid live/test mode mismatch ---
+      const lineItem = {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: "Whistle AI — Export Analysis",
+            description: "One-time market analysis report",
+          },
+          unit_amount: ONE_ANALYSIS_AMOUNT_CENTS,
+        },
+        quantity: 1,
+      };
 
       sessionConfig = {
         customer: customerId,
@@ -261,19 +259,72 @@ serve(async (req) => {
         cancel_url: cancel_url || "https://whistle-ai.com/app#analysis",
         metadata: { user_id: user.id, type: "one_analysis" },
       };
-    } else if (price_id) {
-      // --- SUBSCRIPTION: Uses Stripe price_id, no client amount ---
-      if (typeof price_id !== "string" || !price_id.startsWith("price_")) {
-        return jsonResponse({ error: "Invalid price identifier" }, 400);
+    } else if (price_id || plan) {
+      // --- SUBSCRIPTION ---
+      // Map plan + billing_cycle to price_data to avoid live/test mode mismatch
+      const PLAN_PRICES: Record<string, number> = {
+        starter: 2900,
+        pro: 7900,
+        enterprise: 19900,
+      };
+      const BILLING_INTERVALS: Record<string, { interval: string; count: number; multiplier: number }> = {
+        m: { interval: "month", count: 1, multiplier: 1 },
+        s: { interval: "month", count: 6, multiplier: 6 },
+        a: { interval: "year", count: 1, multiplier: 12 },
+      };
+      const BILLING_DISCOUNTS: Record<string, number> = {
+        m: 1.0,
+        s: 0.9,
+        a: 0.8,
+      };
+
+      const planKey = (plan || "starter").toLowerCase();
+      const cycleKey = (billing_cycle || "m").toLowerCase();
+      const baseAmount = PLAN_PRICES[planKey];
+      const billingInfo = BILLING_INTERVALS[cycleKey];
+      const discount = BILLING_DISCOUNTS[cycleKey] || 1.0;
+
+      if (!baseAmount || !billingInfo) {
+        return jsonResponse({ error: "Invalid plan or billing cycle" }, 400);
+      }
+
+      const unitAmount = Math.round(baseAmount * discount * billingInfo.multiplier);
+      const planNames: Record<string, string> = {
+        starter: "Starter",
+        pro: "Professional",
+        enterprise: "Enterprise",
+      };
+
+      // Try using price_id first, fall back to price_data if it fails
+      let lineItem: Stripe.Checkout.SessionCreateParams.LineItem;
+      let usePriceData = false;
+
+      // Detect test mode by checking if key starts with sk_test_
+      const isTestMode = stripeKey?.startsWith("sk_test_");
+      if (isTestMode || !price_id) {
+        usePriceData = true;
+        lineItem = {
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `Whistle AI — ${planNames[planKey] || planKey} Plan`,
+              description: `${planNames[planKey] || planKey} subscription`,
+            },
+            unit_amount: unitAmount,
+            recurring: {
+              interval: billingInfo.interval as "month" | "year",
+            },
+          },
+          quantity: 1,
+        };
+      } else {
+        lineItem = { price: price_id, quantity: 1 };
       }
 
       sessionConfig = {
         customer: customerId,
         mode: "subscription",
-        line_items: [{ price: price_id, quantity: 1 }],
-        payment_method_options: {
-          card: { setup_future_usage: "off_session" },
-        },
+        line_items: [lineItem],
         allow_promotion_codes: true,
         automatic_tax: { enabled: false },
         success_url:
@@ -301,9 +352,12 @@ serve(async (req) => {
 
     return jsonResponse({ url: session.url, sessionId: session.id });
   } catch (err) {
-    console.error("[checkout] Unhandled error:", err);
+    const stripeMsg = err?.message || String(err);
+    const stripeCode = err?.code || "unknown";
+    const stripeType = err?.type || "unknown";
+    console.error("[checkout] Unhandled error:", stripeMsg, "code:", stripeCode, "type:", stripeType);
     return jsonResponse(
-      { error: "Something went wrong. Please try again or contact support." },
+      { error: `Payment error: ${stripeMsg}` },
       500,
     );
   }

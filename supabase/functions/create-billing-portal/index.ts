@@ -6,6 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "https://whistle-ai.com",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 serve(async (req) => {
@@ -82,8 +83,49 @@ serve(async (req) => {
       );
     }
 
+    // Validate the customer exists in Stripe (handles live/test mode mismatch)
+    let customerId = profile.stripe_customer_id;
+    try {
+      await stripe.customers.retrieve(customerId);
+    } catch (customerErr: any) {
+      console.error("Stripe customer lookup failed:", customerErr.message);
+
+      // Customer ID from different mode (live vs test) — create new customer
+      const isModeMismatch = customerErr.message?.includes("No such customer") ||
+                             customerErr.statusCode === 404;
+      if (isModeMismatch) {
+        // Create a new customer in the current Stripe mode
+        const newCustomer = await stripe.customers.create({
+          email: user.email,
+          metadata: { user_id: user.id, source: "billing_portal_mode_fix" },
+        });
+        customerId = newCustomer.id;
+
+        // Update the stored customer ID
+        await sbAdmin
+          .from("users")
+          .update({
+            stripe_customer_id: customerId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id);
+
+        console.log(`Created new Stripe customer ${customerId} for user ${user.id} (mode mismatch fix)`);
+
+        // New customer has no subscriptions, so portal won't be useful
+        return new Response(
+          JSON.stringify({
+            error: "Your billing account was reset for the current payment environment. Please subscribe again.",
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      throw customerErr;
+    }
+
     const portalSession = await stripe.billingPortal.sessions.create({
-      customer: profile.stripe_customer_id,
+      customer: customerId,
       return_url: safeReturnUrl,
     });
 
@@ -91,7 +133,7 @@ serve(async (req) => {
       JSON.stringify({ url: portalSession.url }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("Billing portal error:", err);
     return new Response(
       JSON.stringify({ error: err.message || "Internal error" }),
