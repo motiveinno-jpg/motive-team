@@ -10,6 +10,7 @@ const corsHeaders = {
 
 const CRAWL_TIMEOUT_MS = 12000;
 const MAX_CRAWL_TEXT_LENGTH = 12000;
+const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -392,7 +393,26 @@ serve(async (req: Request) => {
       package_dimensions = "",
       units_per_carton = "",
       language = "ko",
+      image_base64 = "",
+      image_type = "image/jpeg",
     } = body;
+
+    // Validate image if provided
+    let validatedImageBase64 = "";
+    let validatedImageType = image_type || "image/jpeg";
+    const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+    if (image_base64) {
+      const imageBytes = Math.ceil(image_base64.length * 3 / 4);
+      if (imageBytes > MAX_IMAGE_BASE64_BYTES) {
+        console.warn(`[vision] Image too large: ${(imageBytes / 1024 / 1024).toFixed(1)}MB, max 4MB`);
+      } else if (!ALLOWED_IMAGE_TYPES.includes(validatedImageType)) {
+        console.warn(`[vision] Unsupported image type: ${validatedImageType}`);
+      } else {
+        validatedImageBase64 = image_base64;
+        console.log(`[vision] Image accepted: ${validatedImageType}, ${(imageBytes / 1024).toFixed(0)}KB`);
+      }
+    }
 
     if (!analysis_id || !product_name) {
       return new Response(
@@ -433,12 +453,20 @@ serve(async (req: Request) => {
       .map((m: string) => marketNames[m] || m)
       .join(", ");
 
-    // Crawl URLs for product data extraction
-    const { crawledText, crawlResults } = await crawlUrls(urls);
-    console.log(
-      "[crawl] results:",
-      crawlResults.map((r) => `${r.url}: ${r.success ? "OK" : r.error}`),
-    );
+    // Crawl URLs for product data extraction (skip if only image provided)
+    const hasUrls = urls.filter((u: string) => u && u.trim()).length > 0;
+    const { crawledText, crawlResults } = hasUrls
+      ? await crawlUrls(urls)
+      : { crawledText: "", crawlResults: [] as CrawlResult[] };
+
+    if (hasUrls) {
+      console.log(
+        "[crawl] results:",
+        crawlResults.map((r) => `${r.url}: ${r.success ? "OK" : r.error}`),
+      );
+    } else if (validatedImageBase64) {
+      console.log("[vision] No URLs provided, using image-only analysis");
+    }
 
     // Progressive update: crawl phase complete
     const crawlMeta = crawlResults.map((cr) => ({
@@ -506,6 +534,16 @@ MOQ: ${moq || na}
       ? `\n## Crawled Product Data\n${crawledText}`
       : `\n## 크롤링 제품 데이터\n${crawledText}`) : "";
 
+    // Vision context: inform AI that a product image is attached
+    const visionCtx = validatedImageBase64 ? (isEn
+      ? `\n## Product Image Attached\nA product image has been provided above. Use visual analysis to identify: product name, category, materials, estimated weight, key features, packaging details, and potential HS code hints. Combine visual observations with the text data below for the most accurate analysis.`
+      : `\n## 제품 이미지 첨부됨\n위에 제품 이미지가 첨부되어 있습니다. 시각 분석을 통해 제품명, 카테고리, 소재, 예상 중량, 핵심 특징, 포장 상세, HS코드 힌트를 파악하세요. 시각 분석 결과와 아래 텍스트 데이터를 결합하여 가장 정확한 분석을 제공하세요.`) : "";
+
+    // Prepare vision image data for Panel 1
+    const visionImage: VisionImage | undefined = validatedImageBase64
+      ? { base64: validatedImageBase64, mediaType: validatedImageType }
+      : undefined;
+
     const hrWarning = highRiskTargets.length > 0
       ? `\n⚠️ HIGH-RISK: ${highRiskTargets.join(", ")} — include sanctions/ECCN/EAR warnings.\n` : "";
 
@@ -520,15 +558,39 @@ MOQ: ${moq || na}
     // Helper: non-streaming AI call with timeout + retry
     // Strategy: Haiku PRIMARY (fast 10-15s, reliable) → retry once on failure
     // Haiku produces excellent structured JSON. Speed = reliability.
-    async function callAI(prompt: string, maxTokens: number): Promise<{ result: any; model: string }> {
+    // Optional imageData param enables Claude Vision for image-based analysis
+    interface VisionImage {
+      base64: string;
+      mediaType: string;
+    }
+
+    async function callAI(
+      prompt: string,
+      maxTokens: number,
+      imageData?: VisionImage,
+    ): Promise<{ result: any; model: string }> {
       const MODEL = "claude-haiku-4-5-20251001";
       const TIMEOUT = 50000; // 50s generous timeout
+
+      // Build message content: image block + text block when vision is used
+      const userContent: any[] = [];
+      if (imageData) {
+        userContent.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: imageData.mediaType,
+            data: imageData.base64,
+          },
+        });
+      }
+      userContent.push({ type: "text", text: prompt });
 
       const doCall = async (attempt: number): Promise<{ result: any; model: string }> => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
         try {
-          console.log(`[AI] Attempt ${attempt}, model: ${MODEL}, maxTokens: ${maxTokens}`);
+          console.log(`[AI] Attempt ${attempt}, model: ${MODEL}, maxTokens: ${maxTokens}${imageData ? ", +vision" : ""}`);
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
@@ -540,7 +602,7 @@ MOQ: ${moq || na}
               model: MODEL,
               max_tokens: maxTokens,
               system: sysMsg,
-              messages: [{ role: "user", content: prompt }],
+              messages: [{ role: "user", content: userContent }],
             }),
             signal: ctrl.signal,
           });
@@ -587,10 +649,11 @@ MOQ: ${moq || na}
       .eq("id", analysis_id)
       .eq("user_id", user.id);
 
-    // ─── CALL 1: Core (Scores + HS + FTA) ───
+    // ─── CALL 1: Core (Scores + HS + FTA) — includes Vision when image provided ───
     const prompt1 = `${isEn ? "# Export Analysis — Core Scores & Trade Classification" : "# 수출 분석 — 핵심 점수 & 통관 분류"}
 
 ${productContext}
+${visionCtx}
 ${crawlCtx}
 ${hrWarning}
 ${toneRule}
@@ -712,7 +775,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     const completedResults: any = {};
 
     const [r1, r2, r3] = await Promise.allSettled([
-      callAI(prompt1, 5000).then(async (res) => {
+      callAI(prompt1, 5000, visionImage).then(async (res) => {
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         await sbAdmin.from("analyses").update({
@@ -846,6 +909,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       urls, file_urls, selling_points: selling_points.filter(Boolean),
       target_markets, existing_certs, brand_name, manufacturer,
       thumbnail: firstImage?.image || "",
+      has_vision_image: !!validatedImageBase64,
     };
     if (failedCalls > 0) {
       result._partial_failure = true;
