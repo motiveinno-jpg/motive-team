@@ -1991,11 +1991,76 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 </div>
 <script>
 (function(){
-  var c=localStorage.getItem('cookie_consent');
-  if(!c){document.getElementById('cookie-consent-banner').classList.add('show');}
-  else if(c==='accepted'){loadAnalytics();}
-  window.cookieConsent=function(v){localStorage.setItem('cookie_consent',v);document.getElementById('cookie-consent-banner').classList.remove('show');if(v==='accepted')loadAnalytics();};
-  function loadAnalytics(){try{var s=document.createElement('script');s.defer=true;s.src='https://static.cloudflareinsights.com/beacon.min.js';s.dataset.cfBeacon='{"token":""}';document.head.appendChild(s);}catch(e){}}
+  var ESSENTIAL_PREFIXES = ['sb-', 'supabase'];
+  var TRACKING_PATTERNS = [
+    /^_ga/, /^_gid$/, /^_gat/, /^_fbp$/, /^_fbc$/, /^_gcl/,
+    /^__utm/, /^_hjid$/, /^_hjSession/, /^__cf_bm$/, /^cf_clearance$/,
+    /^_clck$/, /^_clsk$/, /^mp_/, /^amplitude_/, /^ajs_/
+  ];
+
+  function isEssentialCookie(name) {
+    for (var i = 0; i < ESSENTIAL_PREFIXES.length; i++) {
+      if (name.indexOf(ESSENTIAL_PREFIXES[i]) === 0) return true;
+    }
+    return false;
+  }
+
+  function isTrackingCookie(name) {
+    for (var i = 0; i < TRACKING_PATTERNS.length; i++) {
+      if (TRACKING_PATTERNS[i].test(name)) return true;
+    }
+    return false;
+  }
+
+  function deleteNonEssentialCookies() {
+    var cookies = document.cookie.split(';');
+    var domains = [
+      window.location.hostname,
+      '.' + window.location.hostname,
+      '.whistle-ai.com',
+      'whistle-ai.com'
+    ];
+    for (var i = 0; i < cookies.length; i++) {
+      var name = cookies[i].split('=')[0].trim();
+      if (!name || isEssentialCookie(name)) continue;
+      if (isTrackingCookie(name)) {
+        for (var d = 0; d < domains.length; d++) {
+          document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=' + domains[d];
+          document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+        }
+      }
+    }
+  }
+
+  function loadAnalytics() {
+    if (localStorage.getItem('cookie_consent') !== 'accepted') return;
+    try {
+      var s = document.createElement('script');
+      s.defer = true;
+      s.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+      s.dataset.cfBeacon = '{"token":""}';
+      document.head.appendChild(s);
+    } catch (e) {}
+  }
+
+  var consent = localStorage.getItem('cookie_consent');
+  if (!consent) {
+    document.getElementById('cookie-consent-banner').classList.add('show');
+  } else if (consent === 'accepted') {
+    loadAnalytics();
+  } else if (consent === 'declined') {
+    deleteNonEssentialCookies();
+  }
+
+  window.cookieConsent = function(v) {
+    localStorage.setItem('cookie_consent', v);
+    document.getElementById('cookie-consent-banner').classList.remove('show');
+    if (v === 'accepted') {
+      loadAnalytics();
+    } else if (v === 'declined') {
+      deleteNonEssentialCookies();
+    }
+  };
 })();
 </script>
 <script src="/motion-demo.js?v=3"></script>
