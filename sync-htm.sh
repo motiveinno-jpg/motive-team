@@ -11,6 +11,9 @@ PAIRS=(
   "whistle-main"
   "whistle-landing"
   "buyer"
+  "global-landing"
+  "global-buyer-landing"
+  "buyer-landing"
 )
 
 CHANGED=0
