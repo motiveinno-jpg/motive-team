@@ -362,7 +362,7 @@ serve(async (req) => {
     const stripeType = err?.type || "unknown";
     console.error("[checkout] Unhandled error:", stripeMsg, "code:", stripeCode, "type:", stripeType);
     return jsonResponse(
-      { error: `Payment error: ${stripeMsg}` },
+      { error: "Payment processing failed. Please try again." },
       500,
     );
   }

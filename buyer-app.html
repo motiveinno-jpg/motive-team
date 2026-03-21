@@ -3396,11 +3396,11 @@ function _setEscrow(dealId,data){
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
   var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt,method:data.method};
   if(S.user){
-    sb.from('service_requests').upsert({user_id:S.user.id,type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(e){console.error('[escrow] buyer DB upsert fail:',e);});
+    sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('service_type','escrow_buyer_'+dealId).limit(1).single().then(function(sel){if(sel.data&&sel.data.id){return sb.from('service_requests').update({status:data.status,details:_escDetails,updated_at:new Date().toISOString()}).eq('id',sel.data.id);}else{return sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails});}}).catch(function(e){console.error('[escrow] buyer DB sync fail:',e);});
     // Sync to seller's record so seller can read buyer's payment status
     var deal=S.currentDeal||S.deals.find(function(d){return d.id===dealId;});
     var _sellerUserId=deal&&deal.sellerId;
-    if(_sellerUserId)sb.from('service_requests').upsert({user_id:_sellerUserId,type:'escrow_'+dealId,status:data.status,details:_escDetails},{onConflict:'user_id,type'}).catch(function(e){console.error('[buyer]',e);});
+    if(_sellerUserId)sb.from('service_requests').select('id').eq('user_id',_sellerUserId).eq('service_type','escrow_'+dealId).limit(1).single().then(function(sel){if(sel.data&&sel.data.id){return sb.from('service_requests').update({status:data.status,details:_escDetails,updated_at:new Date().toISOString()}).eq('id',sel.data.id);}else{return sb.from('service_requests').insert({user_id:_sellerUserId,service_type:'escrow_'+dealId,status:data.status,details:_escDetails});}}).catch(function(e){console.error('[buyer] seller escrow sync:',e);});
   }
 }
 function _loadEscrowFromDB(){
@@ -3501,7 +3501,7 @@ function confirmEscrowPay(dealId){
   escData.status='buyer_paid';escData.paidAt=new Date().toISOString();escData.method='wire';
   _setEscrow(dealId,escData);
   S.modal=null;S.modalData=null;
-  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_payment',status:'pending',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency||'USD',method:'wire'}}).catch(function(e){console.error('[escrow] payment notify fail:',e);});
+  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_payment',status:'pending',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency||'USD',method:'wire'}}).catch(function(e){console.error('[escrow] payment notify fail:',e);});
   toast(_t('Payment confirmed! Settlement will proceed after delivery is verified.','결제가 확인되었습니다! 배송 확인 후 정산이 진행됩니다.'),'ok',5000);
   render();
 }
@@ -3526,7 +3526,7 @@ function raiseEscrowDispute(dealId){
     escData.dispute={reason:reason.trim(),raisedAt:new Date().toISOString(),status:'open'};
     _setEscrow(dealId,escData);
     toast(_t('Dispute raised. Our team will review and contact both parties within 48 hours.','이의가 제기되었습니다. 48시간 이내에 양측에 연락드리겠습니다.'),'warn',6000);
-    if(S.user)sb.from('service_requests').insert({user_id:S.user.id,type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
+    if(S.user)sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
     render();
   },_t('Describe the issue in detail...','문제를 상세하게 설명해 주세요...'));
 }

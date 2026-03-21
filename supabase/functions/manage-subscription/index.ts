@@ -8,6 +8,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// Zero-decimal currencies — amount is already in smallest unit
+const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -109,7 +112,7 @@ serve(async (req) => {
           return respond({ error: "No active subscription" }, 400);
         }
         await stripe.subscriptions.update(profile.stripe_subscription_id, {
-          pause_collection: "",
+          pause_collection: null as unknown as Stripe.SubscriptionUpdateParams["pause_collection"],
           cancel_at_period_end: false,
         });
         await supabase
@@ -164,10 +167,10 @@ serve(async (req) => {
           return respond({ error: "payment_intent_id required" }, 400);
         }
 
-        // Authorization: verify caller owns this payment or the related deal
-        const { data: paymentRecord } = await supabase
+        // Use admin client for cross-user payment lookup (buyer's payment, seller's deal)
+        const { data: paymentRecord } = await sbAdmin
           .from("payments")
-          .select("user_id, deal_id, amount, currency, status")
+          .select("id, user_id, deal_id, amount, currency, status")
           .eq("stripe_payment_intent", payment_intent_id)
           .single();
 
@@ -178,18 +181,18 @@ serve(async (req) => {
           return respond({ error: "Payment is not in held status" }, 400);
         }
 
-        // Check: caller must be the buyer (payment owner) or the seller (deal owner)
-        let isAuthorized = paymentRecord.user_id === user.id;
-        if (!isAuthorized && paymentRecord.deal_id) {
-          const { data: deal } = await supabase
-            .from("matchings")
-            .select("user_id")
-            .eq("id", paymentRecord.deal_id)
-            .single();
-          isAuthorized = deal?.user_id === user.id;
-        }
-        if (!isAuthorized) {
-          return respond({ error: "Not authorized to release this payment" }, 403);
+        // Check: only the BUYER (payment owner) or admin can release escrow
+        // Sellers cannot self-release — this protects the buyer's escrow
+        const isBuyer = paymentRecord.user_id === user.id;
+        const { data: callerRole } = await sbAdmin
+          .from("users")
+          .select("role")
+          .eq("id", user.id)
+          .single();
+        const isAdmin = callerRole?.role === "admin";
+
+        if (!isBuyer && !isAdmin) {
+          return respond({ error: "Only the buyer or admin can release escrow" }, 403);
         }
 
         // Full-capture model: payment already charged. Transfer net to seller
@@ -214,8 +217,11 @@ serve(async (req) => {
               .single();
 
             if (sellerProfile?.stripe_connect_account_id) {
+              const transferAmount = ZERO_DECIMAL_CURRENCIES.includes(paymentRecord.currency?.toLowerCase())
+                ? Math.round(netAmount)
+                : Math.round(netAmount * 100);
               await stripe.transfers.create({
-                amount: Math.round(netAmount * 100),
+                amount: transferAmount,
                 currency: paymentRecord.currency.toLowerCase(),
                 destination: sellerProfile.stripe_connect_account_id,
                 transfer_group: `escrow_${releaseDealId}`,
@@ -250,8 +256,8 @@ serve(async (req) => {
           }
         }
 
-        // Update payment record
-        await supabase
+        // Update payment record (admin client for cross-user writes)
+        await sbAdmin
           .from("payments")
           .update({
             status: "settled",

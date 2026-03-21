@@ -4,6 +4,10 @@
 
 set -e
 
+echo "🔄 .htm 동기화 확인..."
+bash sync-htm.sh
+
+echo ""
 echo "📦 Git Push..."
 git push origin main
 

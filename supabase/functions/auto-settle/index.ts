@@ -5,6 +5,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 const PLATFORM_FEE_RATE = 0.025;
 const AUTO_SETTLE_DAYS = 7;
 
+// Zero-decimal currencies — amount is already in smallest unit
+const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://whistle-ai.com",
   "Access-Control-Allow-Headers":
@@ -132,7 +135,9 @@ serve(async (req) => {
       try {
         const platformFee = payment.amount * PLATFORM_FEE_RATE;
         const netAmount = payment.amount - platformFee;
-        const netAmountCents = Math.round(netAmount * 100);
+        const netAmountCents = ZERO_DECIMAL_CURRENCIES.includes(payment.currency?.toLowerCase())
+          ? Math.round(netAmount)
+          : Math.round(netAmount * 100);
 
         // Check if seller has a Stripe connected account for direct transfer
         const { data: sellerProfile } = await supabase
