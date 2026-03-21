@@ -195,10 +195,11 @@ serve(async (req) => {
           return respond({ error: "Only the buyer or admin can release escrow" }, 403);
         }
 
-        // Full-capture model: payment already charged. Transfer net to seller
-        // if they have a connected account, otherwise just mark as settled.
-        const platformFee = paymentRecord.amount * 0.025;
-        const netAmount = paymentRecord.amount - platformFee;
+        // Full-capture model: payment already charged. Transfer full amount to seller.
+        // Early partner benefit: 0% platform fee (Stripe processing fee already deducted at charge time).
+        // Category-based fees reserved for future activation.
+        const platformFee = 0;
+        const netAmount = paymentRecord.amount;
 
         const releaseDealId = deal_id || paymentRecord.deal_id;
         if (releaseDealId) {
@@ -238,7 +239,7 @@ serve(async (req) => {
               user_id: dealData.user_id,
               type: "payment",
               title: "Payment Released",
-              body: `Escrow payment of ${paymentRecord.currency} ${netAmount.toFixed(2)} has been released (2.5% platform fee deducted).`,
+              body: `Escrow payment of ${paymentRecord.currency} ${netAmount.toFixed(2)} has been released (full amount, 0% platform fee).`,
               link_page: "deals",
               link_id: releaseDealId,
               is_read: false,

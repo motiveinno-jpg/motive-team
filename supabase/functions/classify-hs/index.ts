@@ -101,12 +101,12 @@ serve(async (req: Request) => {
 
     // ─── Plan enforcement: check user's plan and usage limits ───
     const PLAN_LIMITS: Record<string, number> = {
-      free: 3,
-      starter: 30,
-      pro: 100,
-      professional: 100,
-      enterprise: -1, // unlimited
-      alibaba: -1,    // unlimited
+      free: 1,
+      starter: -1,    // unlimited
+      pro: -1,         // unlimited
+      professional: -1, // unlimited
+      enterprise: -1,  // unlimited
+      alibaba: -1,     // unlimited
     };
 
     const { data: userData } = await sbAdmin

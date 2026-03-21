@@ -267,9 +267,9 @@ serve(async (req) => {
       // --- SUBSCRIPTION ---
       // Map plan + billing_cycle to price_data to avoid live/test mode mismatch
       const PLAN_PRICES: Record<string, number> = {
-        starter: 2900,
-        pro: 7900,
-        enterprise: 19900,
+        starter: 9900,
+        pro: 19900,
+        enterprise: 44900,
       };
       const BILLING_INTERVALS: Record<string, { interval: string; count: number; multiplier: number }> = {
         m: { interval: "month", count: 1, multiplier: 1 },

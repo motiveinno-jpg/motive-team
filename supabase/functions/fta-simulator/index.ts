@@ -80,10 +80,10 @@ serve(async (req: Request) => {
 
     // ─── Plan enforcement: only if user is authenticated ───
     const PLAN_LIMITS: Record<string, number> = {
-      free: 5,
-      starter: 50,
-      pro: 200,
-      professional: 200,
+      free: 0,         // blocked for free users
+      starter: -1,     // unlimited
+      pro: -1,         // unlimited
+      professional: -1, // unlimited
       enterprise: -1,
       alibaba: -1,
     };

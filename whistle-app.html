@@ -670,11 +670,11 @@ var UI={
 
 /* === PLAN LIMITS === */
 var PLAN_LIMITS={
-  free:{analyses:1,products:5,projects:1,docs:0,emails:0,matching:0},
-  starter:{analyses:10,products:20,projects:5,docs:-1,emails:50,matching:0},
-  pro:{analyses:50,products:-1,projects:-1,docs:-1,emails:-1,matching:1},
-  enterprise:{analyses:200,products:-1,projects:-1,docs:-1,emails:-1,matching:3},
-  alibaba:{analyses:200,products:-1,projects:-1,docs:-1,emails:-1,matching:3}
+  free:{analyses:1,products:3,projects:1,docs:0,chat:0,matching:0,escrow:false},
+  starter:{analyses:10,products:20,projects:5,docs:-1,chat:-1,matching:0,escrow:true},
+  pro:{analyses:50,products:-1,projects:-1,docs:-1,chat:-1,matching:3,escrow:true},
+  enterprise:{analyses:200,products:-1,projects:-1,docs:-1,chat:-1,matching:-1,escrow:true},
+  alibaba:{analyses:200,products:-1,projects:-1,docs:-1,chat:-1,matching:-1,escrow:true}
 };
 var OVERAGE_PRICE={usd:1.90}; /* per-analysis overage for paid plans — all payments in USD via Stripe */
 
@@ -728,12 +728,25 @@ function _planGate(feature){
   var cur=S.user&&S.user.plan||'free';
   var lim=PLAN_LIMITS[cur]||PLAN_LIMITS.free;
   var used=0,max=0,label='';
-  if(feature==='analysis'){used=S.analyses.filter(function(a){var d=new Date(a.created_at),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}).length;max=lim.analyses+(S._singleAnalysisCredit||0);label='AI 분석';}
+  if(feature==='analysis'){
+    /* Free = lifetime 1 use (cumulative, no monthly reset); Paid = monthly reset */
+    if(cur==='free'){used=S.analyses.length;}
+    else{used=S.analyses.filter(function(a){var d=new Date(a.created_at),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}).length;}
+    max=lim.analyses+(S._singleAnalysisCredit||0);label='AI 분석';
+  }
   else if(feature==='product'){used=S.products.length;max=lim.products;label=(_isKorean?'제품 등록':'Product Registration');}
   else if(feature==='project'){used=S.projects.length;max=lim.projects;label=(_isKorean?'프로젝트':'Projects');}
   else if(feature==='docgen'){used=(S.savedDocs||[]).length;max=lim.docs;label=(_isKorean?'서류 자동생성':'Document Generation');}
-  else if(feature==='emailhub'){max=lim.emails;label=(_isKorean?'이메일 허브':'Email Hub');}
-  else if(feature==='matching'){max=lim.matching;label=(_isKorean?'바이어 매칭':'Buyer Matching');}
+  else if(feature==='chat'){max=lim.chat;label=(_isKorean?'바이어 채팅':'Buyer Chat');}
+  else if(feature==='matching'){
+    /* Count actual matching usage this month */
+    used=(S.matchings||[]).filter(function(m){var d=new Date(m.created_at),n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();}).length;
+    max=lim.matching;label=(_isKorean?'바이어 매칭':'Buyer Matching');
+  }
+  else if(feature==='escrow'){
+    var allowed=lim.escrow;
+    return{blocked:!allowed,label:(_isKorean?'안전결제':'Secure Payment'),used:0,max:allowed?-1:0,plan:cur,minPlan:'starter'};
+  }
   else if(feature==='alibaba'){var isAli=cur==='alibaba'||cur==='enterprise';return{blocked:!isAli,label:(_isKorean?'알리바바':'Alibaba'),used:0,max:isAli?-1:0,plan:cur,minPlan:'alibaba'};}
   if(max===0)return{blocked:true,label:label,used:0,max:0,plan:cur,minPlan:feature==='matching'?'pro':'starter'};
   if(max===-1)return{blocked:false,used:used,max:-1};
@@ -751,15 +764,15 @@ function _lockOverlay(gate){
 function _lockOverlayEnd(gate){
   var mp=gate.minPlan||'starter';
   var _ko=_isKorean;
-  var _sOrig=_ko?'$59':'$59';var _sDis=_ko?'$29':'$29';var _pUnit=_ko?'/월':'/mo';
-  var _pOrig=_ko?'$159':'$159';var _pDis=_ko?'$79':'$79';
-  var _sDesc=_ko?'AI 분석 10회/월<br>서류 자동생성 무제한<br>바이어 채팅 50건/월<br>초과 시 $1.90/건':'10 AI analyses/mo<br>Unlimited doc generation<br>50 buyer chats/mo<br>Overage: $1.90/report';
-  var _pDesc=_ko?'AI 분석 50회/월<br>바이어 매칭 1건/월<br>초과 시 $1.90/건':'50 AI analyses/mo<br>1 buyer match/mo<br>Overage: $1.90/report';
-  var _launchTxt=_ko?'런칭 특가':'Launch Special';
+  var _sOrig=_ko?'$219':'$219';var _sDis=_ko?'$99':'$99';var _pUnit=_ko?'/월':'/mo';
+  var _pOrig=_ko?'$449':'$449';var _pDis=_ko?'$199':'$199';
+  var _sDesc=_ko?'AI 분석 10회/월<br>서류 자동생성 무제한<br>바이어 채팅 무제한<br>초과 시 $1.90/건':'10 AI analyses/mo<br>Unlimited doc generation<br>Unlimited buyer chat<br>Overage: $1.90/report';
+  var _pDesc=_ko?'AI 분석 50회/월<br>바이어 매칭 3건/월<br>초과 시 $1.90/건':'50 AI analyses/mo<br>3 buyer matches/mo<br>Overage: $1.90/report';
+  var _launchTxt=_ko?'초기 파트너 가격':'Early Partner Price';
   var planCards='<div style="display:flex;gap:10px;margin-top:14px;text-align:left">'+
     '<div style="flex:1;padding:14px;border-radius:10px;border:1px solid '+(mp==='starter'?'var(--pri)':'var(--bd)')+';background:'+(mp==='starter'?'rgba(0,212,255,.06)':'var(--w04)')+'"><div style="font-size:12px;font-weight:800;color:var(--pri);margin-bottom:4px">STARTER</div><div style="font-size:10px;color:var(--ok);margin-bottom:2px">'+_launchTxt+'</div><div style="font-size:16px;font-weight:800;margin-bottom:6px;white-space:nowrap"><span style="font-size:11px;color:var(--w20);text-decoration:line-through">'+_sOrig+'</span> '+_sDis+'<span style="font-size:10px;color:var(--w40);font-weight:400">'+_pUnit+'</span></div><div style="font-size:10px;color:var(--w50);line-height:1.5">'+_sDesc+'</div><button class="btn btn-pri btn-sm btn-block" style="margin-top:10px" onclick="App.openCheckout(\'starter\')">STARTER</button></div>'+
     '<div style="flex:1;padding:14px;border-radius:10px;border:1px solid '+(mp==='pro'?'var(--acc)':'var(--bd)')+';background:'+(mp==='pro'?'rgba(255,184,0,.06)':'var(--w04)')+'"><div style="font-size:12px;font-weight:800;color:var(--acc);margin-bottom:4px">PRO</div><div style="font-size:10px;color:var(--ok);margin-bottom:2px">'+_launchTxt+'</div><div style="font-size:16px;font-weight:800;margin-bottom:6px;white-space:nowrap"><span style="font-size:11px;color:var(--w20);text-decoration:line-through">'+_pOrig+'</span> '+_pDis+'<span style="font-size:10px;color:var(--w40);font-weight:400">'+_pUnit+'</span></div><div style="font-size:10px;color:var(--w50);line-height:1.5">'+_pDesc+'</div><button class="btn btn-acc btn-sm btn-block" style="margin-top:10px" onclick="App.openCheckout(\'pro\')">PRO</button></div></div>';
-  var voucherMsg=_ko?'<div style="margin-top:10px;padding:6px 12px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15)"><span style="font-size:11px;color:var(--acc);font-weight:700">💰 수출바우처 적용시 자부담 $8.70/월 (70% 지원)</span></div>':'';
+  var voucherMsg=_ko?'<div style="margin-top:10px;padding:6px 12px;border-radius:8px;background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.15)"><span style="font-size:11px;color:var(--acc);font-weight:700">💰 수출바우처 적용시 자부담 $29.70/월 (70% 지원)</span></div>':'';
   var _lockMsg=gate.max===0?(_ko?gate.label+' 기능은 유료 플랜부터 사용 가능합니다.':gate.label+' requires a paid plan.'):(_ko?gate.label+' 한도 초과 (<b>'+gate.used+'/'+gate.max+'</b>)<br>업그레이드하세요.':gate.label+' limit exceeded (<b>'+gate.used+'/'+gate.max+'</b>)<br>Please upgrade.');
   return '</div><div style="position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;z-index:5"><div style="text-align:center;padding:28px;border-radius:16px;background:rgba(6,11,24,.94);border:1px solid var(--bd-l);max-width:480px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)"><div style="font-size:32px;margin-bottom:10px">🔒</div><div style="font-size:14px;color:var(--w70);margin-bottom:8px;line-height:1.6">'+
     _lockMsg+
@@ -784,7 +797,7 @@ function _showAnalysisPaywall(){
     /* 옵션2: 구독 */
     '<div style="padding:16px;border-radius:14px;border:1px solid var(--bd);background:var(--w04);cursor:pointer;text-align:left" onclick="App.closeModal(\'analysis-pw\');App.nav(\'subscription\')">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><span style="font-size:13px;font-weight:800;color:var(--acc)">💎 '+(isKo?'구독 플랜':'Subscription Plan')+'</span><span style="font-size:10px;color:var(--ok);font-weight:700">BEST VALUE</span></div>'+
-      '<div style="font-size:12px;color:var(--w60);line-height:1.5">STARTER $29/'+(_isKorean?'월':'mo')+' — '+(_isKorean?'AI 분석 10회/월':'10 AI analyses/mo')+'<br>PRO $79/'+(_isKorean?'월':'mo')+' — '+(_isKorean?'AI 분석 50회/월':'50 AI analyses/mo')+'</div>'+
+      '<div style="font-size:12px;color:var(--w60);line-height:1.5">STARTER $99/'+(_isKorean?'월':'mo')+' — '+(_isKorean?'AI 분석 10회/월':'10 AI analyses/mo')+'<br>PRO $199/'+(_isKorean?'월':'mo')+' — '+(_isKorean?'AI 분석 50회/월':'50 AI analyses/mo')+'</div>'+
       '<div style="font-size:11px;color:var(--acc);margin-top:6px;font-weight:600">'+(isKo?'분석 4회 이상이면 구독이 유리합니다 →':'Better value for 4+ analyses →')+'</div>'+
     '</div>'+
     '<div style="text-align:center;margin-top:12px;font-size:10px;color:var(--w20)">'+(isKo?'* 가격은 지역에 따라 다를 수 있습니다':'* Prices may vary by region')+'</div>'+
@@ -881,7 +894,7 @@ function _showOneAnalysisCTA(){
       '<div style="font-size:12px;color:var(--w60);line-height:1.8">'+
         '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>'+(_isKorean?'상품':'Item')+'</span><b style="color:var(--w90)">'+(_isKorean?'AI 수출 분석 리포트 1회':'1x AI Export Analysis Report')+'</b></div>'+
         '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--w08)"><span>'+(_isKorean?'정상가':'Regular')+'</span><span style="text-decoration:line-through;color:var(--w20)">'+'$40.00'+'</span></div>'+
-        '<div style="display:flex;justify-content:space-between;padding:3px 0"><span>'+(_isKorean?'런칭 특가':'Launch Price')+'</span><b style="color:var(--acc);font-size:14px">'+'$9.90'+' <span style="font-size:10px;color:var(--ok);font-weight:700">75% OFF</span></b></div>'+
+        '<div style="display:flex;justify-content:space-between;padding:3px 0"><span>'+(_isKorean?'초기 파트너 가격':'Launch Price')+'</span><b style="color:var(--acc);font-size:14px">'+'$9.90'+' <span style="font-size:10px;color:var(--ok);font-weight:700">75% OFF</span></b></div>'+
       '</div>'+
     '</div>'+
     '<div style="display:flex;flex-direction:column;gap:10px;max-width:320px;margin:0 auto">'+
@@ -8091,7 +8104,7 @@ function genDocPDF(){
 }
 
 function pgEmail(){
-  var gate=_planGate('emailhub');
+  var gate=_planGate('chat');
   var ts=[{t:'intro',n:'🤝 제품 소개',d:'첫 제품 소개 메일'},{t:'quote',n:'💰 견적 회신',d:'가격/조건 회신'},{t:'sample',n:'📦 샘플 발송',d:'샘플 안내/추적번호'},{t:'followup',n:'🔄 팔로업',d:'후속 연락'},{t:'shipping',n:'🚢 선적 통보',d:'B/L 및 도착일'},{t:'thankyou',n:'🙏 감사/리오더',d:'거래 감사'}];
   var logs=S.emailLogs||[];var esr=SF.read('emails');var fLogs=SF.filter(logs,esr.q,['to_email','subject']);
   var logSection=logs.length?'<div class="card" style="margin-top:16px"><div class="card-h"><span>📬 발송 이력</span>'+UI.badge(logs.length+'건','pri')+'</div><div class="card-b">'+SF.bar('emails',{placeholder:'수신자, 제목 검색…'})+'<div style="padding:0"><table class="tbl tbl-r"><thead><tr><th>수신</th><th>'+(_isKorean?'제목':'Title')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'날짜':'Date')+'</th></tr></thead><tbody>'+fLogs.slice(0,20).map(function(l){var sc={sent:'발송',delivered:'수신',opened:'열람',failed:'실패',bounced:'반송'};var tc={sent:'pri',delivered:'ok',opened:'ok',failed:'err',bounced:'err'};return '<tr><td data-label="수신" style="font-size:12px">'+U.esc(l.to_email)+'</td><td data-label="제목" style="font-size:12px">'+U.esc(U.tr(l.subject,40))+'</td><td data-label="상태">'+UI.badge(sc[l.status]||l.status,tc[l.status]||'ghost')+'</td><td data-label="날짜" style="font-size:11px;color:var(--w40)">'+U.fd(l.created_at,'rel')+'</td></tr>';}).join('')+'</tbody></table></div></div>':'';
@@ -9788,15 +9801,15 @@ function pgSub(){
   var cur=S.user&&S.user.plan||'free';
   var sv=S._showVoucher||false;
   var plans=_isKorean?[
-    {id:'free',n:'FREE',pr:0,pe:'',vPr:'Free',f:[['AI 수출 분석 1회/월',true],['제품 등록 5개',true],['프로젝트 1건',true],['원가 계산기',true],['수출 로드맵 가이드',true],['서류 자동생성',false],['이메일 허브',false]],c:'var(--w40)',desc:'수출 가능성을 먼저 확인해보세요'},
-    {id:'starter',n:'STARTER',pr:29,rp:59,pe:'/mo',vPr:'$8.70',vRate:'70%',f:[['AI 분석 10회/월',true],['제품 등록 20개',true],['프로젝트 5건',true],['서류 자동생성 무제한',true],['50 이메일/월',true],['초과 분석: $1.90/건',true],['월별 초기화',true]],c:'var(--pri)',hi:true,desc:'본격적인 수출 준비를 시작하세요',voucher:8.70},
-    {id:'pro',n:'PRO',pr:79,rp:159,pe:'/mo',vPr:'$23.70',vRate:'70%',f:[['AI 분석 50회/월',true],['제품/프로젝트 무제한',true],['바이어 매칭 1건/월',true],['초과 분석: $1.90/건',true],['안전결제 지원',true],['우선 기술 지원',true],['월별 초기화',true]],c:'var(--acc)',desc:'수출 프로세스 전체를 자동화하세요',voucher:23.70},
-    {id:'enterprise',n:'ENTERPRISE',pr:199,rp:399,pe:'/mo',f:[['AI 분석 200회/월',true],['전담 매니저',true],['커스텀 API 연동',true],['바이어 매칭 무제한',true],['SLA 보장',true],['맞춤 온보딩',true],['전담 성공 팀',true]],c:'#8A5CF6',desc:'대규모 수출 관리를 위한 엔터프라이즈'}
+    {id:'free',n:'FREE',pr:0,pe:'',vPr:'Free',f:[['AI 수출 분석 평생 1회',true],['제품 등록 3개',true],['프로젝트 1건',true],['원가 계산기',true],['수출 로드맵 가이드',true],['서류 자동생성',false],['바이어 채팅',false]],c:'var(--w40)',desc:'수출 가능성을 먼저 확인해보세요'},
+    {id:'starter',n:'STARTER',pr:99,rp:219,pe:'/mo',vPr:'$29.70',vRate:'70%',f:[['AI 분석 10회/월',true],['제품 등록 20개',true],['프로젝트 5건',true],['서류 자동생성 무제한',true],['바이어 채팅 무제한',true],['안전결제 (수수료 면제)',true],['초과 분석: $1.90/건',true]],c:'var(--pri)',desc:'본격적인 수출 준비를 시작하세요',voucher:29.70},
+    {id:'pro',n:'PRO',pr:199,rp:449,pe:'/mo',vPr:'$59.70',vRate:'70%',f:[['AI 분석 50회/월',true],['제품/프로젝트 무제한',true],['바이어 매칭 3건/월',true],['안전결제 (수수료 면제)',true],['초과 분석: $1.90/건',true],['우선 기술 지원',true],['HS코드·FTA 무제한',true]],c:'var(--acc)',hi:true,desc:'수출 프로세스 전체를 자동화하세요',voucher:59.70},
+    {id:'enterprise',n:'ENTERPRISE',pr:449,rp:990,pe:'/mo',f:[['AI 분석 200회/월',true],['전담 매니저',true],['커스텀 API 연동',true],['바이어 매칭 무제한',true],['SLA 보장',true],['맞춤 온보딩',true],['전담 성공 팀',true]],c:'#8A5CF6',desc:'대규모 수출 관리를 위한 엔터프라이즈'}
   ]:[
-    {id:'free',n:'FREE',pr:0,pe:'',vPr:'Free',f:[['1 AI Analysis/mo',true],['5 Products',true],['1 Project',true],['Cost Calculator',true],['Export Roadmap Guide',true],['Auto Documents',false],['Email Hub',false]],c:'var(--w40)',desc:'Check your export potential first'},
-    {id:'starter',n:'STARTER',pr:29,rp:59,pe:'/mo',f:[['10 AI Analyses/mo',true],['20 Products',true],['5 Projects',true],['Unlimited Documents',true],['50 Emails/mo',true],['Overage: $1.90/report',true],['Resets monthly (no rollover)',true]],c:'var(--pri)',hi:true,desc:'Start serious export preparation'},
-    {id:'pro',n:'PRO',pr:79,rp:159,pe:'/mo',f:[['50 AI Analyses/mo',true],['Unlimited Products/Projects',true],['1 Buyer Match/mo',true],['Overage: $1.90/report',true],['Secure Payment Support',true],['Priority Support',true],['Resets monthly (no rollover)',true]],c:'var(--acc)',desc:'Automate your entire export process'},
-    {id:'enterprise',n:'ENTERPRISE',pr:199,rp:399,pe:'/mo',f:[['200 AI Analyses/mo',true],['Dedicated Account Manager',true],['Custom API Integration',true],['Overage: $1.90/report',true],['Unlimited Buyer Matches',true],['SLA Guarantee',true],['Resets monthly (no rollover)',true]],c:'#8A5CF6',desc:'Enterprise-grade export management'}
+    {id:'free',n:'FREE',pr:0,pe:'',vPr:'Free',f:[['1 AI Analysis (lifetime)',true],['3 Products',true],['1 Project',true],['Cost Calculator',true],['Export Roadmap Guide',true],['Auto Documents',false],['Buyer Chat',false]],c:'var(--w40)',desc:'Check your export potential first'},
+    {id:'starter',n:'STARTER',pr:99,rp:219,pe:'/mo',f:[['10 AI Analyses/mo',true],['20 Products',true],['5 Projects',true],['Unlimited Documents',true],['Unlimited Buyer Chat',true],['Secure Payment (0% fee)',true],['Overage: $1.90/report',true]],c:'var(--pri)',desc:'Start serious export preparation'},
+    {id:'pro',n:'PRO',pr:199,rp:449,pe:'/mo',f:[['50 AI Analyses/mo',true],['Unlimited Products/Projects',true],['3 Buyer Matches/mo',true],['Secure Payment (0% fee)',true],['Overage: $1.90/report',true],['Priority Support',true],['HS Code & FTA Unlimited',true]],c:'var(--acc)',hi:true,desc:'Automate your entire export process'},
+    {id:'enterprise',n:'ENTERPRISE',pr:449,rp:990,pe:'/mo',f:[['200 AI Analyses/mo',true],['Dedicated Account Manager',true],['Custom API Integration',true],['Overage: $1.90/report',true],['Unlimited Buyer Matches',true],['SLA Guarantee',true],['Dedicated Success Team',true]],c:'#8A5CF6',desc:'Enterprise-grade export management'}
   ];
   var _fp=function(v){return '$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 
@@ -9831,7 +9844,7 @@ function pgSub(){
   /* SaaS plans + 단건결제 나란히 */
   '<div class="plans-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px;margin-top:12px">'+
   /* 단건 AI 분석 결제 — 가장 좌측 */
-  '<div class="plan-card" style="position:relative;display:flex;flex-direction:column;border-color:rgba(0,212,255,.35);background:linear-gradient(135deg,rgba(0,212,255,.04),rgba(0,230,118,.03))"><div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:3px 14px;border-radius:20px;background:linear-gradient(135deg,#FFB800,#FF8C00);font-size:10px;font-weight:800;color:#000;white-space:nowrap">'+(_isKorean?'건별 구매':'Pay Per Use')+'</div><div class="plan-name" style="color:var(--acc)">'+(_isKorean?'AI 분석 보고서':'AI Analysis Report')+'</div><div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+(_isKorean?'런칭 특가 75% OFF':'Launch Special 75% OFF')+'</div><div class="plan-price" style="display:flex;align-items:baseline;gap:4px"><span style="font-size:14px;color:var(--w20);text-decoration:line-through">'+'$40.00'+'</span><span style="font-size:22px;font-weight:800">'+'$9.90'+'</span><span class="plan-period" style="font-size:12px;color:var(--w40)">/건</span></div><div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+(_isKorean?'구독 없이 1건씩 결제':'Pay per analysis, no subscription')+'</div><div class="plan-features" style="flex:1"><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'13개국 시장 분석':'13-country market analysis')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'HS코드 자동 매칭':'Auto HS code matching')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'타겟 바이어 추천':'Target buyer recommendations')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'인증·규제 확인':'Certification & compliance check')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'FOB 가격 산정':'FOB price estimation')+'</div></div><button class="btn btn-block" style="margin-top:12px;font-weight:800;padding:12px;border-radius:10px;background:linear-gradient(135deg,#FFB800,#FF8C00);border:none;color:#000" onclick="App.payOneAnalysis()">⚡ '+(_isKorean?'단건 분석 결제':'Pay for Single Analysis')+'</button></div>'+
+  '<div class="plan-card" style="position:relative;display:flex;flex-direction:column;border-color:rgba(0,212,255,.35);background:linear-gradient(135deg,rgba(0,212,255,.04),rgba(0,230,118,.03))"><div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:3px 14px;border-radius:20px;background:linear-gradient(135deg,#FFB800,#FF8C00);font-size:10px;font-weight:800;color:#000;white-space:nowrap">'+(_isKorean?'건별 구매':'Pay Per Use')+'</div><div class="plan-name" style="color:var(--acc)">'+(_isKorean?'AI 분석 보고서':'AI Analysis Report')+'</div><div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+(_isKorean?'초기 파트너 가격 75% OFF':'Early Partner Price 75% OFF')+'</div><div class="plan-price" style="display:flex;align-items:baseline;gap:4px"><span style="font-size:14px;color:var(--w20);text-decoration:line-through">'+'$40.00'+'</span><span style="font-size:22px;font-weight:800">'+'$9.90'+'</span><span class="plan-period" style="font-size:12px;color:var(--w40)">/건</span></div><div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+(_isKorean?'구독 없이 1건씩 결제':'Pay per analysis, no subscription')+'</div><div class="plan-features" style="flex:1"><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'13개국 시장 분석':'13-country market analysis')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'HS코드 자동 매칭':'Auto HS code matching')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'타겟 바이어 추천':'Target buyer recommendations')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'인증·규제 확인':'Certification & compliance check')+'</div><div style="color:var(--w60)"><span style="color:var(--ok);margin-right:6px">✓</span>'+(_isKorean?'FOB 가격 산정':'FOB price estimation')+'</div></div><button class="btn btn-block" style="margin-top:12px;font-weight:800;padding:12px;border-radius:10px;background:linear-gradient(135deg,#FFB800,#FF8C00);border:none;color:#000" onclick="App.payOneAnalysis()">⚡ '+(_isKorean?'단건 분석 결제':'Pay for Single Analysis')+'</button></div>'+
   plans.map(function(p){
     var isCur=cur===p.id;
     var isUp=plans.findIndex(function(x){return x.id===p.id;})>plans.findIndex(function(x){return x.id===cur;});
@@ -9845,7 +9858,7 @@ function pgSub(){
       (p.hi&&!isCur?'<div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);padding:3px 14px;border-radius:20px;background:var(--pri-g);font-size:10px;font-weight:800;color:var(--bg);white-space:nowrap">'+(_isKorean?'추천':'Recommended')+'</div>':'')+
       (isCur?'<div style="font-size:10px;font-weight:800;color:var(--pri);margin-bottom:4px;display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:var(--pri)"></span> '+(_isKorean?'현재 플랜':'Current Plan')+'</div>':'')+
       '<div class="plan-name" style="color:'+p.c+'">'+p.n+'</div>'+
-      (p.rp?'<div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+(_isKorean?'런칭 특가':'Launch Special')+' '+Math.round((1-p.pr/p.rp)*100)+'% OFF'+(bc!=='m'?' + '+_cycleDiscount:'')+'</div>':(_cycleDiscount?'<div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+_cycleDiscount+'</div>':''))+
+      (p.rp?'<div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+(_isKorean?'초기 파트너 가격':'Early Partner Price')+' '+Math.round((1-p.pr/p.rp)*100)+'% OFF'+(bc!=='m'?' + '+_cycleDiscount:'')+'</div>':(_cycleDiscount?'<div style="font-size:10px;font-weight:700;color:var(--ok);background:rgba(0,230,118,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+_cycleDiscount+'</div>':''))+
       '<div class="plan-price" style="display:flex;align-items:baseline;gap:4px;flex-wrap:nowrap">'+(sv&&p.vPr!=='무료'?'<span style="font-size:12px;color:var(--w20);text-decoration:line-through;white-space:nowrap">'+_fp(p.rp||p.pr)+'</span><span style="font-size:20px;font-weight:800;white-space:nowrap;background:linear-gradient(135deg,#8A5CF6,#00D4FF);-webkit-background-clip:text;-webkit-text-fill-color:transparent">'+p.vPr+'</span>':p.rp&&bc==='m'?'<span style="font-size:12px;color:var(--w20);text-decoration:line-through;white-space:nowrap">'+_fp(p.rp)+'</span><span style="font-size:20px;font-weight:800;white-space:nowrap">'+_fp(p.pr)+'</span>':'<span style="font-size:20px;font-weight:800;white-space:nowrap">'+(p.pr===0?(_isKorean?'무료':'Free'):_fp(_cyclePrice))+'</span>')+'<span class="plan-period" style="font-size:12px;color:var(--w40);white-space:nowrap">'+_cyclePeriod+'</span></div>'+
       (bc!=='m'&&_monthlyEquiv&&p.pr>0?'<div style="font-size:10px;color:var(--ok);font-weight:600;margin-bottom:2px">'+(_isKorean?'월 '+_fp(_monthlyEquiv)+' 상당':_fp(_monthlyEquiv)+'/mo equivalent')+'</div>':'')+
       (sv&&p.vRate?'<div style="font-size:10px;font-weight:600;color:#8A5CF6;background:rgba(138,92,246,.1);padding:2px 8px;border-radius:6px;display:inline-block;margin-bottom:4px;align-self:flex-start">'+(_isKorean?'바우처 적용 (정부 '+p.vRate+' 부담)':'Voucher applied (Gov\'t covers '+p.vRate+')')+'</div>':'')+
@@ -9860,7 +9873,7 @@ function pgSub(){
   /* 단건결제는 위 플랜 그리드에 포함됨 */
 
   /* Recommended combo */
-  '<div style="padding:12px 18px;border-radius:10px;background:var(--w04);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:24px"><span style="font-size:12px;color:var(--w40)">🔥 '+(_isKorean?'가장 인기 있는 조합:':'Most Popular Combo:')+'</span><span style="font-size:13px;font-weight:700;color:var(--pri)">Starter SaaS</span><span style="font-size:12px;color:var(--w20)">+</span><span style="font-size:13px;font-weight:700;color:var(--acc)">'+(_isKorean?'알리바바 입점 패키지':'Alibaba Listing Package')+'</span></div>'+
+  '<div style="padding:12px 18px;border-radius:10px;background:var(--w04);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:24px"><span style="font-size:12px;color:var(--w40)">🔥 '+(_isKorean?'가장 인기 있는 조합:':'Most Popular Combo:')+'</span><span style="font-size:13px;font-weight:700;color:var(--acc)">Pro SaaS</span><span style="font-size:12px;color:var(--w20)">+</span><span style="font-size:13px;font-weight:700;color:var(--acc)">'+(_isKorean?'알리바바 입점 패키지':'Alibaba Listing Package')+'</span></div>'+
 
   /* Alibaba packages header */
   '<div style="margin-bottom:16px"><div style="font-size:16px;font-weight:800;margin-bottom:4px">🌏 '+(_isKorean?'알리바바 입점 서비스':'Alibaba Listing Services')+'</div><div style="font-size:12px;color:var(--w40)">'+(_isKorean?'SaaS 구독과 별도로, 알리바바 실제 입점이 필요한 기업을 위한 서비스입니다':'Separate from SaaS subscription. For businesses that need an actual Alibaba store listing.')+'</div></div>'+
@@ -14513,6 +14526,8 @@ function triggerAutoRelease(dealId){
 
 
 function openEscrowModal(dealId){
+  var _eg=_planGate('escrow');
+  if(_eg.blocked){UI.toast((_isKorean?'안전결제는 Starter 이상 플랜에서 사용 가능합니다.':'Secure Payment requires Starter plan or above.'),'warn');return;}
   var deal=S._currentDeal||S._dealRoomDealData;
   var amt=0;
   if(deal&&deal.order)amt=Number(deal.order.total_amount||0);
@@ -14524,14 +14539,14 @@ function openEscrowModal(dealId){
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">2</span> 바이어가 결제 → <b>Whistle이 안전 보관</b></div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--pri);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">3</span> 제조사가 물건 발송 (배송 추적)</div>'+
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="background:var(--ok);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">4</span> 바이어가 수령 확인</div>'+
-      '<div style="display:flex;align-items:center;gap:8px"><span style="background:var(--ok);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">5</span> <b>제조사에게 대금 정산</b> (수수료 2.5%)</div>'+
+      '<div style="display:flex;align-items:center;gap:8px"><span style="background:var(--ok);color:#000;font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px">5</span> <b>제조사에게 대금 전액 정산</b> (수수료 0%)</div>'+
     '</div></div>';
   body+='<div class="form-group"><label class="form-label">결제 금액</label><div style="position:relative"><span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:800;color:var(--pri);pointer-events:none;opacity:.7">$</span><input class="form-input" id="esc-amount" type="number" min="1" step="0.01" value="'+amt+'" placeholder="0.00" style="padding-left:28px"></div></div>';
   body+='<div class="form-group"><label class="form-label">통화</label><select class="form-input" id="esc-currency"><option value="USD" selected>USD</option><option value="EUR">EUR</option><option value="KRW">KRW</option><option value="CNY">CNY</option><option value="JPY">JPY</option></select></div>';
   body+='<div class="form-group"><label class="form-label">'+(_isKorean?'결제 조건':'Payment Terms')+'</label><select class="form-input" id="esc-terms"><option value="30/70">'+(_isKorean?'30% 선금 / 70% 잔금 (출하 시)':'30% deposit / 70% on shipment')+'</option><option value="50/50">'+(_isKorean?'50% 선금 / 50% 잔금 (수령 시)':'50% deposit / 50% on receipt')+'</option><option value="100_delivery">'+(_isKorean?'100% 수령 후 결제':'100% on receipt')+'</option><option value="100_upfront">'+(_isKorean?'100% 선불':'100% prepaid')+'</option></select></div>';
   body+='<div class="form-group"><label class="form-label">수령 확인 기한 (일)</label><select class="form-input" id="esc-confirm-days"><option value="7">7일 (기본)</option><option value="14">14일</option><option value="30">30일</option></select></div>';
   body+='<div style="font-size:11px;color:var(--w30);margin-top:8px">※ 바이어가 기한 내 이의제기 없으면 자동 정산됩니다.</div>';
-  body+='<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);font-size:11px;color:var(--pri)">🔒 '+(_isKorean?'안전결제는 Stripe를 통해 안전하게 처리됩니다. 바이어가 결제 후 상품 수령 확인 시 정산됩니다. 수수료: 2.5%':'Payments are securely processed via Stripe. Funds are released to you after buyer confirms receipt. Fee: 2.5%')+'</div>';
+  body+='<div style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12);font-size:11px;color:var(--pri)">🔒 '+(_isKorean?'안전결제는 Stripe를 통해 안전하게 처리됩니다. 바이어가 결제 후 상품 수령 확인 시 전액 정산됩니다. 초기 파트너 혜택: 플랫폼 수수료 0% (Stripe 결제수수료만 적용)':'Payments are securely processed via Stripe. Full amount released after buyer confirms receipt. Early Partner Benefit: 0% platform fee (only Stripe processing fee applies)')+'</div>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'escrow-req',title:'🔒 안전결제 요청',body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'escrow-req\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-pri" onclick="App.submitEscrowRequest(\''+dealId+'\')">💸 결제 요청 전송</button>',width:'480px'}));
   UI.showModal('escrow-req');
 }
@@ -14543,9 +14558,9 @@ function submitEscrowRequest(dealId){
   var terms=_el('esc-terms');
   var confirmDays=Number(_el('esc-confirm-days'))||7;
   if(!amt||amt<=0){UI.toast(_isKorean?'금액을 입력하세요':'Please enter an amount','warn');return;}
-  var _noDecimal=(cur==='KRW'||cur==='JPY');
-  var fee=_noDecimal?Math.round(amt*0.025):Math.round(amt*0.025*100)/100;
-  var net=_noDecimal?Math.round(amt-fee):Math.round((amt-fee)*100)/100;
+  /* Early partner benefit: 0% platform fee. Buyer pays Stripe processing fee at checkout. */
+  var fee=0;
+  var net=amt;
   var escData={status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:net,requestedAt:new Date().toISOString()};
   _setEscrow(dealId,escData);
   /* Also write escrow record for buyer so they can see it cross-device */
