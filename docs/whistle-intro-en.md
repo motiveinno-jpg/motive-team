@@ -159,7 +159,7 @@ Whistle AI operates as an **Alibaba Korea Official Agency**, directly integrated
 │  v7          │              │              │            │
 │              │              │              │            │
 │ Claude AI    │ PostgreSQL   │ Stripe       │ Cloudflare │
-│ Vision API   │ 14 Tables    │ Toss         │ Pages CDN  │
+│ Vision API   │ 14 Tables    │ Connect      │ Pages CDN  │
 │ 3-Expert     │ RLS 100%     │ Escrow       │ Global     │
 │ Panel        │ Realtime     │ 3-Stage      │ Edge       │
 │              │              │              │            │

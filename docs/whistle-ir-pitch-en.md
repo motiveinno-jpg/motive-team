@@ -83,7 +83,7 @@ AI Export Analysis → Certification → Buyer Matching → Auto Documentation �
 
 - **Frontend:** Vanilla JS SPA (zero framework → ultra-lightweight, fast loading)
 - **Backend:** Supabase (Auth + PostgreSQL + RLS + Realtime + Edge Functions)
-- **Payments:** Stripe (Global) + Toss Payments (Korea)
+- **Payments:** Stripe (Global)
 - **Hosting:** Cloudflare Pages (Global CDN)
 - **Security:** 100% Row Level Security, Rate Limiting, XSS Protection
 

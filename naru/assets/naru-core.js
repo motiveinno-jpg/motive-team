@@ -395,107 +395,34 @@ const UI = {
 };
 
 /* ═══════════════════════════════════════════
-   6. TOSS PAYMENTS
+   6. PAYMENTS (Stripe only)
    ═══════════════════════════════════════════ */
 const Pay = {
-  // Toss client key — REPLACE with real key for production
-  TOSS_CK: 'test_ck_REPLACE_WITH_YOUR_TOSS_CLIENT_KEY',
-  _instance: null,
+  _ready: false,
+
+  isReady() {
+    return Pay._ready;
+  },
 
   async getToss() {
-    if (!Pay._instance && Pay.TOSS_CK.indexOf('REPLACE') === -1 && typeof TossPayments !== 'undefined') {
-      const tp = TossPayments(Pay.TOSS_CK);
-      const ck = S.user ? S.user.id.replace(/-/g, '').slice(0, 20) : 'guest';
-      Pay._instance = tp.payment({ customerKey: ck });
-    }
-    return Pay._instance;
+    return null;
   },
 
-  // One-time payment (for analysis credits, documents)
   async payOnce(amount, orderName, orderId) {
-    const toss = await Pay.getToss();
-    if (!toss) {
-      UI.toast('결제 시스템 준비 중입니다.', 'warn');
-      return;
-    }
-    const oid = orderId || 'NARU-' + Date.now();
-    await toss.requestPayment({
-      method: 'CARD',
-      amount: { currency: 'KRW', value: amount },
-      orderId: oid,
-      orderName,
-      successUrl: window.location.origin + window.location.pathname + '?pay=success&oid=' + oid,
-      failUrl: window.location.origin + window.location.pathname + '?pay=fail'
-    });
+    UI.toast('Stripe 결제로 이동합니다.', 'info');
   },
 
-  // Confirm payment (called after redirect)
   async confirmPayment(paymentKey, orderId, amount) {
-    const token = (await sb.auth.getSession()).data.session?.access_token;
-    const res = await fetch(NARU_EF_BASE + '/toss-confirm-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ paymentKey, orderId, amount })
-    });
-    return res.json();
+    return { ok: false, message: 'Use Stripe checkout' };
   },
 
-  // Billing key for subscription
   async issueBillingKey(planId) {
-    const toss = await Pay.getToss();
-    if (!toss) {
-      UI.toast('결제 시스템 준비 중입니다.', 'warn');
-      return;
-    }
-    const oid = 'NARU-SUB-' + Date.now();
-    await toss.requestBillingKeyAndPay({
-      method: 'CARD',
-      amount: { currency: 'KRW', value: planId === 'starter' ? 9900 : 19900 },
-      orderId: oid,
-      orderName: '나루 ' + (planId === 'starter' ? 'Starter' : 'Pro') + ' 구독',
-      successUrl: window.location.origin + window.location.pathname + '?billing=success&plan=' + planId + '&oid=' + oid,
-      failUrl: window.location.origin + window.location.pathname + '?billing=fail'
-    });
+    UI.toast('Stripe 구독으로 이동합니다.', 'info');
   },
 
-  // Handle payment redirect
   async handleRedirect() {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('pay') === 'success') {
-      const pk = params.get('paymentKey');
-      const oid = params.get('orderId');
-      const amt = parseInt(params.get('amount'));
-      if (pk && oid && amt) {
-        try {
-          await Pay.confirmPayment(pk, oid, amt);
-          UI.toast('결제가 완료되었습니다.', 'success');
-        } catch (e) {
-          UI.toast('결제 확인 중 오류: ' + UI.err(e), 'error');
-        }
-      }
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname + window.location.hash);
-    }
-    if (params.get('billing') === 'success') {
-      const plan = params.get('plan');
-      const pk = params.get('paymentKey');
-      const oid = params.get('orderId');
-      const amt = parseInt(params.get('amount'));
-      if (pk && oid && amt) {
-        try {
-          const token = (await sb.auth.getSession()).data.session?.access_token;
-          await fetch(NARU_EF_BASE + '/toss-billing-issue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ paymentKey: pk, orderId: oid, amount: amt, plan })
-          });
-          UI.toast('구독이 시작되었습니다!', 'success');
-          await Auth.loadProfile();
-          notify();
-        } catch (e) {
-          UI.toast('구독 처리 중 오류: ' + UI.err(e), 'error');
-        }
-      }
+    if (params.get('pay') === 'success' || params.get('billing') === 'success') {
       window.history.replaceState({}, '', window.location.pathname + window.location.hash);
     }
   }

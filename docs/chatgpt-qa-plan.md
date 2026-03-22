@@ -251,7 +251,7 @@ Realtime 재연결 시 갭 패치 정상
 4) 수정 필요 기능 중요도/긴급도 매트릭스(샘플)
 항목	중요도	긴급도	판정	이유
 analyze-export 실패(키/모델)	매우 높음	매우 높음	P0	유입 퍼널 핵심이 멈춤
-Stripe/Toss placeholder	높음	중간	P1	결제는 Phase0로 우회 가능
+Stripe placeholder	높음	중간	P1	결제는 Phase0로 우회 가능
 바이어 가입 게이트 누락	높음	높음	P0/P1	리드 증발, 재방문/추적 불가
 1:1 채팅 폴링(기존 pgChat)	중간	낮음	P2	딜룸이 핵심, pgChat은 후순위 가능
 트렌드 localhost 의존	중간	중간	P2	런칭 MVP에서 제외 가능

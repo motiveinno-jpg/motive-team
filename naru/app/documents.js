@@ -241,30 +241,9 @@ const Docs = {
     console.log('[NARU-DOC] 구독 상태:', S.sub ? S.sub.plan : 'none');
 
     if (!S.sub) {
-      // 결제 시스템 확인
-      const toss = await Pay.getToss();
-      if (!toss) {
-        // 토스 미설정 — 무료 생성 허용 (베타)
-        console.log('[NARU-DOC] 토스 미설정, 무료 생성 허용');
-        UI.toast('베타 기간 무료 생성', 'info');
-      } else {
-        const ok = await UI.confirm(`${dtype.ko} 생성 비용: ${UI.won(dtype.price)}\n\n결제하시겠습니까?`);
-        if (!ok) return;
-
-        sessionStorage.setItem('naru_pending_doc', JSON.stringify({
-          productId, docType, buyerName, buyerCountry, buyerAddress,
-          incoterms, currency, qty, unitPrice, notes
-        }));
-
-        try {
-          await Pay.payOnce(dtype.price, `나루 ${dtype.ko} 생성`, `NARU-DOC-${docType.toUpperCase()}-${Date.now()}`);
-          return; // Payment redirect
-        } catch (e) {
-          sessionStorage.removeItem('naru_pending_doc');
-          UI.toast('결제 오류: ' + UI.err(e), 'error');
-          return;
-        }
-      }
+      // No subscription — allow free generation during beta
+      console.log('[NARU-DOC] No subscription, free generation allowed (beta)');
+      UI.toast('베타 기간 무료 생성', 'info');
     }
 
     // Close modal

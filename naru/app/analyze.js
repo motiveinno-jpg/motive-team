@@ -858,13 +858,7 @@ const Analyze = {
       const product = await Setup.createProduct({ name: productName, url: url || null, category: category || null, fob_price: fob || null, images: image ? [image] : [] });
 
       if (!isFirst && !S.sub) {
-        // Try payment — if Toss key not configured, proceed with analysis (dev mode)
-        const toss = await Pay.getToss();
-        if (toss) {
-          removeOverlay();
-          try { await Pay.payOnce(9900, 'AI 수출 분석 - ' + (product.name || 'Product'), 'NARU-A-' + product.id.slice(0, 8) + '-' + Date.now()); return; } catch (payErr) { UI.toast('결제 오류: ' + UI.err(payErr), 'error'); return; }
-        }
-        // Toss not configured — skip payment, proceed with analysis
+        // No subscription — proceed with analysis (beta/free tier)
       }
 
       updateProgress(25, '🌐', 'URL 크롤링 중...', url ? url.slice(0, 50) + '...' : '제품 정보를 수집합니다', '2/5 단계');

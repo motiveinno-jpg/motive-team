@@ -159,7 +159,7 @@ Whistle AI는 **알리바바 코리아 공식대행사**로서, 세계 최대 B2
 │  v7          │              │              │            │
 │              │              │              │            │
 │ Claude AI    │ PostgreSQL   │ Stripe       │ Cloudflare │
-│ Vision API   │ 14 Tables    │ Toss         │ Pages CDN  │
+│ Vision API   │ 14 Tables    │ Connect      │ Pages CDN  │
 │ 3-Expert     │ RLS 100%     │ Escrow       │ Global     │
 │ Panel        │ Realtime     │ 3-Stage      │ Edge       │
 │              │              │              │            │

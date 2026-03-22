@@ -15,7 +15,7 @@
 | 기술 스택 | Vanilla JS SPA (단일 HTML), Supabase (Auth/DB/Realtime/Edge Functions), jsPDF |
 | 호스팅 | GitHub Pages (motiveinno-jpg.github.io/motive-team/) |
 | Supabase | lylktgxngrlxmsldxdqj.supabase.co |
-| 결제 | Stripe + Toss Payments |
+| 결제 | Stripe |
 | AI | Claude API (릴레이 서버 경유) |
 
 ### 전체 페이지 구성 (6개)
@@ -119,7 +119,7 @@
 | 알리바바 | saveAlibabaStore, saveAlibabaInquiry, getAlibabaReply | 10 |
 | 마켓플레이스 | loadMarketplace, viewMarketRequest, submitProposal | 4 |
 | 트렌드 | loadTrends, genTrendReport, setTrendAutoFreq | 6 |
-| 구독/결제 | openCheckout, initStripeCheckout, initTossCheckout, chgPlan | 8 |
+| 구독/결제 | openCheckout, initStripeCheckout, chgPlan | 8 |
 | 설정 | saveSt, uploadCompDoc, saveCompanyProfile | 5 |
 | 기타 | doSearch, toggleMob, toggleNotif, exportCSV, downloadReportPDF | 15 |
 
@@ -414,9 +414,6 @@
 | upload-payment-proof | 결제 증빙 업로드 |
 | verify-payment-proof | 결제 증빙 확인 |
 | create-payment-milestone | 결제 마일스톤 생성 |
-| toss-billing-issue | 토스 빌링 발행 |
-| toss-billing-charge | 토스 빌링 결제 |
-| toss-webhook | 토스 웹훅 |
 | stripe-webhook | Stripe 웹훅 |
 | create-checkout-session | Stripe 결제 세션 |
 | create-billing-portal | Stripe 빌링 포털 |

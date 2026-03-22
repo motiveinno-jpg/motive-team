@@ -562,7 +562,7 @@ buyer.html ◀──── inquiries ────▶ whistle.html
 - [ ] 셀러-바이어 매칭 로직
 - [ ] 인콰이어리 라우팅 (자동 → 셀러 or Admin)
 - [ ] 네이버 상품 ↔ 셀러 상품 매핑
-- [ ] 결제 시스템 (Stripe or Toss)
+- [ ] 결제 시스템 (Stripe)
 
 ### Phase 3 — 스케일 (1~2개월)
 - [ ] 영문 버전 + 번역 레이어
