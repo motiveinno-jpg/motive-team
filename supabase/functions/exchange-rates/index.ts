@@ -27,6 +27,11 @@ serve(async (req: Request) => {
     const sbAdmin = createClient(sbUrl, sbServiceRole);
 
     if (req.method === "POST") {
+      // Check if body is empty — treat as GET (rate fetch)
+      const contentLength = req.headers.get("content-length");
+      if (!contentLength || contentLength === "0") {
+        return await handleGetRates(sbAdmin);
+      }
       return await handleConvert(req, sbAdmin);
     }
 

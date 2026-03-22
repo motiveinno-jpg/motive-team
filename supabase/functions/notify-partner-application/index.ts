@@ -1,7 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
-const TELEGRAM_BOT_TOKEN = '8515924083:AAFN5Kl49vX_GoCkut5vzjkk5r4l4P0B4aU'
-const TELEGRAM_CHAT_ID = '7790078977'
+const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') || ''
+const TELEGRAM_CHAT_ID = Deno.env.get('TELEGRAM_CHAT_ID') || ''
 
 const PARTNER_TYPE_MAP: Record<string, string> = {
   customs_broker: '관세사',
