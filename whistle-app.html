@@ -395,6 +395,19 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .cmd-item .ci-shortcut{font-size:11px;color:var(--w30);font-family:'SF Mono',monospace}
 .cmd-item .ci-shortcut kbd{background:var(--w10);border:1px solid var(--bd);border-radius:3px;padding:1px 5px;font-size:10px}
 .cmd-empty{padding:24px;text-align:center;color:var(--w30);font-size:13px}
+/* Skeleton loading placeholders */
+@keyframes skeletonPulse{0%{opacity:.06}50%{opacity:.12}100%{opacity:.06}}
+.skel{background:var(--w20);border-radius:8px;animation:skeletonPulse 1.5s ease-in-out infinite}
+.skel-line{height:14px;margin-bottom:10px}
+.skel-line.w60{width:60%}.skel-line.w40{width:40%}.skel-line.w80{width:80%}.skel-line.w30{width:30%}
+.skel-card{border:1px solid var(--bd);border-radius:12px;padding:20px;margin-bottom:12px}
+.skel-card .skel-title{height:18px;width:50%;margin-bottom:14px}
+.skel-card .skel-row{display:flex;gap:12px;margin-bottom:10px}
+.skel-card .skel-row .skel-box{height:60px;flex:1;border-radius:8px}
+.skel-banner{height:72px;border-radius:12px;margin-bottom:14px}
+.deferred-loading-bar{position:fixed;top:0;left:0;width:100%;height:2px;z-index:100000;overflow:hidden}
+.deferred-loading-bar::after{content:'';display:block;width:30%;height:100%;background:var(--pri);border-radius:0 2px 2px 0;animation:deferBar 1.2s ease-in-out infinite}
+@keyframes deferBar{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}
 @media print{.sidebar,.topbar,.mob-bottom-nav,.float-chat-btn,.float-chat-panel,.mob-overlay,.modal-overlay,.btn,.getting-started{display:none!important}.main-area{margin-left:0!important}.page-content{padding:0!important;background:#fff;color:#000}*{color:#000!important;background:transparent!important;box-shadow:none!important;text-shadow:none!important}.card{border:1px solid #ddd!important;page-break-inside:avoid}.card-h{border-bottom:1px solid #ddd!important}.badge{border:1px solid #999!important}table{border-collapse:collapse!important}th,td{border:1px solid #ccc!important;padding:4px 8px!important}a{text-decoration:underline!important}}
 </style>
 </head>
@@ -1396,28 +1409,38 @@ function loadExchangeRate(){
     }).catch(function(){_loadExRateFallback();});
   });
 }
+/* Fetch with AbortController timeout — for all external (non-Supabase) APIs */
+function _fetchWithTimeout(url,opts,timeoutMs){
+  var ms=timeoutMs||10000;
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},ms);
+  var fetchOpts=Object.assign({},opts||{},{signal:ctrl.signal});
+  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);return r;}).catch(function(e){clearTimeout(timer);throw e;});
+}
 /* 2차: Frankfurter API (완전 무료, 인증 불필요) */
 function _loadExRateFallback(){
   /* 3차 폴백: localStorage 캐시 (1시간 이내면 사용) */
   var cached=localStorage.getItem('whistle_exrate');
-  if(cached){try{var c=JSON.parse(cached);if(c.rate&&c.time&&Date.now()-c.time<3600000){S.exchangeRate=c.rate;window._exRate=c.rate;}}catch(e){console.error('[whistle]',e);}}
-  fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
+  if(cached){try{var c=JSON.parse(cached);if(c.rate&&c.time&&Date.now()-c.time<3600000){S.exchangeRate=c.rate;window._exRate=c.rate;}}catch(e){console.error('[exrate]',e);}}
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',null,10000).then(function(r){return r.json();}).then(function(d){
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
-  }).catch(function(e){console.error('[whistle]',e);});
+  }).catch(function(e){console.error('[exrate] Frankfurter USD/KRW failed (using cache):',e.name||e.message);});
   /* 다통화 환율 로드 (KRW 기준 → 시장별 통화 표시용) */
-  fetch('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB,INR,CAD').then(function(r){return r.json();}).then(function(d){
-    if(d&&d.rates){window._fxRates=d.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();}
-  }).catch(function(e){console.error('[whistle]',e);});
+  var cachedMulti=localStorage.getItem('whistle_fxrates');
+  if(cachedMulti){try{var cm=JSON.parse(cachedMulti);if(cm.rates&&cm.time&&Date.now()-cm.time<3600000){window._fxRates=cm.rates;window._fxRatesUpdated=new Date(cm.time);_updateFxIndicator();}}catch(e){console.error('[exrate]',e);}}
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB,INR,CAD',null,10000).then(function(r){return r.json();}).then(function(d){
+    if(d&&d.rates){window._fxRates=d.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();localStorage.setItem('whistle_fxrates',JSON.stringify({rates:d.rates,time:Date.now()}));}
+  }).catch(function(e){console.error('[exrate] Frankfurter multi-currency failed (using cache):',e.name||e.message);});
 }
 function refreshExRate(){
   S._exRateLoading=true;render();
-  fetch('https://api.frankfurter.app/latest?from=USD&to=KRW').then(function(r){return r.json();}).then(function(d){
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',null,10000).then(function(r){return r.json();}).then(function(d){
     S._exRateLoading=false;
-    if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;S._exRateTime=new Date().toLocaleTimeString(_isKorean?'ko-KR':'en-US',{hour:'2-digit',minute:'2-digit'});UI.toast(T('toast_fx_update')+d.rates.KRW.toLocaleString(),'ok');}
+    if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;S._exRateTime=new Date().toLocaleTimeString(_isKorean?'ko-KR':'en-US',{hour:'2-digit',minute:'2-digit'});UI.toast(T('toast_fx_update')+d.rates.KRW.toLocaleString(),'ok');localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
     /* 다통화도 갱신 */
-    fetch('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB,INR,CAD').then(function(r2){return r2.json();}).then(function(d2){
-      if(d2&&d2.rates){window._fxRates=d2.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();}
-    }).catch(function(e2){console.error('[fx] multi-currency refresh failed:', e2);});
+    _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB,INR,CAD',null,10000).then(function(r2){return r2.json();}).then(function(d2){
+      if(d2&&d2.rates){window._fxRates=d2.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();localStorage.setItem('whistle_fxrates',JSON.stringify({rates:d2.rates,time:Date.now()}));}
+    }).catch(function(e2){console.error('[fx] multi-currency refresh failed:', e2.name||e2.message);});
     render();
     /* 플로팅 패널도 갱신 */
     saveCostInputs();
@@ -1450,34 +1473,52 @@ function _updateFxIndicator(){
   el.textContent=label;
 }
 /* 국가 정보 로딩 (REST Countries API — 완전 무료) */
+function _parseCountryData(data){
+  if(!Array.isArray(data))return null;
+  var result={};
+  data.forEach(function(c){
+    var code=c.cca2;if(!code)return;
+    var cur=c.currencies?Object.keys(c.currencies)[0]:null;
+    var lang=c.languages?Object.values(c.languages)[0]:null;
+    result[code]={
+      name:c.name.common,nameKo:c.name.nativeName&&c.name.nativeName.kor?c.name.nativeName.kor.common:c.name.common,
+      cca3:c.cca3,currency:cur,currencyName:cur&&c.currencies[cur]?c.currencies[cur].name:null,
+      language:lang,capital:c.capital?c.capital[0]:null,
+      population:c.population,region:c.region,subregion:c.subregion,
+      flag:c.flags?c.flags.svg||c.flags.png:null,timezone:c.timezones?c.timezones[0]:null
+    };
+  });
+  return result;
+}
 function _loadCountryData(){
   if(window._countryData)return;
-  fetch('https://restcountries.com/v3.1/all?fields=name,cca2,cca3,currencies,languages,capital,population,region,subregion,flags,timezones').then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(data){
-    if(!Array.isArray(data)){return;}
-    window._countryData={};
-    data.forEach(function(c){
-      var code=c.cca2;if(!code)return;
-      var cur=c.currencies?Object.keys(c.currencies)[0]:null;
-      var lang=c.languages?Object.values(c.languages)[0]:null;
-      window._countryData[code]={
-        name:c.name.common,nameKo:c.name.nativeName&&c.name.nativeName.kor?c.name.nativeName.kor.common:c.name.common,
-        cca3:c.cca3,currency:cur,currencyName:cur&&c.currencies[cur]?c.currencies[cur].name:null,
-        language:lang,capital:c.capital?c.capital[0]:null,
-        population:c.population,region:c.region,subregion:c.subregion,
-        flag:c.flags?c.flags.svg||c.flags.png:null,timezone:c.timezones?c.timezones[0]:null
-      };
-    });
-    /* World Bank GDP/수출입 데이터 로드 (주요 수출 대상국) */
+  /* Try localStorage cache first (24h TTL) */
+  var cached=localStorage.getItem('whistle_countrydata');
+  if(cached){try{var cc=JSON.parse(cached);if(cc.data&&cc.time&&Date.now()-cc.time<86400000){window._countryData=cc.data;_loadWorldBankData();return;}}catch(e){console.error('[country]',e);}}
+  _fetchWithTimeout('https://restcountries.com/v3.1/all?fields=name,cca2,cca3,currencies,languages,capital,population,region,subregion,flags,timezones',null,10000).then(function(r){if(!r.ok)throw new Error(r.status);return r.json();}).then(function(data){
+    var parsed=_parseCountryData(data);
+    if(!parsed)return;
+    window._countryData=parsed;
+    try{localStorage.setItem('whistle_countrydata',JSON.stringify({data:parsed,time:Date.now()}));}catch(e){/* storage full */}
     _loadWorldBankData();
-  }).catch(function(e){console.error('[whistle]',e);});
+  }).catch(function(e){
+    console.error('[country] REST Countries API failed (using cache if available):',e.name||e.message);
+    /* Fallback: try cached data even if expired */
+    if(!window._countryData&&cached){try{var cc2=JSON.parse(cached);if(cc2.data){window._countryData=cc2.data;_loadWorldBankData();}}catch(e2){console.error('[country]',e2);}}
+  });
 }
 /* World Bank API — GDP + 수출 규모 (무료, 인증 불필요) */
 function _loadWorldBankData(){
-  if(window._wbData)return;window._wbData={};
+  if(window._wbData)return;
+  /* Try localStorage cache first (24h TTL) */
+  var cached=localStorage.getItem('whistle_wbdata');
+  if(cached){try{var cc=JSON.parse(cached);if(cc.data&&cc.time&&Date.now()-cc.time<86400000){window._wbData=cc.data;return;}}catch(e){console.error('[worldbank]',e);}}
+  window._wbData={};
   var countries='USA;JPN;CHN;DEU;VNM;ARE;AUS;BRA;GBR;SGP;THA;IDN;MYS;PHL;IND';
   var indicators=['NY.GDP.MKTP.CD','NE.EXP.GNFS.CD'];
+  var _wbDone=0;
   indicators.forEach(function(ind){
-    fetch('https://api.worldbank.org/v2/country/'+countries+'/indicator/'+ind+'?format=json&date=2022:2024&per_page=100').then(function(r){return r.json();}).then(function(d){
+    _fetchWithTimeout('https://api.worldbank.org/v2/country/'+countries+'/indicator/'+ind+'?format=json&date=2022:2024&per_page=100',null,10000).then(function(r){return r.json();}).then(function(d){
       if(!d||!d[1])return;
       d[1].forEach(function(row){
         if(!row.value)return;
@@ -1487,7 +1528,14 @@ function _loadWorldBankData(){
           window._wbData[iso3][ind]={value:row.value,year:row.date};
         }
       });
-    }).catch(function(e){console.error('[whistle]',e);});
+    }).catch(function(e){
+      console.error('[worldbank] '+ind+' failed:',e.name||e.message);
+    }).then(function(){
+      _wbDone++;
+      if(_wbDone>=indicators.length&&Object.keys(window._wbData).length>0){
+        try{localStorage.setItem('whistle_wbdata',JSON.stringify({data:window._wbData,time:Date.now()}));}catch(e){/* storage full */}
+      }
+    });
   });
 }
 /* 사용자 국가 기반 현지 통화 결정 */
@@ -1544,13 +1592,70 @@ function loadUser(){
       var _tr=localStorage.getItem('whistle_target_rate');if(_tr)S._targetExRate=Number(_tr);
       /* 매출 목표 복원 */
       if(r.data.sales_goal)S._salesGoal=r.data.sales_goal;
-      loadExchangeRate();_loadExRatesFromEdge();_loadCountryData();
+      /* Timeout wrapper: prevents one slow API from blocking everything */
+      function _withTimeout(p,ms){return Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'));},ms);})]);}
+      var FETCH_TIMEOUT=10000;
+      /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
+      var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
+      /* Master timeout: force-render after 15s if entire init chain hangs */
+      var _initDone=false;
+      var _initTimeout=setTimeout(function(){
+        if(!_initDone){
+          _initDone=true;
+          console.error('[init] Master timeout (15s) — forcing render with available data');
+          S.loading=false;S._deferredLoading=false;
+          var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;
+          render();
+          var ol=document.getElementById('appLoadingOverlay');if(ol){ol.style.opacity='0';setTimeout(function(){ol.remove()},500);}
+          UI.toast(_isKorean?'일부 데이터 로딩 중...':'Some data still loading...','info');
+        }
+      },15000);
+      /* Phase 1: Dashboard-critical data — load company + analyses + products FIRST, render immediately */
       sb.from('companies').select('*').eq('user_id',r.data.id).maybeSingle().then(function(cr){
-        S.company=cr.data||null;S.loading=false;
-        /* Promise.allSettled polyfill for older browsers (iOS 12, Samsung Internet 11) */
-        var _settled=typeof Promise.allSettled==='function'?Promise.allSettled.bind(Promise):function(ps){return Promise.all(ps.map(function(p){return Promise.resolve(p).then(function(v){return{status:'fulfilled',value:v};},function(e){return{status:'rejected',reason:e};});}));};
-        _settled([loadA(),loadP(),loadPr(),loadSR(),loadB(),loadEmailLogs(),loadShippingRates(),loadTariffRates(),loadOrders(),loadNotifications(),loadMeetings(),loadSamples(),loadShipments(),loadMilestones(),loadAlibabaStores(),loadAlibabaInquiries(),loadDocs(),loadCompanyDocs(),loadMarketplace(),loadMyProposals(),loadReceivedReviews(),loadMatchings(),loadSharedDocs(),_loadEscrowFromDB()]).then(function(){var _paidCredits=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length;var _now=new Date();var _curPlan=S.user&&S.user.plan||'free';var _planMax=(PLAN_LIMITS[_curPlan]||PLAN_LIMITS.free).analyses;var _usedThisMonth=(S.analyses||[]).filter(function(a){var d=new Date(a.created_at);return d.getMonth()===_now.getMonth()&&d.getFullYear()===_now.getFullYear();}).length;var _overPlan=Math.max(0,_usedThisMonth-_planMax);S._singleAnalysisCredit=Math.max(0,_paidCredits-_overPlan);enrichBuyerProfiles();loadPinnedChats();loadChatAutoTranslate();_loadInvitations();loadChatSummaries();initChatRealtime();loadTrendReports();setTimeout(checkTrendAutoSend,5000);var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;render();var ol=document.getElementById('appLoadingOverlay');if(ol){ol.style.opacity='0';setTimeout(function(){ol.remove()},500);}});
+        S.company=cr.data||null;S.loading=false;S._deferredLoading=true;
+        _settled([_withTimeout(loadA(),FETCH_TIMEOUT),_withTimeout(loadP(),FETCH_TIMEOUT),_withTimeout(loadSR(),FETCH_TIMEOUT)]).then(function(r1){
+          r1.forEach(function(x,i){if(x.status==='rejected')console.error('[init] Phase1 query '+i+' failed:',x.reason);});
+          /* Render dashboard immediately with critical data */
+          var _paidCredits=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length;
+          var _now=new Date();var _curPlan=S.user&&S.user.plan||'free';var _planMax=(PLAN_LIMITS[_curPlan]||PLAN_LIMITS.free).analyses;
+          var _usedThisMonth=(S.analyses||[]).filter(function(a){var d=new Date(a.created_at);return d.getMonth()===_now.getMonth()&&d.getFullYear()===_now.getFullYear();}).length;
+          var _overPlan=Math.max(0,_usedThisMonth-_planMax);S._singleAnalysisCredit=Math.max(0,_paidCredits-_overPlan);
+          var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;
+          render();
+          var ol=document.getElementById('appLoadingOverlay');if(ol){ol.style.opacity='0';setTimeout(function(){ol.remove()},500);}
+          /* Phase 2: Non-critical data — load in background after first render */
+          _settled([
+            _withTimeout(loadPr(),FETCH_TIMEOUT),_withTimeout(loadB(),FETCH_TIMEOUT),_withTimeout(loadOrders(),FETCH_TIMEOUT),
+            _withTimeout(loadNotifications(),FETCH_TIMEOUT),_withTimeout(loadDocs(),FETCH_TIMEOUT),_withTimeout(loadCompanyDocs(),FETCH_TIMEOUT),
+            _withTimeout(loadEmailLogs(),FETCH_TIMEOUT),_withTimeout(loadMeetings(),FETCH_TIMEOUT),_withTimeout(loadMatchings(),FETCH_TIMEOUT),
+            _withTimeout(loadSharedDocs(),FETCH_TIMEOUT),_withTimeout(_loadEscrowFromDB(),FETCH_TIMEOUT)
+          ]).then(function(r2){
+            r2.forEach(function(x,i){if(x.status==='rejected')console.error('[init] Phase2 query '+i+' failed:',x.reason);});
+            enrichBuyerProfiles();render();
+            /* Phase 3: Lowest priority — trends, rates, marketplace */
+            _settled([
+              _withTimeout(loadShippingRates(),FETCH_TIMEOUT),_withTimeout(loadTariffRates(),FETCH_TIMEOUT),
+              _withTimeout(loadSamples(),FETCH_TIMEOUT),_withTimeout(loadShipments(),FETCH_TIMEOUT),
+              _withTimeout(loadMilestones(),FETCH_TIMEOUT),_withTimeout(loadAlibabaStores(),FETCH_TIMEOUT),
+              _withTimeout(loadAlibabaInquiries(),FETCH_TIMEOUT),_withTimeout(loadMarketplace(),FETCH_TIMEOUT),
+              _withTimeout(loadMyProposals(),FETCH_TIMEOUT),_withTimeout(loadReceivedReviews(),FETCH_TIMEOUT)
+            ]).then(function(r3){
+              r3.forEach(function(x,i){if(x.status==='rejected')console.error('[init] Phase3 query '+i+' failed:',x.reason);});
+              if(!_initDone){_initDone=true;clearTimeout(_initTimeout);}
+              S._deferredLoading=false;
+              loadPinnedChats();loadChatAutoTranslate();_loadInvitations();loadChatSummaries();initChatRealtime();
+              loadTrendReports();setTimeout(checkTrendAutoSend,5000);
+              render();
+            });
+          });
+        });
+      }).catch(function(e){
+        console.error('[init] Company load failed:',e);
+        if(!_initDone){_initDone=true;clearTimeout(_initTimeout);}
+        S.loading=false;S._deferredLoading=false;render();
       });
+      /* Fire-and-forget: exchange rates + country data (non-blocking) */
+      loadExchangeRate();_loadExRatesFromEdge();_loadCountryData();
     });
   });
 }
@@ -2125,6 +2230,12 @@ function pgDash(){
     var nextTips=_isKorean?{planning:'제품 분석과 타겟 시장을 선정하세요',certification:'필요 인증(FDA 등)을 확인하고 신청하세요',buyer_search:'AI 바이어 발굴로 잠재 고객을 찾으세요',sample:'바이어에게 샘플을 발송하고 피드백을 받으세요',negotiation:'가격/조건을 협상하고 계약서를 작성하세요',production:'주문 확정 후 생산을 시작하세요',documents:'CI, PL, CO 등 필수 서류를 준비하세요',shipping:'포워더에 선적을 의뢰하세요',customs:'수입국 통관 진행 상황을 확인하세요',completed:'축하합니다! 수출이 완료되었습니다 🎉'}:{planning:'Analyze products and select target markets',certification:'Check required certifications (FDA, etc.) and apply',buyer_search:'Find potential buyers with AI',sample:'Send samples and collect feedback',negotiation:'Negotiate terms and draft contracts',production:'Start production after order confirmation',documents:'Prepare CI, PL, CO and other documents',shipping:'Arrange shipment with a forwarder',customs:'Monitor import customs clearance',completed:'Congratulations! Export completed 🎉'};
     h+='<div style="padding:10px 14px;border-radius:8px;background:var(--w08);display:flex;align-items:center;gap:10px"><span style="font-size:16px">'+(jp.status==='completed'?'🎉':'💡')+'</span><div><div style="font-size:12px;font-weight:600;color:var(--pri)">현재: '+journeyStage+'</div><div style="font-size:11px;color:var(--w40)">'+nextTips[jp.status]+'</div></div><button class="btn btn-ghost btn-sm" onclick="App.viewPj(\''+jp.id+'\')" style="margin-left:auto;font-size:11px">'+(_isKorean?'상세 →':'Details →')+'</button></div>';
     h+='</div></div>';
+  }
+  /* Skeleton placeholders for sections still loading in background */
+  if(S._deferredLoading){
+    h+='<div class="skel-card"><div class="skel skel-title"></div><div class="skel-row"><div class="skel skel-box"></div><div class="skel skel-box"></div><div class="skel skel-box"></div></div><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div>';
+    h+='<div class="grid-2" style="margin-bottom:16px"><div class="skel-card"><div class="skel skel-title"></div><div class="skel skel-line w80"></div><div class="skel skel-line w60"></div><div class="skel skel-line w40"></div></div><div class="skel-card"><div class="skel skel-title"></div><div class="skel skel-line w80"></div><div class="skel skel-line w60"></div></div></div>';
+    return h;
   }
   /* 활동 타임라인 + 최근 분석/서비스 */
   h+='<div class="grid-2" style="margin-bottom:16px">';
@@ -14401,39 +14512,45 @@ var PL={dashboard:'📊 대시보드',analysis:'🔬 AI 수출 분석',products:
 /* === ONBOARDING WIZARD === */
 function pgOnboarding(){
   var step=S.user.onboarding_step||0;
-  var steps=['회사 정보','첫 제품 등록','AI 분석 시작'];
-  var bar='<div style="display:flex;gap:4px;margin-bottom:24px">'+steps.map(function(s,i){return '<div style="flex:1"><div style="height:4px;border-radius:2px;background:'+(i<step?'var(--ok)':i===step?'var(--pri)':'var(--w08)')+';margin-bottom:6px"></div><div style="font-size:10px;color:'+(i===step?'var(--pri)':'var(--w40)')+';font-weight:'+(i===step?'700':'400')+'">'+(i+1)+'. '+s+'</div></div>';}).join('')+'</div>';
-  var hdr='<div style="max-width:640px;margin:0 auto"><div style="text-align:center;margin-bottom:24px"><div style="font-size:32px;margin-bottom:8px">👋</div><div style="font-size:20px;font-weight:800">Whistle AI에 오신 것을 환영합니다!</div><div style="font-size:13px;color:var(--w40);margin-top:6px">3단계만 완료하면 바로 수출 분석을 시작할 수 있습니다</div></div>'+bar;
+  var steps=_isKorean?['회사 정보','첫 제품 등록','AI 분석 시작']:['Company Info','First Product','Start AI Analysis'];
+  var stepDescs=_isKorean?['AI가 맞춤 수출 전략을 제안하려면 회사 정보가 필요합니다','분석할 제품을 하나 등록하세요. 나중에 더 추가할 수 있습니다','등록한 제품의 수출 가능성을 AI가 30초 만에 분석합니다']:['We need your company info to provide tailored export strategies','Register one product to analyze. You can add more later','AI analyzes your product\'s export potential in 30 seconds'];
+  var pctDone=Math.round((step/3)*100);
+  var bar='<div style="margin-bottom:24px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--pri)">'+(step+1)+'/3</span><span style="font-size:11px;color:var(--w30)">'+pctDone+'% '+(_isKorean?'완료':'complete')+'</span></div>';
+  bar+='<div style="height:6px;border-radius:3px;background:var(--w08);overflow:hidden;margin-bottom:12px"><div style="height:100%;width:'+pctDone+'%;background:linear-gradient(90deg,var(--pri),#8b5cf6);border-radius:3px;transition:width .4s ease"></div></div>';
+  bar+='<div style="display:flex;gap:4px">'+steps.map(function(s,i){return '<div style="flex:1"><div style="height:4px;border-radius:2px;background:'+(i<step?'var(--ok)':i===step?'var(--pri)':'var(--w08)')+';margin-bottom:6px"></div><div style="font-size:10px;color:'+(i===step?'var(--pri)':'var(--w40)')+';font-weight:'+(i===step?'700':'400')+'">'+(i+1)+'. '+s+'</div></div>';}).join('')+'</div></div>';
+  var hdr='<div style="max-width:640px;margin:0 auto"><div style="text-align:center;margin-bottom:24px"><div style="font-size:32px;margin-bottom:8px">👋</div><div style="font-size:20px;font-weight:800">'+(_isKorean?'Whistle AI에 오신 것을 환영합니다!':'Welcome to Whistle AI!')+'</div><div style="font-size:13px;color:var(--w40);margin-top:6px">'+(_isKorean?'3단계만 완료하면 바로 수출 분석을 시작할 수 있습니다':'Complete 3 steps to start your export analysis')+'</div></div>'+bar;
+  hdr+='<div style="padding:10px 14px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15);margin-bottom:16px;display:flex;align-items:center;gap:10px"><span style="font-size:16px">💡</span><span style="font-size:12px;color:var(--w60)">'+stepDescs[step]+'</span></div>';
   var body='';
   if(step===0){
     body='<div class="card"><div class="card-h">🏢 '+(_isKorean?'회사 정보':'Company Info')+'</div><div class="card-b"><form id="obf0">'+
       (_isKorean?UI.inp('name_ko','회사명',{placeholder:'(주)모티브이노베이션',required:true,value:(S.company&&S.company.name_ko)||''}):UI.inp('name_en','Company Name',{placeholder:'Green Valley Foods Inc.',required:true,value:(S.company&&S.company.name_en)||''}))+
-      '<div class="grid-2">'+UI.inp('ceo_name_ko',(_isKorean?'대표자명':'CEO Name'),{placeholder:'홍길동',value:(S.company&&(S.company.ceo_name_ko||S.company.ceo_name))||''})+UI.inp('phone',(_isKorean?'전화번호':'Phone'),{placeholder:'02-1234-5678',value:(S.company&&S.company.phone)||''})+'</div>'+
+      '<div class="grid-2">'+UI.inp('ceo_name_ko',(_isKorean?'대표자명':'CEO Name'),{placeholder:(_isKorean?'홍길동':'John Doe'),value:(S.company&&(S.company.ceo_name_ko||S.company.ceo_name))||''})+UI.inp('phone',(_isKorean?'전화번호':'Phone'),{placeholder:'02-1234-5678',value:(S.company&&S.company.phone)||''})+'</div>'+
       '<div class="grid-2">'+UI.inp('biz_number',(_isKorean?'사업자번호':'Business Reg. No.'),{placeholder:'123-45-67890',value:(S.company&&S.company.biz_number)||''})+UI.sel('personal_id_type',(_isKorean?'기업 유형':'Company Type'),[{value:'',label:(_isKorean?'선택':'Select')},{value:'corporation',label:(_isKorean?'법인사업자':'Corporation')},{value:'individual',label:(_isKorean?'개인사업자':'Sole Proprietor')},{value:'individual_person',label:(_isKorean?'개인':'Individual')}],(S.company&&S.company.personal_id_type)||'')+'</div>'+
       '<div class="grid-2">'+UI.sel('category',(_isKorean?'카테고리':'Category'),[''].concat(U.CAT.map(function(c){return{value:c,label:U.catLabel(c)};})),( S.company&&S.company.category)||'')+UI.sel('manufacturing_type',(_isKorean?'제조유형':'Manufacturing Type'),[{value:'',label:(_isKorean?'선택':'Select')},{value:'direct',label:(_isKorean?'직접제조':'Direct Mfg')},{value:'oem',label:'OEM'},{value:'odm',label:'ODM'},{value:'trading',label:(_isKorean?'무역/유통':'Trading')}],(S.company&&S.company.manufacturing_type)||'')+'</div>'+
-      UI.inp('address_ko','주소',{placeholder:'서울시 강남구...',value:(S.company&&S.company.address_ko)||''})+
+      UI.inp('address_ko',(_isKorean?'주소':'Address'),{placeholder:(_isKorean?'서울시 강남구...':'123 Main St...'),value:(S.company&&S.company.address_ko)||''})+
     '</form></div></div>';
   }else if(step===1){
-    body='<div class="card"><div class="card-h">📦 첫 제품 등록</div><div class="card-b"><form id="obf1">'+
-      UI.inp('product_name',(_isKorean?'제품명':'Product Name'),{placeholder:'닥터지 레드 블레미쉬 수딩크림',required:true})+
+    body='<div class="card"><div class="card-h">📦 '+(_isKorean?'첫 제품 등록':'First Product')+'</div><div class="card-b"><form id="obf1">'+
+      UI.inp('product_name',(_isKorean?'제품명':'Product Name'),{placeholder:(_isKorean?'닥터지 레드 블레미쉬 수딩크림':'Dr.G Red Blemish Soothing Cream'),required:true})+
       '<div class="grid-2">'+UI.sel('category',(_isKorean?'카테고리':'Category'),[''].concat(U.CAT.map(function(c){return{value:c,label:U.catLabel(c)};})))+UI.inp('product_url',(_isKorean?'상품 URL (선택)':'Product URL (optional)'),{placeholder:'https://smartstore.naver.com/...'})+'</div>'+
-    '</form><div style="margin-top:8px;font-size:11px;color:var(--w40)">제품은 나중에 더 추가/수정할 수 있습니다</div></div></div>';
+    '</form><div style="margin-top:8px;font-size:11px;color:var(--w40)">'+(_isKorean?'제품은 나중에 더 추가/수정할 수 있습니다':'You can add or edit products anytime later')+'</div></div></div>';
   }else{
-    body='<div class="card"><div class="card-h">🔬 AI 수출 분석</div><div class="card-b" style="text-align:center;padding:32px 16px">'+
+    body='<div class="card"><div class="card-h">🔬 '+(_isKorean?'AI 수출 분석':'AI Export Analysis')+'</div><div class="card-b" style="text-align:center;padding:32px 16px">'+
       '<div style="font-size:48px;margin-bottom:12px">🚀</div>'+
-      '<div style="font-size:16px;font-weight:700;margin-bottom:8px">준비 완료!</div>'+
-      '<div style="font-size:13px;color:var(--w40);line-height:1.7;margin-bottom:20px">등록한 제품의 AI 수출 분석을 바로 시작하세요.<br>30초 이내에 수출 적합도, 타겟 시장, 필요 인증 등을 분석합니다.</div>'+
-      '<button class="btn btn-pri btn-lg" onclick="App.completeOnboarding(true)" style="font-size:15px;padding:14px 32px">🔬 AI 분석 시작하기</button>'+
+      '<div style="font-size:16px;font-weight:700;margin-bottom:8px">'+(_isKorean?'준비 완료!':'All Set!')+'</div>'+
+      '<div style="font-size:13px;color:var(--w40);line-height:1.7;margin-bottom:20px">'+(_isKorean?'등록한 제품의 AI 수출 분석을 바로 시작하세요.<br>30초 이내에 수출 적합도, 타겟 시장, 필요 인증 등을 분석합니다.':'Start AI export analysis for your registered product.<br>Get export suitability, target markets, and required certifications in 30 seconds.')+'</div>'+
+      '<button class="btn btn-pri btn-lg" onclick="App.completeOnboarding(true)" style="font-size:15px;padding:14px 32px">🔬 '+(_isKorean?'AI 분석 시작하기':'Start AI Analysis')+'</button>'+
     '</div></div>'+
-    '<div class="card" style="margin-top:12px"><div class="card-h">💡 분석 후 이런 것도 가능합니다</div><div class="card-b" style="padding:12px 16px">'+
+    '<div class="card" style="margin-top:12px"><div class="card-h">💡 '+(_isKorean?'분석 후 이런 것도 가능합니다':'After analysis, you can also')+'</div><div class="card-b" style="padding:12px 16px">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">'+
-        '<div style="padding:8px;background:var(--w04);border-radius:6px">🤝 <strong>딜 파이프라인</strong><br><span style="color:var(--w40)">바이어 매칭→견적→계약→주문→출하 전 단계 관리</span></div>'+
-        '<div style="padding:8px;background:var(--w04);border-radius:6px">🔒 <strong>안전결제</strong><br><span style="color:var(--w40)">'+(_isKorean?'안전 거래 — 바이어 결제 확보 후 배송':'Secure trade — ship after buyer payment secured')+'</span></div>'+
-        '<div style="padding:8px;background:var(--w04);border-radius:6px">📄 <strong>서류 자동 생성</strong><br><span style="color:var(--w40)">PI/CI/PL/CO/SC 원클릭 생성 + 전자서명</span></div>'+
-        '<div style="padding:8px;background:var(--w04);border-radius:6px">💬 <strong>실시간 채팅</strong><br><span style="color:var(--w40)">바이어와 직접 소통 + AI 자동 번역</span></div>'+
+        '<div style="padding:8px;background:var(--w04);border-radius:6px">🤝 <strong>'+(_isKorean?'딜 파이프라인':'Deal Pipeline')+'</strong><br><span style="color:var(--w40)">'+(_isKorean?'바이어 매칭→견적→계약→주문→출하 전 단계 관리':'Buyer matching, quote, contract, order, shipping')+'</span></div>'+
+        '<div style="padding:8px;background:var(--w04);border-radius:6px">🔒 <strong>'+(_isKorean?'안전결제':'Secure Payment')+'</strong><br><span style="color:var(--w40)">'+(_isKorean?'안전 거래 — 바이어 결제 확보 후 배송':'Secure trade — ship after buyer payment secured')+'</span></div>'+
+        '<div style="padding:8px;background:var(--w04);border-radius:6px">📄 <strong>'+(_isKorean?'서류 자동 생성':'Auto Documents')+'</strong><br><span style="color:var(--w40)">'+(_isKorean?'PI/CI/PL/CO/SC 원클릭 생성 + 전자서명':'PI/CI/PL/CO/SC one-click + e-signature')+'</span></div>'+
+        '<div style="padding:8px;background:var(--w04);border-radius:6px">💬 <strong>'+(_isKorean?'실시간 채팅':'Live Chat')+'</strong><br><span style="color:var(--w40)">'+(_isKorean?'바이어와 직접 소통 + AI 자동 번역':'Direct buyer chat + AI auto-translation')+'</span></div>'+
       '</div></div></div>';
   }
-  var footer='<div style="display:flex;justify-content:space-between;margin-top:16px"><button class="btn btn-ghost btn-sm" onclick="App.skipOnboarding()">건너뛰기</button>'+(step<2?'<button class="btn btn-pri" onclick="App.nextOb('+step+')">다음 →</button>':'')+'</div>';
+  var skipLabel=_isKorean?'건너뛰기 — 나중에 설정에서 완료할 수 있어요':'Skip — you can complete this later in Settings';
+  var footer='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px"><button class="btn btn-ghost btn-sm" onclick="App.skipOnboarding()" style="font-size:11px;color:var(--w30)">'+skipLabel+'</button>'+(step<2?'<button class="btn btn-pri" onclick="App.nextOb('+step+')">'+(_isKorean?'다음':'Next')+' →</button>':'')+'</div>';
   return hdr+body+footer+'</div>';
 }
 
@@ -14469,7 +14586,8 @@ function nextOb(step){
 
 function skipOnboarding(){
   sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id).then(function(){});
-  S.user.onboarding_completed=true;render();
+  S.user.onboarding_completed=true;S.page='dashboard';render();
+  UI.toast(_isKorean?'건너뛰었습니다. 설정 > 온보딩에서 언제든 다시 시작할 수 있어요':'Skipped! You can restart onboarding anytime in Settings','info');
 }
 
 function completeOnboarding(startAnalysis){
@@ -14480,8 +14598,11 @@ function completeOnboarding(startAnalysis){
     S.analysisStep=1;
     S.analysisData={urls:[S._obProductUrl||''],files:[],selling_points:[],target_markets:['US'],existing_certs:[],price_krw:'',product_name:p?p.name_ko:'',category:p?p.category:''};
     S.page='analysis';
+  }else{
+    S.page='dashboard';
   }
   render();
+  UI.toast(_isKorean?'설정 완료! Whistle AI를 시작하세요':'Setup complete! Let\'s get started with Whistle AI','ok');
 }
 function restartOnboarding(){
   sb.from('users').update({onboarding_completed:false,onboarding_step:0}).eq('id',S.user.id).then(function(){});
@@ -16828,6 +16949,10 @@ function render(){
   /* Email verification gate */
   if(S._emailUnverified){var _uvEmail=UI.esc(S._unverifiedEmail||'');app.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;padding:20px"><div style="text-align:center;max-width:460px"><div style="font-size:56px;margin-bottom:16px">📧</div><h2 style="color:var(--w90);margin:0 0 8px;font-size:22px">'+(_isKorean?'이메일 인증이 필요합니다':'Email Verification Required')+'</h2><p style="color:var(--pri);font-size:15px;font-weight:600;margin:0 0 20px">'+(_isKorean?'가입 시 입력한 이메일의 받은 편지함을 확인해주세요':'Please check the inbox of the email you signed up with')+'</p><div style="padding:14px 20px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:10px;margin:0 0 16px;color:var(--w80);font-weight:600;font-size:14px;word-break:break-all">'+_uvEmail+'</div><p style="color:var(--w40);font-size:13px;line-height:1.7;margin:0 0 24px">'+(_isKorean?'위 이메일로 인증 링크를 보냈습니다.<br>메일함에서 인증 링크를 클릭하면 서비스를 이용할 수 있습니다.<br><span style="color:var(--w30)">이메일이 도착하지 않았다면 스팸함도 확인해주세요.</span>':'We sent a verification link to the email above.<br>Click the link in your inbox to start using the service.<br><span style="color:var(--w30)">If you don\'t see it, check your spam folder.</span>')+'</p><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button onclick="sb.auth.resend({type:\'signup\',email:\''+_uvEmail+'\'}).then(function(){UI.toast(\''+(_isKorean?'인증 메일을 재발송했습니다':'Verification email resent')+'\',\'ok\');}).catch(function(){UI.toast(\''+(_isKorean?'잠시 후 다시 시도해주세요':'Please try again later')+'\',\'err\');})" class="btn btn-pri" style="padding:10px 24px;border-radius:10px;font-weight:600;font-size:14px">'+(_isKorean?'인증 이메일 재발송':'Resend Verification Email')+'</button><button onclick="location.reload()" class="btn btn-ghost" style="padding:10px 24px;border-radius:10px;font-weight:600;font-size:14px;border:1px solid var(--bd);color:var(--w50)">'+(_isKorean?'인증 완료 — 새로고침':'Verified — Refresh')+'</button><button onclick="sb.auth.signOut().then(function(){S._emailUnverified=false;S.user=null;render();})" class="btn btn-ghost" style="padding:10px 24px;border-radius:10px;font-weight:600;font-size:14px;border:1px solid var(--bd);color:var(--w30)">'+(_isKorean?'로그아웃':'Sign Out')+'</button></div></div></div>';return;}
   if(!S.user){app.innerHTML=pgAuth();return;}
+  /* Deferred loading indicator — thin animated bar at top */
+  var _deferBar=document.querySelector('.deferred-loading-bar');
+  if(S._deferredLoading&&!_deferBar){var _db=document.createElement('div');_db.className='deferred-loading-bar';document.body.appendChild(_db);}
+  else if(!S._deferredLoading&&_deferBar){_deferBar.remove();}
   try{
   var unreadN=(S.notifications||[]).filter(function(n){return !n.is_read;}).length;
   app.innerHTML='<div class="app-layout">'+renderSidebar()+'<div class="mob-overlay" onclick="App.closeMob()"></div><div class="main-area"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-toggle" onclick="App.toggleMob()">☰</button><div class="topbar-title">'+(PL[S.page]||'')+'</div>'+_breadcrumb()+'</div><div style="display:flex;align-items:center;gap:12px"><button class="btn btn-ghost btn-sm" onclick="App.nav(\'partnership\')" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid rgba(0,212,255,.3);color:var(--pri);display:flex;align-items:center;gap:6px;background:rgba(0,212,255,.06)" title="'+T('topbar_partnership')+'"><span>🤝</span><span style="font-size:11px">'+T('topbar_partnership')+'</span></button><button class="btn btn-ghost btn-sm" onclick="App.openFeedbackModal()" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid var(--bd);color:var(--w40);display:flex;align-items:center;gap:6px" title="'+T('topbar_bug')+'"><span>🐛</span><span style="font-size:11px">'+T('topbar_bug')+'</span></button><button class="btn btn-ghost btn-sm" onclick="App.toggleTheme()" style="font-size:14px;padding:4px 8px;border-radius:6px" title="'+T('topbar_theme')+'">'+(document.documentElement.getAttribute("data-theme")==="light"?"\uD83C\uDF19":"\u2600\uFE0F")+'</button><button class="btn btn-ghost btn-sm" onclick="App.toggleCurrency()" style="font-family:JetBrains Mono;font-size:11px;padding:4px 10px;border-radius:6px">'+(function(){var _lc=_getLocalCurrency();var _ls=_getCurrencySymbol(_lc);var _usd='$ USD';var _local=_ls+' '+_lc;return S.currency==='USD'?'<b>'+_usd+'</b> ↔ '+_local:_usd+' ↔ <b>'+_local+'</b>';})()+'</button><div style="position:relative;cursor:pointer" onclick="App.toggleNotif(event)" title="알림"><span style="font-size:16px">🔔</span>'+(unreadN>0?'<span class="notif-dot"></span><span style="position:absolute;top:-6px;right:-8px;font-size:9px;background:var(--err);color:#fff;border-radius:8px;padding:0 4px;font-weight:700;min-width:14px;text-align:center">'+unreadN+'</span>':'')+'</div><span style="font-size:13px;color:var(--w40)">'+U.esc(S.user.email)+'</span><div style="width:30px;height:30px;border-radius:8px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg)">'+(S.user.company_name||S.user.email||'U').charAt(0).toUpperCase()+'</div></div></div>'+(S.notifOpen?renderNotifPanel():'')+'<div class="page-content">'+renderPage()+'</div></div></div>';
@@ -17655,6 +17780,16 @@ _checkStripeCallback();
 /* Capture invite params from URL */
 (function(){var p=new URLSearchParams(location.search);var ref=p.get('ref');var inv=p.get('invite');if(ref)localStorage.setItem('_invite_ref',ref);if(inv)localStorage.setItem('_invite_token',inv);if(ref||inv)history.replaceState(null,'',location.pathname+location.hash);})();
 loadUser();
+/* === CONNECTION RECOVERY === */
+window.addEventListener('online',function(){
+  UI.toast(_isKorean?'인터넷 연결 복구':'Connection restored','ok');
+  /* Reload critical data on reconnection */
+  loadExchangeRate();_loadExRatesFromEdge();
+  if(S.user){loadNotifications();loadOrders();}
+});
+window.addEventListener('offline',function(){
+  UI.toast(_isKorean?'인터넷 연결 끊김 — 오프라인 모드':'Connection lost — offline mode','err');
+});
 window.addEventListener('hashchange',function(){if(!S.user)return;handleDealRoomHash().then(function(handled){if(handled)return;var hp=location.hash.replace('#','');if(hp&&PL[hp])nav(hp);}).catch(function(e){console.error(e);});});
 /* popstate with hash → hashchange already fires, so only handle non-hash popstate */
 window.addEventListener('popstate',function(){if(!location.hash){var hp='dashboard';if(PL[hp]&&S.user)nav(hp);}});
