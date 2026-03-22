@@ -7,8 +7,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CSL_BASE_URL =
-  "https://api.trade.gov/v2/consolidated_screening_list/search";
 const CSL_SOURCES = "SDN,DPL,EL,UVL,FSE,ISN,DTC,CMIC";
 const CACHE_TTL_HOURS = 24;
 const RATE_LIMIT_PER_MINUTE = 30;
@@ -75,6 +73,259 @@ interface ScreeningResponse {
   timestamp: string;
   sources_checked: string[];
   cached: boolean;
+  provider?: string;
+}
+
+/**
+ * Try Trade.gov CSL API (new developer.trade.gov gateway).
+ * Requires TRADE_GOV_API_KEY env var (free subscription at developer.trade.gov).
+ */
+async function fetchTradeGovCsl(
+  queryName: string,
+  queryCountry: string,
+  queryType: string,
+): Promise<{ results: CslMatch[]; error: string | null }> {
+  const apiKey = Deno.env.get("TRADE_GOV_API_KEY");
+  if (!apiKey) {
+    return { results: [], error: "TRADE_GOV_API_KEY not configured" };
+  }
+
+  const cslUrl = new URL(
+    "https://api.trade.gov/gateway/v2/consolidated_screening_list/search",
+  );
+  cslUrl.searchParams.set("q", queryName);
+  cslUrl.searchParams.set("fuzzy_name", "true");
+  cslUrl.searchParams.set("sources", CSL_SOURCES);
+  if (queryCountry) {
+    cslUrl.searchParams.set("countries", queryCountry);
+  }
+  if (queryType === "individual") {
+    cslUrl.searchParams.set("types", "Individual");
+  } else if (queryType === "entity") {
+    cslUrl.searchParams.set("types", "Entity");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+
+  try {
+    const resp = await fetch(cslUrl.toString(), {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "Ocp-Apim-Subscription-Key": apiKey,
+      },
+    }).finally(() => clearTimeout(timeout));
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error(
+        "[screen-sanctions] Trade.gov CSL error:",
+        resp.status,
+        errText,
+      );
+      return {
+        results: [],
+        error: `Trade.gov CSL returned ${resp.status}`,
+      };
+    }
+
+    const json = await resp.json();
+    const rawResults = json.results || [];
+
+    const results: CslMatch[] = rawResults.map(
+      (r: Record<string, unknown>): CslMatch => {
+        const sourceCode = String(r.source || "");
+        const sourceInfo = SOURCE_DESCRIPTIONS[sourceCode] || {
+          en: sourceCode,
+          ko: sourceCode,
+        };
+        const addresses = Array.isArray(r.addresses)
+          ? (r.addresses as Record<string, string>[]).map(
+              (a) =>
+                [a.address, a.city, a.state, a.country]
+                  .filter(Boolean)
+                  .join(", "),
+            )
+          : [];
+
+        return {
+          source: sourceCode,
+          source_description: sourceInfo,
+          matched_name: String(r.name || ""),
+          entity_type: String(r.type || "unknown"),
+          addresses,
+          country: String(
+            (r.addresses as Record<string, string>[])?.[0]?.country || "",
+          ),
+          programs: Array.isArray(r.programs)
+            ? (r.programs as string[])
+            : [],
+          remarks: String(r.remarks || ""),
+          score: typeof r.score === "number" ? r.score : 0,
+        };
+      },
+    );
+
+    return { results, error: null };
+  } catch (err) {
+    console.error("[screen-sanctions] Trade.gov fetch failed:", err);
+    return {
+      results: [],
+      error: err instanceof Error ? err.message : "Trade.gov network error",
+    };
+  }
+}
+
+/**
+ * Fallback: OpenSanctions match API.
+ * Works without API key for basic use; optionally uses OPENSANCTIONS_API_KEY
+ * for higher rate limits.
+ */
+async function fetchOpenSanctions(
+  queryName: string,
+  queryCountry: string,
+  queryType: string,
+): Promise<{ results: CslMatch[]; error: string | null }> {
+  const apiKey = Deno.env.get("OPENSANCTIONS_API_KEY");
+
+  const schema =
+    queryType === "individual" ? "Person" : "LegalEntity";
+
+  const matchPayload = {
+    schema,
+    properties: {
+      name: [queryName],
+      ...(queryCountry
+        ? { country: [queryCountry] }
+        : {}),
+    },
+  };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    EXTERNAL_API_TIMEOUT_MS,
+  );
+
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    if (apiKey) {
+      headers["Authorization"] = `ApiKey ${apiKey}`;
+    }
+
+    const resp = await fetch(
+      "https://api.opensanctions.org/match/default",
+      {
+        method: "POST",
+        signal: controller.signal,
+        headers,
+        body: JSON.stringify(matchPayload),
+      },
+    ).finally(() => clearTimeout(timeout));
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error(
+        "[screen-sanctions] OpenSanctions error:",
+        resp.status,
+        errText,
+      );
+      return {
+        results: [],
+        error: `OpenSanctions returned ${resp.status}`,
+      };
+    }
+
+    const json = await resp.json();
+    const queryResult = json.responses?.screening?.results
+      || json.results
+      || [];
+
+    const results: CslMatch[] = queryResult.map(
+      (r: Record<string, unknown>): CslMatch => {
+        const datasets = Array.isArray(r.datasets)
+          ? (r.datasets as string[])
+          : [];
+        const props = (r.properties || {}) as Record<string, string[]>;
+        const sourceCode = datasets.includes("us_ofac_sdn")
+          ? "SDN"
+          : datasets.includes("us_bis_denied")
+            ? "DPL"
+            : datasets.includes("us_bis_entity")
+              ? "EL"
+              : datasets[0] || "OS";
+        const sourceInfo = SOURCE_DESCRIPTIONS[sourceCode] || {
+          en: `OpenSanctions (${sourceCode})`,
+          ko: `OpenSanctions (${sourceCode})`,
+        };
+
+        return {
+          source: sourceCode,
+          source_description: sourceInfo,
+          matched_name: String(
+            (props.name || [])[0] || r.caption || "",
+          ),
+          entity_type: String(r.schema || "unknown"),
+          addresses: props.address || [],
+          country: String((props.country || [])[0] || ""),
+          programs: props.program || [],
+          remarks: String((props.notes || [])[0] || ""),
+          score: typeof r.score === "number" ? r.score : 0,
+        };
+      },
+    );
+
+    return { results, error: null };
+  } catch (err) {
+    console.error("[screen-sanctions] OpenSanctions fetch failed:", err);
+    return {
+      results: [],
+      error:
+        err instanceof Error
+          ? err.message
+          : "OpenSanctions network error",
+    };
+  }
+}
+
+/**
+ * Log screening result to sanctions_log table (for admin dashboard).
+ * Fire-and-forget: errors are logged but do not affect the response.
+ */
+async function logToSanctionsLog(
+  sbAdmin: ReturnType<typeof createClient>,
+  data: {
+    queried_name: string;
+    queried_country: string | null;
+    queried_type: string;
+    result: string;
+    match_count: number;
+    matches: CslMatch[];
+    sources_checked: string[];
+    user_id: string | null;
+  },
+): Promise<void> {
+  try {
+    await sbAdmin.from("sanctions_log").insert({
+      queried_name: data.queried_name,
+      queried_country: data.queried_country,
+      queried_type: data.queried_type,
+      result: data.result,
+      match_count: data.match_count,
+      matches: data.matches,
+      sources_checked: data.sources_checked,
+      user_id: data.user_id,
+    });
+  } catch (err) {
+    console.error("[screen-sanctions] Failed to write sanctions_log:", err);
+  }
 }
 
 serve(async (req: Request) => {
@@ -182,18 +433,25 @@ serve(async (req: Request) => {
     if (cachedRows && cachedRows.length > 0) {
       const cached = cachedRows[0];
 
-      // Log audit trail for cached result
-      await sbAdmin.from("sanctions_screenings").insert({
+      const logData = {
         queried_name: queryName.toLowerCase(),
         queried_country: queryCountry || null,
         queried_type: queryType,
         result: cached.result,
         match_count: cached.match_count,
-        matches: cached.matches,
-        sources_checked: cached.sources_checked,
-        cached: true,
+        matches: cached.matches || [],
+        sources_checked: cached.sources_checked || [],
         user_id: user?.id || null,
-      });
+      };
+
+      // Log to both tables in parallel
+      await Promise.all([
+        sbAdmin.from("sanctions_screenings").insert({
+          ...logData,
+          cached: true,
+        }),
+        logToSanctionsLog(sbAdmin, logData),
+      ]);
 
       const response: ScreeningResponse = {
         screened: true,
@@ -210,110 +468,75 @@ serve(async (req: Request) => {
       });
     }
 
-    // --- Call US Trade.gov CSL API ---
-    const cslUrl = new URL(CSL_BASE_URL);
-    cslUrl.searchParams.set("q", queryName);
-    cslUrl.searchParams.set("fuzzy_name", "true");
-    cslUrl.searchParams.set("sources", CSL_SOURCES);
-    if (queryCountry) {
-      cslUrl.searchParams.set("countries", queryCountry);
-    }
-    if (queryType === "individual") {
-      cslUrl.searchParams.set("types", "Individual");
-    } else if (queryType === "entity") {
-      cslUrl.searchParams.set("types", "Entity");
-    }
-
-    let cslResults: CslMatch[] = [];
+    // --- Call external APIs with fallback ---
+    let screeningResults: CslMatch[] = [];
     let fetchError: string | null = null;
+    let provider = "trade_gov";
     const sourcesChecked = CSL_SOURCES.split(",");
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller.abort(),
-        EXTERNAL_API_TIMEOUT_MS,
+    // Primary: Trade.gov CSL API
+    const tradeGovResult = await fetchTradeGovCsl(
+      queryName,
+      queryCountry,
+      queryType,
+    );
+
+    if (tradeGovResult.error === null) {
+      screeningResults = tradeGovResult.results;
+    } else {
+      console.error(
+        "[screen-sanctions] Trade.gov failed, trying OpenSanctions fallback:",
+        tradeGovResult.error,
       );
 
-      const resp = await fetch(cslUrl.toString(), {
-        signal: controller.signal,
-        headers: { Accept: "application/json" },
-      }).finally(() => clearTimeout(timeout));
+      // Fallback: OpenSanctions
+      const osResult = await fetchOpenSanctions(
+        queryName,
+        queryCountry,
+        queryType,
+      );
 
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error(
-          "[screen-sanctions] CSL API error:",
-          resp.status,
-          errText,
-        );
-        fetchError = `CSL API returned ${resp.status}`;
+      if (osResult.error === null) {
+        screeningResults = osResult.results;
+        provider = "opensanctions";
       } else {
-        const json = await resp.json();
-        const rawResults = json.results || [];
-
-        cslResults = rawResults.map(
-          (r: Record<string, unknown>): CslMatch => {
-            const sourceCode = String(r.source || "");
-            const sourceInfo = SOURCE_DESCRIPTIONS[sourceCode] || {
-              en: sourceCode,
-              ko: sourceCode,
-            };
-            const addresses = Array.isArray(r.addresses)
-              ? (r.addresses as Record<string, string>[]).map(
-                  (a) =>
-                    [a.address, a.city, a.state, a.country]
-                      .filter(Boolean)
-                      .join(", "),
-                )
-              : [];
-
-            return {
-              source: sourceCode,
-              source_description: sourceInfo,
-              matched_name: String(r.name || ""),
-              entity_type: String(r.type || "unknown"),
-              addresses,
-              country: String(
-                (r.addresses as Record<string, string>[])?.[0]?.country || "",
-              ),
-              programs: Array.isArray(r.programs)
-                ? (r.programs as string[])
-                : [],
-              remarks: String(r.remarks || ""),
-              score: typeof r.score === "number" ? r.score : 0,
-            };
-          },
+        console.error(
+          "[screen-sanctions] OpenSanctions also failed:",
+          osResult.error,
         );
+        fetchError = `Trade.gov: ${tradeGovResult.error}; OpenSanctions: ${osResult.error}`;
       }
-    } catch (err) {
-      console.error("[screen-sanctions] CSL fetch failed:", err);
-      fetchError =
-        err instanceof Error ? err.message : "CSL network error";
     }
 
     // --- Determine result ---
     let result: "clear" | "flagged" | "error";
-    if (fetchError && cslResults.length === 0) {
+    if (fetchError && screeningResults.length === 0) {
       result = "error";
-    } else if (cslResults.length > 0) {
+    } else if (screeningResults.length > 0) {
       result = "flagged";
     } else {
       result = "clear";
     }
 
-    // --- Save to DB (audit trail + cache source) ---
-    await sbAdmin.from("sanctions_screenings").insert({
+    const logData = {
       queried_name: queryName.toLowerCase(),
       queried_country: queryCountry || null,
       queried_type: queryType,
       result,
-      match_count: cslResults.length,
-      matches: cslResults,
+      match_count: screeningResults.length,
+      matches: screeningResults,
       sources_checked: sourcesChecked,
-      cached: false,
       user_id: user?.id || null,
-    });
+    };
+
+    // --- Save to both tables in parallel ---
+    await Promise.all([
+      sbAdmin.from("sanctions_screenings").insert({
+        ...logData,
+        cached: false,
+      }),
+      logToSanctionsLog(sbAdmin, logData),
+    ]);
 
     // --- Handle error case ---
     if (result === "error") {
@@ -342,10 +565,11 @@ serve(async (req: Request) => {
     const response: ScreeningResponse = {
       screened: true,
       result,
-      matches: cslResults,
+      matches: screeningResults,
       timestamp: new Date().toISOString(),
       sources_checked: sourcesChecked,
       cached: false,
+      provider,
     };
 
     return new Response(JSON.stringify(response), {

@@ -6,6 +6,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Map notification types to email template types
+const EMAIL_TYPE_MAP: Record<string, string> = {
+  payment: 'payment_confirmation',
+  deal: 'buyer_matched',
+  matching: 'buyer_matched',
+  analysis: 'analysis_complete',
+  message: 'new_message',
+  escrow: 'escrow_update',
+  subscription: 'subscription_change',
+}
+
+// Types that should ALWAYS send email (high priority)
+const ALWAYS_EMAIL_TYPES = new Set(['payment', 'escrow', 'matching', 'deal'])
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -35,8 +49,6 @@ serve(async (req) => {
     }
 
     const body = await req.json()
-
-    // Support both single and batch notifications
     const notifications = Array.isArray(body) ? body : [body]
 
     for (const n of notifications) {
@@ -48,6 +60,7 @@ serve(async (req) => {
       }
     }
 
+    // Insert in-app notifications
     const rows = notifications.map((n) => ({
       user_id: n.target_user_id,
       type: n.type || 'system',
@@ -61,6 +74,49 @@ serve(async (req) => {
 
     const { error } = await sbAdmin.from('notifications').insert(rows)
     if (error) throw error
+
+    // Send email notifications (fire-and-forget, don't block response)
+    for (const n of notifications) {
+      if (n.skip_email) continue
+
+      const emailType = EMAIL_TYPE_MAP[n.type]
+      if (!emailType && !ALWAYS_EMAIL_TYPES.has(n.type)) continue
+
+      // Check user's email notification preference
+      const { data: targetUser } = await sbAdmin
+        .from('users')
+        .select('email, display_name, preferred_language, email_notifications')
+        .eq('id', n.target_user_id)
+        .single()
+
+      if (!targetUser?.email) continue
+      // Respect user preference (default: ON)
+      if (targetUser.email_notifications === false) continue
+
+      // Fire-and-forget email
+      fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          to: targetUser.email,
+          user_id: n.target_user_id,
+          type: emailType || 'default',
+          data: {
+            name: targetUser.display_name || '',
+            title: n.title,
+            message: n.message || '',
+            subject: n.title,
+            ...(n.email_data || {}),
+          },
+          lang: targetUser.preferred_language || 'en',
+        }),
+      }).catch((e: unknown) => {
+        console.error('Email send failed:', e instanceof Error ? e.message : String(e))
+      })
+    }
 
     return new Response(
       JSON.stringify({ success: true, count: rows.length }),
