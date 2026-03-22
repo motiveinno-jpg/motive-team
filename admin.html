@@ -1204,13 +1204,15 @@ function pgDocuments(){
 
 /* ── Analytics ── */
 function pgAnalytics(){
-  var tabs=['users','pages','funnel'];
-  var tabL={users:_isKorean?'유저 분석':'User Analytics',pages:_isKorean?'페이지뷰':'Page Views',funnel:_isKorean?'전환 퍼널':'Conversion Funnel'};
+  var tabs=['users','pages','funnel','feature','revenue'];
+  var tabL={users:_isKorean?'유저 분석':'User Analytics',pages:_isKorean?'페이지뷰':'Page Views',funnel:_isKorean?'전환 퍼널':'Conversion Funnel',feature:_isKorean?'기능 사용':'Feature Usage',revenue:_isKorean?'매출 분석':'Revenue'};
   var tabBar='<div class="tab-bar">'+tabs.map(function(t){
     return '<div class="tab-item '+(S.analyticsTab===t?'active':'')+'" onclick="Adm.setAnalyticsTab(\''+t+'\')">'+tabL[t]+'</div>';
   }).join('')+'</div>';
   if(S.analyticsTab==='pages') return pgAnalyticsPages(tabBar);
   if(S.analyticsTab==='funnel') return pgAnalyticsFunnel(tabBar);
+  if(S.analyticsTab==='feature') return pgAnalyticsFeature(tabBar);
+  if(S.analyticsTab==='revenue') return pgAnalyticsRevenue(tabBar);
   return pgAnalyticsUsers(tabBar);
 }
 function pgAnalyticsUsers(tabBar){
@@ -1277,6 +1279,129 @@ function pgAnalyticsFunnel(tabBar){
   '<div class="grid-2">'+
     '<div class="card"><div class="card-h">'+(_isKorean?'제조사 퍼널':'Manufacturer Funnel')+'</div><div class="card-b">'+funnel.map(function(f){return funnelBar(f,clients.length);}).join('')+'</div></div>'+
     '<div class="card"><div class="card-h">'+(_isKorean?'바이어 퍼널':'Buyer Funnel')+'</div><div class="card-b">'+buyerFunnel.map(function(f){return funnelBar(f,buyerUsers.length||1);}).join('')+'</div></div>'+
+  '</div>';
+}
+function pgAnalyticsFeature(tabBar){
+  var usage=calcUsageSummary();
+  var featureLabels={ai_analysis:_isKorean?'AI 수출 분석':'AI Export Analysis',document_gen:_isKorean?'서류 생성':'Document Gen',buyer_matching:_isKorean?'바이어 매칭':'Buyer Matching',email_send:_isKorean?'이메일 발송':'Email Send',trend_report:_isKorean?'트렌드 분석':'Trend Report'};
+  /* Derive feature usage from existing data if usage_events is sparse */
+  var featureData=[];
+  var analysisCount=S.analyses?S.analyses.length:0;
+  var docCount=S.documents?S.documents.length:0;
+  var matchCount=S.matchings?S.matchings.length:0;
+  var msgCount=S.messages?S.messages.length:0;
+  var orderCount=S.orders?S.orders.length:0;
+  var productCount=S.products?S.products.length:0;
+  var projectCount=S.projects?S.projects.length:0;
+  featureData.push({label:_isKorean?'AI 수출 분석':'AI Analysis',count:analysisCount+(usage.ai_analysis?usage.ai_analysis.count:0),icon:'🔬',color:'var(--pri)'});
+  featureData.push({label:_isKorean?'제품 등록':'Product Registration',count:productCount,icon:'📦',color:'var(--acc)'});
+  featureData.push({label:_isKorean?'프로젝트 생성':'Project Creation',count:projectCount,icon:'🗂️',color:'var(--ok)'});
+  featureData.push({label:_isKorean?'서류 생성':'Document Generation',count:docCount+(usage.document_gen?usage.document_gen.count:0),icon:'📄',color:'var(--warn)'});
+  featureData.push({label:_isKorean?'바이어 매칭':'Buyer Matching',count:matchCount+(usage.buyer_matching?usage.buyer_matching.count:0),icon:'🤝',color:'var(--purple)'});
+  featureData.push({label:_isKorean?'채팅 메시지':'Chat Messages',count:msgCount,icon:'💬',color:'var(--admin)'});
+  featureData.push({label:_isKorean?'주문 생성':'Orders Created',count:orderCount,icon:'📋',color:'#f97316'});
+  for(var fk in usage){if(!featureLabels[fk])continue;var found=false;featureData.forEach(function(fd){if(fd.label===(featureLabels[fk]||fk))found=true;});if(!found)featureData.push({label:featureLabels[fk]||fk,count:usage[fk].count,icon:'⚡',color:'var(--pri)'});}
+  featureData.sort(function(a,b){return b.count-a.count;});
+  var maxFeat=featureData.length?featureData[0].count:1;
+  var totalUsage=featureData.reduce(function(s,f){return s+f.count;},0);
+
+  /* Per-user feature adoption */
+  var clients=S.users.filter(function(u){return u.role==='client';});
+  var clientsWithAnalysis=new Set();S.analyses.forEach(function(a){clientsWithAnalysis.add(a.user_id);});
+  var clientsWithProduct=new Set();S.products.forEach(function(p){clientsWithProduct.add(p.user_id);});
+  var clientsWithDoc=new Set();S.documents.forEach(function(d){clientsWithDoc.add(d.user_id);});
+  var clientsWithMatch=new Set();S.matchings.forEach(function(m){clientsWithMatch.add(m.user_id);});
+  var clientsWithOrder=new Set();S.orders.forEach(function(o){clientsWithOrder.add(o.user_id);});
+  var adoptionData=[
+    {label:_isKorean?'분석 사용':'Used Analysis',count:clientsWithAnalysis.size,color:'var(--pri)'},
+    {label:_isKorean?'제품 등록':'Listed Product',count:clientsWithProduct.size,color:'var(--acc)'},
+    {label:_isKorean?'서류 생성':'Generated Docs',count:clientsWithDoc.size,color:'var(--warn)'},
+    {label:_isKorean?'매칭 진행':'Had Matching',count:clientsWithMatch.size,color:'var(--purple)'},
+    {label:_isKorean?'주문 발생':'Placed Order',count:clientsWithOrder.size,color:'var(--ok)'}
+  ];
+
+  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'📈 분석 / 통계':'📈 Analytics')+'</h2></div>'+tabBar+
+  '<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'총 사용량':'Total Usage',totalUsage,'','var(--pri)')+
+    UI.stat(_isKorean?'활성 기능':'Active Features',featureData.filter(function(f){return f.count>0;}).length+'/'+featureData.length,'','var(--acc)')+
+    UI.stat(_isKorean?'분석 건수':'Analyses',analysisCount,'','var(--ok)')+
+    UI.stat(_isKorean?'서류 건수':'Documents',docCount,'','var(--warn)')+
+  '</div>'+
+  '<div class="grid-2" style="margin-bottom:16px">'+
+    '<div class="card"><div class="card-h">'+(_isKorean?'기능별 사용 횟수':'Usage by Feature')+'</div><div class="card-b">'+
+      featureData.map(function(f){
+        var pct=maxFeat?Math.round(f.count/maxFeat*100):0;
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px">'+
+          '<div style="min-width:20px;text-align:center">'+f.icon+'</div>'+
+          '<div style="min-width:110px;font-weight:600">'+f.label+'</div>'+
+          '<div style="flex:1;height:20px;background:var(--w08);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+Math.max(pct,2)+'%;background:'+f.color+';border-radius:4px;opacity:.7"></div></div>'+
+          '<div style="min-width:50px;text-align:right;font-family:JetBrains Mono;font-weight:700;font-size:12px">'+f.count+'</div></div>';
+      }).join('')+
+    '</div></div>'+
+    '<div class="card"><div class="card-h">'+(_isKorean?'기능 도입률 (제조사 기준)':'Feature Adoption (Manufacturers)')+'</div><div class="card-b">'+
+      (clients.length?adoptionData.map(function(a){
+        var pct=Math.round(a.count/clients.length*100);
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px">'+
+          '<div style="min-width:110px;font-weight:600">'+a.label+'</div>'+
+          '<div style="flex:1;height:20px;background:var(--w08);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+Math.max(pct,2)+'%;background:'+a.color+';border-radius:4px;opacity:.7"></div></div>'+
+          '<div style="min-width:70px;text-align:right;font-size:12px;color:var(--w40)">'+a.count+'/'+clients.length+' ('+pct+'%)</div></div>';
+      }).join(''):'<div style="padding:16px;text-align:center;color:var(--w30)">'+(_isKorean?'제조사 없음':'No manufacturers')+'</div>')+
+    '</div></div>'+
+  '</div>';
+}
+function pgAnalyticsRevenue(tabBar){
+  var today=new Date();
+  var days=[];for(var i=29;i>=0;i--){var d=new Date(today-i*864e5);days.push(d.toISOString().slice(0,10));}
+  /* Revenue from paid orders */
+  var paidOrders=S.orders.filter(function(o){return o.payment_status==='paid'||o.status==='completed';});
+  var totalRevenue=sumBy(paidOrders,'total_amount');
+  var revenueByDay={};days.forEach(function(d){revenueByDay[d]=0;});
+  paidOrders.forEach(function(o){var d=(o.created_at||'').slice(0,10);if(revenueByDay[d]!==undefined)revenueByDay[d]+=(o.total_amount||0);});
+  var maxDayRev=Math.max.apply(null,days.map(function(d){return revenueByDay[d];}))||1;
+
+  /* Subscription revenue */
+  var activeSubs=S.subscriptions?S.subscriptions.filter(function(s){return s.status==='active';}):[];
+  var subRevenue=0;activeSubs.forEach(function(s){subRevenue+=(s.amount||0);});
+  var planCount={free:0,starter:0,pro:0,alibaba:0};
+  var clients=S.users.filter(function(u){return u.role==='client';});
+  clients.forEach(function(u){var p=u.plan||'free';if(p==='basic')p='starter';if(planCount[p]!==undefined)planCount[p]++;});
+  var paidUsers=clients.filter(function(u){return u.plan&&u.plan!=='free';}).length;
+
+  /* Billing events breakdown */
+  var billingByType={};
+  if(S.billingEvents){S.billingEvents.forEach(function(e){var t=e.event_type||e.type||'other';billingByType[t]=(billingByType[t]||0)+1;});}
+
+  /* Escrow stats */
+  var escrowTotal=0;var escrowCount=0;
+  if(S.escrowTxns){S.escrowTxns.forEach(function(t){escrowCount++;escrowTotal+=(t.amount||0);});}
+
+  /* Order count by day */
+  var ordersByDay={};days.forEach(function(d){ordersByDay[d]=0;});
+  S.orders.forEach(function(o){var d=(o.created_at||'').slice(0,10);if(ordersByDay[d]!==undefined)ordersByDay[d]++;});
+  var maxDayOrders=Math.max.apply(null,days.map(function(d){return ordersByDay[d];}))||1;
+
+  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'📈 분석 / 통계':'📈 Analytics')+'</h2></div>'+tabBar+
+  '<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'총 매출':'Total Revenue',U.usd(totalRevenue),'','var(--pri)')+
+    UI.stat(_isKorean?'유료 유저':'Paid Users',paidUsers+'/'+clients.length,'','var(--acc)')+
+    UI.stat(_isKorean?'월 구독 수익':'Monthly Sub',U.usd(subRevenue),activeSubs.length+(_isKorean?'건':' subs'),'var(--ok)')+
+    UI.stat(_isKorean?'에스크로':'Escrow',U.usd(escrowTotal),escrowCount+(_isKorean?'건':' txns'),'var(--purple)')+
+  '</div>'+
+  '<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'매출 추이 (30일)':'Revenue (30 days)')+'</div><div class="card-b">'+
+    '<div style="display:flex;align-items:flex-end;gap:2px;height:100px">'+days.map(function(d){var v=revenueByDay[d];var ht=Math.max(Math.round(v/maxDayRev*80),2);return '<div title="'+d+': $'+Math.round(v).toLocaleString()+'" style="flex:1;height:'+ht+'px;background:var(--ok);border-radius:2px 2px 0 0;opacity:'+(v?1:0.2)+'"></div>';}).join('')+'</div>'+
+    '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--w20)"><span>'+days[0]+'</span><span>'+days[days.length-1]+'</span></div>'+
+  '</div></div>'+
+  '<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'주문 건수 (30일)':'Orders (30 days)')+'</div><div class="card-b">'+
+    '<div style="display:flex;align-items:flex-end;gap:2px;height:80px">'+days.map(function(d){var v=ordersByDay[d];var ht=Math.max(Math.round(v/maxDayOrders*70),2);return '<div title="'+d+': '+v+(_isKorean?'건':'')+'" style="flex:1;height:'+ht+'px;background:var(--pri);border-radius:2px 2px 0 0;opacity:'+(v?1:0.2)+'"></div>';}).join('')+'</div>'+
+    '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:10px;color:var(--w20)"><span>'+days[0]+'</span><span>'+days[days.length-1]+'</span></div>'+
+  '</div></div>'+
+  '<div class="grid-2">'+
+    '<div class="card"><div class="card-h">'+(_isKorean?'플랜별 유저 수':'Users by Plan')+'</div><div class="card-b">'+
+      ['free','starter','pro','alibaba'].map(function(k){var cnt=planCount[k]||0;var r=U.pl(k);return hBar(r[0],cnt,clients.length||1,r[1]);}).join('')+
+    '</div></div>'+
+    '<div class="card"><div class="card-h">'+(_isKorean?'결제 이벤트':'Billing Events')+'</div><div class="card-b">'+
+      (Object.keys(billingByType).length?Object.entries(billingByType).sort(function(a,b){return b[1]-a[1];}).slice(0,8).map(function(e){return hBar(e[0],e[1],Math.max.apply(null,Object.values(billingByType))||1,'var(--admin)');}).join(''):'<div style="padding:16px;text-align:center;color:var(--w30)">'+(_isKorean?'결제 이벤트 없음':'No billing events')+'</div>')+
+    '</div></div>'+
   '</div>';
 }
 
@@ -1470,7 +1595,7 @@ function pgOrderDetail(){
 /* ── Disputes ── */
 var DST={open:'접수',investigating:'조사중',resolved:'해결',closed:'종결',escalated:'에스컬레이션'};
 var DST_B={open:'err',investigating:'acc',resolved:'ok',closed:'ghost',escalated:'purple'};
-var DTY={quality:'품질',delivery:'배송',payment:'결제',communication:'커뮤니케이션',fraud:'사기',other:'기타'};
+var DTY={quality:'품질',delivery:'배송',payment:'결제',communication:'커뮤니케이션',fraud:'사기',escrow:'에스크로 분쟁',other:'기타'};
 var DPR={low:'낮음',medium:'보통',high:'높음',critical:'긴급'};
 var DPR_C={low:'var(--w40)',medium:'var(--acc)',high:'var(--warn)',critical:'var(--err)'};
 function pgDisputes(){
@@ -1506,6 +1631,8 @@ function pgDisputeDetail(){
       '<div class="detail-row"><div class="detail-label">상태</div><div class="detail-value"><select onchange="Adm.changeDisputeStatus(\''+d.id+'\',this.value)" style="padding:5px 10px;border-radius:6px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;font-weight:600">'+['open','investigating','resolved','closed','escalated'].map(function(s){return '<option value="'+s+'"'+(d.status===s?' selected':'')+'>'+DST[s]+'</option>';}).join('')+'</select></div></div>'+
       (order?'<div class="detail-row"><div class="detail-label">관련 주문</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewOrder(\''+order.id+'\')">'+U.esc(order.order_number||order.id.slice(0,8))+'</div></div>':'')+
       (matching?'<div class="detail-row"><div class="detail-label">관련 매칭</div><div class="detail-value" style="cursor:pointer;color:var(--pri)" onclick="Adm.viewMatching(\''+matching.id+'\')">'+getUserName(matching.user_id)+' ↔ '+getBuyerName(matching.buyer_id)+'</div></div>':'')+
+      (d.details&&d.details.deal_id?'<div class="detail-row"><div class="detail-label">딜 ID</div><div class="detail-value" style="font-family:monospace;font-size:11px">'+U.esc(d.details.deal_id)+'</div></div>':'')+
+      (d.details&&d.details.amount?'<div class="detail-row"><div class="detail-label">분쟁 금액</div><div class="detail-value" style="font-weight:700;color:var(--err)">'+(d.details.currency||'USD')+' '+Number(d.details.amount).toLocaleString()+'</div></div>':'')+
     '</div></div>'+
     '<div class="card"><div class="card-h">설명</div><div class="card-b"><div style="font-size:13px;color:var(--w70);line-height:1.7;white-space:pre-wrap">'+(d.description?U.esc(d.description):UI.empty('\u26A0\uFE0F',(_isKorean?'설명 없음':'No description'),''))+'</div></div></div>'+
   '</div>'+

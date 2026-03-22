@@ -522,6 +522,7 @@ var S={
   loading:true,page:'dashboard',user:null,authMode:'login',authError:'',_loginEmail:'',
   // search
   searchQuery:'',searchSource:'all',searchResults:[],naverResults:[],whistleResults:[],searching:false,
+  _productCategories:[],_originCountries:[],_whistleTotal:0,_whistleOffset:0,
   _sessionId:'s_'+Date.now().toString(36)+Math.random().toString(36).substr(2,6),
   // data
   inquiries:[],savedProducts:[],
@@ -1565,22 +1566,33 @@ function pgSearch(){
   h+='<div class="source-tab-item'+(S.searchSource==='naver'?' active':'')+'" onclick="B.setSource(\'naver\')">&#x1F1F0;&#x1F1F7; '+_t('Korea Market','한국 마켓')+'</div>';
   h+='</div>';
 
-  // Filters
+  // Filters — load dynamic categories/countries on first render
+  if(!S._productCategories.length)loadProductFilterOptions();
   var sf=S._searchFilters||{};
+  var _catLabels={Beauty:_t('Beauty','뷰티'),Food:_t('Food','식품'),Health:_t('Health','건강'),Electronics:_t('Electronics','전자제품'),Fashion:_t('Fashion','패션'),Organic:_t('Organic','유기농'),Home:_t('Home','홈/리빙'),Medical:_t('Medical','의료'),Industrial:_t('Industrial','산업'),Cosmetics:_t('Cosmetics','화장품'),Skincare:_t('Skincare','스킨케어'),Supplement:_t('Supplement','건강보조식품')};
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">';
-  h+='<select class="form-select" style="width:auto;max-width:140px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'category\',this.value)"><option value="">'+_t('All Categories','전체 카테고리')+'</option>';
-  var _catLabels={Beauty:_t('Beauty','뷰티'),Food:_t('Food','식품'),Health:_t('Health','건강'),Electronics:_t('Electronics','전자제품'),Fashion:_t('Fashion','패션'),Organic:_t('Organic','유기농'),Home:_t('Home','홈/리빙'),Medical:_t('Medical','의료'),Industrial:_t('Industrial','산업')};
-  ['Beauty','Food','Health','Electronics','Fashion','Organic','Home','Medical','Industrial'].forEach(function(c){h+='<option value="'+c+'"'+(sf.category===c?' selected':'')+'>'+(_catLabels[c]||c)+'</option>';});
+  // Category filter — dynamic from DB
+  h+='<select class="form-select" style="width:auto;max-width:160px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'category\',this.value)"><option value="">'+_t('All Categories','전체 카테고리')+'</option>';
+  (S._productCategories.length?S._productCategories:['Beauty','Food','Health','Electronics','Fashion','Organic','Home','Medical','Industrial']).forEach(function(c){h+='<option value="'+c+'"'+(sf.category===c?' selected':'')+'>'+(_catLabels[c]||c)+'</option>';});
   h+='</select>';
-  h+='<select class="form-select" style="width:auto;max-width:130px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'maxPrice\',this.value)"><option value="">'+_t('Any Price','가격 무관')+'</option><option value="10"'+(sf.maxPrice==='10'?' selected':'')+'>'+_t('Under $10','$10 이하')+'</option><option value="25"'+(sf.maxPrice==='25'?' selected':'')+'>'+_t('Under $25','$25 이하')+'</option><option value="50"'+(sf.maxPrice==='50'?' selected':'')+'>'+_t('Under $50','$50 이하')+'</option><option value="100"'+(sf.maxPrice==='100'?' selected':'')+'>'+_t('Under $100','$100 이하')+'</option><option value="500"'+(sf.maxPrice==='500'?' selected':'')+'>'+_t('Under $500','$500 이하')+'</option></select>';
+  // Price range filter
+  h+='<select class="form-select" style="width:auto;max-width:130px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'minPrice\',this.value)"><option value="">'+_t('Min Price','최소 가격')+'</option><option value="1"'+(sf.minPrice==='1'?' selected':'')+'>$1+</option><option value="10"'+(sf.minPrice==='10'?' selected':'')+'>$10+</option><option value="25"'+(sf.minPrice==='25'?' selected':'')+'>$25+</option><option value="50"'+(sf.minPrice==='50'?' selected':'')+'>$50+</option><option value="100"'+(sf.minPrice==='100'?' selected':'')+'>$100+</option></select>';
+  h+='<select class="form-select" style="width:auto;max-width:130px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'maxPrice\',this.value)"><option value="">'+_t('Max Price','최대 가격')+'</option><option value="10"'+(sf.maxPrice==='10'?' selected':'')+'>'+_t('Under $10','$10 이하')+'</option><option value="25"'+(sf.maxPrice==='25'?' selected':'')+'>'+_t('Under $25','$25 이하')+'</option><option value="50"'+(sf.maxPrice==='50'?' selected':'')+'>'+_t('Under $50','$50 이하')+'</option><option value="100"'+(sf.maxPrice==='100'?' selected':'')+'>'+_t('Under $100','$100 이하')+'</option><option value="500"'+(sf.maxPrice==='500'?' selected':'')+'>'+_t('Under $500','$500 이하')+'</option></select>';
+  // MOQ filters
   h+='<select class="form-select" style="width:auto;max-width:130px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'moqMin\',this.value)"><option value="">MOQ Min</option><option value="1"'+(sf.moqMin==='1'?' selected':'')+'>1+</option><option value="50"'+(sf.moqMin==='50'?' selected':'')+'>50+</option><option value="100"'+(sf.moqMin==='100'?' selected':'')+'>100+</option><option value="500"'+(sf.moqMin==='500'?' selected':'')+'>500+</option></select>';
   h+='<select class="form-select" style="width:auto;max-width:130px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'moq\',this.value)"><option value="">MOQ Max</option><option value="100"'+(sf.moq==='100'?' selected':'')+'>MOQ &lt; 100</option><option value="500"'+(sf.moq==='500'?' selected':'')+'>MOQ &lt; 500</option><option value="1000"'+(sf.moq==='1000'?' selected':'')+'>MOQ &lt; 1,000</option><option value="5000"'+(sf.moq==='5000'?' selected':'')+'>MOQ &lt; 5,000</option></select>';
   h+='</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">';
+  // Origin country filter — dynamic from DB
+  h+='<select class="form-select" style="width:auto;max-width:160px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'originCountry\',this.value)"><option value="">'+_t('All Origins','원산지 전체')+'</option>';
+  S._originCountries.forEach(function(c){h+='<option value="'+c+'"'+(sf.originCountry===c?' selected':'')+'>'+c+'</option>';});
+  h+='</select>';
   h+='<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--w60);cursor:pointer;padding:6px 10px;border-radius:var(--r-xs);border:1px solid '+(sf.originVerified?'var(--ok)':'var(--bd)')+';background:'+(sf.originVerified?'rgba(0,230,118,.08)':'transparent')+'"><input type="checkbox" '+(sf.originVerified?'checked':'')+' onchange="B.setFilter(\'originVerified\',this.checked)" style="accent-color:var(--ok)"> &#x1F1F0;&#x1F1F7; '+_t('Korea Verified Only','한국 인증 제품만')+'</label>';
-  h+='<select class="form-select" style="width:auto;max-width:150px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'sort\',this.value)"><option value="relevance"'+(sf.sort==='relevance'||!sf.sort?' selected':'')+'>'+_t('Relevance','관련도순')+'</option><option value="newest"'+(sf.sort==='newest'?' selected':'')+'>'+_t('Newest','최신순')+'</option><option value="price_asc"'+(sf.sort==='price_asc'?' selected':'')+'>'+_t('Price: Low to High','가격 낮은순')+'</option><option value="price_desc"'+(sf.sort==='price_desc'?' selected':'')+'>'+_t('Price: High to Low','가격 높은순')+'</option></select>';
+  // Sort — includes "Most Popular"
+  h+='<select class="form-select" style="width:auto;max-width:150px;padding:6px 10px;font-size:11px" onchange="B.setFilter(\'sort\',this.value)"><option value="relevance"'+(sf.sort==='relevance'||!sf.sort?' selected':'')+'>'+_t('Relevance','관련도순')+'</option><option value="newest"'+(sf.sort==='newest'?' selected':'')+'>'+_t('Newest','최신순')+'</option><option value="popular"'+(sf.sort==='popular'?' selected':'')+'>'+_t('Most Popular','인기순')+'</option><option value="price_asc"'+(sf.sort==='price_asc'?' selected':'')+'>'+_t('Price: Low to High','가격 낮은순')+'</option><option value="price_desc"'+(sf.sort==='price_desc'?' selected':'')+'>'+_t('Price: High to Low','가격 높은순')+'</option></select>';
   h+='<select class="form-select" style="width:auto;min-width:80px;padding:6px 10px;font-size:11px;font-weight:600;color:var(--acc)" onchange="B.setCurrency(this.value)"><option value="USD"'+(S.currency==='USD'?' selected':'')+'>$ USD</option><option value="KRW"'+(S.currency==='KRW'?' selected':'')+'>&#8361; KRW</option><option value="JPY"'+(S.currency==='JPY'?' selected':'')+'>&#165; JPY</option><option value="AED"'+(S.currency==='AED'?' selected':'')+'>AED</option><option value="EUR"'+(S.currency==='EUR'?' selected':'')+'>&#8364; EUR</option><option value="GBP"'+(S.currency==='GBP'?' selected':'')+'>&#163; GBP</option></select>';
-  if(sf.category||sf.maxPrice||sf.moq||sf.moqMin||sf.originVerified){h+='<button class="btn btn-ghost btn-sm" onclick="B.clearFilters()" style="font-size:11px">'+_t('Clear Filters','필터 초기화')+'</button>';}
+  var _hasActiveFilters=sf.category||sf.maxPrice||sf.minPrice||sf.moq||sf.moqMin||sf.originVerified||sf.originCountry||(sf.sort&&sf.sort!=='relevance');
+  if(_hasActiveFilters){h+='<button class="btn btn-ghost btn-sm" onclick="B.clearFilters()" style="font-size:11px">'+_t('Clear Filters','필터 초기화')+'</button>';}
   h+='</div>';
 
   if(S.searching){
@@ -1629,8 +1641,11 @@ function pgSearch(){
     h+=renderProductCard(item.source,item.data,idx);
   });
   h+='</div>';
-  if(products.length>_showCount){
-    h+='<div style="text-align:center;padding:20px"><button class="btn btn-ghost" onclick="B.loadMoreResults()">'+_t('Load More','더 보기')+' ('+(_showCount)+'/'+products.length+')</button></div>';
+  var _hasMoreClient=products.length>_showCount;
+  var _hasMoreServer=S._whistleOffset<S._whistleTotal;
+  if(_hasMoreClient||_hasMoreServer){
+    var _totalAvail=Math.max(products.length,S._whistleTotal||0);
+    h+='<div style="text-align:center;padding:20px"><button class="btn btn-ghost" onclick="B.loadMoreResults()">'+_t('Load More','더 보기')+' ('+Math.min(_showCount,products.length)+'/'+_totalAvail+')</button></div>';
   }
   return h;
 }
@@ -1724,14 +1739,14 @@ function doSearch(){
   if(!query){
     // Reset search: clear query, reload default products
     S.searchQuery='';S.searchResults=[];S.naverResults=[];S.whistleResults=[];S.searching=false;
-    S._searchFilters={};
+    S._searchFilters={};S._whistleOffset=0;S._searchShowCount=20;
     render();
     loadWhistleProducts('');
     return;
   }
   // Check search credits (server-side)
   if(!checkSearchCredits())return;
-  S.searchQuery=query;S.searching=true;S._showSearchHints=false;
+  S.searchQuery=query;S.searching=true;S._showSearchHints=false;S._whistleOffset=0;S._searchShowCount=20;
   // Save to recent searches
   try{var rs=JSON.parse(localStorage.getItem('whistle_recent_searches')||'[]');rs=rs.filter(function(q){return q!==query;});rs.unshift(query);if(rs.length>10)rs=rs.slice(0,10);localStorage.setItem('whistle_recent_searches',JSON.stringify(rs));}catch(e){}
   render();
@@ -1766,7 +1781,17 @@ function quickSearch(kw){
   },50);
 }
 
-function loadMoreResults(){S._searchShowCount=(S._searchShowCount||20)+20;render();}
+function loadMoreResults(){
+  var newCount=(S._searchShowCount||20)+20;
+  S._searchShowCount=newCount;
+  // If we need more whistle results from the server
+  var totalClientItems=S.whistleResults.length+S.naverResults.length;
+  if(newCount>=totalClientItems&&S._whistleOffset<S._whistleTotal){
+    loadWhistleProducts(S.searchQuery||'',null,true);
+  } else {
+    render();
+  }
+}
 function setSource(src){set({searchSource:src,_searchShowCount:20});}
 
 /* === PRODUCT COMPARE === */
@@ -1841,26 +1866,44 @@ function renderCompareBar(){
 
 function setFilter(key,val){
   if(!S._searchFilters)S._searchFilters={};
-  S._searchFilters[key]=val;render();
+  S._searchFilters[key]=val;
+  S._searchShowCount=20;
+  S._whistleOffset=0;
+  // Re-query whistle products with new filters server-side
+  loadWhistleProducts(S.searchQuery||'');
 }
-function clearFilters(){S._searchFilters={};render();}
+function clearFilters(){
+  S._searchFilters={};S._searchShowCount=20;S._whistleOffset=0;
+  loadWhistleProducts(S.searchQuery||'');
+}
 
 function applySearchFilters(products){
   var f=S._searchFilters||{};
+  // Category — Whistle filtered server-side, Naver client-side
   if(f.category){
     products=products.filter(function(item){
-      if(item.source==='whistle')return (item.data.category||'').toLowerCase().indexOf(f.category.toLowerCase())!==-1;
+      if(item.source==='whistle')return true;
       return (item.data.category1||'').toLowerCase().indexOf(f.category.toLowerCase())!==-1||(item.data.category2||'').toLowerCase().indexOf(f.category.toLowerCase())!==-1;
     });
   }
+  // Price — Whistle filtered server-side, Naver client-side
   if(f.maxPrice){
     var mp=parseFloat(f.maxPrice);
     products=products.filter(function(item){
-      if(item.source==='whistle')return item.data.fob_price&&parseFloat(item.data.fob_price)<=mp;
+      if(item.source==='whistle')return true;
       var krwPrice=parseInt(item.data.lprice||0);
       return !krwPrice||krwPrice/1400<=mp;
     });
   }
+  if(f.minPrice){
+    var mnp=parseFloat(f.minPrice);
+    products=products.filter(function(item){
+      if(item.source==='whistle')return true;
+      var krwPrice=parseInt(item.data.lprice||0);
+      return krwPrice&&krwPrice/1400>=mnp;
+    });
+  }
+  // MOQ — client-side for all sources
   if(f.moq){
     var mm=parseInt(f.moq);
     products=products.filter(function(item){
@@ -1875,12 +1918,14 @@ function applySearchFilters(products){
       return true;
     });
   }
+  // Origin verified — Naver client-side
   if(f.originVerified){
     products=products.filter(function(item){
-      if(item.source==='whistle')return true; // Whistle products are Korea-verified
+      if(item.source==='whistle')return true;
       return item.data.origin==='verified'||item.data.origin==='likely_korean';
     });
   }
+  // Sort — Whistle already sorted server-side; apply client sort for mixed results
   var sort=f.sort||'relevance';
   if(sort==='price_asc'){
     products.sort(function(a,b){
@@ -1899,6 +1944,12 @@ function applySearchFilters(products){
       var ta=a.source==='whistle'?(a.data.created_at||''):'';
       var tb=b.source==='whistle'?(b.data.created_at||''):'';
       return tb.localeCompare(ta);
+    });
+  }else if(sort==='popular'){
+    products.sort(function(a,b){
+      var va=a.source==='whistle'?(a.data.view_count||0):0;
+      var vb=b.source==='whistle'?(b.data.view_count||0):0;
+      return vb-va;
     });
   }
   // 'relevance' = default order (whistle first, then naver)
@@ -2141,26 +2192,76 @@ function pdRequestSample(source,id){
   S.inquiryType='sample_order';render();
 }
 
-function loadWhistleProducts(query,cb){
-  var q=sb.from('products').select('*,seller:users!products_user_id_fkey(company_name,display_name)').eq('is_public',true).eq('status','active');
-  if(query){var sq=query.replace(/[%_(),.*\\]/g,'');if(sq)q=q.or('name_en.ilike.%'+sq+'%,name_ko.ilike.%'+sq+'%,category.ilike.%'+sq+'%,description_en.ilike.%'+sq+'%');}
-  q.order('created_at',{ascending:false}).limit(40).then(function(r){
-    var data=r.data||[];
-    // Flatten seller info into product for easy access
-    data.forEach(function(p){
-      if(p.seller){
-        if(!p.company_name)p.company_name=p.seller.company_name||p.seller.display_name||'';
-        if(!p.manufacturer)p.manufacturer=p.seller.company_name||p.seller.display_name||'';
-      }
+function loadProductFilterOptions(){
+  if(S._productCategories.length&&S._originCountries.length)return;
+  sb.from('products').select('category,origin_country').eq('is_public',true).eq('status','active').then(function(r){
+    var cats={},origins={};
+    (r.data||[]).forEach(function(p){
+      if(p.category)cats[p.category]=true;
+      if(p.origin_country)origins[p.origin_country]=true;
     });
-    S.whistleResults=data;
+    S._productCategories=Object.keys(cats).sort();
+    S._originCountries=Object.keys(origins).sort();
+    render();
+  });
+}
+
+var WHISTLE_PAGE_SIZE=40;
+
+function _buildWhistleQuery(query,applyFilters){
+  var q=sb.from('products').select('*,seller:users!products_user_id_fkey(company_name,display_name)',{count:'exact'}).eq('is_public',true).eq('status','active');
+  if(query){var sq=query.replace(/[%_(),.*\\]/g,'');if(sq)q=q.or('name_en.ilike.%'+sq+'%,name_ko.ilike.%'+sq+'%,category.ilike.%'+sq+'%,description_en.ilike.%'+sq+'%,description_ko.ilike.%'+sq+'%');}
+  if(applyFilters){
+    var f=S._searchFilters||{};
+    if(f.category)q=q.ilike('category','%'+f.category+'%');
+    if(f.originCountry)q=q.eq('origin_country',f.originCountry);
+    if(f.minPrice)q=q.gte('fob_price',parseFloat(f.minPrice));
+    if(f.maxPrice)q=q.lte('fob_price',parseFloat(f.maxPrice));
+  }
+  return q;
+}
+
+function _applyWhistleSort(q){
+  var f=S._searchFilters||{};
+  var sort=f.sort||'relevance';
+  if(sort==='newest')q=q.order('created_at',{ascending:false});
+  else if(sort==='price_asc')q=q.order('fob_price',{ascending:true,nullsFirst:false});
+  else if(sort==='price_desc')q=q.order('fob_price',{ascending:false,nullsFirst:false});
+  else if(sort==='popular')q=q.order('view_count',{ascending:false,nullsFirst:false}).order('inquiry_count',{ascending:false,nullsFirst:false});
+  else q=q.order('created_at',{ascending:false});
+  return q;
+}
+
+function _flattenSeller(data){
+  data.forEach(function(p){
+    if(p.seller){
+      if(!p.company_name)p.company_name=p.seller.company_name||p.seller.display_name||'';
+      if(!p.manufacturer)p.manufacturer=p.seller.company_name||p.seller.display_name||'';
+    }
+  });
+  return data;
+}
+
+function loadWhistleProducts(query,cb,append){
+  var offset=append?S._whistleOffset:0;
+  var q=_buildWhistleQuery(query,true);
+  q=_applyWhistleSort(q);
+  q.range(offset,offset+WHISTLE_PAGE_SIZE-1).then(function(r){
+    var data=_flattenSeller(r.data||[]);
+    if(append){S.whistleResults=S.whistleResults.concat(data);}
+    else{S.whistleResults=data;}
+    S._whistleTotal=r.count||data.length;
+    S._whistleOffset=offset+data.length;
     if(cb)cb();else render();
   }).catch(function(){
-    // Fallback: load without join if the FK doesn't exist
-    var q2=sb.from('products').select('*').eq('is_public',true).eq('status','active');
+    var q2=sb.from('products').select('*',{count:'exact'}).eq('is_public',true).eq('status','active');
     if(query){var sq=query.replace(/[%_(),.*\\]/g,'');if(sq)q2=q2.or('name_en.ilike.%'+sq+'%,name_ko.ilike.%'+sq+'%,category.ilike.%'+sq+'%,description_en.ilike.%'+sq+'%');}
-    q2.order('created_at',{ascending:false}).limit(40).then(function(r){
-      S.whistleResults=r.data||[];
+    q2.order('created_at',{ascending:false}).range(offset,offset+WHISTLE_PAGE_SIZE-1).then(function(r){
+      var data=r.data||[];
+      if(append){S.whistleResults=S.whistleResults.concat(data);}
+      else{S.whistleResults=data;}
+      S._whistleTotal=r.count||data.length;
+      S._whistleOffset=offset+data.length;
       if(cb)cb();else render();
     });
   });
@@ -3771,6 +3872,18 @@ function renderDealSidebar(deal,stageIdx){
     if(_escSB.status==='secured')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Funds Secured — Safe with Whistle</div>';
     if(_escSB.status==='shipping'){h+='<button class="btn btn-ok btn-sm" style="width:100%;margin-top:8px;font-size:10px" onclick="B.confirmEscrowDelivery(\''+deal.id+'\')">&#x1F4E6; Confirm Delivery</button>';h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px;color:var(--err)" onclick="B.raiseEscrowDispute(\''+deal.id+'\')">&#x26A0; Raise Dispute</button>';h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(255,167,38,.04);border:1px solid rgba(255,167,38,.1);font-size:9px;color:var(--w40)">&#x26A0;&#xFE0F; Not as described? File a dispute within 7 days. Our team reviews within 48 hours. <a href="mailto:creative@mo-tive.com" style="color:var(--pri);font-size:9px">Contact support</a></div>';}
     if(_escSB.status==='delivered')h+='<div style="margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);font-size:10px;color:var(--ok);text-align:center">&#x2705; Delivery Confirmed — Payment Released to Seller</div>';
+    /* Dispute indicator */
+    if(_escSB.dispute&&_escSB.dispute.status){
+      var _dSt=_escSB.dispute.status;
+      var _dClr=_dSt==='open'?'var(--err)':_dSt==='resolved'?'var(--ok)':'var(--acc)';
+      h+='<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(255,82,82,.06);border:1px solid rgba(255,82,82,.15)">';
+      h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:'+_dClr+'">'+_t('Dispute ','분쟁 ')+B._disputeStatusLabel(_dSt)+'</span></div>';
+      h+='<div style="font-size:10px;color:var(--w40);margin-bottom:6px;line-height:1.4">'+U.esc((_escSB.dispute.reason||'').substring(0,100))+(_escSB.dispute.reason&&_escSB.dispute.reason.length>100?'...':'')+'</div>';
+      if(_escSB.dispute.sellerResponse){h+='<div style="font-size:10px;color:var(--pri);margin-bottom:6px"><strong>'+_t('Seller Response:','셀러 응답:')+'</strong> '+U.esc(_escSB.dispute.sellerResponse.substring(0,100))+'</div>';}
+      h+='<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px" onclick="B.viewBuyerDisputeDetail(\''+deal.id+'\')">'+_t('View Dispute Detail','분쟁 상세 보기')+'</button>';
+      if(_dSt==='open'){h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:4px;font-size:10px" onclick="B.addBuyerDisputeEvidence(\''+deal.id+'\')">'+_t('Add Evidence','증거 추가')+'</button>';}
+      h+='</div>';
+    }
     h+='</div>';
   }
 
@@ -3849,8 +3962,8 @@ function _loadEscrowFromDB(){
     if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
   }).catch(function(e){console.error('[escrow] buyer load fail:',e);});
 }
-function _escrowBuyerLabel(st){var labels=_isKorean?{none:'없음',requested:'결제 요청됨',buyer_paid:'결제 완료',pending:'대기 중',secured:'결제 확인 (정산 대기)',shipping:'발송됨 — 수령 대기',delivered:'수령 확인',release_requested:'정산 처리 중',released:'정산 완료'}:{none:'None',requested:'Payment Requested',buyer_paid:'Paid',pending:'Pending',secured:'Payment Confirmed (Settlement Pending)',shipping:'Shipped — Awaiting Delivery',delivered:'Delivery Confirmed',release_requested:'Settlement Processing',released:'Settled'};return labels[st]||st;}
-function _escrowBuyerColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)'}[st]||'var(--w12)';}
+function _escrowBuyerLabel(st){var labels=_isKorean?{none:'없음',requested:'결제 요청됨',buyer_paid:'결제 완료',pending:'대기 중',secured:'결제 확인 (정산 대기)',shipping:'발송됨 — 수령 대기',delivered:'수령 확인',release_requested:'정산 처리 중',released:'정산 완료',disputed:'분쟁 진행중'}:{none:'None',requested:'Payment Requested',buyer_paid:'Paid',pending:'Pending',secured:'Payment Confirmed (Settlement Pending)',shipping:'Shipped — Awaiting Delivery',delivered:'Delivery Confirmed',release_requested:'Settlement Processing',released:'Settled',disputed:'Dispute In Progress'};return labels[st]||st;}
+function _escrowBuyerColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)',disputed:'var(--err)'}[st]||'var(--w12)';}
 
 function openEscrowPayModal(dealId){
   var escData=_getEscrowStatus(dealId);
@@ -3971,10 +4084,133 @@ function raiseEscrowDispute(dealId){
     escData.dispute={reason:reason.trim(),raisedAt:new Date().toISOString(),status:'open'};
     _setEscrow(dealId,escData);
     toast(_t('Dispute raised. Our team will review and contact both parties within 48 hours.','이의가 제기되었습니다. 48시간 이내에 양측에 연락드리겠습니다.'),'warn',6000);
-    if(S.user)sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
+    if(S.user){
+      sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
+      /* Insert into disputes table for admin dashboard */
+      sb.from('disputes').insert({reporter_id:S.user.id,type:'escrow',title:_t('Escrow Dispute — ','에스크로 분쟁 — ')+(escData.amount?'$'+Number(escData.amount).toLocaleString():''),description:reason.trim(),deal_id:dealId,priority:'high',status:'open',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency,buyer_user_id:S.user.id,raised_at:new Date().toISOString()}}).catch(function(e){console.error('[dispute] admin insert fail:',e);});
+    }
     render();
   },_t('Describe the issue in detail...','문제를 상세하게 설명해 주세요...'));
 }
+
+/* Buyer: View dispute detail */
+function viewBuyerDisputeDetail(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc||!esc.dispute){toast(_t('No dispute information found','분쟁 정보가 없습니다'),'warn');return;}
+  var d=esc.dispute;
+  var timeline=d.timeline||[];
+  var isOpen=d.status==='open'||d.status==='investigating';
+  var h='';
+  h+='<div style="margin-bottom:16px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+  var _stClr={open:'var(--err)',investigating:'var(--acc)',resolved:'var(--ok)',rejected:'var(--w40)',closed:'var(--w30)'}[d.status]||'var(--w12)';
+  h+='<span class="badge" style="font-size:10px;padding:3px 10px;background:'+_stClr+';color:#fff">'+_disputeStatusLabel(d.status)+'</span>';
+  h+='<span style="font-size:11px;color:var(--w40)">'+_t('Raised: ','제기일: ')+_fmtBuyerDisputeDate(d.raisedAt)+'</span>';
+  h+='</div>';
+  if(d.resolvedAt){h+='<div style="font-size:11px;color:var(--w40)">'+_t('Resolved: ','해결일: ')+_fmtBuyerDisputeDate(d.resolvedAt)+'</div>';}
+  h+='</div>';
+  h+='<div style="margin-bottom:14px;padding:12px;border-radius:8px;background:rgba(255,82,82,.06);border:1px solid rgba(255,82,82,.15)">';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--err);margin-bottom:6px">'+_t('My Dispute Reason','내 이의 사유')+'</div>';
+  h+='<div style="font-size:12px;color:var(--w80);line-height:1.6">'+U.esc(d.reason)+'</div>';
+  h+='</div>';
+  if(d.buyerEvidence&&d.buyerEvidence.length){
+    h+='<div style="margin-bottom:14px">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">'+_t('My Evidence','내 증거 자료')+' ('+d.buyerEvidence.length+')</div>';
+    d.buyerEvidence.forEach(function(ev){
+      h+='<div style="padding:8px 10px;border-radius:6px;background:var(--w04);margin-bottom:4px;font-size:11px">';
+      h+='<div style="color:var(--w60)">'+U.esc(ev.description||'')+'</div>';
+      h+='<div style="font-size:10px;color:var(--w30)">'+_fmtBuyerDisputeDate(ev.uploadedAt)+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  if(d.sellerResponse){
+    h+='<div style="margin-bottom:14px;padding:12px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.15)">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--pri);margin-bottom:6px">'+_t('Seller Response','셀러 응답')+'</div>';
+    h+='<div style="font-size:12px;color:var(--w80);line-height:1.6">'+U.esc(d.sellerResponse)+'</div>';
+    if(d.respondedAt){h+='<div style="font-size:10px;color:var(--w30);margin-top:4px">'+_fmtBuyerDisputeDate(d.respondedAt)+'</div>';}
+    h+='</div>';
+  }
+  if(d.sellerEvidence&&d.sellerEvidence.length){
+    h+='<div style="margin-bottom:14px">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">'+_t('Seller Evidence','셀러 증거 자료')+' ('+d.sellerEvidence.length+')</div>';
+    d.sellerEvidence.forEach(function(ev){
+      h+='<div style="padding:8px 10px;border-radius:6px;background:var(--w04);margin-bottom:4px;font-size:11px">';
+      h+='<div style="color:var(--w60)">'+U.esc(ev.description||'')+'</div>';
+      h+='<div style="font-size:10px;color:var(--w30)">'+_fmtBuyerDisputeDate(ev.uploadedAt)+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  /* Timeline */
+  h+='<div style="margin-bottom:14px">';
+  h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:8px">'+_t('Dispute Timeline','분쟁 진행 내역')+'</div>';
+  var allEvents=[{date:d.raisedAt,action:_t('You raised a dispute','이의를 제기했습니다'),type:'raised'}];
+  if(d.respondedAt)allEvents.push({date:d.respondedAt,action:_t('Seller responded','셀러가 응답했습니다'),type:'response'});
+  timeline.forEach(function(ev){allEvents.push(ev);});
+  if(d.resolvedAt){var resLabel={full_refund:_t('Full Refund','전액 환불'),partial_refund:_t('Partial Refund','부분 환불'),reject:_t('Dispute Rejected','이의 기각'),reship:_t('Re-shipment','재발송')};allEvents.push({date:d.resolvedAt,action:_t('Dispute resolved: ','분쟁이 해결되었습니다: ')+(resLabel[d.resolution]||d.resolution||''),type:'resolved'});}
+  allEvents.sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+  allEvents.forEach(function(ev){
+    var dotColor=ev.type==='resolved'?'var(--ok)':ev.type==='raised'?'var(--err)':'var(--pri)';
+    h+='<div style="display:flex;gap:10px;margin-bottom:8px">';
+    h+='<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0"><div style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';margin-top:4px"></div><div style="width:1px;flex:1;background:var(--w08)"></div></div>';
+    h+='<div><div style="font-size:11px;color:var(--w70)">'+U.esc(ev.action)+'</div>';
+    h+='<div style="font-size:10px;color:var(--w30)">'+_fmtBuyerDisputeDate(ev.date)+'</div></div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  if(d.resolution){
+    var resLabel2={full_refund:_t('Full Refund','전액 환불'),partial_refund:_t('Partial Refund','부분 환불'),reject:_t('Dispute Rejected','이의 기각'),reship:_t('Re-shipment','재발송')};
+    h+='<div style="padding:12px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.15);margin-bottom:14px">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--ok);margin-bottom:4px">'+_t('Resolution','해결 결과')+'</div>';
+    h+='<div style="font-size:12px;color:var(--w80)">'+(resLabel2[d.resolution]||d.resolution||'')+'</div>';
+    if(d.resolutionNote){h+='<div style="font-size:11px;color:var(--w50);margin-top:4px">'+U.esc(d.resolutionNote)+'</div>';}
+    h+='</div>';
+  }
+  if(isOpen){
+    h+='<div style="border-top:1px solid var(--bd);padding-top:14px">';
+    h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">'+_t('Add Evidence','증거 자료 추가')+'</div>';
+    h+='<textarea id="buyerDisputeEvidenceDesc" rows="2" style="width:100%;padding:8px;border-radius:6px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:11px;resize:vertical" placeholder="'+_t('Evidence description (photo URLs, tracking info, etc.)','증거 설명 (사진 URL, 배송 추적 정보 등)')+'"></textarea>';
+    h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:6px;font-size:11px" onclick="B.submitBuyerDisputeEvidence(\''+dealId+'\')">'+_t('Submit Evidence','증거 제출')+'</button>';
+    h+='<div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12)">';
+    h+='<div style="font-size:10px;color:var(--w40);line-height:1.5">'+_t('Our team reviews disputes within 48 hours. Both parties can submit evidence.','분쟁은 48시간 이내에 검토됩니다. 양측 모두 증거를 제출할 수 있습니다.')+' <a href="mailto:creative@mo-tive.com" style="color:var(--pri)">creative@mo-tive.com</a></div>';
+    h+='</div>';
+    h+='</div>';
+  }
+  var _dm=document.getElementById('b-dispute-modal');if(_dm)_dm.remove();
+  var wrap=document.createElement('div');wrap.id='b-dispute-modal';
+  wrap.innerHTML='<div class="modal-overlay show" style="position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);overflow-y:auto;padding:20px" onclick="if(event.target===this)B.closeModal(\'b-dispute-modal\')"><div class="modal" style="max-width:520px;width:100%" onclick="event.stopPropagation()"><div class="modal-h"><h3>'+_t('Dispute Detail','분쟁 상세')+'</h3><button class="modal-close" onclick="B.closeModal(\'b-dispute-modal\')">&#x2715;</button></div><div class="modal-b" style="max-height:70vh;overflow-y:auto">'+h+'</div></div></div>';
+  document.body.appendChild(wrap);
+}
+function addBuyerDisputeEvidence(dealId){
+  var esc=_getEscrowStatus(dealId);
+  if(!esc||!esc.dispute||esc.dispute.status!=='open'){toast(_t('Cannot add evidence to this dispute','이 분쟁에 증거를 추가할 수 없습니다'),'warn');return;}
+  _bPrompt(_t('Describe your evidence (photo URLs, tracking info, inspection reports):','증거를 설명하세요 (사진 URL, 추적 정보, 검사 보고서):'),function(desc){
+    if(!desc||!desc.trim())return;
+    esc.dispute.buyerEvidence=esc.dispute.buyerEvidence||[];
+    esc.dispute.buyerEvidence.push({description:desc.trim(),uploadedAt:new Date().toISOString()});
+    esc.dispute.timeline=esc.dispute.timeline||[];
+    esc.dispute.timeline.push({date:new Date().toISOString(),action:_t('Buyer submitted evidence','바이어가 증거를 제출했습니다'),type:'evidence'});
+    _setEscrow(dealId,esc);
+    toast(_t('Evidence added','증거가 추가되었습니다'),'ok');
+    render();
+  },_t('Describe evidence in detail...','증거를 상세하게 설명하세요...'));
+}
+function submitBuyerDisputeEvidence(dealId){
+  var el=document.getElementById('buyerDisputeEvidenceDesc');
+  if(!el||!el.value.trim()){toast(_t('Please describe the evidence','증거 설명을 입력하세요'),'warn');return;}
+  var esc=_getEscrowStatus(dealId);if(!esc||!esc.dispute)return;
+  esc.dispute.buyerEvidence=esc.dispute.buyerEvidence||[];
+  esc.dispute.buyerEvidence.push({description:el.value.trim(),uploadedAt:new Date().toISOString()});
+  esc.dispute.timeline=esc.dispute.timeline||[];
+  esc.dispute.timeline.push({date:new Date().toISOString(),action:_t('Buyer submitted evidence','바이어가 증거를 제출했습니다'),type:'evidence'});
+  _setEscrow(dealId,esc);
+  toast(_t('Evidence added','증거가 추가되었습니다'),'ok');
+  closeModal('b-dispute-modal');
+  B.viewBuyerDisputeDetail(dealId);
+}
+function _disputeStatusLabel(st){var labels=_isKorean?{open:'진행중',investigating:'조사중',resolved:'해결됨',rejected:'기각됨',closed:'종료'}:{open:'Open',investigating:'Investigating',resolved:'Resolved',rejected:'Rejected',closed:'Closed'};return labels[st]||st;}
+function _fmtBuyerDisputeDate(iso){if(!iso)return '-';try{var d=new Date(iso);return d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return iso;}}
 
 function closeStripeEscrow(){
   if(window._bStripeEsc){window._bStripeEsc.destroy();window._bStripeEsc=null;}
@@ -6105,7 +6341,7 @@ window.B={
   // Documents
   showDocDetail:showDocDetail,
   // Escrow Payment
-  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmEscrowDelivery:confirmEscrowDelivery,raiseEscrowDispute:raiseEscrowDispute,closeStripeEscrow:closeStripeEscrow,_escMethodSelect:_escMethodSelect,
+  openEscrowPayModal:openEscrowPayModal,confirmEscrowPay:confirmEscrowPay,confirmEscrowDelivery:confirmEscrowDelivery,raiseEscrowDispute:raiseEscrowDispute,viewBuyerDisputeDetail:viewBuyerDisputeDetail,addBuyerDisputeEvidence:addBuyerDisputeEvidence,submitBuyerDisputeEvidence:submitBuyerDisputeEvidence,_disputeStatusLabel:_disputeStatusLabel,closeStripeEscrow:closeStripeEscrow,_escMethodSelect:_escMethodSelect,
   // Order Actions
   payMilestone:payMilestone,confirmOrderReceipt:confirmOrderReceipt,
   // Electronic Signature
