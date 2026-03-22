@@ -191,7 +191,10 @@ var S={
   tab:'all',analyticsTab:'users',paymentTab:'revenue',
   subscriptions:[],escrowTxns:[],disputes:[],reviews:[],
   alibabaStores:[],alibabaInquiries:[],_buyerTab:'all',
-  deals:[],dealParticipants:[],dealEvents:[],dealMessages:[],quotes:[],selectedDeal:null,dealsTab:'all'
+  deals:[],dealParticipants:[],dealEvents:[],dealMessages:[],quotes:[],selectedDeal:null,dealsTab:'all',
+  comtradeCache:[],sanctionsLog:[],briefs:[],localizationCountries:[],
+  _buyerVerifyTab:'pending',_sanctionsFilter:'all',_briefTab:'all',_locTab:'all',
+  _settingsTab:'api',_certFilter:'all',_logisticsFilter:'all'
 };
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -1706,26 +1709,159 @@ function changeDealStage(dealId,newStage,evt){
 
 /* ── Settings ── */
 function pgSettings(){
-  return '<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'⚙️ 시스템 설정':'⚙️ System Settings')+'</h2></div>'+
-  '<div class="grid-2">'+
+  var tab=S._settingsTab||'api';
+  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'⚙️ 시스템 설정':'⚙️ System Settings')+'</h2></div>';
+  h+=_admHubTabBar([
+    {id:'api',icon:'🔑',label:_isKorean?'API/DB':'API/DB'},
+    {id:'exchange',icon:'💱',label:_isKorean?'환율':'Exchange Rates'},
+    {id:'toggles',icon:'🎛️',label:_isKorean?'기능 토글':'Feature Toggles'},
+    {id:'cache',icon:'💾',label:_isKorean?'캐시':'Cache'},
+    {id:'tools',icon:'🛠️',label:_isKorean?'도구':'Tools'}
+  ],'_settingsTab','api');
+
+  if(tab==='exchange')return h+pgSettingsExchange();
+  if(tab==='toggles')return h+pgSettingsToggles();
+  if(tab==='cache')return h+pgSettingsCache();
+  if(tab==='tools')return h+pgSettingsTools();
+  return h+pgSettingsApi();
+}
+function pgSettingsApi(){
+  return '<div class="grid-2">'+
     '<div class="card"><div class="card-h">'+(_isKorean?'🔑 API 설정':'🔑 API Settings')+'</div><div class="card-b">'+
       '<div class="detail-row"><div class="detail-label">Supabase</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;color:var(--ok)">'+(_isKorean?'연결됨':'Connected')+'</div></div>'+
       '<div class="detail-row"><div class="detail-label">AI Engine</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px">Claude Sonnet (relay)</div></div>'+
       '<div class="detail-row"><div class="detail-label">Relay URL</div><div class="detail-value" style="font-family:JetBrains Mono;font-size:11px;word-break:break-all">'+(RELAY_URL||'Edge Functions')+'</div></div>'+
+      '<div style="margin-top:12px"><label class="form-label">'+(_isKorean?'Relay URL 변경':'Change Relay URL')+'</label><div style="display:flex;gap:8px"><input id="settings-relay-url" class="form-input" placeholder="https://..." value="'+U.esc(RELAY_URL)+'" style="flex:1"><button class="btn btn-pri btn-sm" onclick="Adm.saveRelayUrl()">'+(_isKorean?'저장':'Save')+'</button></div></div>'+
     '</div></div>'+
-
     '<div class="card"><div class="card-h">'+(_isKorean?'📊 DB 현황':'📊 DB Status')+'</div><div class="card-b">'+
       [['users',S.users.length],['companies',S.companies.length],['analyses',S.analyses.length],['products',S.products.length],['buyers',S.buyers.length],['matchings',S.matchings.length],['orders',S.orders.length],['messages',S.messages.length],['documents',S.documents.length],['shipments',S.shipments.length],['page_views',S.pageViews.length],['service_req',S.serviceRequests.length],['projects',S.projects.length]].map(function(e){return '<div class="detail-row"><div class="detail-label">'+e[0]+'</div><div class="detail-value" style="font-family:JetBrains Mono">'+e[1]+'</div></div>';}).join('')+
       '<div style="margin-top:14px"><button class="btn btn-admin btn-sm" onclick="Adm.refreshAll()">'+(_isKorean?'🔄 전체 새로고침':'🔄 Refresh All')+'</button></div>'+
     '</div></div>'+
-  '</div>'+
+  '</div>';
+}
+function pgSettingsExchange(){
+  var rates=S._exchangeRates||{USD_KRW:1380,EUR_KRW:1500,JPY_KRW:9.2,CNY_KRW:190,lastUpdated:new Date().toISOString()};
+  if(!S._exchangeRates)S._exchangeRates=rates;
+  return '<div class="card"><div class="card-h"><span>'+(_isKorean?'💱 환율 설정':'💱 Exchange Rate Settings')+'</span><span style="font-size:11px;color:var(--w40)">'+(_isKorean?'마지막 업데이트: ':'Last updated: ')+U.fd(rates.lastUpdated)+'</span></div><div class="card-b">'+
+    '<div class="grid-2" style="gap:12px">'+
+    '<div><label class="form-label">USD/KRW</label><input id="rate-usd" class="form-input" type="number" step="0.01" value="'+rates.USD_KRW+'"></div>'+
+    '<div><label class="form-label">EUR/KRW</label><input id="rate-eur" class="form-input" type="number" step="0.01" value="'+rates.EUR_KRW+'"></div>'+
+    '<div><label class="form-label">JPY/KRW (per 100)</label><input id="rate-jpy" class="form-input" type="number" step="0.01" value="'+rates.JPY_KRW+'"></div>'+
+    '<div><label class="form-label">CNY/KRW</label><input id="rate-cny" class="form-input" type="number" step="0.01" value="'+rates.CNY_KRW+'"></div>'+
+    '</div>'+
+    '<div style="margin-top:16px;display:flex;gap:8px">'+
+    '<button class="btn btn-pri" onclick="Adm.saveExchangeRates()">'+(_isKorean?'환율 저장':'Save Rates')+'</button>'+
+    '<button class="btn btn-ghost" onclick="Adm.fetchLiveRates()">'+(_isKorean?'실시간 환율 가져오기':'Fetch Live Rates')+'</button>'+
+    '</div>'+
+    '<div style="margin-top:12px;padding:10px 14px;border-radius:8px;background:var(--w08);font-size:11px;color:var(--w40)">'+(_isKorean?'수동 설정한 환율은 자동 환율보다 우선 적용됩니다. 분석/서류 생성 시 이 환율이 사용됩니다.':'Manual rates take priority over auto rates. These rates are used for analysis and document generation.')+'</div>'+
+  '</div></div>';
+}
+function saveExchangeRates(){
+  S._exchangeRates={
+    USD_KRW:parseFloat((document.getElementById('rate-usd')||{}).value)||1380,
+    EUR_KRW:parseFloat((document.getElementById('rate-eur')||{}).value)||1500,
+    JPY_KRW:parseFloat((document.getElementById('rate-jpy')||{}).value)||9.2,
+    CNY_KRW:parseFloat((document.getElementById('rate-cny')||{}).value)||190,
+    lastUpdated:new Date().toISOString()
+  };
+  /* Persist to revenue_config */
+  sb.from('revenue_config').upsert({key:'exchange_rates',value:S._exchangeRates,updated_at:new Date().toISOString()},{onConflict:'key'}).then(function(r){
+    if(r.error){UI.toast((_isKorean?'저장 실패: ':'Save failed: ')+r.error.message,'err');return;}
+    UI.toast(_isKorean?'환율 저장 완료':'Exchange rates saved','ok');render();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function fetchLiveRates(){
+  UI.toast(_isKorean?'실시간 환율을 가져오는 중...':'Fetching live rates...','info');
+  /* Simple fallback — in production, call an API */
+  S._exchangeRates={USD_KRW:1380,EUR_KRW:1500,JPY_KRW:9.2,CNY_KRW:190,lastUpdated:new Date().toISOString()};
+  UI.toast(_isKorean?'환율 업데이트 완료 (기본값)':'Rates updated (defaults)','ok');render();
+}
+function pgSettingsToggles(){
+  var toggles=S._featureToggles||{sanctions_screening:false,buyer_matching:true,ai_analysis:true,comtrade_cache:true,email_notifications:true,escrow:true,whistle_brief:false,auto_translation:false};
+  if(!S._featureToggles)S._featureToggles=toggles;
+  var toggleList=[
+    {key:'ai_analysis',label:_isKorean?'AI 수출 분석':'AI Export Analysis',desc:_isKorean?'AI 기반 수출적합성 분석':'AI-based export suitability analysis'},
+    {key:'buyer_matching',label:_isKorean?'바이어 매칭':'Buyer Matching',desc:_isKorean?'AI 바이어 자동 매칭':'AI auto buyer matching'},
+    {key:'sanctions_screening',label:_isKorean?'제재 스크리닝':'Sanctions Screening',desc:_isKorean?'거래 상대방 제재 검사':'Trade partner sanctions check'},
+    {key:'escrow',label:_isKorean?'에스크로 결제':'Escrow Payments',desc:_isKorean?'에스크로 기반 안전 거래':'Escrow-based safe transactions'},
+    {key:'comtrade_cache',label:_isKorean?'Comtrade 캐시':'Comtrade Cache',desc:_isKorean?'UN Comtrade 데이터 캐싱':'Cache UN Comtrade data'},
+    {key:'email_notifications',label:_isKorean?'이메일 알림':'Email Notifications',desc:_isKorean?'Resend 기반 이메일 알림':'Resend-based email notifications'},
+    {key:'whistle_brief',label:_isKorean?'Whistle Brief':'Whistle Brief',desc:_isKorean?'뉴스레터/브리핑 발행':'Newsletter/briefing publishing'},
+    {key:'auto_translation',label:_isKorean?'자동 번역':'Auto Translation',desc:_isKorean?'다국어 자동 번역':'Multi-language auto translation'}
+  ];
+  var h='<div class="card"><div class="card-h">'+(_isKorean?'🎛️ 기능 토글':'🎛️ Feature Toggles')+'</div><div class="card-b">';
+  toggleList.forEach(function(t){
+    var isOn=toggles[t.key];
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--w08)">'+
+      '<div><div style="font-size:13px;font-weight:600;color:var(--w90)">'+t.label+'</div><div style="font-size:11px;color:var(--w40);margin-top:2px">'+t.desc+'</div></div>'+
+      '<div onclick="Adm.toggleFeature(\''+t.key+'\')" style="cursor:pointer;width:44px;height:24px;border-radius:12px;background:'+(isOn?'var(--ok)':'var(--w12)')+';position:relative;transition:all .2s;flex-shrink:0"><div style="position:absolute;top:3px;'+(isOn?'right:3px':'left:3px')+';width:18px;height:18px;border-radius:9px;background:var(--w);transition:all .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div></div>'+
+    '</div>';
+  });
+  h+='<div style="margin-top:16px"><button class="btn btn-pri" onclick="Adm.saveFeatureToggles()">'+(_isKorean?'설정 저장':'Save Settings')+'</button></div>';
+  h+='</div></div>';
+  return h;
+}
+function toggleFeature(key){
+  if(!S._featureToggles)S._featureToggles={};
+  S._featureToggles[key]=!S._featureToggles[key];render();
+}
+function saveFeatureToggles(){
+  sb.from('revenue_config').upsert({key:'feature_toggles',value:S._featureToggles,updated_at:new Date().toISOString()},{onConflict:'key'}).then(function(r){
+    if(r.error){UI.toast((_isKorean?'저장 실패: ':'Save failed: ')+r.error.message,'err');return;}
+    UI.toast(_isKorean?'기능 설정 저장 완료':'Feature toggles saved','ok');
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function pgSettingsCache(){
+  var cache=S.comtradeCache||[];
+  var now=new Date();
+  var expired=cache.filter(function(c){return c.expires_at&&new Date(c.expires_at)<now;}).length;
+  var valid=cache.length-expired;
+  var hitRate=cache.length?Math.round(valid/cache.length*100):0;
 
-  '<div class="card" style="margin-top:16px"><div class="card-h">'+(_isKorean?'🛠️ 관리 도구':'🛠️ Admin Tools')+'</div><div class="card-b"><div style="display:flex;flex-wrap:wrap;gap:8px">'+
+  var h='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'전체 캐시':'Total Cache',cache.length,'','var(--pri)')+
+    UI.stat(_isKorean?'유효':'Valid',valid,'','var(--ok)')+
+    UI.stat(_isKorean?'만료':'Expired',expired,'','var(--err)')+
+    UI.stat(_isKorean?'히트율':'Hit Rate',hitRate+'%','','var(--acc)')+
+  '</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:16px">'+
+    '<button class="btn btn-ghost" onclick="Adm.loadComtradeCache()">'+(_isKorean?'새로고침':'Refresh')+'</button>'+
+    '<button class="btn btn-acc btn-sm" onclick="Adm.clearExpiredCache()">'+(_isKorean?'만료 캐시 삭제':'Clear Expired')+'</button>'+
+    '<button class="btn btn-danger btn-sm" onclick="Adm.clearAllCache()">'+(_isKorean?'전체 캐시 삭제':'Clear All Cache')+'</button>'+
+  '</div>';
+
+  if(!cache.length){
+    return h+UI.empty('💾',_isKorean?'캐시 없음':'No Cache Entries',_isKorean?'Comtrade 캐시 데이터가 없습니다. 분석 실행 후 자동 생성됩니다.':'No cache data. Will be auto-created after running analyses.');
+  }
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'캐시 키':'Cache Key')+'</th><th>'+(_isKorean?'조회일':'Fetched')+'</th><th>'+(_isKorean?'만료일':'Expires')+'</th><th>'+(_isKorean?'상태':'Status')+'</th>'+
+    '</tr></thead><tbody>';
+  cache.slice(0,50).forEach(function(c){
+    var isExpired=c.expires_at&&new Date(c.expires_at)<now;
+    h+='<tr'+(isExpired?' style="opacity:.5"':'')+'>'+
+      '<td style="font-family:JetBrains Mono;font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis">'+U.esc(c.cache_key||c.key||'')+'</td>'+
+      '<td style="font-size:11px">'+U.fd(c.fetched_at||c.created_at)+'</td>'+
+      '<td style="font-size:11px">'+U.fd(c.expires_at)+'</td>'+
+      '<td>'+(isExpired?UI.badge(_isKorean?'만료':'Expired','err'):UI.badge(_isKorean?'유효':'Valid','ok'))+'</td>'+
+    '</tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+function pgSettingsTools(){
+  return '<div class="card"><div class="card-h">'+(_isKorean?'🛠️ 관리 도구':'🛠️ Admin Tools')+'</div><div class="card-b"><div style="display:flex;flex-wrap:wrap;gap:8px">'+
     '<button class="btn btn-ghost" onclick="Adm.exportCSV(\'users\')">'+(_isKorean?'📥 유저 CSV':'📥 Users CSV')+'</button>'+
     '<button class="btn btn-ghost" onclick="Adm.exportCSV(\'analyses\')">'+(_isKorean?'📥 분석 CSV':'📥 Analysis CSV')+'</button>'+
     '<button class="btn btn-ghost" onclick="Adm.exportCSV(\'service_requests\')">'+(_isKorean?'📥 서비스 CSV':'📥 Services CSV')+'</button>'+
     '<button class="btn btn-ghost" onclick="window.open(\'whistle.html\',\'_blank\')">'+(_isKorean?'🔗 클라이언트 포털':'🔗 Client Portal')+'</button>'+
   '</div></div></div>';
+}
+function saveRelayUrl(){
+  var url=(document.getElementById('settings-relay-url')||{}).value||'';
+  RELAY_URL=url.trim();
+  UI.toast(_isKorean?'Relay URL 업데이트 완료':'Relay URL updated','ok');
 }
 
 /* ── Payments / Escrow ── */
@@ -2410,7 +2546,7 @@ function paginationBar(key,info){
 }
 
 /* ============ NAV & RENDER ============ */
-var _APL={dashboard:1,feedback:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1,errorMonitor:1,usershub:1,dealhub:1,orderpay:1,contenthub:1,systemhub:1,voucherReport:1,changelog:1};
+var _APL={dashboard:1,feedback:1,services:1,analytics:1,sellers:1,buyersMgmt:1,users:1,matchings:1,ordersMgmt:1,disputes:1,payments:1,chat:1,analyses:1,products:1,projects:1,documents:1,alibabaMgmt:1,health:1,settings:1,dealsMgmt:1,errorMonitor:1,usershub:1,dealhub:1,orderpay:1,contenthub:1,systemhub:1,voucherReport:1,changelog:1,buyerVerify:1,sanctionsLog:1,briefMgmt:1,localization:1,certTracking:1};
 function nav(p){S.page=p;S.searchFilter='';S.tab='all';S._fbTab='all';S.selectedUser=null;S.selectedAnalysis=null;S.selectedSR=null;S.selectedFB=null;S.selectedBuyer=null;S.selectedSeller=null;S.selectedMatching=null;S.selectedOrder=null;S.selectedDispute=null;S.selectedDeal=null;S.analyticsTab='users';S.paymentTab='revenue';S.dealsTab='all';if(history.replaceState)history.replaceState(null,null,'#'+p);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){var e=document.getElementById(id);if(e)e.remove();},300);}
 function setSearch(v){S.searchFilter=v;S._pg={};render();}
@@ -2430,7 +2566,7 @@ function viewOrder(oid){var o=S.orders.find(function(x){return x.id===oid;});if(
 function setAnalyticsTab(t){S.analyticsTab=t;render();}
 function setPaymentTab(t){S.paymentTab=t;render();}
 
-var PL={dashboard:_isKorean?'📊 대시보드':'📊 Dashboard',analytics:_isKorean?'📈 분석/통계':'📈 Analytics',sellers:_isKorean?'🏭 제조사 관리':'🏭 Manufacturers',buyersMgmt:_isKorean?'🌍 바이어 관리':'🌍 Buyers',matchings:_isKorean?'🤝 매칭/딜':'🤝 Matching/Deals',ordersMgmt:_isKorean?'💰 주문/매출':'💰 Orders/Revenue',disputes:_isKorean?'⚠️ 분쟁 관리':'⚠️ Disputes',payments:_isKorean?'💳 결제/에스크로':'💳 Payments/Escrow',chat:_isKorean?'💬 채팅 모니터':'💬 Chat Monitor',users:_isKorean?'👥 유저 관리':'👥 Users',analyses:_isKorean?'🔬 AI 분석':'🔬 AI Analysis',services:_isKorean?'💼 서비스 요청':'💼 Service Requests',products:_isKorean?'📦 제품 관리':'📦 Products',projects:_isKorean?'🚀 프로젝트':'🚀 Projects',documents:_isKorean?'📄 서류':'📄 Documents',health:_isKorean?'🛡️ 시스템 상태':'🛡️ System Health',settings:_isKorean?'⚙️ 설정':'⚙️ Settings',alibabaMgmt:_isKorean?'🏪 알리바바 관리':'🏪 Alibaba',dealsMgmt:_isKorean?'🏢 딜룸 거래 관리':'🏢 Deal Room',errorMonitor:_isKorean?'🚨 에러 모니터링':'🚨 Error Monitor',usershub:_isKorean?'👥 유저 관리':'👥 Users',dealhub:_isKorean?'🤝 매칭 & 딜':'🤝 Matching & Deals',orderpay:_isKorean?'💰 주문 & 결제':'💰 Orders & Payments',contenthub:_isKorean?'📦 제품 & 프로젝트':'📦 Products & Projects',systemhub:_isKorean?'🛡️ 시스템 & 에러':'🛡️ System & Errors',voucherReport:_isKorean?'📋 바우처 결과보고서':'📋 Voucher Report',changelog:_isKorean?'📝 작업일지':'📝 Changelog'};
+var PL={dashboard:_isKorean?'📊 대시보드':'📊 Dashboard',analytics:_isKorean?'📈 분석/통계':'📈 Analytics',sellers:_isKorean?'🏭 제조사 관리':'🏭 Manufacturers',buyersMgmt:_isKorean?'🌍 바이어 관리':'🌍 Buyers',matchings:_isKorean?'🤝 매칭/딜':'🤝 Matching/Deals',ordersMgmt:_isKorean?'💰 주문/매출':'💰 Orders/Revenue',disputes:_isKorean?'⚠️ 분쟁 관리':'⚠️ Disputes',payments:_isKorean?'💳 결제/에스크로':'💳 Payments/Escrow',chat:_isKorean?'💬 채팅 모니터':'💬 Chat Monitor',users:_isKorean?'👥 유저 관리':'👥 Users',analyses:_isKorean?'🔬 AI 분석':'🔬 AI Analysis',services:_isKorean?'💼 서비스 요청':'💼 Service Requests',products:_isKorean?'📦 제품 관리':'📦 Products',projects:_isKorean?'🚀 프로젝트':'🚀 Projects',documents:_isKorean?'📄 서류':'📄 Documents',health:_isKorean?'🛡️ 시스템 상태':'🛡️ System Health',settings:_isKorean?'⚙️ 설정':'⚙️ Settings',alibabaMgmt:_isKorean?'🏪 알리바바 관리':'🏪 Alibaba',dealsMgmt:_isKorean?'🏢 딜룸 거래 관리':'🏢 Deal Room',errorMonitor:_isKorean?'🚨 에러 모니터링':'🚨 Error Monitor',usershub:_isKorean?'👥 유저 관리':'👥 Users',dealhub:_isKorean?'🤝 매칭 & 딜':'🤝 Matching & Deals',orderpay:_isKorean?'💰 주문 & 결제':'💰 Orders & Payments',contenthub:_isKorean?'📦 제품 & 프로젝트':'📦 Products & Projects',systemhub:_isKorean?'🛡️ 시스템 & 에러':'🛡️ System & Errors',voucherReport:_isKorean?'📋 바우처 결과보고서':'📋 Voucher Report',changelog:_isKorean?'📝 작업일지':'📝 Changelog',buyerVerify:_isKorean?'✅ 바이어 인증 심사':'✅ Buyer Verification',sanctionsLog:_isKorean?'🚫 제재 스크리닝':'🚫 Sanctions Screening',briefMgmt:_isKorean?'📰 Whistle Brief':'📰 Whistle Brief',localization:_isKorean?'🌐 글로벌 현지화':'🌐 Localization',certTracking:_isKorean?'🏅 인증 추적':'🏅 Certification Tracking'};
 
 /* === HUB TAB BAR & HUB PAGES === */
 function _admHubTabBar(tabs,stateKey,defaultTab){
@@ -2453,9 +2589,10 @@ function pgUsersHub(){
 }
 function pgDealHub(){
   var tab=S._dealHubTab||'matchings';
-  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'🤝 매칭 & 딜':'🤝 Matching & Deals')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'매칭 관리, 딜룸 거래 현황':'Manage matching and deals')+'</p></div>';
-  h+=_admHubTabBar([{id:'matchings',icon:'🤝',label:_isKorean?'매칭':'Matching'},{id:'deals',icon:'🏢',label:_isKorean?'딜룸':'Deal Room'}],'_dealHubTab','matchings');
+  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'🤝 매칭 & 딜':'🤝 Matching & Deals')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'매칭 관리, 딜룸 거래, 물류 현황':'Manage matching, deals, and logistics')+'</p></div>';
+  h+=_admHubTabBar([{id:'matchings',icon:'🤝',label:_isKorean?'매칭':'Matching'},{id:'deals',icon:'🏢',label:_isKorean?'딜룸':'Deal Room'},{id:'logistics',icon:'\uD83D\uDEA2',label:_isKorean?'물류 추적':'Logistics'}],'_dealHubTab','matchings');
   if(tab==='deals')return h+pgDeals();
+  if(tab==='logistics')return h+pgLogisticsDash();
   return h+pgMatchings();
 }
 function pgOrderPay(){
@@ -2468,9 +2605,10 @@ function pgOrderPay(){
 function pgContentHub(){
   var tab=S._contentHubTab||'products';
   var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'📦 제품 & 프로젝트':'📦 Products & Projects')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'제품, 프로젝트, 서류 관리':'Manage products, projects, and documents')+'</p></div>';
-  h+=_admHubTabBar([{id:'products',icon:'📦',label:_isKorean?'제품':'Products'},{id:'projects',icon:'🚀',label:_isKorean?'프로젝트':'Projects'},{id:'documents',icon:'📄',label:_isKorean?'서류':'Documents'}],'_contentHubTab','products');
+  h+=_admHubTabBar([{id:'products',icon:'📦',label:_isKorean?'제품':'Products'},{id:'projects',icon:'🚀',label:_isKorean?'프로젝트':'Projects'},{id:'documents',icon:'📄',label:_isKorean?'서류':'Documents'},{id:'briefs',icon:'📰',label:'Brief'}],'_contentHubTab','products');
   if(tab==='projects')return h+pgProjects();
   if(tab==='documents')return h+pgDocuments();
+  if(tab==='briefs')return h+pgBriefMgmt();
   return h+pgProducts();
 }
 /* ═══ 바우처 결과보고서 자동 생성 ═══ */
@@ -2564,6 +2702,571 @@ function pgSystemHub(){
   if(tab==='errors')return h+pgErrorMonitor();
   return h+pgHealth();
 }
+
+/* ═══ 1. Buyer Verification Review (바이어 인증 심사) ═══ */
+function pgBuyerVerify(){
+  var tab=S._buyerVerifyTab||'pending';
+  var allBuyers=S.buyers||[];
+  var pending=allBuyers.filter(function(b){return b.verification_status==='pending';});
+  var approved=allBuyers.filter(function(b){return b.verification_status==='approved';});
+  var rejected=allBuyers.filter(function(b){return b.verification_status==='rejected';});
+  var filtered=tab==='pending'?pending:tab==='approved'?approved:tab==='rejected'?rejected:allBuyers;
+  var search=(S.searchFilter||'').toLowerCase();
+  if(search)filtered=filtered.filter(function(b){return(b.company_name||'').toLowerCase().indexOf(search)>=0||(b.country||'').toLowerCase().indexOf(search)>=0;});
+
+  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'✅ 바이어 인증 심사':'✅ Buyer Verification Review')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'바이어 인증 요청 검토 및 승인/반려':'Review and approve/reject buyer verification requests')+'</p></div>';
+
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'대기':'Pending',pending.length,'','var(--acc)')+
+    UI.stat(_isKorean?'승인':'Approved',approved.length,'','var(--ok)')+
+    UI.stat(_isKorean?'반려':'Rejected',rejected.length,'','var(--err)')+
+    UI.stat(_isKorean?'전체':'Total',allBuyers.length,'','var(--pri)')+
+  '</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    ['pending','approved','rejected','all'].map(function(t){
+      var label={pending:_isKorean?'대기 ('+pending.length+')':'Pending ('+pending.length+')',approved:_isKorean?'승인 ('+approved.length+')':'Approved ('+approved.length+')',rejected:_isKorean?'반려 ('+rejected.length+')':'Rejected ('+rejected.length+')',all:_isKorean?'전체':'All'}[t];
+      return '<button class="btn btn-sm '+(tab===t?'btn-pri':'btn-ghost')+'" onclick="S._buyerVerifyTab=\''+t+'\';render()">'+label+'</button>';
+    }).join('')+
+    '<div style="flex:1"></div>'+
+    '<input placeholder="'+(_isKorean?'회사명/국가 검색...':'Search company/country...')+'" value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="padding:8px 12px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;width:220px">'+
+  '</div>';
+
+  if(!filtered.length){
+    return h+UI.empty('✅',_isKorean?'인증 요청 없음':'No Verification Requests',_isKorean?'해당 상태의 요청이 없습니다.':'No requests in this status.');
+  }
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'회사명':'Company')+'</th><th>'+(_isKorean?'국가':'Country')+'</th><th>'+(_isKorean?'인증 레벨':'Level')+'</th><th>'+(_isKorean?'서류':'Documents')+'</th><th>'+(_isKorean?'요청일':'Request Date')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'작업':'Actions')+'</th>'+
+    '</tr></thead><tbody>';
+  filtered.forEach(function(b){
+    var docs=b.verification_documents||b.documents||[];
+    if(typeof docs==='string')try{docs=JSON.parse(docs);}catch(e){docs=[];}
+    var docCount=Array.isArray(docs)?docs.length:0;
+    var statusBadge=b.verification_status==='approved'?UI.badge(_isKorean?'승인':'Approved','ok'):b.verification_status==='rejected'?UI.badge(_isKorean?'반려':'Rejected','err'):UI.badge(_isKorean?'대기':'Pending','acc');
+    h+='<tr>'+
+      '<td style="font-weight:600">'+U.esc(b.company_name||'\u2014')+'</td>'+
+      '<td>'+U.cl(b.country)+' '+U.esc(b.country||'')+'</td>'+
+      '<td><span class="badge badge-pri">'+(b.verification_level||'basic')+'</span></td>'+
+      '<td>'+docCount+(_isKorean?'개 파일':' files')+'</td>'+
+      '<td style="font-size:11px">'+U.fd(b.created_at)+'</td>'+
+      '<td>'+statusBadge+'</td>'+
+      '<td style="white-space:nowrap">'+
+        (b.verification_status==='pending'?
+          '<button class="btn btn-ok btn-sm" onclick="Adm.approveBuyer(\''+b.id+'\')">'+(_isKorean?'승인':'Approve')+'</button> '+
+          '<button class="btn btn-danger btn-sm" onclick="Adm.rejectBuyer(\''+b.id+'\')">'+(_isKorean?'반려':'Reject')+'</button>':
+          '<button class="btn btn-ghost btn-sm" onclick="Adm.viewBuyer(\''+b.id+'\')">'+(_isKorean?'상세':'Detail')+'</button>')+
+      '</td></tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+
+  /* Verification history log */
+  var history=allBuyers.filter(function(b){return b.verification_status==='approved'||b.verification_status==='rejected';}).sort(function(a,b){return new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at);}).slice(0,20);
+  if(history.length){
+    h+='<div class="card" style="margin-top:16px"><div class="card-h">'+(_isKorean?'최근 심사 이력':'Recent Review History')+'</div><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>'+(_isKorean?'회사':'Company')+'</th><th>'+(_isKorean?'결과':'Result')+'</th><th>'+(_isKorean?'사유':'Reason')+'</th><th>'+(_isKorean?'일시':'Date')+'</th></tr></thead><tbody>';
+    history.forEach(function(b){
+      h+='<tr><td>'+U.esc(b.company_name||'')+'</td><td>'+(b.verification_status==='approved'?UI.badge(_isKorean?'승인':'Approved','ok'):UI.badge(_isKorean?'반려':'Rejected','err'))+'</td><td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">'+U.esc(b.rejection_reason||'\u2014')+'</td><td style="font-size:11px">'+U.fd(b.updated_at||b.created_at)+'</td></tr>';
+    });
+    h+='</tbody></table></div></div></div>';
+  }
+  return h;
+}
+function approveBuyer(bid){
+  if(!confirm(_isKorean?'이 바이어를 승인하시겠습니까?':'Approve this buyer?'))return;
+  sb.from('buyers').update({verification_status:'approved',verification_level:'verified',updated_at:new Date().toISOString()}).eq('id',bid).then(function(r){
+    if(r.error){UI.toast((_isKorean?'승인 실패: ':'Approve failed: ')+r.error.message,'err');return;}
+    var idx=S.buyers.findIndex(function(b){return b.id===bid;});
+    if(idx>=0){S.buyers[idx].verification_status='approved';S.buyers[idx].verification_level='verified';}
+    UI.toast(_isKorean?'바이어 인증 승인 완료':'Buyer verified','ok');render();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function rejectBuyer(bid){
+  var reason=prompt(_isKorean?'반려 사유를 입력하세요:':'Enter rejection reason:');
+  if(!reason)return;
+  sb.from('buyers').update({verification_status:'rejected',rejection_reason:reason,updated_at:new Date().toISOString()}).eq('id',bid).then(function(r){
+    if(r.error){UI.toast((_isKorean?'반려 실패: ':'Reject failed: ')+r.error.message,'err');return;}
+    var idx=S.buyers.findIndex(function(b){return b.id===bid;});
+    if(idx>=0){S.buyers[idx].verification_status='rejected';S.buyers[idx].rejection_reason=reason;}
+    UI.toast(_isKorean?'바이어 인증 반려 완료':'Buyer rejected','ok');render();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+
+/* ═══ 2. UN Comtrade Cache Management ═══ */
+function loadComtradeCache(){
+  sb.from('comtrade_cache').select('*').order('fetched_at',{ascending:false}).limit(200).then(function(r){
+    S.comtradeCache=r.data||[];render();
+  }).catch(function(e){console.error('[comtrade_cache]',e);});
+}
+function clearExpiredCache(){
+  if(!confirm(_isKorean?'만료된 캐시를 삭제하시겠습니까?':'Clear expired cache?'))return;
+  var now=new Date().toISOString();
+  sb.from('comtrade_cache').delete().lt('expires_at',now).then(function(r){
+    if(r.error){UI.toast((_isKorean?'삭제 실패: ':'Delete failed: ')+r.error.message,'err');return;}
+    UI.toast(_isKorean?'만료 캐시 삭제 완료':'Expired cache cleared','ok');
+    loadComtradeCache();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function clearAllCache(){
+  if(!confirm(_isKorean?'전체 캐시를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.':'Clear ALL cache? This cannot be undone.'))return;
+  sb.from('comtrade_cache').delete().neq('cache_key','_dummy_never_match_').then(function(r){
+    if(r.error){UI.toast((_isKorean?'삭제 실패: ':'Delete failed: ')+r.error.message,'err');return;}
+    S.comtradeCache=[];
+    UI.toast(_isKorean?'전체 캐시 삭제 완료':'All cache cleared','ok');render();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+
+/* ═══ 3. Sanctions Screening Log ═══ */
+function pgSanctionsLog(){
+  var logs=S.sanctionsLog||[];
+  var filter=S._sanctionsFilter||'all';
+  if(filter!=='all')logs=logs.filter(function(l){return l.result===filter;});
+  var search=(S.searchFilter||'').toLowerCase();
+  if(search)logs=logs.filter(function(l){return(l.entity_name||'').toLowerCase().indexOf(search)>=0;});
+  var flagged=S.sanctionsLog.filter(function(l){return l.result==='flagged';}).length;
+  var clear=S.sanctionsLog.filter(function(l){return l.result==='clear';}).length;
+
+  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'🚫 제재 스크리닝 로그':'🚫 Sanctions Screening Log')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'거래 상대방 제재 스크리닝 결과 기록':'Log of sanctions screening results for trade partners')+'</p></div>';
+
+  h+='<div class="grid-3" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'전체 검사':'Total Checks',S.sanctionsLog.length,'','var(--pri)')+
+    UI.stat(_isKorean?'정상':'Clear',clear,'','var(--ok)')+
+    UI.stat(_isKorean?'주의 필요':'Flagged',flagged,'',flagged>0?'var(--err)':'var(--ok)')+
+  '</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    '<button class="btn btn-sm '+(filter==='all'?'btn-pri':'btn-ghost')+'" onclick="S._sanctionsFilter=\'all\';render()">'+(_isKorean?'전체':'All')+'</button>'+
+    '<button class="btn btn-sm '+(filter==='clear'?'btn-ok':'btn-ghost')+'" onclick="S._sanctionsFilter=\'clear\';render()">'+(_isKorean?'정상':'Clear')+'</button>'+
+    '<button class="btn btn-sm '+(filter==='flagged'?'btn-danger':'btn-ghost')+'" onclick="S._sanctionsFilter=\'flagged\';render()">'+(_isKorean?'주의':'Flagged')+'</button>'+
+    '<div style="flex:1"></div>'+
+    '<input placeholder="'+(_isKorean?'업체명 검색...':'Search entity...')+'" value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="padding:8px 12px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;width:220px">'+
+    '<button class="btn btn-ghost btn-sm" onclick="Adm.loadSanctionsLog()">'+(_isKorean?'새로고침':'Refresh')+'</button>'+
+  '</div>';
+
+  if(!logs.length){
+    return h+'<div class="card"><div class="card-b">'+UI.empty('🚫',_isKorean?'스크리닝 기록 없음':'No Screening Records',_isKorean?'제재 스크리닝 Edge Function 배포 후 자동 기록됩니다.':'Records will appear after sanctions screening Edge Function is deployed.')+'</div></div>'+
+    '<div class="card" style="margin-top:16px"><div class="card-h">'+(_isKorean?'준비 상태':'Readiness')+'</div><div class="card-b">'+
+    '<div class="detail-row"><div class="detail-label">Edge Function</div><div class="detail-value"><span class="status-dot pending"></span>'+(_isKorean?'배포 대기':'Pending deployment')+'</div></div>'+
+    '<div class="detail-row"><div class="detail-label">'+(_isKorean?'검사 리스트':'Screening Lists')+'</div><div class="detail-value">OFAC SDN, EU Consolidated, UN Security Council, BIS Entity List</div></div>'+
+    '<div class="detail-row"><div class="detail-label">'+(_isKorean?'자동화':'Automation')+'</div><div class="detail-value">'+(_isKorean?'매칭/주문 생성 시 자동 실행 예정':'Will auto-run on matching/order creation')+'</div></div>'+
+    '</div></div>';
+  }
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'검사 대상':'Entity')+'</th><th>'+(_isKorean?'유형':'Type')+'</th><th>'+(_isKorean?'검사일':'Date')+'</th><th>'+(_isKorean?'결과':'Result')+'</th><th>'+(_isKorean?'검사 목록':'Lists Checked')+'</th><th>'+(_isKorean?'상세':'Detail')+'</th>'+
+    '</tr></thead><tbody>';
+  logs.forEach(function(l){
+    var isFlagged=l.result==='flagged';
+    var rowStyle=isFlagged?' style="background:rgba(255,82,82,.06)"':'';
+    h+='<tr'+rowStyle+'>'+
+      '<td style="font-weight:600">'+U.esc(l.entity_name||'\u2014')+'</td>'+
+      '<td>'+U.esc(l.entity_type||'company')+'</td>'+
+      '<td style="font-size:11px">'+U.fd(l.checked_at||l.created_at)+'</td>'+
+      '<td>'+(isFlagged?UI.badge(_isKorean?'주의':'FLAGGED','err'):UI.badge(_isKorean?'정상':'CLEAR','ok'))+'</td>'+
+      '<td style="font-size:11px">'+U.esc((l.lists_checked||[]).join(', ')||'OFAC, EU, UN')+'</td>'+
+      '<td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis">'+U.esc(l.detail||'\u2014')+'</td>'+
+    '</tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+function loadSanctionsLog(){
+  sb.from('sanctions_log').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){
+    S.sanctionsLog=r.data||[];render();
+  }).catch(function(e){
+    console.error('[sanctions_log]',e);
+    /* Table may not exist yet — that's expected */
+    S.sanctionsLog=[];render();
+  });
+}
+
+/* ═══ 4. Whistle Brief Management ═══ */
+function pgBriefMgmt(){
+  var tab=S._briefTab||'all';
+  var briefs=S.briefs||[];
+  var published=briefs.filter(function(b){return b.status==='published';});
+  var drafts=briefs.filter(function(b){return b.status==='draft';});
+  var scheduled=briefs.filter(function(b){return b.status==='scheduled';});
+  var filtered=tab==='published'?published:tab==='draft'?drafts:tab==='scheduled'?scheduled:briefs;
+
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'📰 Whistle Brief 관리':'📰 Whistle Brief Management')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'뉴스레터/브리핑 콘텐츠 관리':'Manage newsletter and briefing content')+'</p></div>'+
+    '<button class="btn btn-pri" onclick="Adm.showBriefEditor()">'+(_isKorean?'+ 새 Brief 작성':'+ New Brief')+'</button></div>';
+
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'전체':'Total',briefs.length,'','var(--pri)')+
+    UI.stat(_isKorean?'발행됨':'Published',published.length,'','var(--ok)')+
+    UI.stat(_isKorean?'초안':'Drafts',drafts.length,'','var(--acc)')+
+    UI.stat(_isKorean?'예약됨':'Scheduled',scheduled.length,'','var(--purple)')+
+  '</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px">'+
+    ['all','published','draft','scheduled'].map(function(t){
+      var label={all:_isKorean?'전체':'All',published:_isKorean?'발행됨':'Published',draft:_isKorean?'초안':'Draft',scheduled:_isKorean?'예약':'Scheduled'}[t];
+      return '<button class="btn btn-sm '+(tab===t?'btn-pri':'btn-ghost')+'" onclick="S._briefTab=\''+t+'\';render()">'+label+'</button>';
+    }).join('')+
+  '</div>';
+
+  if(!filtered.length){
+    return h+UI.empty('📰',_isKorean?'Brief 없음':'No Briefs',_isKorean?'첫 번째 Whistle Brief를 작성해보세요.':'Create your first Whistle Brief.');
+  }
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'제목':'Title')+'</th><th>'+(_isKorean?'유형':'Type')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'날짜':'Date')+'</th><th>'+(_isKorean?'구독자':'Subscribers')+'</th><th>'+(_isKorean?'작업':'Actions')+'</th>'+
+    '</tr></thead><tbody>';
+  filtered.forEach(function(b){
+    var typeBadge=b.type==='premium'?UI.badge('PREMIUM','acc'):UI.badge('FREE','ghost');
+    var statusBadge=b.status==='published'?UI.badge(_isKorean?'발행':'Published','ok'):b.status==='scheduled'?UI.badge(_isKorean?'예약':'Scheduled','purple'):UI.badge(_isKorean?'초안':'Draft','ghost');
+    h+='<tr>'+
+      '<td style="font-weight:600">'+U.esc(b.title||'\u2014')+'</td>'+
+      '<td>'+typeBadge+'</td>'+
+      '<td>'+statusBadge+'</td>'+
+      '<td style="font-size:11px">'+U.fd(b.published_at||b.scheduled_at||b.created_at)+'</td>'+
+      '<td style="font-family:JetBrains Mono;font-size:12px">'+(b.subscriber_count||0)+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" onclick="Adm.editBrief(\''+b.id+'\')">'+(_isKorean?'편집':'Edit')+'</button>'+
+      (b.status==='draft'?' <button class="btn btn-ok btn-sm" onclick="Adm.publishBrief(\''+b.id+'\')">'+(_isKorean?'발행':'Publish')+'</button>':'')+
+      '</td></tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+function showBriefEditor(briefId){
+  var brief=briefId?S.briefs.find(function(b){return b.id===briefId;}):null;
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:12px">'+
+    '<div><label class="form-label">'+(_isKorean?'제목':'Title')+' *</label><input id="brief-title" class="form-input" placeholder="'+(_isKorean?'Brief 제목':'Brief title')+'" value="'+U.esc(brief?brief.title:'')+'"></div>'+
+    '<div class="grid-2"><div><label class="form-label">'+(_isKorean?'유형':'Type')+'</label><select id="brief-type" class="form-select"><option value="free"'+(brief&&brief.type==='free'?' selected':'')+'>Free</option><option value="premium"'+(brief&&brief.type==='premium'?' selected':'')+'>Premium</option></select></div>'+
+    '<div><label class="form-label">'+(_isKorean?'예약일':'Schedule Date')+'</label><input id="brief-schedule" type="datetime-local" class="form-input" value="'+(brief&&brief.scheduled_at?brief.scheduled_at.slice(0,16):'')+'"></div></div>'+
+    '<div><label class="form-label">'+(_isKorean?'헤드라인':'Headlines')+'</label><textarea id="brief-headlines" class="form-textarea" rows="3" placeholder="'+(_isKorean?'주요 뉴스 헤드라인 (줄바꿈으로 구분)':'News headlines (one per line)')+'">'+(brief&&brief.content?brief.content.headlines||'':'')+'</textarea></div>'+
+    '<div><label class="form-label">'+(_isKorean?'시장 데이터':'Market Data')+'</label><textarea id="brief-market" class="form-textarea" rows="3" placeholder="'+(_isKorean?'환율, 운임, 원자재 등':'Exchange rates, freight, commodities')+'">'+(brief&&brief.content?brief.content.market_data||'':'')+'</textarea></div>'+
+    '<div><label class="form-label">'+(_isKorean?'수출 팁':'Export Tip')+'</label><textarea id="brief-tip" class="form-textarea" rows="2" placeholder="'+(_isKorean?'이번 주 수출 실무 팁':'This week export tip')+'">'+(brief&&brief.content?brief.content.export_tip||'':'')+'</textarea></div>'+
+    '<div><label class="form-label">'+(_isKorean?'규제 업데이트':'Regulatory Updates')+'</label><textarea id="brief-regulatory" class="form-textarea" rows="2" placeholder="'+(_isKorean?'FTA, 관세, 인증 변경사항':'FTA, tariff, certification changes')+'">'+(brief&&brief.content?brief.content.regulatory||'':'')+'</textarea></div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'brief-editor',title:brief?(_isKorean?'Brief 편집':'Edit Brief'):(_isKorean?'새 Brief 작성':'New Brief'),body:body,footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\'brief-editor\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-ghost" onclick="Adm.saveBriefDraft('+(brief?'\''+brief.id+'\'':'null')+')">'+(_isKorean?'초안 저장':'Save Draft')+'</button><button class="btn btn-pri" onclick="Adm.saveBriefPublish('+(brief?'\''+brief.id+'\'':'null')+')">'+(_isKorean?'발행':'Publish')+'</button>',width:'640px'}));
+  UI.showModal('brief-editor');
+}
+function _getBriefFormData(){
+  return{
+    title:(document.getElementById('brief-title')||{}).value||'',
+    type:(document.getElementById('brief-type')||{}).value||'free',
+    scheduled_at:(document.getElementById('brief-schedule')||{}).value||null,
+    content:{
+      headlines:(document.getElementById('brief-headlines')||{}).value||'',
+      market_data:(document.getElementById('brief-market')||{}).value||'',
+      export_tip:(document.getElementById('brief-tip')||{}).value||'',
+      regulatory:(document.getElementById('brief-regulatory')||{}).value||''
+    }
+  };
+}
+function saveBriefDraft(briefId){
+  var d=_getBriefFormData();if(!d.title){UI.toast(_isKorean?'제목을 입력하세요':'Title is required','warn');return;}
+  d.status='draft';d.updated_at=new Date().toISOString();
+  var q=briefId?sb.from('whistle_briefs').update(d).eq('id',briefId):sb.from('whistle_briefs').insert(d).select().single();
+  q.then(function(r){
+    if(r.error){UI.toast((_isKorean?'저장 실패: ':'Save failed: ')+r.error.message,'err');return;}
+    closeModal('brief-editor');UI.toast(_isKorean?'초안 저장 완료':'Draft saved','ok');
+    loadBriefs();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function saveBriefPublish(briefId){
+  var d=_getBriefFormData();if(!d.title){UI.toast(_isKorean?'제목을 입력하세요':'Title is required','warn');return;}
+  d.status='published';d.published_at=new Date().toISOString();d.updated_at=new Date().toISOString();
+  var q=briefId?sb.from('whistle_briefs').update(d).eq('id',briefId):sb.from('whistle_briefs').insert(d).select().single();
+  q.then(function(r){
+    if(r.error){UI.toast((_isKorean?'발행 실패: ':'Publish failed: ')+r.error.message,'err');return;}
+    closeModal('brief-editor');UI.toast(_isKorean?'Brief 발행 완료':'Brief published','ok');
+    loadBriefs();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function publishBrief(briefId){
+  if(!confirm(_isKorean?'이 Brief를 발행하시겠습니까?':'Publish this brief?'))return;
+  sb.from('whistle_briefs').update({status:'published',published_at:new Date().toISOString()}).eq('id',briefId).then(function(r){
+    if(r.error){UI.toast((_isKorean?'발행 실패: ':'Publish failed: ')+r.error.message,'err');return;}
+    UI.toast(_isKorean?'Brief 발행 완료':'Brief published','ok');loadBriefs();
+  }).catch(function(e){UI.toast((_isKorean?'오류: ':'Error: ')+e.message,'err');});
+}
+function editBrief(briefId){showBriefEditor(briefId);}
+function loadBriefs(){
+  sb.from('whistle_briefs').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){
+    S.briefs=r.data||[];render();
+  }).catch(function(e){console.error('[briefs]',e);S.briefs=[];render();});
+}
+
+/* ═══ 5. Global Localization Settings ═══ */
+var LOC_COUNTRIES=[
+  {name:'United States',code:'US',flag:'\uD83C\uDDFA\uD83C\uDDF8',isActive:true,certs:'FDA,FCC,UL',ftas:'KORUS FTA',templates:12,lang:'en',readiness:9},
+  {name:'Japan',code:'JP',flag:'\uD83C\uDDEF\uD83C\uDDF5',isActive:true,certs:'JIS,PSE,JFRL',ftas:'RCEP,Korea-Japan',templates:10,lang:'ja',readiness:8},
+  {name:'China',code:'CN',flag:'\uD83C\uDDE8\uD83C\uDDF3',isActive:true,certs:'CCC,CFDA,GB',ftas:'RCEP,Korea-China FTA',templates:11,lang:'zh',readiness:8},
+  {name:'Germany',code:'DE',flag:'\uD83C\uDDE9\uD83C\uDDEA',isActive:true,certs:'CE,TUV,GS',ftas:'EU-Korea FTA',templates:9,lang:'de',readiness:8},
+  {name:'United Kingdom',code:'GB',flag:'\uD83C\uDDEC\uD83C\uDDE7',isActive:true,certs:'UKCA,BSI',ftas:'UK-Korea FTA',templates:8,lang:'en',readiness:7},
+  {name:'Vietnam',code:'VN',flag:'\uD83C\uDDFB\uD83C\uDDF3',isActive:true,certs:'CR,QCVN',ftas:'RCEP,VKFTA,EVFTA',templates:7,lang:'vi',readiness:7},
+  {name:'Singapore',code:'SG',flag:'\uD83C\uDDF8\uD83C\uDDEC',isActive:true,certs:'PSB,TUV SUD',ftas:'RCEP,KSFTA',templates:6,lang:'en',readiness:8},
+  {name:'Thailand',code:'TH',flag:'\uD83C\uDDF9\uD83C\uDDED',isActive:true,certs:'TISI,FDA Thai',ftas:'RCEP,AKFTA',templates:6,lang:'th',readiness:6},
+  {name:'India',code:'IN',flag:'\uD83C\uDDEE\uD83C\uDDF3',isActive:true,certs:'BIS,FSSAI,ISI',ftas:'CEPA',templates:7,lang:'hi',readiness:6},
+  {name:'Indonesia',code:'ID',flag:'\uD83C\uDDEE\uD83C\uDDE9',isActive:true,certs:'SNI,BPOM',ftas:'RCEP,AKFTA',templates:5,lang:'id',readiness:5},
+  {name:'Australia',code:'AU',flag:'\uD83C\uDDE6\uD83C\uDDFA',isActive:true,certs:'RCM,TGA,ASNZ',ftas:'RCEP,KAFTA',templates:7,lang:'en',readiness:7},
+  {name:'Canada',code:'CA',flag:'\uD83C\uDDE8\uD83C\uDDE6',isActive:true,certs:'CSA,Health Canada',ftas:'CKFTA',templates:7,lang:'en',readiness:7},
+  {name:'France',code:'FR',flag:'\uD83C\uDDEB\uD83C\uDDF7',isActive:true,certs:'CE,NF',ftas:'EU-Korea FTA',templates:8,lang:'fr',readiness:7},
+  {name:'Netherlands',code:'NL',flag:'\uD83C\uDDF3\uD83C\uDDF1',isActive:true,certs:'CE',ftas:'EU-Korea FTA',templates:6,lang:'nl',readiness:7},
+  {name:'Italy',code:'IT',flag:'\uD83C\uDDEE\uD83C\uDDF9',isActive:true,certs:'CE,IMQ',ftas:'EU-Korea FTA',templates:6,lang:'it',readiness:6},
+  {name:'Spain',code:'ES',flag:'\uD83C\uDDEA\uD83C\uDDF8',isActive:true,certs:'CE,AENOR',ftas:'EU-Korea FTA',templates:5,lang:'es',readiness:6},
+  {name:'UAE',code:'AE',flag:'\uD83C\uDDE6\uD83C\uDDEA',isActive:true,certs:'ESMA,Halal',ftas:'Korea-GCC (negotiating)',templates:5,lang:'ar',readiness:5},
+  {name:'Saudi Arabia',code:'SA',flag:'\uD83C\uDDF8\uD83C\uDDE6',isActive:true,certs:'SASO,SFDA,Halal',ftas:'Korea-GCC (negotiating)',templates:5,lang:'ar',readiness:5},
+  {name:'Malaysia',code:'MY',flag:'\uD83C\uDDF2\uD83C\uDDFE',isActive:true,certs:'SIRIM,Halal JAKIM',ftas:'RCEP,AKFTA',templates:5,lang:'ms',readiness:6},
+  {name:'Philippines',code:'PH',flag:'\uD83C\uDDF5\uD83C\uDDED',isActive:true,certs:'BPS,FDA PH',ftas:'RCEP,AKFTA',templates:4,lang:'en',readiness:5},
+  {name:'Mexico',code:'MX',flag:'\uD83C\uDDF2\uD83C\uDDFD',isActive:false,certs:'NOM,COFEPRIS',ftas:'(none)',templates:3,lang:'es',readiness:4},
+  {name:'Brazil',code:'BR',flag:'\uD83C\uDDE7\uD83C\uDDF7',isActive:false,certs:'INMETRO,ANVISA',ftas:'Mercosur-Korea (exploring)',templates:3,lang:'pt',readiness:3},
+  {name:'Turkey',code:'TR',flag:'\uD83C\uDDF9\uD83C\uDDF7',isActive:false,certs:'TSE,CE (accepted)',ftas:'Korea-Turkey FTA',templates:3,lang:'tr',readiness:4},
+  {name:'Poland',code:'PL',flag:'\uD83C\uDDF5\uD83C\uDDF1',isActive:false,certs:'CE',ftas:'EU-Korea FTA',templates:4,lang:'pl',readiness:5},
+  {name:'Sweden',code:'SE',flag:'\uD83C\uDDF8\uD83C\uDDEA',isActive:false,certs:'CE',ftas:'EU-Korea FTA',templates:4,lang:'sv',readiness:5},
+  {name:'Switzerland',code:'CH',flag:'\uD83C\uDDE8\uD83C\uDDED',isActive:false,certs:'CE(accepted),Swissmedic',ftas:'EFTA-Korea FTA',templates:3,lang:'de',readiness:5},
+  {name:'Norway',code:'NO',flag:'\uD83C\uDDF3\uD83C\uDDF4',isActive:false,certs:'CE(accepted)',ftas:'EFTA-Korea FTA',templates:3,lang:'no',readiness:5},
+  {name:'New Zealand',code:'NZ',flag:'\uD83C\uDDF3\uD83C\uDDFF',isActive:false,certs:'RCM',ftas:'RCEP,NZ-Korea FTA',templates:4,lang:'en',readiness:6},
+  {name:'Chile',code:'CL',flag:'\uD83C\uDDE8\uD83C\uDDF1',isActive:false,certs:'SEC,ISP',ftas:'Korea-Chile FTA',templates:3,lang:'es',readiness:4},
+  {name:'Peru',code:'PE',flag:'\uD83C\uDDF5\uD83C\uDDEA',isActive:false,certs:'INACAL',ftas:'Korea-Peru FTA',templates:2,lang:'es',readiness:3},
+  {name:'Colombia',code:'CO',flag:'\uD83C\uDDE8\uD83C\uDDF4',isActive:false,certs:'ICONTEC,INVIMA',ftas:'Korea-Colombia FTA',templates:2,lang:'es',readiness:3}
+];
+function pgLocalization(){
+  var countries=S.localizationCountries.length?S.localizationCountries:LOC_COUNTRIES;
+  if(!S.localizationCountries.length)S.localizationCountries=LOC_COUNTRIES;
+  var tab=S._locTab||'all';
+  var filtered=tab==='active'?countries.filter(function(c){return c.isActive;}):tab==='inactive'?countries.filter(function(c){return !c.isActive;}):countries;
+  var search=(S.searchFilter||'').toLowerCase();
+  if(search)filtered=filtered.filter(function(c){return c.name.toLowerCase().indexOf(search)>=0||c.code.toLowerCase().indexOf(search)>=0;});
+  var activeCount=countries.filter(function(c){return c.isActive;}).length;
+  var avgReadiness=countries.length?Math.round(countries.reduce(function(s,c){return s+c.readiness;},0)/countries.length*10)/10:0;
+  var totalTemplates=countries.reduce(function(s,c){return s+c.templates;},0);
+
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'🌐 글로벌 현지화 설정':'🌐 Global Localization Settings')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'국가별 인증, FTA, 서류 템플릿 관리':'Manage country certifications, FTAs, and document templates')+'</p></div>'+
+    '<button class="btn btn-pri" onclick="Adm.showAddCountry()">'+(_isKorean?'+ 국가 추가':'+ Add Country')+'</button></div>';
+
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'지원 국가':'Countries',countries.length,'','var(--pri)')+
+    UI.stat(_isKorean?'활성':'Active',activeCount,'','var(--ok)')+
+    UI.stat(_isKorean?'평균 준비도':'Avg Readiness',avgReadiness+'/10','','var(--acc)')+
+    UI.stat(_isKorean?'서류 템플릿':'Templates',totalTemplates,'','var(--purple)')+
+  '</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    '<button class="btn btn-sm '+(tab==='all'?'btn-pri':'btn-ghost')+'" onclick="S._locTab=\'all\';render()">'+(_isKorean?'전체':'All')+' ('+countries.length+')</button>'+
+    '<button class="btn btn-sm '+(tab==='active'?'btn-ok':'btn-ghost')+'" onclick="S._locTab=\'active\';render()">'+(_isKorean?'활성':'Active')+' ('+activeCount+')</button>'+
+    '<button class="btn btn-sm '+(tab==='inactive'?'btn-ghost':'btn-ghost')+'" onclick="S._locTab=\'inactive\';render()">'+(_isKorean?'비활성':'Inactive')+' ('+(countries.length-activeCount)+')</button>'+
+    '<div style="flex:1"></div>'+
+    '<input placeholder="'+(_isKorean?'국가 검색...':'Search country...')+'" value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="padding:8px 12px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;width:220px">'+
+  '</div>';
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'국가':'Country')+'</th><th>'+(_isKorean?'코드':'Code')+'</th><th>'+(_isKorean?'활성':'Active')+'</th><th>'+(_isKorean?'필수 인증':'Certifications')+'</th><th>FTA</th><th>'+(_isKorean?'템플릿':'Templates')+'</th><th>'+(_isKorean?'언어':'Lang')+'</th><th>'+(_isKorean?'준비도':'Score')+'</th><th>'+(_isKorean?'편집':'Edit')+'</th>'+
+    '</tr></thead><tbody>';
+  filtered.forEach(function(c,i){
+    var readinessColor=c.readiness>=8?'var(--ok)':c.readiness>=5?'var(--acc)':'var(--err)';
+    var readinessBar='<div style="display:flex;align-items:center;gap:6px"><div style="width:60px;height:6px;border-radius:3px;background:var(--w08);overflow:hidden"><div style="height:100%;width:'+c.readiness*10+'%;background:'+readinessColor+';border-radius:3px"></div></div><span style="font-size:11px;font-weight:700;color:'+readinessColor+'">'+c.readiness+'</span></div>';
+    var certTags=(c.certs||'').split(',').map(function(t){return t.trim()?'<span class="badge badge-ghost" style="margin:1px;font-size:9px;padding:1px 5px">'+U.esc(t.trim())+'</span>':'';}).join('');
+    var ftaTags=(c.ftas||'').split(',').map(function(t){return t.trim()?'<span class="badge badge-pri" style="margin:1px;font-size:9px;padding:1px 5px">'+U.esc(t.trim())+'</span>':'';}).join('');
+    h+='<tr>'+
+      '<td style="font-weight:600">'+c.flag+' '+U.esc(c.name)+'</td>'+
+      '<td style="font-family:JetBrains Mono;font-size:12px">'+c.code+'</td>'+
+      '<td><div onclick="Adm.toggleLocCountry(\''+c.code+'\')" style="cursor:pointer;width:36px;height:20px;border-radius:10px;background:'+(c.isActive?'var(--ok)':'var(--w12)')+';position:relative;transition:all .2s"><div style="position:absolute;top:2px;'+(c.isActive?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:8px;background:var(--w);transition:all .2s"></div></div></td>'+
+      '<td style="max-width:180px">'+certTags+'</td>'+
+      '<td style="max-width:160px">'+ftaTags+'</td>'+
+      '<td style="text-align:center;font-family:JetBrains Mono">'+c.templates+'</td>'+
+      '<td style="font-size:11px">'+c.lang+'</td>'+
+      '<td>'+readinessBar+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" onclick="Adm.editLocCountry(\''+c.code+'\')">'+(_isKorean?'편집':'Edit')+'</button></td>'+
+    '</tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+function toggleLocCountry(code){
+  var idx=S.localizationCountries.findIndex(function(c){return c.code===code;});
+  if(idx>=0){S.localizationCountries[idx].isActive=!S.localizationCountries[idx].isActive;render();}
+}
+function editLocCountry(code){
+  var c=S.localizationCountries.find(function(x){return x.code===code;});
+  if(!c)return;
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div class="grid-2"><div><label class="form-label">'+(_isKorean?'국가명':'Country Name')+'</label><input id="loc-name" class="form-input" value="'+U.esc(c.name)+'"></div>'+
+    '<div><label class="form-label">'+(_isKorean?'코드':'Code')+'</label><input id="loc-code" class="form-input" value="'+U.esc(c.code)+'" readonly style="opacity:.6"></div></div>'+
+    '<div class="grid-2"><div><label class="form-label">'+(_isKorean?'언어':'Language')+'</label><input id="loc-lang" class="form-input" value="'+U.esc(c.lang)+'"></div>'+
+    '<div><label class="form-label">'+(_isKorean?'준비도 (1-10)':'Readiness (1-10)')+'</label><input id="loc-readiness" class="form-input" type="number" min="1" max="10" value="'+c.readiness+'"></div></div>'+
+    '<div><label class="form-label">'+(_isKorean?'필수 인증 (쉼표 구분)':'Required Certifications (comma-separated)')+'</label><input id="loc-certs" class="form-input" value="'+U.esc(c.certs)+'"></div>'+
+    '<div><label class="form-label">'+(_isKorean?'적용 FTA (쉼표 구분)':'Available FTAs (comma-separated)')+'</label><input id="loc-ftas" class="form-input" value="'+U.esc(c.ftas)+'"></div>'+
+    '<div><label class="form-label">'+(_isKorean?'서류 템플릿 수':'Document Templates Count')+'</label><input id="loc-templates" class="form-input" type="number" min="0" value="'+c.templates+'"></div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'loc-edit',title:c.flag+' '+c.name+(_isKorean?' 설정':' Settings'),body:body,footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\'loc-edit\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-pri" onclick="Adm.saveLocCountry(\''+c.code+'\')">'+(_isKorean?'저장':'Save')+'</button>',width:'520px'}));
+  UI.showModal('loc-edit');
+}
+function saveLocCountry(code){
+  var idx=S.localizationCountries.findIndex(function(c){return c.code===code;});
+  if(idx<0)return;
+  S.localizationCountries[idx].name=(document.getElementById('loc-name')||{}).value||S.localizationCountries[idx].name;
+  S.localizationCountries[idx].lang=(document.getElementById('loc-lang')||{}).value||S.localizationCountries[idx].lang;
+  S.localizationCountries[idx].readiness=parseInt((document.getElementById('loc-readiness')||{}).value)||S.localizationCountries[idx].readiness;
+  S.localizationCountries[idx].certs=(document.getElementById('loc-certs')||{}).value||'';
+  S.localizationCountries[idx].ftas=(document.getElementById('loc-ftas')||{}).value||'';
+  S.localizationCountries[idx].templates=parseInt((document.getElementById('loc-templates')||{}).value)||0;
+  closeModal('loc-edit');UI.toast(_isKorean?'국가 설정 저장 완료':'Country settings saved','ok');render();
+}
+function showAddCountry(){
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div class="grid-2"><div><label class="form-label">'+(_isKorean?'국가명':'Country Name')+' *</label><input id="loc-new-name" class="form-input" placeholder="e.g., Taiwan"></div>'+
+    '<div><label class="form-label">'+(_isKorean?'코드':'Code')+' *</label><input id="loc-new-code" class="form-input" placeholder="e.g., TW" maxlength="2" style="text-transform:uppercase"></div></div>'+
+    '<div class="grid-2"><div><label class="form-label">'+(_isKorean?'플래그 이모지':'Flag Emoji')+'</label><input id="loc-new-flag" class="form-input" placeholder="e.g., \uD83C\uDDF9\uD83C\uDDFC"></div>'+
+    '<div><label class="form-label">'+(_isKorean?'언어':'Language')+'</label><input id="loc-new-lang" class="form-input" placeholder="e.g., zh"></div></div>'+
+    '<div><label class="form-label">'+(_isKorean?'필수 인증':'Certifications')+'</label><input id="loc-new-certs" class="form-input" placeholder="BSMI,NCC"></div>'+
+    '<div><label class="form-label">FTA</label><input id="loc-new-ftas" class="form-input" placeholder="ECFA"></div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'loc-add',title:_isKorean?'국가 추가':'Add Country',body:body,footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\'loc-add\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-pri" onclick="Adm.saveNewCountry()">'+(_isKorean?'추가':'Add')+'</button>',width:'480px'}));
+  UI.showModal('loc-add');
+}
+function saveNewCountry(){
+  var name=(document.getElementById('loc-new-name')||{}).value;
+  var code=((document.getElementById('loc-new-code')||{}).value||'').toUpperCase();
+  if(!name||!code){UI.toast(_isKorean?'국가명과 코드는 필수입니다':'Name and code are required','warn');return;}
+  if(S.localizationCountries.find(function(c){return c.code===code;})){UI.toast(_isKorean?'이미 존재하는 코드입니다':'Code already exists','warn');return;}
+  S.localizationCountries.push({
+    name:name,code:code,flag:(document.getElementById('loc-new-flag')||{}).value||'',
+    isActive:false,certs:(document.getElementById('loc-new-certs')||{}).value||'',
+    ftas:(document.getElementById('loc-new-ftas')||{}).value||'',templates:0,
+    lang:(document.getElementById('loc-new-lang')||{}).value||'en',readiness:1
+  });
+  closeModal('loc-add');UI.toast(_isKorean?'국가 추가 완료':'Country added','ok');render();
+}
+
+/* ═══ 6. Enhanced Logistics Dashboard ═══ */
+function pgLogisticsDash(){
+  var shipments=S.shipments||[];
+  var filter=S._logisticsFilter||'all';
+  if(filter!=='all')shipments=shipments.filter(function(s){return s.status===filter;});
+  var search=(S.searchFilter||'').toLowerCase();
+  if(search)shipments=shipments.filter(function(s){return(s.tracking_number||'').toLowerCase().indexOf(search)>=0||(s.carrier||'').toLowerCase().indexOf(search)>=0;});
+
+  var inTransit=S.shipments.filter(function(s){return s.status==='in_transit'||s.status==='in-transit'||s.status==='shipped';}).length;
+  var delivered=S.shipments.filter(function(s){return s.status==='delivered';}).length;
+  var delayed=S.shipments.filter(function(s){return s.status==='delayed';}).length;
+  var pending=S.shipments.filter(function(s){return s.status==='pending';}).length;
+
+  var h='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.stat(_isKorean?'운송 중':'In Transit',inTransit,'','var(--pri)')+
+    UI.stat(_isKorean?'배송 완료':'Delivered',delivered,'','var(--ok)')+
+    UI.stat(_isKorean?'지연':'Delayed',delayed,'',delayed>0?'var(--err)':'var(--ok)')+
+    UI.stat(_isKorean?'대기':'Pending',pending,'','var(--acc)')+
+  '</div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    ['all','in_transit','delivered','delayed','pending'].map(function(t){
+      var labels={all:_isKorean?'전체':'All',in_transit:_isKorean?'운송중':'In Transit',delivered:_isKorean?'배송완료':'Delivered',delayed:_isKorean?'지연':'Delayed',pending:_isKorean?'대기':'Pending'};
+      return '<button class="btn btn-sm '+(filter===t?'btn-pri':'btn-ghost')+'" onclick="S._logisticsFilter=\''+t+'\';render()">'+labels[t]+'</button>';
+    }).join('')+
+    '<div style="flex:1"></div>'+
+    '<input placeholder="'+(_isKorean?'추적번호/운송사 검색...':'Search tracking/carrier...')+'" value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="padding:8px 12px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;width:220px">'+
+  '</div>';
+
+  if(!shipments.length){
+    return h+UI.empty('\uD83D\uDEA2',_isKorean?'물류 내역 없음':'No Shipments',_isKorean?'활성 물류 건이 없습니다.':'No active shipments.');
+  }
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'운송사':'Carrier')+'</th><th>'+(_isKorean?'추적번호':'Tracking #')+'</th><th>ETD</th><th>ETA</th><th>'+(_isKorean?'출발지':'Origin')+'</th><th>'+(_isKorean?'도착지':'Destination')+'</th><th>'+(_isKorean?'생성일':'Created')+'</th>'+
+    '</tr></thead><tbody>';
+  shipments.forEach(function(s){
+    var statusColors={in_transit:'pri',shipped:'pri',delivered:'ok',delayed:'err',pending:'acc'};
+    var statusLabels={in_transit:_isKorean?'운송중':'In Transit',shipped:_isKorean?'운송중':'Shipped',delivered:_isKorean?'배송완료':'Delivered',delayed:_isKorean?'지연':'Delayed',pending:_isKorean?'대기':'Pending'};
+    h+='<tr'+(s.status==='delayed'?' style="background:rgba(255,82,82,.04)"':'')+'>'+
+      '<td>'+UI.badge(statusLabels[s.status]||s.status,statusColors[s.status]||'ghost')+'</td>'+
+      '<td style="font-weight:600">'+U.esc(s.carrier||'\u2014')+'</td>'+
+      '<td style="font-family:JetBrains Mono;font-size:11px">'+U.esc(s.tracking_number||'\u2014')+'</td>'+
+      '<td style="font-size:11px">'+U.fd(s.etd||s.departure_date)+'</td>'+
+      '<td style="font-size:11px">'+U.fd(s.eta||s.arrival_date)+'</td>'+
+      '<td style="font-size:11px">'+U.esc(s.origin||'\u2014')+'</td>'+
+      '<td style="font-size:11px">'+U.esc(s.destination||'\u2014')+'</td>'+
+      '<td style="font-size:11px">'+U.fd(s.created_at)+'</td>'+
+    '</tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+
+/* ═══ 7. Certification Tracking ═══ */
+var CERT_STAGES=['접수','서류검토','시험의뢰','시험진행','결과검토','인증발급','완료'];
+var CERT_STAGES_EN=['Received','Doc Review','Test Request','Testing','Result Review','Issuance','Complete'];
+function pgCertTracking(){
+  var projects=S.projects||[];
+  /* Extract certification items from projects */
+  var certs=[];
+  projects.forEach(function(p){
+    var items=p.certifications||p.certification_items||[];
+    if(typeof items==='string')try{items=JSON.parse(items);}catch(e){items=[];}
+    if(Array.isArray(items)){
+      items.forEach(function(ci){
+        certs.push({project_id:p.id,project_name:p.name||p.title||'',user_id:p.user_id,cert_name:ci.name||ci.type||'',country:ci.country||p.target_country||'',status:ci.status||'접수',stage:ci.stage||0,created_at:ci.created_at||p.created_at});
+      });
+    }
+    /* Also treat project itself as a cert if it has certification type */
+    if(p.service_type==='certification'||p.type==='certification'){
+      certs.push({project_id:p.id,project_name:p.name||p.title||'',user_id:p.user_id,cert_name:p.certification_type||p.name||'',country:p.target_country||'',status:p.certification_status||p.status||'접수',stage:p.certification_stage||0,created_at:p.created_at});
+    }
+  });
+
+  var filter=S._certFilter||'all';
+  var filtered=filter==='all'?certs:certs.filter(function(c){return c.status===filter;});
+  var search=(S.searchFilter||'').toLowerCase();
+  if(search)filtered=filtered.filter(function(c){return(c.cert_name||'').toLowerCase().indexOf(search)>=0||(c.project_name||'').toLowerCase().indexOf(search)>=0||(c.country||'').toLowerCase().indexOf(search)>=0;});
+
+  /* Stage distribution */
+  var stageDist=CERT_STAGES.map(function(s,i){return certs.filter(function(c){return c.status===s||c.stage===i;}).length;});
+
+  var h='<div style="margin-bottom:20px"><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'\uD83C\uDFC5 인증 추적 관리':'\uD83C\uDFC5 Certification Tracking')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'전체 프로젝트 인증 현황 7단계 추적':'Track all project certifications across 7 stages')+'</p></div>';
+
+  /* Stage pipeline visualization */
+  h+='<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'인증 파이프라인':'Certification Pipeline')+'</div><div class="card-b"><div style="display:flex;gap:4px">';
+  CERT_STAGES.forEach(function(s,i){
+    var count=stageDist[i];
+    var colors=['#94a3b8','#3b82f6','#f59e0b','#8b5cf6','#06b6d4','#22c55e','#10b981'];
+    h+='<div style="flex:1;text-align:center;padding:12px 4px;border-radius:8px;background:'+(count>0?colors[i]+'18':'var(--w08)')+';border:1px solid '+(count>0?colors[i]+'30':'var(--bd)')+'">'+
+      '<div style="font-size:20px;font-weight:800;color:'+(count>0?colors[i]:'var(--w20)')+'">'+count+'</div>'+
+      '<div style="font-size:9px;color:var(--w40);margin-top:2px">'+(_isKorean?s:CERT_STAGES_EN[i])+'</div>'+
+      '</div>';
+    if(i<CERT_STAGES.length-1)h+='<div style="display:flex;align-items:center;color:var(--w12);font-size:16px">\u2192</div>';
+  });
+  h+='</div></div></div>';
+
+  h+='<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">'+
+    '<button class="btn btn-sm '+(filter==='all'?'btn-pri':'btn-ghost')+'" onclick="S._certFilter=\'all\';render()">'+(_isKorean?'전체':'All')+' ('+certs.length+')</button>';
+  CERT_STAGES.forEach(function(s){
+    h+='<button class="btn btn-sm '+(filter===s?'btn-pri':'btn-ghost')+'" onclick="S._certFilter=\''+s+'\';render()" style="font-size:11px">'+(_isKorean?s:CERT_STAGES_EN[CERT_STAGES.indexOf(s)])+'</button>';
+  });
+  h+='<div style="flex:1"></div>'+
+    '<input placeholder="'+(_isKorean?'인증명/프로젝트/국가 검색...':'Search cert/project/country...')+'" value="'+U.esc(S.searchFilter)+'" oninput="Adm.setSearch(this.value)" style="padding:8px 12px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;width:220px">'+
+  '</div>';
+
+  if(!filtered.length){
+    return h+UI.empty('\uD83C\uDFC5',_isKorean?'인증 내역 없음':'No Certifications',_isKorean?'인증 프로젝트가 등록되면 여기에 표시됩니다.':'Certifications will appear here when registered.');
+  }
+
+  h+='<div class="card"><div class="card-b" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>'+
+    '<th>'+(_isKorean?'인증명':'Certification')+'</th><th>'+(_isKorean?'프로젝트':'Project')+'</th><th>'+(_isKorean?'국가':'Country')+'</th><th>'+(_isKorean?'진행 상태':'Progress')+'</th><th>'+(_isKorean?'현재 단계':'Stage')+'</th><th>'+(_isKorean?'등록일':'Date')+'</th>'+
+    '</tr></thead><tbody>';
+  filtered.forEach(function(c){
+    var stageIdx=typeof c.stage==='number'?c.stage:CERT_STAGES.indexOf(c.status);
+    if(stageIdx<0)stageIdx=0;
+    var pct=Math.round((stageIdx+1)/CERT_STAGES.length*100);
+    var progressBar='<div style="display:flex;align-items:center;gap:6px;min-width:120px"><div style="flex:1;height:6px;border-radius:3px;background:var(--w08);overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+(pct>=100?'var(--ok)':pct>=50?'var(--acc)':'var(--pri)')+';border-radius:3px"></div></div><span style="font-size:10px;font-weight:700;color:var(--w40)">'+pct+'%</span></div>';
+    h+='<tr>'+
+      '<td style="font-weight:600">'+U.esc(c.cert_name||'\u2014')+'</td>'+
+      '<td style="font-size:12px">'+U.esc(c.project_name||'\u2014')+'</td>'+
+      '<td>'+U.cl(c.country)+' '+U.esc(c.country||'')+'</td>'+
+      '<td>'+progressBar+'</td>'+
+      '<td>'+UI.badge(_isKorean?CERT_STAGES[stageIdx]||'':CERT_STAGES_EN[stageIdx]||'','pri')+'</td>'+
+      '<td style="font-size:11px">'+U.fd(c.created_at)+'</td>'+
+    '</tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  return h;
+}
+
+/* ═══ Enhanced DealHub with Logistics Tab ═══ */
 
 function pgChangelog(){
   var CL=[
@@ -2718,6 +3421,11 @@ function renderPage(){
     case'errorMonitor':return pgErrorMonitor();
     case'voucherReport':return pgVoucherReport();
     case'changelog':return pgChangelog();
+    case'buyerVerify':return pgBuyerVerify();
+    case'sanctionsLog':return pgSanctionsLog();
+    case'briefMgmt':return pgBriefMgmt();
+    case'localization':return pgLocalization();
+    case'certTracking':return pgCertTracking();
     default:return pgDash();
   }
 }
@@ -2735,23 +3443,28 @@ function renderSidebar(){
     {id:'services',icon:'💼',label:_isKorean?'서비스 요청':'Services',count:pendSR||null},
     {id:'sec',label:_isKorean?'사용자':'Users'},
     {id:'usershub',icon:'👥',label:_isKorean?'유저 관리':'Users',count:S.users.length},
+    {id:'buyerVerify',icon:'✅',label:_isKorean?'바이어 인증':'Buyer Verify',count:S.buyers.filter(function(b){return b.verification_status==='pending';}).length||null},
     {id:'voucherReport',icon:'📋',label:_isKorean?'바우처 보고서':'Voucher Report'},
     {id:'sec',label:_isKorean?'거래 관리':'Trade Mgmt'},
     {id:'dealhub',icon:'🤝',label:_isKorean?'매칭 & 딜':'Matching & Deals',count:activeDeals||null},
     {id:'orderpay',icon:'💰',label:_isKorean?'주문 & 결제':'Orders & Payments',count:S.paymentProofs.filter(function(p){return p.status==='pending';}).length||null},
     {id:'disputes',icon:'⚠️',label:_isKorean?'분쟁 관리':'Disputes',count:S.disputes.filter(function(d){return d.status==='open'||d.status==='escalated';}).length||0},
+    {id:'sanctionsLog',icon:'🚫',label:_isKorean?'제재 스크리닝':'Sanctions',count:S.sanctionsLog.filter(function(s){return s.result==='flagged';}).length||null},
     {id:'chat',icon:'💬',label:_isKorean?'채팅 모니터':'Chat Monitor',count:unreadMsgs||null},
     {id:'sec',label:_isKorean?'컨텐츠':'Content'},
     {id:'analyses',icon:'🔬',label:_isKorean?'분석 이력':'Analyses',count:analyzingA||null},
     {id:'contenthub',icon:'📦',label:_isKorean?'제품 & 프로젝트':'Products & Projects'},
+    {id:'briefMgmt',icon:'📰',label:_isKorean?'Whistle Brief':'Whistle Brief'},
     {id:'alibabaMgmt',icon:'🏪',label:_isKorean?'알리바바':'Alibaba'},
+    {id:'certTracking',icon:'🏅',label:_isKorean?'인증 추적':'Certifications'},
     {id:'analytics',icon:'📈',label:_isKorean?'분석/통계':'Analytics'},
     {id:'sec',label:_isKorean?'시스템':'System'},
     {id:'systemhub',icon:'🛡️',label:_isKorean?'시스템 & 에러':'System & Errors',count:S.clientErrors.length||null},
+    {id:'localization',icon:'🌐',label:_isKorean?'글로벌 현지화':'Localization'},
     {id:'changelog',icon:'📝',label:_isKorean?'작업일지':'Changelog'},
     {id:'settings',icon:'⚙️',label:_isKorean?'설정':'Settings'}
   ];
-  var _hubChildren={usershub:{users:1,sellers:1,buyersMgmt:1},dealhub:{matchings:1,dealsMgmt:1},orderpay:{ordersMgmt:1,payments:1},contenthub:{products:1,projects:1,documents:1},systemhub:{health:1,errorMonitor:1}};
+  var _hubChildren={usershub:{users:1,sellers:1,buyersMgmt:1},dealhub:{matchings:1,dealsMgmt:1,logistics:1},orderpay:{ordersMgmt:1,payments:1},contenthub:{products:1,projects:1,documents:1},systemhub:{health:1,errorMonitor:1}};
   function _isHubActive(mid){if(S.page===mid)return true;var ch=_hubChildren[mid];return ch&&ch[S.page];}
   return '<div class="sidebar"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">ADMIN</div></div></div><div class="sidebar-nav">'+menu.map(function(m){
     if(m.id==='div')return '<div class="nav-section"></div>';
@@ -3047,7 +3760,14 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   setPg:setPg,
   editAlibabaSync:editAlibabaSync,saveAlibabaSync:saveAlibabaSync,
   viewDeal:viewDeal,setDealsTab:setDealsTab,changeDealStage:changeDealStage,
-  viewProofDetail:viewProofDetail,approveProof:approveProof,rejectProof:rejectProof,setProofTab:setProofTab,refreshErrors:refreshErrors,UI:UI};
+  viewProofDetail:viewProofDetail,approveProof:approveProof,rejectProof:rejectProof,setProofTab:setProofTab,refreshErrors:refreshErrors,
+  approveBuyer:approveBuyer,rejectBuyer:rejectBuyer,
+  loadComtradeCache:loadComtradeCache,clearExpiredCache:clearExpiredCache,clearAllCache:clearAllCache,
+  loadSanctionsLog:loadSanctionsLog,
+  showBriefEditor:showBriefEditor,editBrief:editBrief,saveBriefDraft:saveBriefDraft,saveBriefPublish:saveBriefPublish,publishBrief:publishBrief,loadBriefs:loadBriefs,
+  toggleLocCountry:toggleLocCountry,editLocCountry:editLocCountry,saveLocCountry:saveLocCountry,showAddCountry:showAddCountry,saveNewCountry:saveNewCountry,
+  saveExchangeRates:saveExchangeRates,fetchLiveRates:fetchLiveRates,toggleFeature:toggleFeature,saveFeatureToggles:saveFeatureToggles,saveRelayUrl:saveRelayUrl,
+  UI:UI};
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp]&&S.user)nav(hp);});
 sb.auth.onAuthStateChange(function(event, session){
