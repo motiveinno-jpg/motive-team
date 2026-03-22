@@ -4635,34 +4635,181 @@ function loadOrders(){
 
 function pgOrders(){
   var h='';
-  if(!S.buyerLinks.length){return '<div style="text-align:center;padding:60px;color:var(--w40)"><div style="font-size:36px;margin-bottom:12px">&#x1F4E6;</div><p>'+_t('Submit an inquiry to receive orders from sellers.','문의를 제출하면 판매자로부터 주문을 받을 수 있습니다.')+'</p><button class="btn btn-pri btn-sm" onclick="B.nav(\'search\')" style="margin-top:16px;font-size:13px">🔍 Search Products</button></div>';}
+  if(!S.buyerLinks.length){return '<div style="text-align:center;padding:60px;color:var(--w40)"><div style="font-size:36px;margin-bottom:12px">&#x1F4E6;</div><p>'+_t('Submit an inquiry to receive orders from sellers.','문의를 제출하면 판매자로부터 주문을 받을 수 있습니다.')+'</p><button class="btn btn-pri btn-sm" onclick="B.nav(\'search\')" style="margin-top:16px;font-size:13px">&#x1F50D; '+_t('Search Products','제품 검색')+'</button></div>';}
+
+  // Build unified order list: formal orders + deals at order stage or beyond
+  var unified=[];
+  // 1) Formal orders from orders table
+  var usedDealIds={};
+  S.orders.forEach(function(o){
+    var linkedDeal=S.deals.find(function(d){return d.order&&d.order.id===o.id;});
+    if(linkedDeal)usedDealIds[linkedDeal.id]=true;
+    unified.push({
+      type:'order',source:o,deal:linkedDeal||null,
+      id:o.id,title:o.order_number||_t('Order','주문'),
+      sellerName:getSellerName(o.user_id),sellerId:o.user_id,
+      status:o.status||'pending',payStatus:o.payment_status||'unpaid',
+      amount:Number(o.total_amount||0),currency:o.currency||'USD',
+      terms:o.payment_terms||'-',incoterms:o.incoterms||'FOB',
+      shipDate:o.estimated_ship_date||'',
+      created:o.created_at,stage:linkedDeal?linkedDeal.stage:'order',
+      hasEscrow:!!(o.escrow_status||o.payment_intent_id),
+      escrowStatus:o.escrow_status||''
+    });
+  });
+  // 2) Deals at order stage or beyond (not already linked to a formal order)
+  var orderStages=['order','production','shipping','completed'];
+  S.deals.forEach(function(d){
+    if(usedDealIds[d.id])return;
+    if(orderStages.indexOf(d.stage)<0)return;
+    var amt=0;var cur='USD';var terms='-';var inco='FOB';
+    if(d.order){amt=Number(d.order.total_amount||0);cur=d.order.currency||'USD';terms=d.order.payment_terms||'-';inco=d.order.incoterms||'FOB';}
+    else if(d.matching&&d.matching.quoted_price){amt=Number(d.matching.quoted_price||0);cur=d.matching.currency||'USD';}
+    unified.push({
+      type:'deal',source:d,deal:d,
+      id:d.id,title:d.title||_t('Deal','거래'),
+      sellerName:getSellerName(d.sellerId),sellerId:d.sellerId,
+      status:d.stage,payStatus:d.order?(d.order.payment_status||'unpaid'):'awaiting',
+      amount:amt,currency:cur,terms:terms,incoterms:inco,
+      shipDate:d.order?d.order.estimated_ship_date||'':'',
+      created:d.created_at,stage:d.stage,
+      hasEscrow:!!(d.order&&(d.order.escrow_status||d.order.payment_intent_id)),
+      escrowStatus:d.order?d.order.escrow_status||'':''
+    });
+  });
+  // 3) If still empty, also include all active deals as "pre-order" pipeline
+  if(!unified.length&&S.deals.length){
+    S.deals.forEach(function(d){
+      if(d.stage==='completed')return;
+      var amt=0;
+      if(d.matching&&d.matching.quoted_price)amt=Number(d.matching.quoted_price||0);
+      unified.push({
+        type:'deal',source:d,deal:d,
+        id:d.id,title:d.title||_t('Deal','거래'),
+        sellerName:getSellerName(d.sellerId),sellerId:d.sellerId,
+        status:d.stage,payStatus:'pre-order',
+        amount:amt,currency:d.matching?d.matching.currency||'USD':'USD',
+        terms:'-',incoterms:'-',shipDate:'',
+        created:d.created_at,stage:d.stage,
+        hasEscrow:false,escrowStatus:''
+      });
+    });
+  }
+
+  // Sort by created date descending
+  unified.sort(function(a,b){return new Date(b.created)-new Date(a.created);});
+
+  // Summary stats
+  var totalActive=unified.filter(function(u){return u.status!=='completed'&&u.status!=='cancelled';}).length;
+  var totalAmount=unified.reduce(function(sum,u){return sum+u.amount;},0);
+  var formalCount=unified.filter(function(u){return u.type==='order';}).length;
+  var inProgress=unified.filter(function(u){return u.status==='production'||u.status==='order'||u.status==='shipping';}).length;
+
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:20px">';
+  h+='<div style="padding:14px;border-radius:var(--r-s);background:var(--sf);border:1px solid var(--bd);text-align:center">';
+  h+='<div style="font-size:22px;font-weight:800;color:var(--pri)">'+totalActive+'</div>';
+  h+='<div style="font-size:11px;color:var(--w40)">'+_t('Active','진행 중')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:var(--r-s);background:var(--sf);border:1px solid var(--bd);text-align:center">';
+  h+='<div style="font-size:22px;font-weight:800;color:var(--acc)">$'+totalAmount.toLocaleString()+'</div>';
+  h+='<div style="font-size:11px;color:var(--w40)">'+_t('Total Value','총 금액')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:var(--r-s);background:var(--sf);border:1px solid var(--bd);text-align:center">';
+  h+='<div style="font-size:22px;font-weight:800;color:var(--ok)">'+formalCount+'</div>';
+  h+='<div style="font-size:11px;color:var(--w40)">'+_t('Confirmed Orders','확정 주문')+'</div></div>';
+  h+='<div style="padding:14px;border-radius:var(--r-s);background:var(--sf);border:1px solid var(--bd);text-align:center">';
+  h+='<div style="font-size:22px;font-weight:800;color:var(--warn)">'+inProgress+'</div>';
+  h+='<div style="font-size:11px;color:var(--w40)">'+_t('In Progress','처리 중')+'</div></div>';
+  h+='</div>';
+
   // Pipeline filter
-  var stages=['all','confirmed','production','inspection','shipping','delivered','completed'];
+  var stages=['all','order','production','shipping','completed','cancelled'];
+  // Include pre-order stages if we have deals in early stages
+  var hasPreOrder=unified.some(function(u){return ['inquiry','matched','quotation','sample','negotiation'].indexOf(u.status)>=0;});
+  if(hasPreOrder)stages.splice(1,0,'pre-order');
   h+='<div class="order-pipeline">';
   stages.forEach(function(st){
-    var cnt=st==='all'?S.orders.length:S.orders.filter(function(o){return o.status===st;}).length;
-    h+='<div class="order-stage'+(S.orderFilter===st?' active':'')+'" onclick="B.set({orderFilter:\''+st+'\'})">'+st.replace('_',' ')+' <span class="cnt">'+cnt+'</span></div>';
+    var cnt;
+    if(st==='all')cnt=unified.length;
+    else if(st==='pre-order')cnt=unified.filter(function(u){return ['inquiry','matched','quotation','sample','negotiation'].indexOf(u.status)>=0;}).length;
+    else cnt=unified.filter(function(u){return u.status===st;}).length;
+    if(st!=='all'&&!cnt)return;
+    var stLabel={'all':_t('All','전체'),'pre-order':_t('Pre-order','주문 전'),'order':_t('Ordered','주문'),'production':_t('Production','생산'),'shipping':_t('Shipping','배송'),'completed':_t('Completed','완료'),'cancelled':_t('Cancelled','취소')};
+    h+='<div class="order-stage'+(S.orderFilter===st?' active':'')+'" onclick="B.set({orderFilter:\''+st+'\'})">'+esc(stLabel[st]||st)+' <span class="cnt">('+cnt+')</span></div>';
   });
   h+='</div>';
-  var list=S.orders;
-  if(S.orderFilter&&S.orderFilter!=='all')list=list.filter(function(o){return o.status===S.orderFilter;});
-  if(!list.length){return h+'<div style="text-align:center;padding:40px;color:var(--w40)">'+_t('No orders','주문이 없습니다')+'</div>';}
-  list.forEach(function(o){
-    var stCls=o.status==='completed'?'badge-ok':o.status==='shipping'?'badge-pri':o.status==='cancelled'?'badge-err':'badge-acc';
-    var payCls=o.payment_status==='paid'?'badge-ok':o.payment_status==='partial'||o.payment_status==='deposit_received'?'badge-acc':'badge-ghost';
-    h+='<div class="card" style="cursor:pointer" onclick="B.showOrderDetail(\''+o.id+'\')">';
-    h+='<div class="card-b"><div style="display:flex;justify-content:space-between;align-items:flex-start">';
-    h+='<div><div style="font-weight:700;font-size:15px">'+esc(o.order_number||'Order')+'</div>';
-    h+='<div style="font-size:12px;color:var(--w40);margin-top:2px">'+esc(getSellerName(o.user_id))+' &middot; '+formatDate(o.created_at)+'</div></div>';
-    h+='<div style="text-align:right"><span class="badge '+stCls+'">'+o.status+'</span>';
-    h+='<div style="margin-top:6px"><span class="badge '+payCls+'">'+(o.payment_status||'unpaid')+'</span></div></div></div>';
-    // Order details row
-    h+='<div style="display:flex;gap:20px;margin-top:14px;font-size:12px;color:var(--w60)">';
-    h+='<div><span style="color:var(--w40)">'+_t('Amount:','금액:')+'</span> <strong style="color:var(--acc)">$'+Number(o.total_amount||0).toLocaleString()+'</strong> '+esc(o.currency||'USD')+'</div>';
-    h+='<div><span style="color:var(--w40)">'+_t('Terms:','조건:')+'</span> '+esc(o.payment_terms||'-')+'</div>';
-    h+='<div><span style="color:var(--w40)">'+_t('Incoterms:','인코텀즈:')+'</span> '+esc(o.incoterms||'FOB')+'</div>';
-    if(o.estimated_ship_date)h+='<div><span style="color:var(--w40)">'+_t('Ship by:','출하 예정:')+'</span> '+o.estimated_ship_date+'</div>';
-    h+='</div></div></div>';
+
+  // Filter
+  var list=unified;
+  if(S.orderFilter&&S.orderFilter!=='all'){
+    if(S.orderFilter==='pre-order')list=list.filter(function(u){return ['inquiry','matched','quotation','sample','negotiation'].indexOf(u.status)>=0;});
+    else list=list.filter(function(u){return u.status===S.orderFilter;});
+  }
+
+  if(!list.length){
+    h+='<div style="text-align:center;padding:60px;color:var(--w40)"><div style="font-size:48px;margin-bottom:16px">&#x1F4E6;</div>';
+    h+='<h3 style="font-weight:700;margin-bottom:8px">'+_t('No orders yet','아직 주문이 없습니다')+'</h3>';
+    h+='<p style="font-size:13px;max-width:400px;margin:0 auto 16px">'+_t('Search products and submit inquiries to start your order pipeline.','제품을 검색하고 문의를 제출하여 주문 파이프라인을 시작하세요.')+'</p>';
+    h+='<div style="display:flex;gap:8px;justify-content:center">';
+    h+='<button class="btn btn-pri" onclick="B.nav(\'search\')">&#x1F50D; '+_t('Search Products','제품 검색')+'</button>';
+    h+='<button class="btn btn-ghost" onclick="B.nav(\'pipeline\')">&#x1F680; '+_t('View Deals','거래 보기')+'</button></div></div>';
+    return h;
+  }
+
+  // Render unified order cards
+  list.forEach(function(u){
+    var stageMap={inquiry:'badge-ghost',matched:'badge-ghost',quotation:'badge-acc',sample:'badge-acc',negotiation:'badge-acc',order:'badge-pri',production:'badge-warn',shipping:'badge-purple',completed:'badge-ok',cancelled:'badge-err',pending:'badge-ghost',confirmed:'badge-pri',delivered:'badge-ok'};
+    var stCls=stageMap[u.status]||'badge-ghost';
+    var payMap={paid:'badge-ok',partial:'badge-acc',deposit_received:'badge-acc',unpaid:'badge-ghost','pre-order':'badge-ghost',awaiting:'badge-ghost'};
+    var payCls=payMap[u.payStatus]||'badge-ghost';
+    var payLabel={'paid':_t('Paid','결제 완료'),'partial':_t('Partial','부분 결제'),'deposit_received':_t('Deposit','계약금'),'unpaid':_t('Unpaid','미결제'),'pre-order':_t('Pre-order','주문 전'),'awaiting':_t('Awaiting','대기')};
+
+    // Stage label for display
+    var stageLabels={inquiry:_t('Inquiry','문의'),matched:_t('Matched','매칭'),quotation:_t('Quote','견적'),sample:_t('Sample','샘플'),negotiation:_t('Negotiation','협상'),order:_t('Ordered','주문'),production:_t('Production','생산'),shipping:_t('Shipping','배송'),completed:_t('Completed','완료'),cancelled:_t('Cancelled','취소'),pending:_t('Pending','대기'),confirmed:_t('Confirmed','확정'),delivered:_t('Delivered','배송완료')};
+
+    var clickAction=u.type==='order'?'B.showOrderDetail(\''+u.id+'\')':'B.openDeal(\''+u.id+'\')';
+
+    h+='<div class="deal-card" onclick="'+clickAction+'">';
+    // Header row
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start">';
+    h+='<div style="flex:1;min-width:0">';
+    h+='<div style="display:flex;align-items:center;gap:6px">';
+    if(u.type==='order')h+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(0,212,255,.1);color:var(--pri);font-weight:700">'+_t('ORDER','주문')+'</span>';
+    else h+='<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--w08);color:var(--w40);font-weight:700">'+_t('DEAL','거래')+'</span>';
+    h+='<div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.title)+'</div></div>';
+    h+='<div style="font-size:11px;color:var(--w40);margin-top:3px">'+esc(u.sellerName)+' &middot; '+formatDate(u.created)+'</div></div>';
+    h+='<div style="text-align:right;flex-shrink:0;margin-left:12px">';
+    h+='<span class="badge '+stCls+'">'+(stageLabels[u.status]||u.status)+'</span>';
+    h+='<div style="margin-top:6px"><span class="badge '+payCls+'" style="font-size:10px">'+(payLabel[u.payStatus]||u.payStatus)+'</span></div></div></div>';
+
+    // Info row
+    h+='<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;font-size:12px;color:var(--w60)">';
+    if(u.amount>0)h+='<div><span style="color:var(--w40)">'+_t('Amount','금액')+':</span> <strong style="color:var(--acc)">$'+u.amount.toLocaleString()+'</strong> '+esc(u.currency)+'</div>';
+    if(u.terms&&u.terms!=='-')h+='<div><span style="color:var(--w40)">'+_t('Terms','조건')+':</span> '+esc(u.terms)+'</div>';
+    if(u.incoterms&&u.incoterms!=='-')h+='<div><span style="color:var(--w40)">'+_t('Incoterms','인코텀즈')+':</span> '+esc(u.incoterms)+'</div>';
+    if(u.shipDate)h+='<div><span style="color:var(--w40)">'+_t('Ship by','출하 예정')+':</span> '+esc(u.shipDate)+'</div>';
+    h+='</div>';
+
+    // Escrow indicator
+    if(u.hasEscrow){
+      var escLabel={'held':_t('Funds Held','자금 보관 중'),'partial_released':_t('Partially Released','부분 방출'),'released':_t('Released','방출 완료'),'refunded':_t('Refunded','환불 완료')};
+      h+='<div style="display:flex;align-items:center;gap:6px;margin-top:10px;padding:8px 10px;background:rgba(0,230,118,.04);border:1px solid rgba(0,230,118,.15);border-radius:var(--r-xs);font-size:11px">';
+      h+='<span>&#x1F512;</span><span style="color:var(--ok);font-weight:600">'+_t('Escrow','에스크로')+'</span>';
+      if(u.escrowStatus)h+='<span style="color:var(--w40)">&middot; '+(escLabel[u.escrowStatus]||u.escrowStatus)+'</span>';
+      h+='</div>';
+    }
+
+    // Progress dots for deal type
+    if(u.deal){
+      var stageIdx=DEAL_STAGES.findIndex(function(s){return s.id===u.stage;});
+      if(stageIdx>=0){
+        h+='<div class="mini-stages" style="margin-top:10px">';
+        DEAL_STAGES.forEach(function(s,i){
+          var cls=i<stageIdx?'done':i===stageIdx?'current':'';
+          h+='<div class="mini-dot '+cls+'" title="'+s.label+'"></div>';
+        });
+        h+='</div>';
+      }
+    }
+    h+='</div>';
   });
   return h;
 }

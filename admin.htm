@@ -98,6 +98,20 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 .detail-value{color:var(--w90)}
 .chart-bar{height:24px;border-radius:6px;position:relative;overflow:hidden;background:var(--w08)}
 .chart-bar-fill{height:100%;border-radius:6px;transition:width .5s ease}
+.svg-chart{width:100%;overflow:visible}
+.svg-chart text{font-family:'Inter','Pretendard',sans-serif;fill:var(--w40)}
+.svg-chart .axis-line{stroke:var(--w08);stroke-width:1}
+.svg-chart .grid-line{stroke:var(--w06,rgba(255,255,255,0.06));stroke-width:1;stroke-dasharray:4,4}
+.svg-chart .bar-rect{rx:3;ry:3;transition:opacity .2s}
+.svg-chart .bar-rect:hover{opacity:.8}
+.svg-chart .line-path{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.svg-chart .area-path{opacity:.15}
+.svg-chart .dot{transition:r .15s}
+.svg-chart .dot:hover{r:5}
+.donut-chart{position:relative;display:inline-block}
+.donut-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}
+.donut-legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--w60)}
+.donut-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .tab-bar{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--bd);padding-bottom:8px}
 .tab-item{padding:6px 14px;font-size:13px;font-weight:500;color:var(--w40);cursor:pointer;border-radius:var(--r-xs) var(--r-xs) 0 0;transition:all .15s}
 .tab-item:hover{color:var(--w70);background:var(--w08)}
@@ -324,6 +338,108 @@ function sumBy(arr,key){return arr.reduce(function(s,x){return s+(Number(x[key])
 function matchStatusLabel(s){return{proposed:(_isKorean?'\uC81C\uC548':'Proposed'),interested:(_isKorean?'\uAD00\uC2EC':'Interested'),sample:(_isKorean?'\uC0D8\uD50C':'Sample'),negotiation:(_isKorean?'\uD611\uC0C1':'Negotiation'),contract:(_isKorean?'\uACC4\uC57D':'Contract'),completed:(_isKorean?'\uC644\uB8CC':'Completed'),rejected:(_isKorean?'\uAC70\uC808':'Rejected'),expired:(_isKorean?'\uB9CC\uB8CC':'Expired')}[s]||s;}
 function orderStatusLabel(s){return{confirmed:(_isKorean?'\uD655\uC815':'Confirmed'),production:(_isKorean?'\uC0DD\uC0B0\uC911':'In Production'),inspection:(_isKorean?'\uAC80\uC218':'Inspection'),shipping:(_isKorean?'\uC120\uC801\uC911':'Shipping'),delivered:(_isKorean?'\uBC30\uC1A1\uC644\uB8CC':'Delivered'),completed:(_isKorean?'\uC644\uB8CC':'Completed'),cancelled:(_isKorean?'\uCDE8\uC18C':'Cancelled')}[s]||s;}
 function hBar(label,val,max,color){var pct=max?Math.round(val/max*100):0;return '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:12px;color:var(--w60)">'+label+'</span><span style="font-size:12px;font-weight:700;font-family:JetBrains Mono;color:'+(color||'var(--pri)')+'">'+val+'</span></div><div class="chart-bar" style="height:8px"><div class="chart-bar-fill" style="width:'+Math.max(pct,2)+'%;background:'+(color||'var(--pri)')+'"></div></div></div>';}
+
+/* ── SVG Chart Helpers ── */
+function svgBarChart(data,opts){
+  var w=opts.w||480,h=opts.h||180,pad=opts.pad||{t:10,r:10,b:28,l:42};
+  var cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;
+  var n=data.length;if(!n)return '<div style="color:var(--w30);font-size:12px;text-align:center;padding:30px">No data</div>';
+  var maxV=Math.max.apply(null,data.map(function(d){return d.v;}))||1;
+  var barW=Math.max(Math.floor(cw/n)-4,6);
+  var gap=Math.max(Math.floor((cw-barW*n)/(n+1)),2);
+  var gridLines=4;
+  var svg='<svg class="svg-chart" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet">';
+  for(var g=0;g<=gridLines;g++){
+    var gy=pad.t+ch-ch*(g/gridLines);
+    var gVal=Math.round(maxV*(g/gridLines));
+    svg+='<line class="grid-line" x1="'+pad.l+'" y1="'+gy+'" x2="'+(w-pad.r)+'" y2="'+gy+'"/>';
+    svg+='<text x="'+(pad.l-6)+'" y="'+(gy+3)+'" text-anchor="end" font-size="9">'+(opts.fmt?opts.fmt(gVal):gVal)+'</text>';
+  }
+  svg+='<line class="axis-line" x1="'+pad.l+'" y1="'+(pad.t+ch)+'" x2="'+(w-pad.r)+'" y2="'+(pad.t+ch)+'"/>';
+  for(var i=0;i<n;i++){
+    var bx=pad.l+gap+(barW+gap)*i;
+    var bh=Math.max(Math.round(data[i].v/maxV*ch),2);
+    var by=pad.t+ch-bh;
+    var col=data[i].c||opts.color||'#00d4ff';
+    svg+='<rect class="bar-rect" x="'+bx+'" y="'+by+'" width="'+barW+'" height="'+bh+'" fill="'+col+'"><title>'+data[i].l+': '+(opts.fmt?opts.fmt(data[i].v):data[i].v)+'</title></rect>';
+    if(n<=12){
+      svg+='<text x="'+(bx+barW/2)+'" y="'+(pad.t+ch+14)+'" text-anchor="middle" font-size="9">'+data[i].l+'</text>';
+    } else if(i%Math.ceil(n/6)===0||i===n-1){
+      svg+='<text x="'+(bx+barW/2)+'" y="'+(pad.t+ch+14)+'" text-anchor="middle" font-size="8">'+data[i].l+'</text>';
+    }
+  }
+  svg+='</svg>';
+  return svg;
+}
+
+function svgLineChart(data,opts){
+  var w=opts.w||480,h=opts.h||180,pad=opts.pad||{t:10,r:10,b:28,l:42};
+  var cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;
+  var n=data.length;if(!n)return '<div style="color:var(--w30);font-size:12px;text-align:center;padding:30px">No data</div>';
+  var maxV=Math.max.apply(null,data.map(function(d){return d.v;}))||1;
+  var stepX=n>1?cw/(n-1):cw;
+  var gridLines=4;
+  var col=opts.color||'#00d4ff';
+  var svg='<svg class="svg-chart" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet">';
+  for(var g=0;g<=gridLines;g++){
+    var gy=pad.t+ch-ch*(g/gridLines);
+    var gVal=Math.round(maxV*(g/gridLines));
+    svg+='<line class="grid-line" x1="'+pad.l+'" y1="'+gy+'" x2="'+(w-pad.r)+'" y2="'+gy+'"/>';
+    svg+='<text x="'+(pad.l-6)+'" y="'+(gy+3)+'" text-anchor="end" font-size="9">'+(opts.fmt?opts.fmt(gVal):gVal)+'</text>';
+  }
+  svg+='<line class="axis-line" x1="'+pad.l+'" y1="'+(pad.t+ch)+'" x2="'+(w-pad.r)+'" y2="'+(pad.t+ch)+'"/>';
+  var pts=[];var areaPath='M '+pad.l+' '+(pad.t+ch)+' ';
+  for(var i=0;i<n;i++){
+    var px=pad.l+(n>1?stepX*i:cw/2);
+    var py=pad.t+ch-Math.round(data[i].v/maxV*ch);
+    pts.push(px+','+py);
+    areaPath+='L '+px+' '+py+' ';
+  }
+  areaPath+='L '+(pad.l+stepX*(n-1))+' '+(pad.t+ch)+' Z';
+  svg+='<path class="area-path" d="'+areaPath+'" fill="'+col+'"/>';
+  svg+='<polyline class="line-path" points="'+pts.join(' ')+'" stroke="'+col+'"/>';
+  for(var i=0;i<n;i++){
+    var px=pad.l+(n>1?stepX*i:cw/2);
+    var py=pad.t+ch-Math.round(data[i].v/maxV*ch);
+    svg+='<circle class="dot" cx="'+px+'" cy="'+py+'" r="3" fill="'+col+'"><title>'+data[i].l+': '+(opts.fmt?opts.fmt(data[i].v):data[i].v)+'</title></circle>';
+    if(n<=12){
+      svg+='<text x="'+px+'" y="'+(pad.t+ch+14)+'" text-anchor="middle" font-size="9">'+data[i].l+'</text>';
+    } else if(i%Math.ceil(n/6)===0||i===n-1){
+      svg+='<text x="'+px+'" y="'+(pad.t+ch+14)+'" text-anchor="middle" font-size="8">'+data[i].l+'</text>';
+    }
+  }
+  svg+='</svg>';
+  return svg;
+}
+
+function svgDonutChart(data,opts){
+  var size=opts.size||160,thick=opts.thick||28;
+  var r=(size-thick)/2,cx=size/2,cy=size/2;
+  var total=data.reduce(function(s,d){return s+d.v;},0)||1;
+  var svg='<div class="donut-chart"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">';
+  svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="var(--w08)" stroke-width="'+thick+'"/>';
+  var offset=0;var circ=2*Math.PI*r;
+  data.forEach(function(d){
+    if(d.v<=0)return;
+    var pct=d.v/total;
+    var dash=pct*circ;
+    var gap=circ-dash;
+    var rot=-90+offset*360;
+    svg+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+(d.c||'#00d4ff')+'" stroke-width="'+thick+'" stroke-dasharray="'+dash.toFixed(2)+' '+gap.toFixed(2)+'" transform="rotate('+rot.toFixed(2)+' '+cx+' '+cy+')" stroke-linecap="butt"><title>'+d.l+': '+d.v+' ('+(pct*100).toFixed(1)+'%)</title></circle>';
+    offset+=pct;
+  });
+  svg+='<text x="'+cx+'" y="'+(cy-4)+'" text-anchor="middle" font-size="18" font-weight="800" fill="var(--w90)">'+(opts.centerVal||total)+'</text>';
+  svg+='<text x="'+cx+'" y="'+(cy+12)+'" text-anchor="middle" font-size="9" fill="var(--w40)">'+(opts.centerLabel||'')+'</text>';
+  svg+='</svg>';
+  svg+='<div class="donut-legend">';
+  data.forEach(function(d){
+    if(d.v<=0)return;
+    svg+='<div class="donut-legend-item"><div class="donut-legend-dot" style="background:'+(d.c||'#00d4ff')+'"></div>'+d.l+' <b style="color:var(--w90)">'+d.v+'</b></div>';
+  });
+  svg+='</div></div>';
+  return svg;
+}
+
 function filterBySearch(arr,fields){
   var q=S.searchFilter.toLowerCase().trim();
   if(!q)return arr;
@@ -1941,6 +2057,69 @@ function pgPayRevenue(){
     UI.stat(_isKorean?'전환율':'Conv. Rate',convR.toFixed(1)+'%','Free→Paid','var(--acc)')+
     UI.stat('활동률 (30일)',actR.toFixed(1)+'%','최근 로그인','var(--purple)')+
   '</div>'+
+  /* ═══ SVG Charts: Revenue Trend + Subscription Donut + User Growth ═══ */
+  (function(){
+    /* Monthly revenue trend (last 6 months) */
+    var today=new Date();
+    var months=[];
+    for(var mi=5;mi>=0;mi--){
+      var md=new Date(today.getFullYear(),today.getMonth()-mi,1);
+      months.push({key:md.toISOString().slice(0,7),label:(md.getMonth()+1)+'월',start:md,end:new Date(md.getFullYear(),md.getMonth()+1,0,23,59,59)});
+    }
+    var monthlyRev=months.map(function(m){
+      var subRev=0;
+      var subs=S.subscriptions.length?S.subscriptions:S.users.filter(function(u){return PLAN_PRICE[u.plan];}).map(function(u){return{plan:u.plan,status:'active',started_at:u.plan_started_at||u.created_at,billing_cycle:u.billing_cycle||'monthly',amount:PLAN_PRICE[u.plan]?PLAN_PRICE[u.plan].m:0};});
+      subs.forEach(function(s){
+        if(s.status!=='active')return;
+        var started=new Date(s.started_at||'2026-01-01');
+        if(started<=m.end){
+          var mo=s.billing_cycle==='semi_annual'?(Number(s.amount)||0)/6:s.billing_cycle==='annual'?(Number(s.amount)||0)/12:(Number(s.amount)||0);
+          subRev+=mo;
+        }
+      });
+      var escRev=0;
+      S.escrowTxns.forEach(function(e){
+        if(e.escrow_status==='released'){
+          var rd=new Date(e.released_at||e.updated_at||e.created_at);
+          if(rd>=m.start&&rd<=m.end)escRev+=Number(e.commission_amount)||0;
+        }
+      });
+      return{l:m.label,v:Math.round(subRev+escRev)};
+    });
+    var revChart=svgBarChart(monthlyRev,{w:460,h:180,color:'#00d4ff',fmt:function(v){return'$'+v;}});
+
+    /* Subscription plan donut */
+    var planCounts={starter:0,pro:0,alibaba:0,enterprise:0};
+    var planColors={starter:'#00d4ff',pro:'#FFB800',alibaba:'#FF6B6B',enterprise:'#00E676'};
+    var planNames={starter:'Starter',pro:'Professional',alibaba:'Alibaba',enterprise:'Enterprise'};
+    if(S.subscriptions.length){
+      S.subscriptions.filter(function(s){return s.status==='active';}).forEach(function(s){
+        var k=(s.plan==='basic')?'starter':s.plan;
+        planCounts[k]=(planCounts[k]||0)+1;
+      });
+    } else {
+      S.users.forEach(function(u){
+        if(PLAN_PRICE[u.plan]){var k=(u.plan==='basic')?'starter':u.plan;planCounts[k]=(planCounts[k]||0)+1;}
+      });
+    }
+    var donutData=Object.keys(planCounts).filter(function(k){return planCounts[k]>0;}).map(function(k){return{l:planNames[k]||k,v:planCounts[k],c:planColors[k]||'#00d4ff'};});
+    var totalSubs=donutData.reduce(function(s,d){return s+d.v;},0);
+    if(!donutData.length)donutData=[{l:(_isKorean?'구독 없음':'No subs'),v:1,c:'var(--w20)'}];
+    var donutChart=svgDonutChart(donutData,{size:160,thick:26,centerVal:totalSubs,centerLabel:(_isKorean?'구독자':'Subs')});
+
+    /* User growth trend (last 6 months) */
+    var userGrowth=months.map(function(m){
+      var cnt=S.users.filter(function(u){return new Date(u.created_at)<=m.end;}).length;
+      return{l:m.label,v:cnt};
+    });
+    var growthChart=svgLineChart(userGrowth,{w:460,h:180,color:'#00E676',fmt:function(v){return v+'명';}});
+
+    return '<div class="grid-2" style="margin-bottom:16px">'+
+      '<div class="card"><div class="card-h">'+(_isKorean?'📊 월별 매출 추이 (6개월)':'📊 Monthly Revenue (6 Months)')+'</div><div class="card-b">'+revChart+'</div></div>'+
+      '<div class="card"><div class="card-h" style="margin-bottom:8px">'+(_isKorean?'🍩 구독 플랜 분포':'🍩 Subscription Breakdown')+'</div><div class="card-b" style="display:flex;justify-content:center">'+donutChart+'</div></div>'+
+    '</div>'+
+    '<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'📈 유저 증가 추이 (6개월)':'📈 User Growth (6 Months)')+'</div><div class="card-b">'+growthChart+'</div></div>';
+  })()+
   /* ═══ 매출 목표 대시보드 ═══ */
   (function(){
     var targets={
