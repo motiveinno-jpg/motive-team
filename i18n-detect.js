@@ -7,7 +7,7 @@
 
   // App pages have their own internal i18n system (_userLang, _isKorean, _ML).
   // Do NOT apply translations, redirects, or lang switcher on these pages.
-  var APP_PATH_PREFIXES = ['/app', '/ko_made', '/admin'];
+  var APP_PATH_PREFIXES = ['/app', '/ko_made', '/admin', '/global-buyer'];
   var currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
   for (var k = 0; k < APP_PATH_PREFIXES.length; k++) {
     if (currentPath === APP_PATH_PREFIXES[k] || currentPath.indexOf(APP_PATH_PREFIXES[k] + '/') === 0) {
