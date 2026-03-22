@@ -11,7 +11,7 @@ const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx"
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://whistle-ai.com",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-cron-secret, x-service-key",
 };
 
 serve(async (req) => {
@@ -20,17 +20,37 @@ serve(async (req) => {
   }
 
   try {
-    // Auth: require either cron secret or valid admin JWT
+    // Auth: require either cron secret, service role key, or valid admin JWT
     const cronSecret = Deno.env.get("CRON_SECRET");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const authHeader = req.headers.get("Authorization");
     const cronHeader = req.headers.get("x-cron-secret");
 
-    if (cronSecret && cronHeader === cronSecret) {
-      // Cron invocation — OK
-    } else if (authHeader) {
+    let isAuthorized = false;
+
+    // 1. Check cron secret (trimmed to avoid whitespace issues)
+    if (cronSecret && cronHeader && cronHeader.trim() === cronSecret.trim()) {
+      isAuthorized = true;
+    }
+
+    // 2. Check service role key via custom header (for cron/internal calls)
+    const serviceKeyHeader = req.headers.get("x-service-key");
+    if (!isAuthorized && serviceKeyHeader && serviceKeyHeader === serviceRoleKey) {
+      isAuthorized = true;
+    }
+
+    // 3. Check service role key in Authorization header
+    if (!isAuthorized && authHeader) {
+      const token = authHeader.replace("Bearer ", "");
+      if (token === serviceRoleKey) {
+        isAuthorized = true;
+      }
+    }
+
+    // 4. Check valid admin user JWT
+    if (!isAuthorized && authHeader) {
       const sbUrl = Deno.env.get("SUPABASE_URL")!;
-      const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sbCheck = createClient(sbUrl, sbKey);
+      const sbCheck = createClient(sbUrl, serviceRoleKey);
       const token = authHeader.replace("Bearer ", "");
       const {
         data: { user },
@@ -42,7 +62,6 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      // Verify admin role
       const { data: userData } = await sbCheck
         .from("users")
         .select("role")
@@ -54,7 +73,10 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-    } else {
+      isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

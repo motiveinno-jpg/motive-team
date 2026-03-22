@@ -578,6 +578,48 @@ function toast(msg,type,dur){
   var t=document.createElement('div');t.className='toast toast-'+(type||'ok');t.textContent=msg;
   document.body.appendChild(t);setTimeout(function(){t.remove();},dur||3000);
 }
+/* === WEB PUSH NOTIFICATIONS === */
+function _initWebPush(){
+  if(!('Notification' in window))return;
+  if(!('serviceWorker' in navigator))return;
+  navigator.serviceWorker.register('/sw.js').catch(function(e){console.error('[sw] register failed:',e);});
+}
+function _requestWebPush(){
+  if(!('Notification' in window)){toast(_t('This browser does not support notifications','이 브라우저는 알림을 지원하지 않습니다'),'warn');return;}
+  if(Notification.permission==='denied'){toast(_t('Notifications are blocked. Please allow them in browser settings.','브라우저 설정에서 알림이 차단되어 있습니다. 브라우저 설정에서 허용해주세요.'),'warn');return;}
+  Notification.requestPermission().then(function(perm){
+    if(perm==='granted'){
+      localStorage.setItem('whistle_web_push','1');
+      toast(_t('Browser notifications enabled','브라우저 알림이 활성화되었습니다'),'ok');
+      render();
+    }else{
+      localStorage.removeItem('whistle_web_push');
+      toast(_t('Notification permission denied','알림 권한이 거부되었습니다'),'warn');
+      render();
+    }
+  });
+}
+function _disableWebPush(){
+  localStorage.removeItem('whistle_web_push');
+  toast(_t('Browser notifications disabled','브라우저 알림이 비활성화되었습니다'),'info');
+  render();
+}
+function _isWebPushEnabled(){
+  return 'Notification' in window && Notification.permission==='granted' && localStorage.getItem('whistle_web_push')==='1';
+}
+function _showWebNotif(title,body,tag){
+  if(!_isWebPushEnabled())return;
+  if(document.hasFocus())return;
+  try{
+    var opts={body:body||'',icon:'/whistle-icon-192.png',tag:(tag||'whistle')+'-'+Date.now()};
+    if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+      navigator.serviceWorker.ready.then(function(reg){reg.showNotification(title,opts);});
+    }else{
+      new Notification(title,opts);
+    }
+  }catch(e){console.error('[webpush]',e);}
+}
+
 /* Helper: send notification via Edge Function (prevents cross-user INSERT) */
 function _sendNotification(targetUserId, type, title, message, metadata) {
   var body = { target_user_id: targetUserId, type: type, title: title, message: message || '' };
@@ -1266,6 +1308,7 @@ function loadAllData(){
   importLandingSavedProducts();
   var hp=location.hash.replace('#','');if(hp&&_BPL[hp])S.page=hp;
   _initRendered=true;clearTimeout(_initMasterTimeout);
+  _initWebPush();
   render();
 }
 
@@ -3122,6 +3165,16 @@ function pgProfile(){
   h+='<div style="font-size:12px;color:var(--w40)">Role: '+esc(u.role||'buyer')+'</div>';
   h+='</div></div>';
 
+  // Browser Notifications
+  h+='<div class="card" style="margin-top:14px"><div class="card-h">'+_t('Browser Notifications','브라우저 알림')+'</div><div class="card-b">';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px;line-height:1.6">'+_t('Enable browser notifications to receive alerts for new messages, deal updates, and more even when this tab is not focused.','브라우저 알림을 활성화하면 탭이 비활성 상태일 때도 새 메시지, 딜 업데이트 등의 알림을 받을 수 있습니다.')+'</div>';
+  h+='<div style="display:flex;align-items:center;gap:12px">';
+  if(!('Notification' in window)){h+='<div style="font-size:12px;color:var(--w30)">'+_t('This browser does not support notifications','이 브라우저는 알림을 지원하지 않습니다')+'</div>';}
+  else if(Notification.permission==='denied'){h+='<div style="font-size:12px;color:var(--err)">'+_t('Notifications are blocked. Please allow them in browser settings.','알림이 차단되어 있습니다. 브라우저 설정에서 허용해주세요.')+'</div>';}
+  else if(_isWebPushEnabled()){h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--ok);font-weight:600">'+_t('Enabled','활성')+'</span><button class="btn btn-sm btn-ghost" onclick="B.disableWebPush()">'+_t('Disable','비활성화')+'</button></div>';}
+  else{h+='<button class="btn btn-pri" style="font-size:12px;padding:8px 18px" onclick="B.requestWebPush()">'+_t('Enable Notifications','알림 활성화')+'</button>';}
+  h+='</div></div></div>';
+
   // Delete Account
   h+='<div class="card" style="margin-top:24px;border-color:rgba(255,59,48,.2)"><div class="card-h" style="color:var(--err)">Delete Account</div><div class="card-b">';
   h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px;line-height:1.6">Deleting your account will permanently remove all your data. This action cannot be undone.</div>';
@@ -4813,9 +4866,15 @@ function renderDocDetailModal(){
 /* === NOTIFICATIONS === */
 function loadNotifications(){
   if(!S.user)return;
+  var prevCount=S.notifications?S.notifications.length:0;
   sb.from('notifications').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(30).then(function(r){
     S.notifications=r.data||[];
     S.notifUnread=S.notifications.filter(function(n){return!n.is_read;}).length;
+    /* Show browser notification for new unread items */
+    if(prevCount>0&&S.notifications.length>prevCount){
+      var newest=S.notifications[0];
+      if(newest&&!newest.is_read){_showWebNotif(newest.title||'Whistle AI',newest.body||'',newest.type||'notification');}
+    }
     render();
   });
 }
@@ -5905,7 +5964,7 @@ window.B={
   // Electronic Signature
   openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
   // Notifications
-  toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,
+  toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,requestWebPush:_requestWebPush,disableWebPush:_disableWebPush,
   // Translation
   translateMsg:translateMsg,
   // Marketplace
