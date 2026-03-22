@@ -249,28 +249,27 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sbAdmin = createClient(supabaseUrl, serviceKey);
 
-    // Auth check — allow both JWT auth and service-to-service (internal calls)
+    // Auth check — require JWT or valid internal secret
     const authHeader = req.headers.get("Authorization");
     const internalSecret = req.headers.get("X-Internal-Secret");
     const expectedSecret = Deno.env.get("INTERNAL_SERVICE_SECRET");
 
-    if (!authHeader && (!internalSecret || internalSecret !== expectedSecret)) {
-      // Also allow calls from other Edge Functions via service role
-      if (!internalSecret) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+    const hasValidInternal = expectedSecret && internalSecret === expectedSecret;
+
+    if (!authHeader && !hasValidInternal) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    if (authHeader) {
+    if (authHeader && !hasValidInternal) {
       const token = authHeader.replace("Bearer ", "");
       const { error: authErr } = await sbAdmin.auth.getUser(token);
       if (authErr) {
         return new Response(
           JSON.stringify({ error: "Invalid token" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
     }
