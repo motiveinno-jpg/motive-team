@@ -210,7 +210,8 @@ var S={
   comtradeCache:[],sanctionsLog:[],briefs:[],localizationCountries:[],
   _buyerVerifyTab:'pending',_sanctionsFilter:'all',_briefTab:'all',_locTab:'all',
   _settingsTab:'api',_certFilter:'all',_logisticsFilter:'all',
-  marketingCampaigns:[],marketingEvents:[],marketingAutomations:[],_mktTab:'overview'
+  marketingCampaigns:[],marketingEvents:[],marketingAutomations:[],_mktTab:'overview',
+  outreachCampaigns:[],outreachSends:[],outreachContacts:[]
 };
 
 function set(u){for(var k in u)S[k]=u[k];render();}
@@ -270,7 +271,10 @@ function loadAll(){
     sb.from('client_errors').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.clientErrors=r.data||[];}),
     sb.from('marketing_campaigns').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.marketingCampaigns=r.data||[];}),
     sb.from('marketing_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.marketingEvents=r.data||[];}),
-    sb.from('marketing_automations').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.marketingAutomations=r.data||[];})
+    sb.from('marketing_automations').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.marketingAutomations=r.data||[];}),
+    sb.from('outreach_campaigns').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.outreachCampaigns=r.data||[];}),
+    sb.from('outreach_sends').select('*').order('sent_at',{ascending:false}).limit(500).then(function(r){S.outreachSends=r.data||[];}),
+    sb.from('outreach_contacts').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.outreachContacts=r.data||[];})
   ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();});
 }
 
@@ -3728,7 +3732,8 @@ function pgMarketing(){
     {id:'overview',label:_isKorean?'개요':'Overview'},
     {id:'campaigns',label:_isKorean?'캠페인':'Campaigns'},
     {id:'automation',label:_isKorean?'자동화':'Automation'},
-    {id:'log',label:_isKorean?'실시간 로그':'Live Log'}
+    {id:'log',label:_isKorean?'실시간 로그':'Live Log'},
+    {id:'outreach',label:_isKorean?'📧 아웃리치':'📧 Outreach'}
   ];
 
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div><h2 style="font-size:18px;font-weight:800">'+(_isKorean?'📣 마케팅 대시보드':'📣 Marketing Dashboard')+'</h2><p style="font-size:12px;color:var(--w40);margin-top:4px">'+(_isKorean?'캠페인, 자동화, 채널 성과 관리':'Campaign, automation & channel performance')+'</p></div>'+
@@ -3748,6 +3753,8 @@ function pgMarketing(){
     h+=_mktAutomation(automations);
   } else if(tab==='log'){
     h+=_mktLog(events);
+  } else if(tab==='outreach'){
+    h+=_mktOutreach();
   }
   return h;
 }
@@ -3923,13 +3930,168 @@ function _mktLog(events){
   return h;
 }
 
+function _mktOutreach(){
+  var campaigns=S.outreachCampaigns||[];
+  var sends=S.outreachSends||[];
+  var contacts=S.outreachContacts||[];
+  var h='';
+
+  // Stats cards
+  var totalContacts=contacts.length;
+  var totalSent=sends.filter(function(s){return s.status==='sent';}).length;
+  var totalFailed=sends.filter(function(s){return s.status==='failed';}).length;
+  var totalOpened=sends.filter(function(s){return s.opened_at;}).length;
+  var openRate=totalSent>0?Math.round(totalOpened/totalSent*1000)/10:0;
+  var catCounts={};
+  contacts.forEach(function(c){catCounts[c.category]=(catCounts[c.category]||0)+1;});
+
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.statCard(_isKorean?'총 연락처':'Total Contacts',totalContacts,'👥','')+
+    UI.statCard(_isKorean?'발송 성공':'Sent OK',totalSent,'✅','')+
+    UI.statCard(_isKorean?'발송 실패':'Failed',totalFailed,'❌','')+
+    UI.statCard(_isKorean?'오픈율':'Open Rate',openRate+'%','📬','')+
+  '</div>';
+
+  // Category breakdown
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.statCard(_isKorean?'관세사':'Customs Broker',catCounts['customs_broker']||0,'🏛️','')+
+    UI.statCard(_isKorean?'포워더':'Forwarder',catCounts['forwarder']||0,'🚢','')+
+    UI.statCard(_isKorean?'제조사':'Manufacturer',catCounts['manufacturer']||0,'🏭','')+
+    UI.statCard(_isKorean?'바이어':'Buyer',catCounts['buyer']||0,'🛒','')+
+  '</div>';
+
+  // Campaigns table
+  h+='<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'아웃리치 캠페인':'Outreach Campaigns')+'</div><div class="card-b" style="padding:0">';
+  if(!campaigns.length){
+    h+=UI.empty('📧',_isKorean?'캠페인 없음':'No Campaigns',_isKorean?'아직 아웃리치 캠페인이 없습니다.':'No outreach campaigns yet.');
+  } else {
+    h+='<table class="tbl"><thead><tr><th>'+(_isKorean?'이름':'Name')+'</th><th>'+(_isKorean?'카테고리':'Category')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'발송':'Sent')+'</th><th>'+(_isKorean?'오픈':'Opened')+'</th><th>'+(_isKorean?'답변':'Replied')+'</th><th>'+(_isKorean?'생성일':'Created')+'</th></tr></thead><tbody>';
+    campaigns.forEach(function(c){
+      var statusColor=c.status==='completed'?'var(--ok)':c.status==='running'?'var(--pri)':'var(--w40)';
+      h+='<tr><td style="font-weight:600">'+esc(c.name||'')+'</td>'+
+        '<td><span class="badge" style="background:var(--w08)">'+esc(c.category||c.template_type||'')+'</span></td>'+
+        '<td><span style="color:'+statusColor+';font-weight:600">'+esc(c.status||'')+'</span></td>'+
+        '<td>'+N(c.total_sent)+'</td>'+
+        '<td>'+N(c.total_opened)+'</td>'+
+        '<td>'+N(c.total_replied)+'</td>'+
+        '<td style="color:var(--w40);font-size:12px">'+U.fd(c.created_at)+'</td></tr>';
+    });
+    h+='</tbody></table>';
+  }
+  h+='</div></div>';
+
+  // Recent sends
+  h+='<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'최근 발송 (최대 50건)':'Recent Sends (max 50)')+'</div><div class="card-b" style="padding:0">';
+  var recentSends=sends.slice(0,50);
+  if(!recentSends.length){
+    h+=UI.empty('📮',_isKorean?'발송 기록 없음':'No Sends',_isKorean?'아직 발송 기록이 없습니다.':'No outreach emails sent yet.');
+  } else {
+    h+='<div style="max-height:400px;overflow-y:auto"><table class="tbl"><thead><tr><th>'+(_isKorean?'수신자':'To')+'</th><th>'+(_isKorean?'제목':'Subject')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'발송일':'Sent')+'</th></tr></thead><tbody>';
+    recentSends.forEach(function(s){
+      var stColor=s.status==='sent'?'var(--ok)':s.status==='failed'?'var(--err)':'var(--w40)';
+      h+='<tr><td style="font-size:12px">'+esc(s.email_to||'')+'</td>'+
+        '<td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.subject||'')+'</td>'+
+        '<td><span style="color:'+stColor+';font-weight:600;font-size:12px">'+esc(s.status||'')+'</span></td>'+
+        '<td style="color:var(--w40);font-size:11px">'+U.fd(s.sent_at)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  h+='</div></div>';
+
+  // Contacts list
+  h+='<div class="card"><div class="card-h" style="display:flex;justify-content:space-between;align-items:center">'+
+    '<span>'+(_isKorean?'아웃리치 연락처':'Outreach Contacts')+' ('+totalContacts+')</span>'+
+    '<button class="btn btn-pri btn-sm" onclick="Adm.showAddContactForm()">'+(_isKorean?'+ 연락처 추가':'+ Add Contact')+'</button>'+
+  '</div><div class="card-b" style="padding:0">';
+  if(!contacts.length){
+    h+=UI.empty('👥',_isKorean?'연락처 없음':'No Contacts',_isKorean?'아웃리치 연락처를 추가하세요.':'Add outreach contacts to get started.');
+  } else {
+    h+='<div style="max-height:400px;overflow-y:auto"><table class="tbl"><thead><tr><th>'+(_isKorean?'회사':'Company')+'</th><th>'+(_isKorean?'담당자':'Contact')+'</th><th>Email</th><th>'+(_isKorean?'카테고리':'Category')+'</th><th>'+(_isKorean?'국가':'Country')+'</th></tr></thead><tbody>';
+    contacts.forEach(function(c){
+      var catLabel={'customs_broker':_isKorean?'관세사':'Customs','forwarder':_isKorean?'포워더':'Forwarder','manufacturer':_isKorean?'제조사':'Manufacturer','buyer':_isKorean?'바이어':'Buyer'};
+      h+='<tr><td style="font-weight:600;font-size:12px">'+esc(c.company_name||c.company_name_en||'')+'</td>'+
+        '<td style="font-size:12px">'+esc(c.contact_name||'')+'</td>'+
+        '<td style="font-size:12px">'+esc(c.email||'')+'</td>'+
+        '<td><span class="badge" style="background:var(--w08);font-size:11px">'+(catLabel[c.category]||esc(c.category||''))+'</span></td>'+
+        '<td style="font-size:12px;color:var(--w40)">'+esc(c.country||'')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  h+='</div></div>';
+
+  return h;
+}
+
+function showAddContactForm(){
+  var body=
+    '<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div class="grid-2">'+
+      '<div><label class="form-label">'+(_isKorean?'회사명':'Company')+' *</label><input id="oc-company" class="form-input" placeholder="'+(_isKorean?'회사명':'Company name')+'"></div>'+
+      '<div><label class="form-label">'+(_isKorean?'담당자':'Contact Name')+'</label><input id="oc-name" class="form-input" placeholder="'+(_isKorean?'이름':'Name')+'"></div>'+
+    '</div>'+
+    '<div class="grid-2">'+
+      '<div><label class="form-label">Email *</label><input id="oc-email" class="form-input" type="email" placeholder="email@example.com"></div>'+
+      '<div><label class="form-label">'+(_isKorean?'카테고리':'Category')+' *</label><select id="oc-cat" class="form-select">'+
+        '<option value="customs_broker">'+(_isKorean?'관세사':'Customs Broker')+'</option>'+
+        '<option value="forwarder">'+(_isKorean?'포워더':'Forwarder')+'</option>'+
+        '<option value="manufacturer">'+(_isKorean?'제조사':'Manufacturer')+'</option>'+
+        '<option value="buyer">'+(_isKorean?'바이어':'Buyer')+'</option>'+
+      '</select></div>'+
+    '</div>'+
+    '<div class="grid-2">'+
+      '<div><label class="form-label">'+(_isKorean?'국가':'Country')+'</label><input id="oc-country" class="form-input" placeholder="KR"></div>'+
+      '<div><label class="form-label">'+(_isKorean?'웹사이트':'Website')+'</label><input id="oc-website" class="form-input" placeholder="https://"></div>'+
+    '</div>'+
+    '<div><label class="form-label">'+(_isKorean?'메모':'Notes')+'</label><input id="oc-notes" class="form-input" placeholder="'+(_isKorean?'메모':'Notes')+'"></div>'+
+    '</div>';
+  var mid='outreach-add-contact';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({
+    id:mid,
+    title:_isKorean?'아웃리치 연락처 추가':'Add Outreach Contact',
+    body:body,
+    footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\''+mid+'\')">'+(_isKorean?'취소':'Cancel')+'</button><button class="btn btn-pri" onclick="Adm.saveOutreachContact()">'+(_isKorean?'저장':'Save')+'</button>',
+    width:'520px'
+  }));
+  UI.showModal(mid);
+}
+
+function saveOutreachContact(){
+  var company=(document.getElementById('oc-company')||{}).value;
+  var email=(document.getElementById('oc-email')||{}).value;
+  var category=(document.getElementById('oc-cat')||{}).value;
+  if(!company||!company.trim()||!email||!email.trim()){
+    UI.toast(_isKorean?'회사명과 이메일은 필수입니다':'Company and email are required','warn');return;
+  }
+  var data={
+    company_name:company.trim(),
+    contact_name:((document.getElementById('oc-name')||{}).value||'').trim(),
+    email:email.trim().toLowerCase(),
+    category:category,
+    country:((document.getElementById('oc-country')||{}).value||'').trim()||'KR',
+    website:((document.getElementById('oc-website')||{}).value||'').trim(),
+    notes:((document.getElementById('oc-notes')||{}).value||'').trim(),
+    source:'admin_manual',
+    created_at:new Date().toISOString()
+  };
+  sb.from('outreach_contacts').insert(data).select().single().then(function(r){
+    if(r.error){UI.toast(_isKorean?'저장 실패: ':'Save failed: '+r.error.message,'err');return;}
+    S.outreachContacts.unshift(r.data);
+    closeModal('outreach-add-contact');
+    UI.toast(_isKorean?'연락처 추가됨':'Contact added','ok');
+    render();
+  });
+}
+
 function setMktTab(t){S._mktTab=t;render();}
 
 function refreshMarketing(){
   Promise.allSettled([
     sb.from('marketing_campaigns').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.marketingCampaigns=r.data||[];}),
     sb.from('marketing_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.marketingEvents=r.data||[];}),
-    sb.from('marketing_automations').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.marketingAutomations=r.data||[];})
+    sb.from('marketing_automations').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.marketingAutomations=r.data||[];}),
+    sb.from('outreach_campaigns').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.outreachCampaigns=r.data||[];}),
+    sb.from('outreach_sends').select('*').order('sent_at',{ascending:false}).limit(500).then(function(r){S.outreachSends=r.data||[];}),
+    sb.from('outreach_contacts').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.outreachContacts=r.data||[];})
   ]).then(function(){UI.toast(_isKorean?'마케팅 데이터 새로고침 완료':'Marketing data refreshed','ok');render();});
 }
 
@@ -4394,7 +4556,7 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   showBriefEditor:showBriefEditor,editBrief:editBrief,saveBriefDraft:saveBriefDraft,saveBriefPublish:saveBriefPublish,publishBrief:publishBrief,loadBriefs:loadBriefs,
   toggleLocCountry:toggleLocCountry,editLocCountry:editLocCountry,saveLocCountry:saveLocCountry,showAddCountry:showAddCountry,saveNewCountry:saveNewCountry,
   saveExchangeRates:saveExchangeRates,fetchLiveRates:fetchLiveRates,toggleFeature:toggleFeature,saveFeatureToggles:saveFeatureToggles,saveRelayUrl:saveRelayUrl,
-  setMktTab:setMktTab,refreshMarketing:refreshMarketing,toggleCampaign:toggleCampaign,toggleAutomation:toggleAutomation,showCampaignForm:showCampaignForm,saveCampaignForm:saveCampaignForm,
+  setMktTab:setMktTab,refreshMarketing:refreshMarketing,toggleCampaign:toggleCampaign,toggleAutomation:toggleAutomation,showCampaignForm:showCampaignForm,saveCampaignForm:saveCampaignForm,showAddContactForm:showAddContactForm,saveOutreachContact:saveOutreachContact,
   UI:UI};
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp]&&S.user)nav(hp);});
