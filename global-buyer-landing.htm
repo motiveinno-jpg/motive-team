@@ -64,7 +64,1251 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
+
+/* ═══════════════════════════════════════════════════
+   i18n — Language Detection, Translations, t() helper
+   ═══════════════════════════════════════════════════ */
+
+const SUPPORTED_LANGS = ['en','ko','ja','zh','es','vi','th','de','fr','pt','id','tr','ar'];
+const RTL_LANGS = ['ar'];
+const LANG_STORAGE_KEY = 'whistle_buyer_lang';
+
+const LANG_LABELS = {
+  en: 'English', ko: '한국어', ja: '日本語', zh: '中文', es: 'Español',
+  vi: 'Tiếng Việt', th: 'ไทย', de: 'Deutsch', fr: 'Français',
+  pt: 'Português', id: 'Bahasa', tr: 'Türkçe', ar: 'العربية',
+};
+
+function detectLanguage() {
+  var stored = localStorage.getItem(LANG_STORAGE_KEY);
+  if (stored && SUPPORTED_LANGS.indexOf(stored) !== -1) return stored;
+  var nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+  var exact = nav.split('-')[0];
+  if (SUPPORTED_LANGS.indexOf(exact) !== -1) return exact;
+  return 'en';
+}
+
+const translations = {
+  en: {
+    // Nav
+    nav_how: "How It Works",
+    nav_features: "Features",
+    nav_categories: "Categories",
+    nav_for_manufacturers: "For Manufacturers",
+    nav_sign_in: "Sign In",
+    nav_start_free: "Start Free",
+    // Hero
+    hero_badge: "Free to Use for Buyers",
+    hero_title_1: "Find the right manufacturer",
+    hero_title_2: "in ",
+    hero_title_highlight: "minutes, not months",
+    hero_sub: "AI-powered sourcing platform. Describe what you need, get matched with verified manufacturers, and see your total landed cost — instantly.",
+    hero_search_placeholder: "e.g. I need organic skincare products, 500 units, shipping to Dubai...",
+    hero_search_btn: "Find Manufacturers",
+    hero_cat_beauty: "K-Beauty",
+    hero_cat_electronics: "Electronics",
+    hero_cat_food: "Food & Beverage",
+    hero_cat_textiles: "Textiles",
+    hero_cat_health: "Health",
+    hero_stat_ai: "AI",
+    hero_stat_ai_sub: "Powered Matching",
+    hero_stat_stripe: "Stripe",
+    hero_stat_stripe_sub: "Secure Payments",
+    hero_stat_free: "Free",
+    hero_stat_free_sub: "For All Buyers",
+    hero_stat_asia: "Asia+",
+    hero_stat_asia_sub: "Expanding Globally",
+    // Pain Points
+    pain_heading: "What makes Whistle AI different?",
+    pain_sub: "We solve the real problems buyers face in international sourcing.",
+    pain_problem_1: "Searching through thousands of listings on B2B platforms",
+    pain_solution_1: "Tell our AI what you need in plain language — get matched with verified manufacturers instantly",
+    pain_problem_2: "No idea what the total landed cost will be",
+    pain_solution_2: "AI calculates HS code, tariffs, FTA benefits, shipping — see your real cost before you commit",
+    pain_problem_3: "Worried about scams and quality issues",
+    pain_solution_3: "AI-verified manufacturers + Stripe-secured payments + full transaction history",
+    pain_problem_4: "Language barriers with manufacturers",
+    pain_solution_4: "AI translates your conversations in real-time — negotiate naturally in your language",
+    // How It Works
+    how_heading: "How It Works",
+    how_sub: "From idea to delivery — source globally in 4 simple steps.",
+    step_1_title: "Describe",
+    step_1_desc: "Tell us what you're looking for — product type, quantity, budget, destination country.",
+    step_2_title: "Match",
+    step_2_desc: "Our AI finds verified manufacturers that match your requirements and calculates total landed cost.",
+    step_3_title: "Connect",
+    step_3_desc: "Chat directly with manufacturers using AI translation. Request samples, negotiate terms.",
+    step_4_title: "Trade",
+    step_4_desc: "Secure payment via Stripe. Track your order from factory to doorstep.",
+    // AI Section
+    ai_badge: "AI-Powered",
+    ai_heading: "Sourcing Intelligence That Works",
+    ai_sub: "Tools that traditional sourcing platforms don't have — powered by real trade data from 190+ countries.",
+    ai_vision_title: "Vision Search",
+    ai_vision_desc: "Search products by photo — AI identifies items from images. Snap a picture, find matching manufacturers instantly.",
+    ai_market_title: "Market Analysis & Margin",
+    ai_market_desc: "AI-powered market analysis with margin calculations. Understand profitability before you commit to a supplier.",
+    ai_price_title: "Price Strategy",
+    ai_price_desc: "AI suggests optimal pricing strategies for your market. Factor in competition, demand, and landed costs automatically.",
+    ai_hs_title: "AI HS Code Classification",
+    ai_hs_desc: "Automatically classify any product into the correct HS code. No customs broker needed for basic classification.",
+    ai_landed_title: "Landed Cost Calculator",
+    ai_landed_desc: "FOB + shipping + tariff + insurance = total cost to your door. Know your real cost before you commit.",
+    ai_fta_title: "FTA Optimization",
+    ai_fta_desc: "Check FTA eligibility to potentially save on import duties. Available on select trade routes.",
+    ai_translation_title: "AI Translation",
+    ai_translation_desc: "Chat with manufacturers in your language. AI translates messages in real-time for natural conversation.",
+    ai_verification_title: "Manufacturer Verification",
+    ai_verification_desc: "AI analyzes manufacturer credentials, export history, and product data to give you a trust score.",
+    ai_documents_title: "Trade Documents",
+    ai_documents_desc: "Generate PI, CI, PL, CO and other export documents. Reduce paperwork hours to minutes.",
+    ai_data_comtrade: "UN Comtrade",
+    ai_data_comtrade_sub: "190+ countries",
+    ai_data_realtime: "Real-Time Data",
+    ai_data_realtime_sub: "Live market feeds",
+    ai_data_models: "AI Models",
+    ai_data_models_sub: "Multi-engine analysis",
+    // Categories
+    cat_heading: "Product Categories",
+    cat_sub: "Starting with Korea's premium manufacturers — expanding across Asia and beyond.",
+    cat_beauty: "Beauty & Cosmetics",
+    cat_beauty_desc: "K-Beauty, skincare, hair care",
+    cat_food: "Food & Beverage",
+    cat_food_desc: "Health foods, snacks, beverages",
+    cat_electronics: "Electronics",
+    cat_electronics_desc: "Components, devices, accessories",
+    cat_textiles: "Textiles & Fashion",
+    cat_textiles_desc: "Fabrics, apparel, accessories",
+    cat_health: "Health & Wellness",
+    cat_health_desc: "Supplements, vitamins, wellness products",
+    cat_industrial: "Industrial",
+    cat_industrial_desc: "Machinery, auto parts, materials",
+    cat_gateway: "Your gateway to premium Korean manufacturers",
+    cat_gateway_sub: "K-Beauty · K-Food · K-Tech · K-Culture",
+    // Payment
+    pay_heading: "Safe and secure payments",
+    pay_sub: "All payments processed through Stripe. Your money is protected.",
+    pay_stripe_title: "Stripe-Powered",
+    pay_stripe_desc: "PCI DSS Level 1 compliant payment processing. The same infrastructure used by Amazon, Google, and Shopify.",
+    pay_protection_title: "Payment Protection",
+    pay_protection_desc: "Funds are processed securely. Track every transaction with full transparency and dispute support.",
+    pay_global_title: "Global Currencies",
+    pay_global_desc: "Pay in USD, EUR, GBP, JPY, KRW, and more. Automatic currency conversion at competitive rates.",
+    // Get Started
+    start_heading: "Get Started",
+    start_sub: "Free for all buyers. Or try a single AI analysis with no subscription.",
+    start_free_title: "Free for Buyers",
+    start_free_desc: "Search manufacturers, request quotes, chat with suppliers, use AI tools — all free. A small commission (3-5%) applies only on completed deals.",
+    start_free_f1: "Manufacturer search & discovery",
+    start_free_f2: "AI cost analysis",
+    start_free_f3: "Direct messaging",
+    start_free_f4: "Trade document generation",
+    start_free_f5: "Stripe-secured payments",
+    start_free_btn: "Start Sourcing Free",
+    start_free_note: "No credit card required",
+    start_single_title: "Single AI Analysis",
+    start_single_price: "$9.90",
+    start_single_price_label: "one-time",
+    start_single_desc: "Try one AI analysis — no subscription needed. Get full market analysis, HS classification, landed cost calculation, and FTA optimization for a single product.",
+    start_single_f1: "Full AI market analysis",
+    start_single_f2: "HS code classification",
+    start_single_f3: "Landed cost breakdown",
+    start_single_f4: "FTA optimization check",
+    start_single_f5: "Exportable PDF report",
+    start_single_btn: "Try Single Analysis",
+    start_single_note: "No subscription required",
+    trust_certified: "Trusted & Certified",
+    trust_voucher: "Manufacturing Innovation Voucher",
+    trust_voucher_sub: "Government Certified",
+    trust_export: "Export Voucher",
+    trust_export_sub: "KOTRA Approved",
+    trust_network: "Global Manufacturer Network",
+    trust_network_sub: "Verified Partners",
+    trust_stripe: "Stripe Verified",
+    trust_stripe_sub: "PCI DSS Level 1",
+    // Global Infrastructure
+    global_badge: "Global Infrastructure",
+    global_heading: "Built for Global Trade at Scale",
+    global_sub: "31 countries. 12 languages. 15 currencies. One platform.",
+    global_stat_countries: "Countries",
+    global_stat_countries_sub: "Certification coverage",
+    global_stat_languages: "Languages",
+    global_stat_languages_sub: "Auto-detection",
+    global_stat_currencies: "Currencies",
+    global_stat_currencies_sub: "Live exchange rates",
+    global_stat_data: "Data Sources",
+    global_stat_data_sub: "UN Comtrade powered",
+    global_fta_title: "FTA Network Database",
+    global_fta_desc: "FTA benefits automatically applied based on trade routes. Save on duties without manual research.",
+    global_shipping_title: "Shipping Timeline Tracking",
+    global_shipping_sub: "Track shipments through 6 stages from factory to your door",
+    ship_booked: "Booked",
+    ship_picked: "Picked Up",
+    ship_transit: "In Transit",
+    ship_customs: "Customs",
+    ship_delivery: "Out for Delivery",
+    ship_delivered: "Delivered",
+    // Compliance
+    compliance_badge: "Compliance Verified",
+    compliance_heading: "Trade Compliance & Trust",
+    compliance_sub: "Every transaction is screened. Every supplier is verified. Every certification is checked.",
+    compliance_denied_title: "Denied Party Screening",
+    compliance_denied_desc: "Every supplier screened against OFAC, EU, UN denied party lists before you connect.",
+    compliance_cert_title: "Certification Gap Analysis",
+    compliance_cert_desc: "AI identifies which certifications suppliers need for your specific target market.",
+    compliance_db_title: "Country Certification DB",
+    compliance_db_desc: "Database of required certifications for 31 countries — know exactly what's needed.",
+    compliance_sanctions_title: "Sanctions Compliance",
+    compliance_sanctions_desc: "Real-time sanctions screening built into every transaction. Trade with confidence.",
+    // Brief
+    brief_title: "Stay Ahead with Whistle Brief",
+    brief_desc: "Stay informed with Whistle Brief — free global trade intelligence",
+    brief_btn: "Subscribe to Whistle Brief",
+    // Enhanced Trust
+    etrust_heading: "Built for Trust, End to End",
+    etrust_sub: "Every layer of the sourcing process is protected.",
+    etrust_1: "4-level supplier verification",
+    etrust_2: "AI-powered quality assessment",
+    etrust_3: "Escrow payment protection on every order",
+    etrust_4: "Logistics tracking",
+    etrust_5: "12-language platform with auto-detection",
+    etrust_6: "Live exchange rates for 15 currencies",
+    // Market Coverage
+    market_heading: "Global Manufacturer Network — Verified & Growing",
+    market_sub: "Access verified manufacturers from around the world — a growing network spanning multiple countries and industries.",
+    market_text_1: "Access manufacturers from Korea, SE Asia, India, Japan, and more — markets traditional B2B platforms underserve",
+    market_text_2: "Discover premium, certified manufacturers you won't find on typical B2B platforms",
+    market_tam_label: "Non-Chinese manufacturers worldwide — the market Whistle AI unlocks",
+    market_countries: "Korea · Japan · India · Vietnam · Thailand · Indonesia · Taiwan",
+    // FAQ
+    faq_heading: "Frequently Asked Questions",
+    faq_sub: "Everything you need to know about sourcing with Whistle AI.",
+    faq_q1: "Is Whistle AI really free for buyers?",
+    faq_a1: "Yes. Signing up, searching for manufacturers, and connecting with them is 100% free. You only pay when you place an order or purchase a premium analysis.",
+    faq_q2: "How does AI manufacturer matching work?",
+    faq_a2: "Describe what you need in plain language — product type, quantity, budget, and destination. Our AI analyzes your requirements against our verified manufacturer database and returns the best matches with estimated landed costs.",
+    faq_q3: "What countries do you source from?",
+    faq_a3: "We started with Korea's premium manufacturers and are expanding across Asia — Japan, Vietnam, Thailand, India, Indonesia, and Taiwan. New regions are added regularly.",
+    faq_q4: "How are manufacturers verified?",
+    faq_a4: "Every manufacturer goes through a multi-step verification process including business registration checks, production capacity review, and quality certification validation before appearing on the platform.",
+    faq_q5: "How are payments secured?",
+    faq_a5: "All transactions are processed through Stripe with escrow protection. Funds are held securely and released to the manufacturer only after you confirm receipt of goods.",
+    faq_q6: "Can I request samples before placing a bulk order?",
+    faq_a6: "Absolutely. You can chat directly with manufacturers using our AI translation feature, request samples, negotiate pricing, and review quality before committing to a larger order.",
+    // CTA
+    cta_heading: "Ready to source smarter?",
+    cta_sub: "Join buyers using AI to find the best manufacturers. Starting with Korea's finest — expanding worldwide.",
+    cta_signup: "Sign Up Free",
+    cta_manufacturer: "I'm a Manufacturer",
+    // Footer
+    footer_platform: "Platform",
+    footer_for_buyers: "For Buyers",
+    footer_for_manufacturers: "For Manufacturers",
+    footer_legal: "Legal",
+    footer_signup: "Sign Up",
+    footer_buyer_portal: "Buyer Portal",
+    footer_seller_portal: "Seller Portal",
+    footer_export_tools: "Export Tools",
+    footer_terms: "Terms of Service",
+    footer_privacy: "Privacy Policy",
+    footer_refund: "Refund Policy",
+    footer_copyright: "© 2026 MOTIVE Global, Inc. All rights reserved.",
+    footer_tagline: "Whistle AI · AI-Powered Global Sourcing",
+    // Cookie
+    cookie_text: "We use cookies to improve your experience. By continuing, you agree to our",
+    cookie_privacy: "Privacy Policy",
+    cookie_accept: "Accept",
+    cookie_decline: "Decline",
+    // Demo
+    demo_heading: "See It In Action",
+    demo_sub: "From manufacturer search to FTA analysis, chat negotiation, secure payment, and delivery — the full sourcing journey",
+  },
+  ko: {
+    nav_how: "이용 방법",
+    nav_features: "주요 기능",
+    nav_categories: "카테고리",
+    nav_for_manufacturers: "제조사 전용",
+    nav_sign_in: "로그인",
+    nav_start_free: "무료 시작",
+    hero_badge: "바이어 무료 이용",
+    hero_title_1: "적합한 제조사를",
+    hero_title_2: "",
+    hero_title_highlight: "몇 분 만에 찾으세요",
+    hero_sub: "AI 기반 소싱 플랫폼. 필요한 제품을 설명하면, 검증된 제조사와 매칭되고, 총 도착 비용을 즉시 확인할 수 있습니다.",
+    hero_search_placeholder: "예: 유기농 스킨케어 제품 500개, 두바이 배송...",
+    hero_search_btn: "제조사 찾기",
+    hero_cat_beauty: "K-뷰티",
+    hero_cat_electronics: "전자제품",
+    hero_cat_food: "식품",
+    hero_cat_textiles: "섬유",
+    hero_cat_health: "건강",
+    hero_stat_ai: "AI",
+    hero_stat_ai_sub: "매칭 엔진",
+    hero_stat_stripe: "Stripe",
+    hero_stat_stripe_sub: "안전 결제",
+    hero_stat_free: "무료",
+    hero_stat_free_sub: "모든 바이어",
+    hero_stat_asia: "아시아+",
+    hero_stat_asia_sub: "글로벌 확장 중",
+    pain_heading: "Whistle AI가 다른 이유",
+    pain_sub: "국제 소싱에서 바이어가 겪는 진짜 문제를 해결합니다.",
+    pain_problem_1: "B2B 플랫폼에서 수천 개 리스팅 검색",
+    pain_solution_1: "AI에게 필요한 것을 설명하면 — 검증된 제조사와 즉시 매칭",
+    pain_problem_2: "총 도착 비용을 알 수 없음",
+    pain_solution_2: "AI가 HS 코드, 관세, FTA 혜택, 배송비를 계산 — 커밋 전 실비용 확인",
+    pain_problem_3: "사기와 품질 문제 걱정",
+    pain_solution_3: "AI 검증 제조사 + Stripe 보안 결제 + 거래 이력 관리",
+    pain_problem_4: "제조사와의 언어 장벽",
+    pain_solution_4: "AI가 실시간 번역 — 모국어로 자연스럽게 협상",
+    how_heading: "이용 방법",
+    how_sub: "아이디어에서 배송까지 — 4단계로 글로벌 소싱.",
+    step_1_title: "설명",
+    step_1_desc: "필요한 제품, 수량, 예산, 배송 국가를 알려주세요.",
+    step_2_title: "매칭",
+    step_2_desc: "AI가 요구사항에 맞는 검증된 제조사를 찾고 총 도착 비용을 계산합니다.",
+    step_3_title: "연결",
+    step_3_desc: "AI 번역으로 제조사와 직접 채팅. 샘플 요청, 조건 협상.",
+    step_4_title: "거래",
+    step_4_desc: "Stripe를 통한 안전 결제. 공장에서 도착까지 주문 추적.",
+    ai_badge: "AI 기반",
+    ai_heading: "실용적인 소싱 인텔리전스",
+    ai_sub: "기존 소싱 플랫폼에 없는 도구 — 190개국 이상의 실제 무역 데이터 기반.",
+    ai_vision_title: "비전 검색",
+    ai_vision_desc: "사진으로 제품 검색 — AI가 이미지에서 제품을 식별. 사진 한 장으로 제조사 매칭.",
+    ai_market_title: "시장 분석 & 마진",
+    ai_market_desc: "AI 기반 시장 분석과 마진 계산. 공급자 결정 전 수익성을 파악하세요.",
+    ai_price_title: "가격 전략",
+    ai_price_desc: "AI가 시장에 최적화된 가격 전략을 제안. 경쟁, 수요, 도착 비용을 자동 반영.",
+    ai_hs_title: "AI HS 코드 분류",
+    ai_hs_desc: "모든 제품을 올바른 HS 코드로 자동 분류. 기본 분류에 관세사가 필요 없습니다.",
+    ai_landed_title: "도착 비용 계산기",
+    ai_landed_desc: "FOB + 배송 + 관세 + 보험 = 도착 총비용. 커밋 전 실비용을 알 수 있습니다.",
+    ai_fta_title: "FTA 최적화",
+    ai_fta_desc: "FTA 적격 여부를 확인하여 수입 관세를 절약하세요. 특정 무역 경로에서 이용 가능.",
+    ai_translation_title: "AI 번역",
+    ai_translation_desc: "모국어로 제조사와 채팅. AI가 메시지를 실시간 번역합니다.",
+    ai_verification_title: "제조사 검증",
+    ai_verification_desc: "AI가 제조사의 자격 증명, 수출 이력, 제품 데이터를 분석하여 신뢰도 점수를 제공합니다.",
+    ai_documents_title: "무역 서류",
+    ai_documents_desc: "PI, CI, PL, CO 등 수출 서류를 자동 생성. 서류 작업 시간을 몇 분으로 단축.",
+    ai_data_comtrade: "UN Comtrade",
+    ai_data_comtrade_sub: "190개국 이상",
+    ai_data_realtime: "실시간 데이터",
+    ai_data_realtime_sub: "라이브 시장 피드",
+    ai_data_models: "AI 모델",
+    ai_data_models_sub: "멀티 엔진 분석",
+    cat_heading: "제품 카테고리",
+    cat_sub: "한국의 프리미엄 제조사를 시작으로 — 아시아 전역으로 확장 중.",
+    cat_beauty: "뷰티 & 화장품",
+    cat_beauty_desc: "K-뷰티, 스킨케어, 헤어케어",
+    cat_food: "식품 & 음료",
+    cat_food_desc: "건강식품, 스낵, 음료",
+    cat_electronics: "전자제품",
+    cat_electronics_desc: "부품, 기기, 액세서리",
+    cat_textiles: "섬유 & 패션",
+    cat_textiles_desc: "직물, 의류, 액세서리",
+    cat_health: "건강 & 웰니스",
+    cat_health_desc: "보충제, 비타민, 웰니스 제품",
+    cat_industrial: "산업재",
+    cat_industrial_desc: "기계, 자동차 부품, 소재",
+    cat_gateway: "한국 프리미엄 제조사의 관문",
+    cat_gateway_sub: "K-뷰티 · K-푸드 · K-테크 · K-컬처",
+    pay_heading: "안전한 결제",
+    pay_sub: "모든 결제는 Stripe를 통해 처리됩니다. 자금이 안전하게 보호됩니다.",
+    pay_stripe_title: "Stripe 기반",
+    pay_stripe_desc: "PCI DSS Level 1 준수 결제 처리. Amazon, Google, Shopify와 동일한 인프라.",
+    pay_protection_title: "결제 보호",
+    pay_protection_desc: "자금은 안전하게 처리됩니다. 완전한 투명성과 분쟁 지원으로 모든 거래를 추적하세요.",
+    pay_global_title: "글로벌 통화",
+    pay_global_desc: "USD, EUR, GBP, JPY, KRW 등으로 결제. 경쟁력 있는 환율로 자동 통화 변환.",
+    start_heading: "시작하기",
+    start_sub: "모든 바이어에게 무료. 또는 구독 없이 단건 AI 분석을 이용하세요.",
+    start_free_title: "바이어 무료",
+    start_free_desc: "제조사 검색, 견적 요청, 공급자 채팅, AI 도구 — 모두 무료. 거래 성사 시에만 수수료(3-5%) 적용.",
+    start_free_f1: "제조사 검색 & 발견",
+    start_free_f2: "AI 비용 분석",
+    start_free_f3: "다이렉트 메시징",
+    start_free_f4: "무역 서류 생성",
+    start_free_f5: "Stripe 보안 결제",
+    start_free_btn: "무료로 소싱 시작",
+    start_free_note: "신용카드 불필요",
+    start_single_title: "단건 AI 분석",
+    start_single_price: "$9.90",
+    start_single_price_label: "1회",
+    start_single_desc: "구독 없이 AI 분석 1회 이용. 단일 제품에 대한 시장 분석, HS 분류, 도착 비용 계산, FTA 최적화를 제공합니다.",
+    start_single_f1: "AI 시장 분석",
+    start_single_f2: "HS 코드 분류",
+    start_single_f3: "도착 비용 내역",
+    start_single_f4: "FTA 최적화 확인",
+    start_single_f5: "PDF 리포트 내보내기",
+    start_single_btn: "단건 분석 이용",
+    start_single_note: "구독 불필요",
+    trust_certified: "인증 & 신뢰",
+    trust_voucher: "제조혁신 바우처",
+    trust_voucher_sub: "정부 인증",
+    trust_export: "수출 바우처",
+    trust_export_sub: "KOTRA 승인",
+    trust_network: "글로벌 제조사 네트워크",
+    trust_network_sub: "검증된 파트너",
+    trust_stripe: "Stripe 인증",
+    trust_stripe_sub: "PCI DSS Level 1",
+    global_badge: "글로벌 인프라",
+    global_heading: "글로벌 무역 규모에 맞춘 구축",
+    global_sub: "31개국. 12개 언어. 15개 통화. 하나의 플랫폼.",
+    global_stat_countries: "개국",
+    global_stat_countries_sub: "인증 커버리지",
+    global_stat_languages: "개 언어",
+    global_stat_languages_sub: "자동 감지",
+    global_stat_currencies: "개 통화",
+    global_stat_currencies_sub: "실시간 환율",
+    global_stat_data: "데이터 소스",
+    global_stat_data_sub: "UN Comtrade 기반",
+    global_fta_title: "FTA 네트워크 DB",
+    global_fta_desc: "무역 경로에 따라 FTA 혜택 자동 적용. 수동 조사 없이 관세 절감.",
+    global_shipping_title: "배송 타임라인 추적",
+    global_shipping_sub: "공장에서 도착까지 6단계 추적",
+    ship_booked: "예약",
+    ship_picked: "수거",
+    ship_transit: "운송 중",
+    ship_customs: "통관",
+    ship_delivery: "배송 중",
+    ship_delivered: "배송 완료",
+    compliance_badge: "컴플라이언스 인증",
+    compliance_heading: "무역 컴플라이언스 & 신뢰",
+    compliance_sub: "모든 거래가 심사됩니다. 모든 공급자가 검증됩니다. 모든 인증이 확인됩니다.",
+    compliance_denied_title: "제재 대상 심사",
+    compliance_denied_desc: "모든 공급자를 OFAC, EU, UN 제재 목록에 대해 사전 심사합니다.",
+    compliance_cert_title: "인증 갭 분석",
+    compliance_cert_desc: "AI가 특정 목표 시장에 필요한 인증을 식별합니다.",
+    compliance_db_title: "국가별 인증 DB",
+    compliance_db_desc: "31개국 필수 인증 데이터베이스 — 정확히 무엇이 필요한지 파악.",
+    compliance_sanctions_title: "제재 준수",
+    compliance_sanctions_desc: "모든 거래에 실시간 제재 심사 내장. 안심하고 거래하세요.",
+    brief_title: "Whistle Brief로 앞서가세요",
+    brief_desc: "Whistle Brief — 무료 글로벌 무역 인텔리전스",
+    brief_btn: "Whistle Brief 구독",
+    etrust_heading: "엔드투엔드 신뢰 구축",
+    etrust_sub: "소싱 프로세스의 모든 레이어가 보호됩니다.",
+    etrust_1: "4단계 공급자 검증",
+    etrust_2: "AI 기반 품질 평가",
+    etrust_3: "모든 주문에 에스크로 결제 보호",
+    etrust_4: "물류 추적",
+    etrust_5: "12개 언어 플랫폼 + 자동 감지",
+    etrust_6: "15개 통화 실시간 환율",
+    market_heading: "글로벌 제조사 네트워크 — 검증 & 성장 중",
+    market_sub: "전 세계 검증된 제조사에 접근하세요 — 다양한 국가와 산업을 아우르는 성장하는 네트워크.",
+    market_text_1: "한국, 동남아시아, 인도, 일본 등의 제조사 접근 — 기존 B2B 플랫폼이 미치지 못하는 시장",
+    market_text_2: "일반 B2B 플랫폼에서 찾을 수 없는 프리미엄 인증 제조사 발견",
+    market_tam_label: "전 세계 비중국 제조사 — Whistle AI가 여는 시장",
+    market_countries: "한국 · 일본 · 인도 · 베트남 · 태국 · 인도네시아 · 대만",
+    faq_heading: "자주 묻는 질문",
+    faq_sub: "Whistle AI 소싱에 대해 알아야 할 모든 것.",
+    faq_q1: "바이어는 정말 무료인가요?",
+    faq_a1: "네. 가입, 제조사 검색, 연결 모두 무료입니다. 주문 시 또는 프리미엄 분석 구매 시에만 비용이 발생합니다.",
+    faq_q2: "AI 제조사 매칭은 어떻게 작동하나요?",
+    faq_a2: "필요한 것을 자연어로 설명하세요 — 제품 유형, 수량, 예산, 목적지. AI가 검증된 제조사 데이터베이스에서 최적 매칭과 예상 도착 비용을 제공합니다.",
+    faq_q3: "어떤 국가에서 소싱하나요?",
+    faq_a3: "한국의 프리미엄 제조사를 시작으로 아시아 전역으로 확장 중 — 일본, 베트남, 태국, 인도, 인도네시아, 대만. 새 지역이 정기적으로 추가됩니다.",
+    faq_q4: "제조사는 어떻게 검증되나요?",
+    faq_a4: "모든 제조사는 사업자 등록 확인, 생산 역량 검토, 품질 인증 검증을 포함한 다단계 검증 프로세스를 거칩니다.",
+    faq_q5: "결제는 어떻게 보호되나요?",
+    faq_a5: "모든 거래는 에스크로 보호 하에 Stripe를 통해 처리됩니다. 상품 수령 확인 후에만 자금이 제조사에 지급됩니다.",
+    faq_q6: "대량 주문 전 샘플 요청이 가능한가요?",
+    faq_a6: "물론입니다. AI 번역 기능으로 제조사와 직접 채팅하고, 샘플 요청, 가격 협상, 품질 검토 후 대량 주문을 결정할 수 있습니다.",
+    cta_heading: "더 스마트하게 소싱할 준비가 되셨나요?",
+    cta_sub: "AI로 최고의 제조사를 찾는 바이어에 합류하세요. 한국의 최고 제조사부터 — 전 세계로 확장 중.",
+    cta_signup: "무료 가입",
+    cta_manufacturer: "저는 제조사입니다",
+    footer_platform: "플랫폼",
+    footer_for_buyers: "바이어",
+    footer_for_manufacturers: "제조사",
+    footer_legal: "법적 고지",
+    footer_signup: "가입",
+    footer_buyer_portal: "바이어 포털",
+    footer_seller_portal: "셀러 포털",
+    footer_export_tools: "수출 도구",
+    footer_terms: "이용약관",
+    footer_privacy: "개인정보처리방침",
+    footer_refund: "환불정책",
+    footer_copyright: "© 2026 MOTIVE Global, Inc. All rights reserved.",
+    footer_tagline: "Whistle AI · AI 기반 글로벌 소싱",
+    cookie_text: "더 나은 경험을 위해 쿠키를 사용합니다. 계속하면",
+    cookie_privacy: "개인정보처리방침",
+    cookie_accept: "수락",
+    cookie_decline: "거부",
+    demo_heading: "실제로 보기",
+    demo_sub: "제조사 검색부터 FTA 분석, 채팅 협상, 안전 결제, 배송까지 — 전체 소싱 여정",
+  },
+  ja: {
+    nav_how: "使い方",
+    nav_features: "主な機能",
+    nav_categories: "カテゴリー",
+    nav_for_manufacturers: "メーカー向け",
+    nav_sign_in: "ログイン",
+    nav_start_free: "無料で始める",
+    hero_badge: "バイヤーは無料",
+    hero_title_1: "適切なメーカーを",
+    hero_title_2: "",
+    hero_title_highlight: "数分で見つける",
+    hero_sub: "AI搭載ソーシングプラットフォーム。必要なものを説明するだけで、認証済みメーカーとマッチングし、総到着コストを即座に確認できます。",
+    hero_search_placeholder: "例：オーガニックスキンケア製品500個、ドバイへ配送...",
+    hero_search_btn: "メーカーを探す",
+    hero_cat_beauty: "K-ビューティー",
+    hero_cat_electronics: "電子機器",
+    hero_cat_food: "食品・飲料",
+    hero_cat_textiles: "テキスタイル",
+    hero_cat_health: "ヘルスケア",
+    hero_stat_ai: "AI",
+    hero_stat_ai_sub: "マッチング",
+    hero_stat_stripe: "Stripe",
+    hero_stat_stripe_sub: "安全決済",
+    hero_stat_free: "無料",
+    hero_stat_free_sub: "全バイヤー",
+    hero_stat_asia: "アジア+",
+    hero_stat_asia_sub: "グローバル展開中",
+    pain_heading: "Whistle AIの違い",
+    pain_sub: "国際ソーシングでバイヤーが直面する本当の問題を解決します。",
+    pain_problem_1: "B2Bプラットフォームで数千のリスティングを検索",
+    pain_solution_1: "AIに必要なものを伝えるだけ — 認証済みメーカーと即座にマッチング",
+    pain_problem_2: "総到着コストが分からない",
+    pain_solution_2: "AIがHSコード、関税、FTA恩恵、送料を計算 — 発注前に実コストを確認",
+    pain_problem_3: "詐欺や品質問題が心配",
+    pain_solution_3: "AI認証メーカー + Stripe安全決済 + 完全な取引履歴",
+    pain_problem_4: "メーカーとの言語の壁",
+    pain_solution_4: "AIがリアルタイム翻訳 — 母国語で自然に交渉",
+    how_heading: "使い方",
+    how_sub: "アイデアから配送まで — 4つの簡単なステップでグローバルソーシング。",
+    step_1_title: "説明",
+    step_1_desc: "必要な製品、数量、予算、配送先国をお伝えください。",
+    step_2_title: "マッチング",
+    step_2_desc: "AIが要件に合った認証済みメーカーを見つけ、総到着コストを計算します。",
+    step_3_title: "接続",
+    step_3_desc: "AI翻訳でメーカーと直接チャット。サンプル依頼、条件交渉。",
+    step_4_title: "取引",
+    step_4_desc: "Stripeで安全決済。工場から到着まで注文を追跡。",
+    ai_badge: "AI搭載",
+    ai_heading: "実用的なソーシングインテリジェンス",
+    ai_sub: "従来のソーシングプラットフォームにないツール — 190カ国以上の実取引データ駆動。",
+    ai_vision_title: "ビジョン検索",
+    ai_vision_desc: "写真で製品検索 — AIが画像から製品を識別。写真1枚でメーカーマッチング。",
+    ai_market_title: "市場分析＆マージン",
+    ai_market_desc: "AI市場分析とマージン計算。サプライヤー決定前に収益性を把握。",
+    ai_price_title: "価格戦略",
+    ai_price_desc: "AIが市場に最適な価格戦略を提案。競争、需要、到着コストを自動反映。",
+    ai_hs_title: "AI HSコード分類",
+    ai_hs_desc: "あらゆる製品を正確なHSコードに自動分類。基本分類に通関士不要。",
+    ai_landed_title: "到着コスト計算機",
+    ai_landed_desc: "FOB + 送料 + 関税 + 保険 = 到着総コスト。発注前に実コストを確認。",
+    ai_fta_title: "FTA最適化",
+    ai_fta_desc: "FTA適格性を確認して輸入関税を節約。特定の貿易ルートで利用可能。",
+    ai_translation_title: "AI翻訳",
+    ai_translation_desc: "母国語でメーカーとチャット。AIがリアルタイムでメッセージを翻訳。",
+    ai_verification_title: "メーカー検証",
+    ai_verification_desc: "AIがメーカーの資格、輸出履歴、製品データを分析して信頼スコアを提供。",
+    ai_documents_title: "貿易書類",
+    ai_documents_desc: "PI、CI、PL、CO等の輸出書類を自動生成。書類作業を数分に短縮。",
+    ai_data_comtrade: "UN Comtrade",
+    ai_data_comtrade_sub: "190カ国以上",
+    ai_data_realtime: "リアルタイム",
+    ai_data_realtime_sub: "ライブ市場フィード",
+    ai_data_models: "AIモデル",
+    ai_data_models_sub: "マルチエンジン分析",
+    cat_heading: "製品カテゴリー",
+    cat_sub: "韓国のプレミアムメーカーから — アジア全域に拡大中。",
+    cat_beauty: "ビューティー＆コスメ",
+    cat_beauty_desc: "K-ビューティー、スキンケア、ヘアケア",
+    cat_food: "食品＆飲料",
+    cat_food_desc: "健康食品、スナック、飲料",
+    cat_electronics: "電子機器",
+    cat_electronics_desc: "部品、デバイス、アクセサリー",
+    cat_textiles: "テキスタイル＆ファッション",
+    cat_textiles_desc: "生地、アパレル、アクセサリー",
+    cat_health: "ヘルス＆ウェルネス",
+    cat_health_desc: "サプリメント、ビタミン、ウェルネス製品",
+    cat_industrial: "産業用",
+    cat_industrial_desc: "機械、自動車部品、素材",
+    cat_gateway: "韓国プレミアムメーカーへのゲートウェイ",
+    cat_gateway_sub: "K-ビューティー · K-フード · K-テック · K-カルチャー",
+    pay_heading: "安全な決済",
+    pay_sub: "すべての決済はStripeで処理されます。資金は安全に保護されます。",
+    pay_stripe_title: "Stripe搭載",
+    pay_stripe_desc: "PCI DSS Level 1準拠の決済処理。Amazon、Google、Shopifyと同じインフラ。",
+    pay_protection_title: "決済保護",
+    pay_protection_desc: "資金は安全に処理されます。完全な透明性と紛争サポートですべての取引を追跡。",
+    pay_global_title: "グローバル通貨",
+    pay_global_desc: "USD、EUR、GBP、JPY、KRW等で決済。競争力のある為替レートで自動通貨変換。",
+    start_heading: "始めましょう",
+    start_sub: "全バイヤー無料。またはサブスクなしで単発AI分析をお試しください。",
+    start_free_title: "バイヤー無料",
+    start_free_desc: "メーカー検索、見積依頼、サプライヤーチャット、AIツール — すべて無料。取引成立時のみ手数料(3-5%)適用。",
+    start_free_f1: "メーカー検索＆発見",
+    start_free_f2: "AIコスト分析",
+    start_free_f3: "ダイレクトメッセージ",
+    start_free_f4: "貿易書類生成",
+    start_free_f5: "Stripe安全決済",
+    start_free_btn: "無料でソーシング開始",
+    start_free_note: "クレジットカード不要",
+    start_single_title: "単発AI分析",
+    start_single_price: "$9.90",
+    start_single_price_label: "1回",
+    start_single_desc: "サブスクなしでAI分析1回。単一製品の市場分析、HS分類、到着コスト計算、FTA最適化。",
+    start_single_f1: "AI市場分析",
+    start_single_f2: "HSコード分類",
+    start_single_f3: "到着コスト内訳",
+    start_single_f4: "FTA最適化確認",
+    start_single_f5: "PDFレポート出力",
+    start_single_btn: "単発分析を試す",
+    start_single_note: "サブスク不要",
+    trust_certified: "認証＆信頼",
+    trust_voucher: "製造革新バウチャー",
+    trust_voucher_sub: "政府認証",
+    trust_export: "輸出バウチャー",
+    trust_export_sub: "KOTRA承認",
+    trust_network: "グローバルメーカーネットワーク",
+    trust_network_sub: "認証パートナー",
+    trust_stripe: "Stripe認証",
+    trust_stripe_sub: "PCI DSS Level 1",
+    global_badge: "グローバルインフラ",
+    global_heading: "グローバル貿易規模に対応",
+    global_sub: "31カ国。12言語。15通貨。1つのプラットフォーム。",
+    global_stat_countries: "カ国",
+    global_stat_countries_sub: "認証カバレッジ",
+    global_stat_languages: "言語",
+    global_stat_languages_sub: "自動検出",
+    global_stat_currencies: "通貨",
+    global_stat_currencies_sub: "ライブ為替",
+    global_stat_data: "データソース",
+    global_stat_data_sub: "UN Comtrade駆動",
+    global_fta_title: "FTAネットワークDB",
+    global_fta_desc: "貿易ルートに基づきFTA恩恵を自動適用。手動調査なしで関税削減。",
+    global_shipping_title: "配送タイムライン追跡",
+    global_shipping_sub: "工場から到着まで6段階を追跡",
+    ship_booked: "予約済",
+    ship_picked: "集荷済",
+    ship_transit: "輸送中",
+    ship_customs: "通関",
+    ship_delivery: "配送中",
+    ship_delivered: "配達完了",
+    compliance_badge: "コンプライアンス認証",
+    compliance_heading: "貿易コンプライアンス＆信頼",
+    compliance_sub: "すべての取引が審査されます。すべてのサプライヤーが検証されます。すべての認証が確認されます。",
+    compliance_denied_title: "制裁対象審査",
+    compliance_denied_desc: "すべてのサプライヤーをOFAC、EU、UN制裁リストに対して事前審査。",
+    compliance_cert_title: "認証ギャップ分析",
+    compliance_cert_desc: "AIが特定のターゲット市場に必要な認証を特定。",
+    compliance_db_title: "国別認証DB",
+    compliance_db_desc: "31カ国の必要認証データベース — 必要なものを正確に把握。",
+    compliance_sanctions_title: "制裁遵守",
+    compliance_sanctions_desc: "すべての取引にリアルタイム制裁審査を内蔵。安心して取引。",
+    brief_title: "Whistle Briefで先を行く",
+    brief_desc: "Whistle Brief — 無料グローバル貿易インテリジェンス",
+    brief_btn: "Whistle Brief購読",
+    etrust_heading: "エンドツーエンドの信頼構築",
+    etrust_sub: "ソーシングプロセスのすべてのレイヤーが保護されています。",
+    etrust_1: "4レベルサプライヤー検証",
+    etrust_2: "AI品質評価",
+    etrust_3: "全注文にエスクロー決済保護",
+    etrust_4: "物流追跡",
+    etrust_5: "12言語プラットフォーム＋自動検出",
+    etrust_6: "15通貨ライブ為替レート",
+    market_heading: "グローバルメーカーネットワーク — 認証＆成長中",
+    market_sub: "世界中の認証済みメーカーにアクセス — 複数の国と産業にまたがる成長ネットワーク。",
+    market_text_1: "韓国、東南アジア、インド、日本等のメーカーにアクセス — 従来のB2Bが届かない市場",
+    market_text_2: "一般的なB2Bでは見つからないプレミアム認証メーカーを発見",
+    market_tam_label: "世界の非中国メーカー — Whistle AIが開く市場",
+    market_countries: "韓国 · 日本 · インド · ベトナム · タイ · インドネシア · 台湾",
+    faq_heading: "よくある質問",
+    faq_sub: "Whistle AIソーシングについて知っておくべきすべて。",
+    faq_q1: "バイヤーは本当に無料ですか？",
+    faq_a1: "はい。登録、メーカー検索、接続はすべて無料です。注文時またはプレミアム分析購入時のみ費用が発生します。",
+    faq_q2: "AIメーカーマッチングはどう機能しますか？",
+    faq_a2: "必要なものを自然言語で説明してください — 製品タイプ、数量、予算、配送先。AIが認証済みメーカーDBから最適マッチングと推定到着コストを提供。",
+    faq_q3: "どの国からソーシングできますか？",
+    faq_a3: "韓国のプレミアムメーカーからスタートし、アジア全域に拡大中 — 日本、ベトナム、タイ、インド、インドネシア、台湾。新地域は定期的に追加。",
+    faq_q4: "メーカーはどう検証されますか？",
+    faq_a4: "すべてのメーカーは事業者登録確認、生産能力審査、品質認証検証を含む多段階検証プロセスを経ます。",
+    faq_q5: "決済はどう保護されますか？",
+    faq_a5: "すべての取引はエスクロー保護付きでStripeを通じて処理。商品受領確認後にのみメーカーに資金が支払われます。",
+    faq_q6: "大量注文前にサンプル依頼できますか？",
+    faq_a6: "もちろんです。AI翻訳機能でメーカーと直接チャットし、サンプル依頼、価格交渉、品質確認後に大量注文を決定できます。",
+    cta_heading: "よりスマートなソーシングを始めませんか？",
+    cta_sub: "AIで最高のメーカーを見つけるバイヤーに参加。韓国の最高メーカーから — 世界へ展開中。",
+    cta_signup: "無料登録",
+    cta_manufacturer: "メーカーの方はこちら",
+    footer_platform: "プラットフォーム",
+    footer_for_buyers: "バイヤー",
+    footer_for_manufacturers: "メーカー",
+    footer_legal: "法的情報",
+    footer_signup: "登録",
+    footer_buyer_portal: "バイヤーポータル",
+    footer_seller_portal: "セラーポータル",
+    footer_export_tools: "輸出ツール",
+    footer_terms: "利用規約",
+    footer_privacy: "プライバシーポリシー",
+    footer_refund: "返金ポリシー",
+    footer_copyright: "© 2026 MOTIVE Global, Inc. All rights reserved.",
+    footer_tagline: "Whistle AI · AIグローバルソーシング",
+    cookie_text: "より良い体験のためにCookieを使用しています。続行すると",
+    cookie_privacy: "プライバシーポリシー",
+    cookie_accept: "同意",
+    cookie_decline: "拒否",
+    demo_heading: "実際に見る",
+    demo_sub: "メーカー検索からFTA分析、チャット交渉、安全決済、配送まで — 完全なソーシングジャーニー",
+  },
+  zh: {
+    nav_how: "使用方式",
+    nav_features: "核心功能",
+    nav_categories: "产品分类",
+    nav_for_manufacturers: "制造商入口",
+    nav_sign_in: "登录",
+    nav_start_free: "免费开始",
+    hero_badge: "买家免费使用",
+    hero_title_1: "找到合适的制造商",
+    hero_title_2: "",
+    hero_title_highlight: "只需几分钟",
+    hero_sub: "AI驱动的采购平台。描述您的需求，与认证制造商匹配，即时查看总到岸成本。",
+    hero_search_placeholder: "例：有机护肤品500件，运到迪拜...",
+    hero_search_btn: "查找制造商",
+    hero_cat_beauty: "K-美妆",
+    hero_cat_electronics: "电子产品",
+    hero_cat_food: "食品饮料",
+    hero_cat_textiles: "纺织品",
+    hero_cat_health: "健康",
+    hero_stat_ai: "AI",
+    hero_stat_ai_sub: "智能匹配",
+    hero_stat_stripe: "Stripe",
+    hero_stat_stripe_sub: "安全支付",
+    hero_stat_free: "免费",
+    hero_stat_free_sub: "所有买家",
+    hero_stat_asia: "亚洲+",
+    hero_stat_asia_sub: "全球扩展中",
+    pain_heading: "Whistle AI的不同之处",
+    pain_sub: "解决买家在国际采购中面临的真正问题。",
+    pain_problem_1: "在B2B平台上搜索数千个列表",
+    pain_solution_1: "用自然语言告诉AI您需要什么 — 立即与认证制造商匹配",
+    pain_problem_2: "不知道总到岸成本",
+    pain_solution_2: "AI计算HS编码、关税、FTA优惠、运费 — 下单前了解真实成本",
+    pain_problem_3: "担心诈骗和质量问题",
+    pain_solution_3: "AI认证制造商 + Stripe安全支付 + 完整交易记录",
+    pain_problem_4: "与制造商的语言障碍",
+    pain_solution_4: "AI实时翻译 — 用母语自然谈判",
+    how_heading: "使用方式",
+    how_sub: "从创意到交付 — 4个简单步骤完成全球采购。",
+    step_1_title: "描述",
+    step_1_desc: "告诉我们您需要的产品类型、数量、预算和目的地国家。",
+    step_2_title: "匹配",
+    step_2_desc: "AI找到符合您需求的认证制造商并计算总到岸成本。",
+    step_3_title: "连接",
+    step_3_desc: "通过AI翻译与制造商直接聊天。请求样品，协商条款。",
+    step_4_title: "交易",
+    step_4_desc: "通过Stripe安全支付。从工厂到门口追踪订单。",
+    ai_badge: "AI驱动",
+    ai_heading: "实用的采购智能",
+    ai_sub: "传统采购平台没有的工具 — 基于190+国家的真实贸易数据。",
+    ai_vision_title: "图片搜索",
+    ai_vision_desc: "通过照片搜索产品 — AI从图片识别商品。拍张照片，即刻匹配制造商。",
+    ai_market_title: "市场分析与利润",
+    ai_market_desc: "AI市场分析与利润计算。在选择供应商前了解盈利能力。",
+    ai_price_title: "定价策略",
+    ai_price_desc: "AI为您的市场建议最优定价策略。自动考虑竞争、需求和到岸成本。",
+    ai_hs_title: "AI HS编码分类",
+    ai_hs_desc: "自动将任何产品归入正确的HS编码。基本分类无需报关行。",
+    ai_landed_title: "到岸成本计算器",
+    ai_landed_desc: "FOB + 运费 + 关税 + 保险 = 总到岸成本。下单前了解真实成本。",
+    ai_fta_title: "FTA优化",
+    ai_fta_desc: "检查FTA资格以节省进口关税。可在特定贸易路线上使用。",
+    ai_translation_title: "AI翻译",
+    ai_translation_desc: "用母语与制造商聊天。AI实时翻译消息。",
+    ai_verification_title: "制造商验证",
+    ai_verification_desc: "AI分析制造商的资质、出口历史和产品数据，提供信任评分。",
+    ai_documents_title: "贸易文件",
+    ai_documents_desc: "自动生成PI、CI、PL、CO等出口文件。将文书工作缩短至几分钟。",
+    ai_data_comtrade: "UN Comtrade",
+    ai_data_comtrade_sub: "190+国家",
+    ai_data_realtime: "实时数据",
+    ai_data_realtime_sub: "实时市场动态",
+    ai_data_models: "AI模型",
+    ai_data_models_sub: "多引擎分析",
+    cat_heading: "产品分类",
+    cat_sub: "从韩国优质制造商开始 — 扩展至整个亚洲。",
+    cat_beauty: "美妆与护肤",
+    cat_beauty_desc: "K-美妆、护肤、护发",
+    cat_food: "食品与饮料",
+    cat_food_desc: "健康食品、零食、饮料",
+    cat_electronics: "电子产品",
+    cat_electronics_desc: "零部件、设备、配件",
+    cat_textiles: "纺织与时尚",
+    cat_textiles_desc: "面料、服装、配饰",
+    cat_health: "健康与保健",
+    cat_health_desc: "保健品、维生素、健康产品",
+    cat_industrial: "工业",
+    cat_industrial_desc: "机械、汽车零件、材料",
+    cat_gateway: "通往韩国优质制造商的门户",
+    cat_gateway_sub: "K-美妆 · K-食品 · K-科技 · K-文化",
+    pay_heading: "安全可靠的支付",
+    pay_sub: "所有支付通过Stripe处理。您的资金受到保护。",
+    pay_stripe_title: "Stripe驱动",
+    pay_stripe_desc: "PCI DSS Level 1合规支付处理。与Amazon、Google、Shopify相同的基础设施。",
+    pay_protection_title: "支付保护",
+    pay_protection_desc: "资金安全处理。完全透明和争议支持追踪每笔交易。",
+    pay_global_title: "全球货币",
+    pay_global_desc: "支持USD、EUR、GBP、JPY、KRW等支付。竞争性汇率自动货币转换。",
+    start_heading: "开始使用",
+    start_sub: "所有买家免费。或无需订阅试用单次AI分析。",
+    start_free_title: "买家免费",
+    start_free_desc: "搜索制造商、询价、聊天、AI工具 — 全部免费。仅在成交时收取佣金(3-5%)。",
+    start_free_f1: "制造商搜索与发现",
+    start_free_f2: "AI成本分析",
+    start_free_f3: "直接消息",
+    start_free_f4: "贸易文件生成",
+    start_free_f5: "Stripe安全支付",
+    start_free_btn: "免费开始采购",
+    start_free_note: "无需信用卡",
+    start_single_title: "单次AI分析",
+    start_single_price: "$9.90",
+    start_single_price_label: "单次",
+    start_single_desc: "无需订阅试用一次AI分析。获取单个产品的完整市场分析、HS分类、到岸成本计算和FTA优化。",
+    start_single_f1: "完整AI市场分析",
+    start_single_f2: "HS编码分类",
+    start_single_f3: "到岸成本明细",
+    start_single_f4: "FTA优化检查",
+    start_single_f5: "可导出PDF报告",
+    start_single_btn: "试用单次分析",
+    start_single_note: "无需订阅",
+    trust_certified: "认证与信赖",
+    trust_voucher: "制造创新凭证",
+    trust_voucher_sub: "政府认证",
+    trust_export: "出口凭证",
+    trust_export_sub: "KOTRA批准",
+    trust_network: "全球制造商网络",
+    trust_network_sub: "认证合作伙伴",
+    trust_stripe: "Stripe认证",
+    trust_stripe_sub: "PCI DSS Level 1",
+    global_badge: "全球基础设施",
+    global_heading: "为全球贸易规模而建",
+    global_sub: "31个国家。12种语言。15种货币。一个平台。",
+    global_stat_countries: "个国家",
+    global_stat_countries_sub: "认证覆盖",
+    global_stat_languages: "种语言",
+    global_stat_languages_sub: "自动检测",
+    global_stat_currencies: "种货币",
+    global_stat_currencies_sub: "实时汇率",
+    global_stat_data: "数据源",
+    global_stat_data_sub: "UN Comtrade驱动",
+    global_fta_title: "FTA网络数据库",
+    global_fta_desc: "基于贸易路线自动应用FTA优惠。无需人工研究即可节省关税。",
+    global_shipping_title: "物流时间线追踪",
+    global_shipping_sub: "从工厂到门口6个阶段追踪",
+    ship_booked: "已预订",
+    ship_picked: "已取件",
+    ship_transit: "运输中",
+    ship_customs: "清关",
+    ship_delivery: "配送中",
+    ship_delivered: "已送达",
+    compliance_badge: "合规认证",
+    compliance_heading: "贸易合规与信任",
+    compliance_sub: "每笔交易都经过审查。每个供应商都经过验证。每项认证都经过确认。",
+    compliance_denied_title: "制裁方筛查",
+    compliance_denied_desc: "所有供应商均对照OFAC、EU、UN制裁名单进行预筛查。",
+    compliance_cert_title: "认证差距分析",
+    compliance_cert_desc: "AI识别供应商针对特定目标市场所需的认证。",
+    compliance_db_title: "国家认证数据库",
+    compliance_db_desc: "31个国家所需认证数据库 — 准确了解所需内容。",
+    compliance_sanctions_title: "制裁合规",
+    compliance_sanctions_desc: "每笔交易内置实时制裁筛查。放心交易。",
+    brief_title: "通过Whistle Brief保持领先",
+    brief_desc: "Whistle Brief — 免费全球贸易情报",
+    brief_btn: "订阅Whistle Brief",
+    etrust_heading: "端到端信任构建",
+    etrust_sub: "采购流程的每一层都受到保护。",
+    etrust_1: "4级供应商验证",
+    etrust_2: "AI质量评估",
+    etrust_3: "每笔订单托管支付保护",
+    etrust_4: "物流追踪",
+    etrust_5: "12语言平台+自动检测",
+    etrust_6: "15种货币实时汇率",
+    market_heading: "全球制造商网络 — 认证与增长中",
+    market_sub: "访问全球认证制造商 — 覆盖多个国家和行业的成长网络。",
+    market_text_1: "访问韩国、东南亚、印度、日本等制造商 — 传统B2B平台未覆盖的市场",
+    market_text_2: "发现在普通B2B平台找不到的优质认证制造商",
+    market_tam_label: "全球非中国制造商 — Whistle AI开启的市场",
+    market_countries: "韩国 · 日本 · 印度 · 越南 · 泰国 · 印度尼西亚 · 台湾",
+    faq_heading: "常见问题",
+    faq_sub: "关于Whistle AI采购您需要知道的一切。",
+    faq_q1: "买家真的免费吗？",
+    faq_a1: "是的。注册、搜索制造商和连接都完全免费。仅在下单或购买高级分析时才需付费。",
+    faq_q2: "AI制造商匹配如何运作？",
+    faq_a2: "用自然语言描述您的需求 — 产品类型、数量、预算和目的地。AI从认证制造商数据库中提供最佳匹配和预估到岸成本。",
+    faq_q3: "从哪些国家采购？",
+    faq_a3: "从韩国优质制造商开始，扩展至整个亚洲 — 日本、越南、泰国、印度、印度尼西亚和台湾。新地区定期增加。",
+    faq_q4: "制造商如何验证？",
+    faq_a4: "每个制造商都经过多步骤验证流程，包括营业执照审核、生产能力评估和质量认证验证。",
+    faq_q5: "支付如何保障？",
+    faq_a5: "所有交易通过Stripe托管保护处理。资金在您确认收货后才会支付给制造商。",
+    faq_q6: "大量订购前可以要样品吗？",
+    faq_a6: "当然可以。通过AI翻译功能与制造商直接聊天，请求样品，协商价格，确认质量后再决定大量订购。",
+    cta_heading: "准备好更智能地采购了吗？",
+    cta_sub: "加入使用AI寻找最佳制造商的买家。从韩国最优秀的开始 — 扩展至全球。",
+    cta_signup: "免费注册",
+    cta_manufacturer: "我是制造商",
+    footer_platform: "平台",
+    footer_for_buyers: "买家",
+    footer_for_manufacturers: "制造商",
+    footer_legal: "法律信息",
+    footer_signup: "注册",
+    footer_buyer_portal: "买家门户",
+    footer_seller_portal: "卖家门户",
+    footer_export_tools: "出口工具",
+    footer_terms: "服务条款",
+    footer_privacy: "隐私政策",
+    footer_refund: "退款政策",
+    footer_copyright: "© 2026 MOTIVE Global, Inc. 保留所有权利。",
+    footer_tagline: "Whistle AI · AI驱动全球采购",
+    cookie_text: "我们使用Cookie改善您的体验。继续即表示您同意我们的",
+    cookie_privacy: "隐私政策",
+    cookie_accept: "接受",
+    cookie_decline: "拒绝",
+    demo_heading: "实际演示",
+    demo_sub: "从制造商搜索到FTA分析、聊天谈判、安全支付和交付 — 完整的采购旅程",
+  },
+  es: {
+    nav_how: "Cómo funciona", nav_features: "Características", nav_categories: "Categorías",
+    nav_for_manufacturers: "Para fabricantes", nav_sign_in: "Iniciar sesión", nav_start_free: "Empezar gratis",
+    hero_badge: "Gratis para compradores", hero_title_1: "Encuentra el fabricante adecuado",
+    hero_title_2: "en ", hero_title_highlight: "minutos, no meses",
+    hero_sub: "Plataforma de sourcing con IA. Describe lo que necesitas, conéctate con fabricantes verificados y conoce el costo total al instante.",
+    hero_search_placeholder: "Ej: Necesito productos orgánicos de skincare, 500 unidades, envío a Dubai...",
+    hero_search_btn: "Buscar fabricantes",
+    hero_cat_beauty: "K-Beauty", hero_cat_electronics: "Electrónica", hero_cat_food: "Alimentación",
+    hero_cat_textiles: "Textil", hero_cat_health: "Salud",
+    hero_stat_ai: "IA", hero_stat_ai_sub: "Matching inteligente",
+    hero_stat_stripe: "Stripe", hero_stat_stripe_sub: "Pagos seguros",
+    hero_stat_free: "Gratis", hero_stat_free_sub: "Para compradores",
+    hero_stat_asia: "Asia+", hero_stat_asia_sub: "Expansión global",
+    pain_heading: "¿Qué hace diferente a Whistle AI?",
+    pain_sub: "Resolvemos los problemas reales del sourcing internacional.",
+    pain_problem_1: "Buscar entre miles de listados en plataformas B2B",
+    pain_solution_1: "Dile a nuestra IA lo que necesitas — conecta con fabricantes verificados al instante",
+    pain_problem_2: "Sin idea del costo total de llegada",
+    pain_solution_2: "La IA calcula código HS, aranceles, beneficios FTA, envío — conoce el costo real antes de comprometerte",
+    pain_problem_3: "Preocupado por estafas y calidad",
+    pain_solution_3: "Fabricantes verificados por IA + pagos seguros con Stripe + historial completo",
+    pain_problem_4: "Barreras idiomáticas con fabricantes",
+    pain_solution_4: "La IA traduce en tiempo real — negocia naturalmente en tu idioma",
+    how_heading: "Cómo funciona", how_sub: "De la idea a la entrega — sourcing global en 4 pasos.",
+    step_1_title: "Describe", step_1_desc: "Dinos qué buscas — tipo de producto, cantidad, presupuesto, país de destino.",
+    step_2_title: "Match", step_2_desc: "Nuestra IA encuentra fabricantes verificados y calcula el costo total de llegada.",
+    step_3_title: "Conecta", step_3_desc: "Chatea directamente con fabricantes usando traducción IA. Solicita muestras, negocia.",
+    step_4_title: "Comercia", step_4_desc: "Pago seguro vía Stripe. Rastrea tu pedido de fábrica a puerta.",
+    ai_badge: "Con IA", ai_heading: "Inteligencia de sourcing que funciona",
+    ai_sub: "Herramientas que las plataformas tradicionales no tienen — con datos comerciales reales de 190+ países.",
+    ai_vision_title: "Búsqueda visual", ai_vision_desc: "Busca productos por foto — la IA identifica artículos. Toma una foto, encuentra fabricantes.",
+    ai_market_title: "Análisis de mercado", ai_market_desc: "Análisis de mercado con IA y cálculos de margen. Entiende la rentabilidad antes de decidir.",
+    ai_price_title: "Estrategia de precios", ai_price_desc: "La IA sugiere estrategias de precios óptimas. Competencia, demanda y costos incluidos.",
+    ai_hs_title: "Clasificación HS con IA", ai_hs_desc: "Clasifica automáticamente cualquier producto en el código HS correcto.",
+    ai_landed_title: "Calculadora de costo", ai_landed_desc: "FOB + envío + arancel + seguro = costo total. Conoce el costo real antes de decidir.",
+    ai_fta_title: "Optimización FTA", ai_fta_desc: "Verifica elegibilidad FTA para ahorrar en aranceles de importación.",
+    ai_translation_title: "Traducción IA", ai_translation_desc: "Chatea con fabricantes en tu idioma. La IA traduce mensajes en tiempo real.",
+    ai_verification_title: "Verificación de fabricantes", ai_verification_desc: "La IA analiza credenciales, historial y datos para dar un score de confianza.",
+    ai_documents_title: "Documentos comerciales", ai_documents_desc: "Genera PI, CI, PL, CO y otros documentos de exportación. Reduce horas a minutos.",
+    ai_data_comtrade: "UN Comtrade", ai_data_comtrade_sub: "190+ países",
+    ai_data_realtime: "Datos en tiempo real", ai_data_realtime_sub: "Feeds de mercado en vivo",
+    ai_data_models: "Modelos IA", ai_data_models_sub: "Análisis multi-motor",
+    cat_heading: "Categorías de productos",
+    cat_sub: "Comenzando con fabricantes premium de Corea — expandiendo por Asia.",
+    cat_beauty: "Belleza y cosmética", cat_beauty_desc: "K-Beauty, cuidado de piel, cuidado capilar",
+    cat_food: "Alimentos y bebidas", cat_food_desc: "Alimentos saludables, snacks, bebidas",
+    cat_electronics: "Electrónica", cat_electronics_desc: "Componentes, dispositivos, accesorios",
+    cat_textiles: "Textil y moda", cat_textiles_desc: "Telas, ropa, accesorios",
+    cat_health: "Salud y bienestar", cat_health_desc: "Suplementos, vitaminas, productos wellness",
+    cat_industrial: "Industrial", cat_industrial_desc: "Maquinaria, autopartes, materiales",
+    cat_gateway: "Tu puerta a fabricantes premium coreanos",
+    cat_gateway_sub: "K-Beauty · K-Food · K-Tech · K-Culture",
+    pay_heading: "Pagos seguros y protegidos",
+    pay_sub: "Todos los pagos procesados por Stripe. Tu dinero está protegido.",
+    pay_stripe_title: "Powered by Stripe", pay_stripe_desc: "Procesamiento PCI DSS Level 1. La misma infraestructura de Amazon, Google y Shopify.",
+    pay_protection_title: "Protección de pago", pay_protection_desc: "Fondos procesados de forma segura. Transparencia total y soporte de disputas.",
+    pay_global_title: "Monedas globales", pay_global_desc: "Paga en USD, EUR, GBP, JPY, KRW y más. Conversión automática a tasas competitivas.",
+    start_heading: "Comienza ahora", start_sub: "Gratis para todos los compradores. O prueba un análisis IA sin suscripción.",
+    start_free_title: "Gratis para compradores",
+    start_free_desc: "Busca fabricantes, solicita cotizaciones, chatea, usa herramientas IA — todo gratis. Solo comisión (3-5%) en negocios cerrados.",
+    start_free_f1: "Búsqueda de fabricantes", start_free_f2: "Análisis de costos IA",
+    start_free_f3: "Mensajería directa", start_free_f4: "Generación de documentos",
+    start_free_f5: "Pagos seguros con Stripe",
+    start_free_btn: "Empieza gratis", start_free_note: "Sin tarjeta de crédito",
+    start_single_title: "Análisis IA único", start_single_price: "$9.90", start_single_price_label: "único",
+    start_single_desc: "Prueba un análisis IA sin suscripción. Análisis completo de mercado, clasificación HS, costo y optimización FTA.",
+    start_single_f1: "Análisis completo de mercado", start_single_f2: "Clasificación de código HS",
+    start_single_f3: "Desglose de costo", start_single_f4: "Verificación FTA",
+    start_single_f5: "Informe PDF exportable",
+    start_single_btn: "Probar análisis", start_single_note: "Sin suscripción",
+    trust_certified: "Confiable y certificado",
+    trust_voucher: "Voucher de innovación", trust_voucher_sub: "Certificado por el gobierno",
+    trust_export: "Voucher de exportación", trust_export_sub: "Aprobado por KOTRA",
+    trust_network: "Red global de fabricantes", trust_network_sub: "Socios verificados",
+    trust_stripe: "Verificado por Stripe", trust_stripe_sub: "PCI DSS Level 1",
+    global_badge: "Infraestructura global", global_heading: "Construido para el comercio global a escala",
+    global_sub: "31 países. 12 idiomas. 15 monedas. Una plataforma.",
+    global_stat_countries: "Países", global_stat_countries_sub: "Cobertura de certificación",
+    global_stat_languages: "Idiomas", global_stat_languages_sub: "Detección automática",
+    global_stat_currencies: "Monedas", global_stat_currencies_sub: "Tasas de cambio en vivo",
+    global_stat_data: "Fuentes de datos", global_stat_data_sub: "Powered by UN Comtrade",
+    global_fta_title: "Base de datos FTA", global_fta_desc: "Beneficios FTA aplicados automáticamente. Ahorra en aranceles sin investigación manual.",
+    global_shipping_title: "Seguimiento de envío", global_shipping_sub: "Rastrea envíos en 6 etapas",
+    ship_booked: "Reservado", ship_picked: "Recogido", ship_transit: "En tránsito",
+    ship_customs: "Aduana", ship_delivery: "En reparto", ship_delivered: "Entregado",
+    compliance_badge: "Cumplimiento verificado", compliance_heading: "Cumplimiento comercial y confianza",
+    compliance_sub: "Cada transacción es revisada. Cada proveedor verificado. Cada certificación confirmada.",
+    compliance_denied_title: "Screening de partes denegadas", compliance_denied_desc: "Cada proveedor revisado contra listas OFAC, UE, ONU.",
+    compliance_cert_title: "Análisis de certificaciones", compliance_cert_desc: "La IA identifica certificaciones necesarias para tu mercado objetivo.",
+    compliance_db_title: "Base de datos de certificaciones", compliance_db_desc: "Base de datos de certificaciones de 31 países.",
+    compliance_sanctions_title: "Cumplimiento de sanciones", compliance_sanctions_desc: "Screening de sanciones en tiempo real en cada transacción.",
+    brief_title: "Mantente al día con Whistle Brief", brief_desc: "Whistle Brief — inteligencia comercial global gratuita",
+    brief_btn: "Suscribirse a Whistle Brief",
+    etrust_heading: "Confianza de extremo a extremo", etrust_sub: "Cada capa del proceso está protegida.",
+    etrust_1: "Verificación de proveedores en 4 niveles", etrust_2: "Evaluación de calidad con IA",
+    etrust_3: "Protección escrow en cada pedido", etrust_4: "Seguimiento logístico",
+    etrust_5: "Plataforma en 12 idiomas con detección automática", etrust_6: "Tasas de cambio en vivo para 15 monedas",
+    market_heading: "Red global de fabricantes — Verificada y en crecimiento",
+    market_sub: "Accede a fabricantes verificados de todo el mundo.",
+    market_text_1: "Accede a fabricantes de Corea, SE Asia, India, Japón y más",
+    market_text_2: "Descubre fabricantes premium certificados que no encontrarás en plataformas típicas",
+    market_tam_label: "Fabricantes no chinos en el mundo — el mercado que Whistle AI desbloquea",
+    market_countries: "Corea · Japón · India · Vietnam · Tailandia · Indonesia · Taiwán",
+    faq_heading: "Preguntas frecuentes", faq_sub: "Todo lo que necesitas saber sobre sourcing con Whistle AI.",
+    faq_q1: "¿Es realmente gratis para compradores?", faq_a1: "Sí. Registrarse, buscar y conectar es 100% gratis. Solo pagas al hacer un pedido o comprar un análisis premium.",
+    faq_q2: "¿Cómo funciona el matching con IA?", faq_a2: "Describe lo que necesitas — tipo de producto, cantidad, presupuesto y destino. La IA encuentra los mejores matches con costos estimados.",
+    faq_q3: "¿De qué países se abastecen?", faq_a3: "Comenzamos con Corea y expandimos por Asia — Japón, Vietnam, Tailandia, India, Indonesia y Taiwán.",
+    faq_q4: "¿Cómo se verifican los fabricantes?", faq_a4: "Cada fabricante pasa por un proceso de verificación que incluye verificación de registro, revisión de capacidad y validación de certificaciones.",
+    faq_q5: "¿Cómo se aseguran los pagos?", faq_a5: "Todas las transacciones se procesan por Stripe con protección escrow. Los fondos se liberan solo tras confirmar la recepción.",
+    faq_q6: "¿Puedo solicitar muestras?", faq_a6: "Por supuesto. Chatea directamente con fabricantes usando traducción IA, solicita muestras y negocia antes de hacer un pedido grande.",
+    cta_heading: "¿Listo para sourcing inteligente?", cta_sub: "Únete a compradores usando IA para encontrar los mejores fabricantes.",
+    cta_signup: "Regístrate gratis", cta_manufacturer: "Soy fabricante",
+    footer_platform: "Plataforma", footer_for_buyers: "Compradores", footer_for_manufacturers: "Fabricantes",
+    footer_legal: "Legal", footer_signup: "Registro", footer_buyer_portal: "Portal del comprador",
+    footer_seller_portal: "Portal del vendedor", footer_export_tools: "Herramientas de exportación",
+    footer_terms: "Términos de servicio", footer_privacy: "Política de privacidad", footer_refund: "Política de reembolso",
+    footer_copyright: "© 2026 MOTIVE Global, Inc. Todos los derechos reservados.",
+    footer_tagline: "Whistle AI · Sourcing global con IA",
+    cookie_text: "Usamos cookies para mejorar tu experiencia. Al continuar, aceptas nuestra",
+    cookie_privacy: "Política de privacidad", cookie_accept: "Aceptar", cookie_decline: "Rechazar",
+    demo_heading: "Véalo en acción", demo_sub: "Desde búsqueda de fabricantes hasta análisis FTA, negociación, pago seguro y entrega",
+  },
+};
+
+/* Generate stubs for remaining languages that fall back to English */
+['vi','th','de','fr','pt','id','tr','ar'].forEach(function(lang) {
+  if (!translations[lang]) translations[lang] = {};
+});
+
+/* Vietnamese */
+Object.assign(translations.vi, {
+  nav_how: "Cách hoạt động", nav_features: "Tính năng", nav_categories: "Danh mục",
+  nav_for_manufacturers: "Cho nhà sản xuất", nav_sign_in: "Đăng nhập", nav_start_free: "Bắt đầu miễn phí",
+  hero_badge: "Miễn phí cho người mua", hero_title_1: "Tìm nhà sản xuất phù hợp",
+  hero_title_2: "trong ", hero_title_highlight: "vài phút, không phải vài tháng",
+  hero_sub: "Nền tảng tìm nguồn cung ứng bằng AI. Mô tả nhu cầu, kết nối với nhà sản xuất đã xác minh và xem tổng chi phí ngay lập tức.",
+  hero_search_placeholder: "VD: Tôi cần sản phẩm skincare hữu cơ, 500 đơn vị, giao đến Dubai...",
+  hero_search_btn: "Tìm nhà sản xuất",
+  pain_heading: "Whistle AI khác biệt ở điểm nào?", pain_sub: "Chúng tôi giải quyết vấn đề thực sự của người mua trong tìm nguồn quốc tế.",
+  how_heading: "Cách hoạt động", how_sub: "Từ ý tưởng đến giao hàng — tìm nguồn toàn cầu trong 4 bước.",
+  step_1_title: "Mô tả", step_2_title: "Kết nối", step_3_title: "Liên hệ", step_4_title: "Giao dịch",
+  cta_heading: "Sẵn sàng tìm nguồn thông minh hơn?", cta_signup: "Đăng ký miễn phí", cta_manufacturer: "Tôi là nhà sản xuất",
+  faq_heading: "Câu hỏi thường gặp", start_heading: "Bắt đầu", start_free_btn: "Bắt đầu miễn phí",
+  cookie_accept: "Chấp nhận", cookie_decline: "Từ chối",
+});
+
+/* Thai */
+Object.assign(translations.th, {
+  nav_how: "วิธีการทำงาน", nav_features: "คุณสมบัติ", nav_categories: "หมวดหมู่",
+  nav_for_manufacturers: "สำหรับผู้ผลิต", nav_sign_in: "เข้าสู่ระบบ", nav_start_free: "เริ่มต้นฟรี",
+  hero_badge: "ใช้งานฟรีสำหรับผู้ซื้อ", hero_title_1: "ค้นหาผู้ผลิตที่เหมาะสม",
+  hero_title_2: "ใน", hero_title_highlight: "ไม่กี่นาที ไม่ใช่หลายเดือน",
+  hero_sub: "แพลตฟอร์มการจัดหาด้วย AI อธิบายสิ่งที่คุณต้องการ จับคู่กับผู้ผลิตที่ผ่านการรับรอง และดูต้นทุนรวมทันที",
+  hero_search_btn: "ค้นหาผู้ผลิต",
+  pain_heading: "อะไรทำให้ Whistle AI แตกต่าง?", how_heading: "วิธีการทำงาน",
+  step_1_title: "อธิบาย", step_2_title: "จับคู่", step_3_title: "เชื่อมต่อ", step_4_title: "ซื้อขาย",
+  cta_heading: "พร้อมจัดหาอย่างชาญฉลาด?", cta_signup: "สมัครฟรี", cta_manufacturer: "ฉันเป็นผู้ผลิต",
+  faq_heading: "คำถามที่พบบ่อย", start_heading: "เริ่มต้น", start_free_btn: "เริ่มจัดหาฟรี",
+  cookie_accept: "ยอมรับ", cookie_decline: "ปฏิเสธ",
+});
+
+/* German */
+Object.assign(translations.de, {
+  nav_how: "So funktioniert's", nav_features: "Funktionen", nav_categories: "Kategorien",
+  nav_for_manufacturers: "Für Hersteller", nav_sign_in: "Anmelden", nav_start_free: "Kostenlos starten",
+  hero_badge: "Kostenlos für Käufer", hero_title_1: "Finden Sie den richtigen Hersteller",
+  hero_title_2: "in ", hero_title_highlight: "Minuten, nicht Monaten",
+  hero_sub: "KI-gestützte Sourcing-Plattform. Beschreiben Sie Ihren Bedarf, werden Sie mit verifizierten Herstellern verbunden und sehen Sie sofort die Gesamtkosten.",
+  hero_search_btn: "Hersteller finden",
+  pain_heading: "Was macht Whistle AI anders?", how_heading: "So funktioniert's",
+  step_1_title: "Beschreiben", step_2_title: "Matching", step_3_title: "Verbinden", step_4_title: "Handeln",
+  cta_heading: "Bereit für smarteres Sourcing?", cta_signup: "Kostenlos registrieren", cta_manufacturer: "Ich bin Hersteller",
+  faq_heading: "Häufig gestellte Fragen", start_heading: "Jetzt starten", start_free_btn: "Kostenlos starten",
+  cookie_accept: "Akzeptieren", cookie_decline: "Ablehnen",
+});
+
+/* French */
+Object.assign(translations.fr, {
+  nav_how: "Comment ça marche", nav_features: "Fonctionnalités", nav_categories: "Catégories",
+  nav_for_manufacturers: "Pour les fabricants", nav_sign_in: "Connexion", nav_start_free: "Commencer gratuitement",
+  hero_badge: "Gratuit pour les acheteurs", hero_title_1: "Trouvez le bon fabricant",
+  hero_title_2: "en ", hero_title_highlight: "minutes, pas en mois",
+  hero_sub: "Plateforme de sourcing alimentée par l'IA. Décrivez vos besoins, connectez-vous avec des fabricants vérifiés et consultez le coût total instantanément.",
+  hero_search_btn: "Trouver des fabricants",
+  pain_heading: "Qu'est-ce qui rend Whistle AI différent ?", how_heading: "Comment ça marche",
+  step_1_title: "Décrivez", step_2_title: "Matching", step_3_title: "Connectez", step_4_title: "Commercez",
+  cta_heading: "Prêt pour un sourcing plus intelligent ?", cta_signup: "Inscription gratuite", cta_manufacturer: "Je suis fabricant",
+  faq_heading: "Questions fréquentes", start_heading: "Commencer", start_free_btn: "Commencer gratuitement",
+  cookie_accept: "Accepter", cookie_decline: "Refuser",
+});
+
+/* Portuguese */
+Object.assign(translations.pt, {
+  nav_how: "Como funciona", nav_features: "Recursos", nav_categories: "Categorias",
+  nav_for_manufacturers: "Para fabricantes", nav_sign_in: "Entrar", nav_start_free: "Começar grátis",
+  hero_badge: "Grátis para compradores", hero_title_1: "Encontre o fabricante certo",
+  hero_title_2: "em ", hero_title_highlight: "minutos, não meses",
+  hero_sub: "Plataforma de sourcing com IA. Descreva o que precisa, conecte-se com fabricantes verificados e veja o custo total instantaneamente.",
+  hero_search_btn: "Encontrar fabricantes",
+  pain_heading: "O que torna o Whistle AI diferente?", how_heading: "Como funciona",
+  step_1_title: "Descreva", step_2_title: "Match", step_3_title: "Conecte", step_4_title: "Negocie",
+  cta_heading: "Pronto para sourcing inteligente?", cta_signup: "Cadastre-se grátis", cta_manufacturer: "Sou fabricante",
+  faq_heading: "Perguntas frequentes", start_heading: "Começar", start_free_btn: "Começar grátis",
+  cookie_accept: "Aceitar", cookie_decline: "Recusar",
+});
+
+/* Indonesian */
+Object.assign(translations.id, {
+  nav_how: "Cara Kerja", nav_features: "Fitur", nav_categories: "Kategori",
+  nav_for_manufacturers: "Untuk Produsen", nav_sign_in: "Masuk", nav_start_free: "Mulai Gratis",
+  hero_badge: "Gratis untuk Pembeli", hero_title_1: "Temukan produsen yang tepat",
+  hero_title_2: "dalam ", hero_title_highlight: "hitungan menit, bukan bulan",
+  hero_sub: "Platform sourcing berbasis AI. Jelaskan kebutuhan Anda, terhubung dengan produsen terverifikasi, dan lihat total biaya secara instan.",
+  hero_search_btn: "Cari Produsen",
+  pain_heading: "Apa yang membuat Whistle AI berbeda?", how_heading: "Cara Kerja",
+  step_1_title: "Jelaskan", step_2_title: "Cocokkan", step_3_title: "Hubungkan", step_4_title: "Perdagangan",
+  cta_heading: "Siap sourcing lebih cerdas?", cta_signup: "Daftar Gratis", cta_manufacturer: "Saya Produsen",
+  faq_heading: "Pertanyaan Umum", start_heading: "Mulai", start_free_btn: "Mulai Sourcing Gratis",
+  cookie_accept: "Terima", cookie_decline: "Tolak",
+});
+
+/* Turkish */
+Object.assign(translations.tr, {
+  nav_how: "Nasıl Çalışır", nav_features: "Özellikler", nav_categories: "Kategoriler",
+  nav_for_manufacturers: "Üreticiler İçin", nav_sign_in: "Giriş Yap", nav_start_free: "Ücretsiz Başla",
+  hero_badge: "Alıcılar İçin Ücretsiz", hero_title_1: "Doğru üreticiyi bulun",
+  hero_title_2: "", hero_title_highlight: "aylar değil, dakikalar içinde",
+  hero_sub: "Yapay zeka destekli tedarik platformu. İhtiyacınızı tanımlayın, doğrulanmış üreticilerle eşleşin ve toplam maliyeti anında görün.",
+  hero_search_btn: "Üretici Bul",
+  pain_heading: "Whistle AI'ı farklı kılan ne?", how_heading: "Nasıl Çalışır",
+  step_1_title: "Tanımla", step_2_title: "Eşleştir", step_3_title: "Bağlan", step_4_title: "Ticaret",
+  cta_heading: "Daha akıllı tedarike hazır mısınız?", cta_signup: "Ücretsiz Kaydol", cta_manufacturer: "Ben Üreticiyim",
+  faq_heading: "Sık Sorulan Sorular", start_heading: "Başlayın", start_free_btn: "Ücretsiz Başla",
+  cookie_accept: "Kabul Et", cookie_decline: "Reddet",
+});
+
+/* Arabic */
+Object.assign(translations.ar, {
+  nav_how: "كيف يعمل", nav_features: "المميزات", nav_categories: "الفئات",
+  nav_for_manufacturers: "للمصنعين", nav_sign_in: "تسجيل الدخول", nav_start_free: "ابدأ مجاناً",
+  hero_badge: "مجاني للمشترين", hero_title_1: "اعثر على المصنع المناسب",
+  hero_title_2: "في ", hero_title_highlight: "دقائق، وليس أشهر",
+  hero_sub: "منصة توريد مدعومة بالذكاء الاصطناعي. صف ما تحتاجه، تواصل مع مصنعين موثقين، واطلع على التكلفة الإجمالية فوراً.",
+  hero_search_placeholder: "مثال: أحتاج منتجات عناية بالبشرة عضوية، 500 وحدة، شحن إلى دبي...",
+  hero_search_btn: "البحث عن مصنعين",
+  pain_heading: "ما الذي يميز Whistle AI؟", pain_sub: "نحل المشاكل الحقيقية التي يواجهها المشترون في التوريد الدولي.",
+  how_heading: "كيف يعمل", how_sub: "من الفكرة إلى التسليم — توريد عالمي في 4 خطوات.",
+  step_1_title: "صِف", step_1_desc: "أخبرنا بما تبحث عنه — نوع المنتج، الكمية، الميزانية، بلد الوجهة.",
+  step_2_title: "تطابق", step_2_desc: "يجد الذكاء الاصطناعي مصنعين موثقين ويحسب التكلفة الإجمالية.",
+  step_3_title: "تواصل", step_3_desc: "تحدث مباشرة مع المصنعين باستخدام الترجمة الذكية. اطلب عينات، تفاوض.",
+  step_4_title: "تداول", step_4_desc: "دفع آمن عبر Stripe. تتبع طلبك من المصنع إلى باب منزلك.",
+  ai_badge: "مدعوم بالذكاء الاصطناعي", ai_heading: "ذكاء توريد يعمل فعلاً",
+  cat_heading: "فئات المنتجات", pay_heading: "مدفوعات آمنة ومحمية",
+  start_heading: "ابدأ الآن", start_free_title: "مجاني للمشترين", start_free_btn: "ابدأ التوريد مجاناً",
+  start_free_note: "لا حاجة لبطاقة ائتمان", start_single_title: "تحليل ذكاء اصطناعي واحد",
+  start_single_btn: "جرب التحليل", start_single_note: "بدون اشتراك",
+  cta_heading: "مستعد للتوريد الذكي؟", cta_sub: "انضم إلى المشترين الذين يستخدمون الذكاء الاصطناعي للعثور على أفضل المصنعين.",
+  cta_signup: "سجل مجاناً", cta_manufacturer: "أنا مصنع",
+  faq_heading: "الأسئلة الشائعة", faq_sub: "كل ما تحتاج معرفته عن التوريد مع Whistle AI.",
+  faq_q1: "هل Whistle AI مجاني حقاً للمشترين؟",
+  faq_a1: "نعم. التسجيل والبحث عن المصنعين والتواصل معهم مجاني تماماً. تدفع فقط عند تقديم طلب أو شراء تحليل متقدم.",
+  cookie_text: "نستخدم ملفات تعريف الارتباط لتحسين تجربتك. بالاستمرار، أنت توافق على",
+  cookie_privacy: "سياسة الخصوصية", cookie_accept: "قبول", cookie_decline: "رفض",
+  footer_platform: "المنصة", footer_for_buyers: "للمشترين", footer_for_manufacturers: "للمصنعين",
+  footer_legal: "قانوني", footer_terms: "شروط الخدمة", footer_privacy: "سياسة الخصوصية", footer_refund: "سياسة الاسترداد",
+  footer_copyright: "© 2026 MOTIVE Global, Inc. جميع الحقوق محفوظة.",
+  global_heading: "مبني للتجارة العالمية على نطاق واسع",
+  compliance_heading: "الامتثال التجاري والثقة",
+  etrust_heading: "ثقة من البداية إلى النهاية",
+  market_heading: "شبكة مصنعين عالمية — موثقة ومتنامية",
+  brief_title: "ابقَ في المقدمة مع Whistle Brief", brief_btn: "اشترك في Whistle Brief",
+});
+
+const LangContext = createContext({ lang: 'en', setLang: function(){} });
+
+function useLang() { return useContext(LangContext); }
+
+function t(key, lang) {
+  var dict = translations[lang] || translations.en;
+  if (dict[key] !== undefined) return dict[key];
+  return translations.en[key] || key;
+}
+
+/* ═══════════════════════════════════════════════════
+   Language Switcher Component
+   ═══════════════════════════════════════════════════ */
+function LanguageSwitcher() {
+  var ctx = useLang();
+  var currentLang = ctx.lang;
+  var setLang = ctx.setLang;
+  var ref = useRef(null);
+  var isOpen = useState(false);
+  var open = isOpen[0];
+  var setOpen = isOpen[1];
+
+  useEffect(function() {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return function() { document.removeEventListener('mousedown', handleClick); };
+  }, []);
+
+  var isRtl = RTL_LANGS.indexOf(currentLang) !== -1;
+
+  return (
+    <div ref={ref} style={{ position: 'fixed', bottom: 24, right: isRtl ? 'auto' : 24, left: isRtl ? 24 : 'auto', zIndex: 9998 }}>
+      {open && (
+        <div style={{ position: 'absolute', bottom: 52, right: 0, background: 'rgba(13,20,36,.97)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 12, padding: '8px 0', minWidth: 160, maxHeight: 320, overflowY: 'auto', backdropFilter: 'blur(16px)', boxShadow: '0 8px 32px rgba(0,0,0,.5)' }}>
+          {SUPPORTED_LANGS.map(function(code) {
+            var isActive = code === currentLang;
+            return (
+              <div
+                key={code}
+                onClick={function() { setLang(code); setOpen(false); }}
+                style={{ padding: '8px 16px', fontSize: 13, color: isActive ? '#00D4FF' : 'rgba(255,255,255,.7)', cursor: 'pointer', fontWeight: isActive ? 700 : 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'background .15s', background: isActive ? 'rgba(0,212,255,.06)' : 'transparent' }}
+                onMouseEnter={function(e) { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,.04)'; }}
+                onMouseLeave={function(e) { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <span>{LANG_LABELS[code]}</span>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase' }}>{code}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div
+        onClick={function() { setOpen(!open); }}
+        style={{ width: 44, height: 44, borderRadius: 22, background: 'rgba(13,20,36,.92)', border: '1px solid rgba(255,255,255,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,.4)', backdropFilter: 'blur(12px)', transition: 'all .2s', fontSize: 20 }}
+        title="Change language"
+      >
+        {"\uD83C\uDF10"}
+      </div>
+    </div>
+  );
+}
 
 const T = {
   bg: "#060B18", bgCard: "#0D1424", bgSurface: "#111B2E",
@@ -90,51 +1334,31 @@ const useInView = (th = 0.1) => {
 const Fade = ({ children, delay = 0, style = {} }) => { const [ref, v] = useInView(); return <div ref={ref} style={{ ...style, opacity: v ? 1 : 0, transform: v ? "translateY(0)" : "translateY(28px)", transition: `all .8s cubic-bezier(.16,1,.3,1) ${delay}s` }}>{children}</div>; };
 const GlowLine = () => <div style={{ height: 1, background: `linear-gradient(90deg, transparent, ${T.pri}40, transparent)`, margin: "0 auto", maxWidth: 600 }} />;
 
-const CATEGORIES = [
-  { icon: "💄", name: "Beauty & Cosmetics", desc: "K-Beauty, skincare, hair care" },
-  { icon: "🍜", name: "Food & Beverage", desc: "Health foods, snacks, beverages" },
-  { icon: "⚡", name: "Electronics", desc: "Components, devices, accessories" },
-  { icon: "👕", name: "Textiles & Fashion", desc: "Fabrics, apparel, accessories" },
-  { icon: "🌿", name: "Health & Wellness", desc: "Supplements, vitamins, wellness products" },
-  { icon: "🏭", name: "Industrial", desc: "Machinery, auto parts, materials" },
-];
-
-const PAIN_POINTS = [
-  {
-    problem: "Searching through thousands of listings on B2B platforms",
-    solution: "Tell our AI what you need in plain language — get matched with verified manufacturers instantly",
-    icon: "🔍"
-  },
-  {
-    problem: "No idea what the total landed cost will be",
-    solution: "AI calculates HS code, tariffs, FTA benefits, shipping — see your real cost before you commit",
-    icon: "💰"
-  },
-  {
-    problem: "Worried about scams and quality issues",
-    solution: "AI-verified manufacturers + Stripe-secured payments + full transaction history",
-    icon: "🛡️"
-  },
-  {
-    problem: "Language barriers with manufacturers",
-    solution: "AI translates your conversations in real-time — negotiate naturally in your language",
-    icon: "💬"
-  },
-];
-
-const STEPS = [
-  { num: "01", title: "Describe", desc: "Tell us what you're looking for — product type, quantity, budget, destination country.", color: T.pri },
-  { num: "02", title: "Match", desc: "Our AI finds verified manufacturers that match your requirements and calculates total landed cost.", color: T.acc },
-  { num: "03", title: "Connect", desc: "Chat directly with manufacturers using AI translation. Request samples, negotiate terms.", color: T.ok },
-  { num: "04", title: "Trade", desc: "Secure payment via Stripe. Track your order from factory to doorstep.", color: T.purple },
-];
+/* Data arrays moved inside App to access translations */
 
 function App() {
   const [scrollY, setScrollY] = useState(0);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [lang, setLangState] = useState(detectLanguage);
+
+  const setLang = useCallback(function(newLang) {
+    setLangState(newLang);
+    localStorage.setItem(LANG_STORAGE_KEY, newLang);
+    document.documentElement.lang = newLang;
+    document.documentElement.dir = RTL_LANGS.indexOf(newLang) !== -1 ? 'rtl' : 'ltr';
+  }, []);
+
+  useEffect(function() {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = RTL_LANGS.indexOf(lang) !== -1 ? 'rtl' : 'ltr';
+  }, [lang]);
+
+  const _ = useCallback(function(key) { return t(key, lang); }, [lang]);
 
   useEffect(() => { const h = () => setScrollY(window.scrollY); window.addEventListener("scroll", h, { passive: true }); return () => window.removeEventListener("scroll", h); }, []);
+
+  const isRtl = RTL_LANGS.indexOf(lang) !== -1;
 
   const s = {
     section: { padding: "100px 24px", maxWidth: 1140, margin: "0 auto" },
@@ -155,14 +1379,38 @@ function App() {
     </div>
   );
 
-  const goSignup = () => { window.location.href = "/app/buyer?lang=en"; };
-  const goSearch = () => { window.location.href = "/app/buyer?lang=en&q=" + encodeURIComponent(searchQuery); };
+  const langParam = lang === 'ko' ? 'ko' : lang;
+  const goSignup = () => { window.location.href = "/app/buyer?lang=" + langParam; };
+  const goSearch = () => { window.location.href = "/app/buyer?lang=" + langParam + "&q=" + encodeURIComponent(searchQuery); };
   const scrollTo = (id) => { setMobileMenu(false); setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }), 100); };
 
+  const CATEGORIES = [
+    { icon: "\uD83D\uDC84", name: _('cat_beauty'), desc: _('cat_beauty_desc') },
+    { icon: "\uD83C\uDF5C", name: _('cat_food'), desc: _('cat_food_desc') },
+    { icon: "\u26A1", name: _('cat_electronics'), desc: _('cat_electronics_desc') },
+    { icon: "\uD83D\uDC55", name: _('cat_textiles'), desc: _('cat_textiles_desc') },
+    { icon: "\uD83C\uDF3F", name: _('cat_health'), desc: _('cat_health_desc') },
+    { icon: "\uD83C\uDFED", name: _('cat_industrial'), desc: _('cat_industrial_desc') },
+  ];
+
+  const PAIN_POINTS = [
+    { problem: _('pain_problem_1'), solution: _('pain_solution_1'), icon: "\uD83D\uDD0D" },
+    { problem: _('pain_problem_2'), solution: _('pain_solution_2'), icon: "\uD83D\uDCB0" },
+    { problem: _('pain_problem_3'), solution: _('pain_solution_3'), icon: "\uD83D\uDEE1\uFE0F" },
+    { problem: _('pain_problem_4'), solution: _('pain_solution_4'), icon: "\uD83D\uDCAC" },
+  ];
+
+  const STEPS = [
+    { num: "01", title: _('step_1_title'), desc: _('step_1_desc'), color: T.pri },
+    { num: "02", title: _('step_2_title'), desc: _('step_2_desc'), color: T.acc },
+    { num: "03", title: _('step_3_title'), desc: _('step_3_desc'), color: T.ok },
+    { num: "04", title: _('step_4_title'), desc: _('step_4_desc'), color: T.purple },
+  ];
+
   const navItems = [
-    { label: "How It Works", action: () => scrollTo("howitworks") },
-    { label: "Features", action: () => scrollTo("features") },
-    { label: "Categories", action: () => scrollTo("categories") },
+    { label: _('nav_how'), action: () => scrollTo("howitworks") },
+    { label: _('nav_features'), action: () => scrollTo("features") },
+    { label: _('nav_categories'), action: () => scrollTo("categories") },
   ];
 
   /* ═══ HEADER ═══ */
@@ -172,9 +1420,9 @@ function App() {
         <Logo size={22} />
         <div className="nav-desktop" style={{ display: "flex", alignItems: "center", gap: 28 }}>
           {navItems.map((n, i) => <div key={i} onClick={n.action} style={{ fontSize: 13, color: T.w60, cursor: "pointer", fontWeight: 500, transition: "color .2s" }}>{n.label}</div>)}
-          <a href="/en" style={{ fontSize: 13, color: T.w40, fontWeight: 500, textDecoration: "none" }}>For Manufacturers</a>
-          <a href="/app/buyer" style={{ fontSize: 13, color: T.w60, fontWeight: 500, transition: "color .2s", textDecoration: "none" }}>Sign In</a>
-          <a href="/app/buyer?lang=en" style={{ ...s.btn("pri"), padding: "10px 24px", fontSize: 13, textDecoration: "none" }}>Start Free</a>
+          <a href="/en" style={{ fontSize: 13, color: T.w40, fontWeight: 500, textDecoration: "none" }}>{_('nav_for_manufacturers')}</a>
+          <a href="/app/buyer" style={{ fontSize: 13, color: T.w60, fontWeight: 500, transition: "color .2s", textDecoration: "none" }}>{_('nav_sign_in')}</a>
+          <a href={"/app/buyer?lang=" + langParam} style={{ ...s.btn("pri"), padding: "10px 24px", fontSize: 13, textDecoration: "none" }}>{_('nav_start_free')}</a>
         </div>
         <div className="mobile-cta" onClick={() => setMobileMenu(!mobileMenu)} style={{ display: "none", cursor: "pointer", padding: 8 }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d={mobileMenu ? "M18 6L6 18M6 6l12 12" : "M3 12h18M3 6h18M3 18h18"} stroke={T.w} strokeWidth="2" strokeLinecap="round" /></svg>
@@ -182,7 +1430,7 @@ function App() {
       </div>
       {mobileMenu && <div style={{ background: "rgba(6,11,24,.98)", padding: "16px 24px", borderTop: `1px solid ${T.border}` }}>
         {navItems.map((n, i) => <div key={i} onClick={n.action} style={{ padding: "12px 0", fontSize: 14, color: T.w60, cursor: "pointer", borderBottom: `1px solid ${T.border}` }}>{n.label}</div>)}
-        <a href="/app/buyer?lang=en" style={{ ...s.btn("pri"), width: "100%", marginTop: 16, textAlign: "center", textDecoration: "none" }}>Start Free</a>
+        <a href={"/app/buyer?lang=" + langParam} style={{ ...s.btn("pri"), width: "100%", marginTop: 16, textAlign: "center", textDecoration: "none" }}>{_('nav_start_free')}</a>
       </div>}
     </div>
   );
@@ -193,23 +1441,23 @@ function App() {
       <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 50% 0%, rgba(0,212,255,.08) 0%, transparent 60%)" }} />
       <div style={{ maxWidth: 800, margin: "0 auto", textAlign: "center", position: "relative", zIndex: 1 }}>
         <Fade>
-          <div style={{ ...s.tag(T.ok), marginBottom: 8 }}>Free to Use for Buyers</div>
+          <div style={{ ...s.tag(T.ok), marginBottom: 8 }}>{_('hero_badge')}</div>
         </Fade>
         <Fade delay={0.1}>
           <h1 className="hero-heading" style={{ fontSize: 48, fontWeight: 800, color: T.w, letterSpacing: -2, lineHeight: 1.15, marginTop: 16 }}>
-            Find the right manufacturer<br />in <span style={{ background: T.priG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>minutes, not months</span>
+            {_('hero_title_1')}<br />{_('hero_title_2')}<span style={{ background: T.priG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{_('hero_title_highlight')}</span>
           </h1>
         </Fade>
         <Fade delay={0.2}>
           <p className="hero-sub" style={{ fontSize: 17, color: T.w60, lineHeight: 1.7, marginTop: 20, maxWidth: 600, margin: "20px auto 0" }}>
-            AI-powered sourcing platform. Describe what you need, get matched with verified manufacturers, and see your total landed cost — instantly.
+            {_('hero_sub')}
           </p>
         </Fade>
         <Fade delay={0.3}>
           <div className="hero-search-box" style={{ display: "flex", gap: 0, marginTop: 36, maxWidth: 600, margin: "36px auto 0", background: T.bgCard, borderRadius: 14, border: `1.5px solid ${T.borderL}`, overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,.4)" }}>
             <input
               type="text"
-              placeholder="e.g. I need organic skincare products, 500 units, shipping to Dubai..."
+              placeholder={_('hero_search_placeholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && searchQuery.trim()) goSearch(); }}
@@ -217,20 +1465,20 @@ function App() {
             />
             <div onClick={() => searchQuery.trim() ? goSearch() : goSignup()} style={{ padding: "16px 28px", background: T.priG, color: T.bg, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke={T.bg} strokeWidth="2.5" strokeLinecap="round"/></svg>
-              Find Manufacturers
+              {_('hero_search_btn')}
             </div>
           </div>
         </Fade>
         <Fade delay={0.4}>
           <div style={{ display: "flex", justifyContent: "center", gap: 24, marginTop: 32, flexWrap: "wrap" }}>
-            {["K-Beauty", "Electronics", "Food & Beverage", "Textiles", "Health"].map((cat, i) => (
+            {[_('hero_cat_beauty'), _('hero_cat_electronics'), _('hero_cat_food'), _('hero_cat_textiles'), _('hero_cat_health')].map((cat, i) => (
               <div key={i} onClick={goSignup} style={{ padding: "6px 14px", borderRadius: 8, background: T.w08, border: `1px solid ${T.border}`, color: T.w40, fontSize: 12, cursor: "pointer", transition: "all .2s" }}>{cat}</div>
             ))}
           </div>
         </Fade>
         <Fade delay={0.5}>
           <div style={{ display: "flex", justifyContent: "center", gap: 32, marginTop: 48, flexWrap: "wrap" }}>
-            {[["AI", "Powered Matching"], ["Stripe", "Secure Payments"], ["Free", "For All Buyers"], ["Asia+", "Expanding Globally"]].map(([v, l], i) => (
+            {[[_('hero_stat_ai'), _('hero_stat_ai_sub')], [_('hero_stat_stripe'), _('hero_stat_stripe_sub')], [_('hero_stat_free'), _('hero_stat_free_sub')], [_('hero_stat_asia'), _('hero_stat_asia_sub')]].map(([v, l], i) => (
               <div key={i} style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 800, background: T.priG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{v}</div>
                 <div style={{ fontSize: 12, color: T.w40, marginTop: 4 }}>{l}</div>
@@ -245,8 +1493,8 @@ function App() {
   /* ═══ PAIN POINTS — Why Whistle ═══ */
   const painSection = (
     <div id="features" style={{ ...s.section, padding: "80px 24px" }}>
-      <Fade><h2 style={s.heading}>What makes Whistle AI different?</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>We solve the real problems buyers face in international sourcing.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('pain_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('pain_sub')}</p></Fade>
       <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 56, maxWidth: 800, margin: "56px auto 0" }}>
         {PAIN_POINTS.map((p, i) => (
           <Fade key={i} delay={i * 0.1}>
@@ -266,8 +1514,8 @@ function App() {
   /* ═══ HOW IT WORKS ═══ */
   const howSection = (
     <div id="howitworks" style={s.section}>
-      <Fade><h2 style={s.heading}>How It Works</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>From idea to delivery — source globally in 4 simple steps.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('how_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('how_sub')}</p></Fade>
       <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 24, marginTop: 56 }}>
         {STEPS.map((step, i) => (
           <Fade key={i} delay={i * 0.1}>
@@ -290,22 +1538,22 @@ function App() {
     <div style={{ ...s.section, padding: "80px 24px" }}>
       <Fade>
         <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "rgba(0,212,255,.08)", color: T.pri, border: "1px solid rgba(0,212,255,.2)" }}>AI-Powered</span>
+          <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "rgba(0,212,255,.08)", color: T.pri, border: "1px solid rgba(0,212,255,.2)" }}>{_('ai_badge')}</span>
         </div>
-        <h2 style={s.heading}>Sourcing Intelligence That Works</h2>
+        <h2 style={s.heading}>{_('ai_heading')}</h2>
       </Fade>
-      <Fade delay={0.1}><p style={s.sub}>Tools that traditional sourcing platforms don't have — powered by real trade data from 190+ countries.</p></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('ai_sub')}</p></Fade>
       <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 56 }}>
         {[
-          { icon: "📷", title: "Vision Search", desc: "Search products by photo — AI identifies items from images. Snap a picture, find matching manufacturers instantly.", color: T.pri },
-          { icon: "📊", title: "Market Analysis & Margin", desc: "AI-powered market analysis with margin calculations. Understand profitability before you commit to a supplier.", color: T.acc },
-          { icon: "💡", title: "Price Strategy", desc: "AI suggests optimal pricing strategies for your market. Factor in competition, demand, and landed costs automatically.", color: T.purple },
-          { icon: "🏷️", title: "AI HS Code Classification", desc: "Automatically classify any product into the correct HS code. No customs broker needed for basic classification.", color: T.pri },
-          { icon: "💰", title: "Landed Cost Calculator", desc: "FOB + shipping + tariff + insurance = total cost to your door. Know your real cost before you commit.", color: T.acc },
-          { icon: "🌐", title: "FTA Optimization", desc: "Check FTA eligibility to potentially save on import duties. Available on select trade routes.", color: T.ok },
-          { icon: "💬", title: "AI Translation", desc: "Chat with manufacturers in your language. AI translates messages in real-time for natural conversation.", color: T.purple },
-          { icon: "🛡️", title: "Manufacturer Verification", desc: "AI analyzes manufacturer credentials, export history, and product data to give you a trust score.", color: T.pri },
-          { icon: "📄", title: "Trade Documents", desc: "Generate PI, CI, PL, CO and other export documents. Reduce paperwork hours to minutes.", color: T.acc },
+          { icon: "\uD83D\uDCF7", title: _('ai_vision_title'), desc: _('ai_vision_desc'), color: T.pri },
+          { icon: "\uD83D\uDCCA", title: _('ai_market_title'), desc: _('ai_market_desc'), color: T.acc },
+          { icon: "\uD83D\uDCA1", title: _('ai_price_title'), desc: _('ai_price_desc'), color: T.purple },
+          { icon: "\uD83C\uDFF7\uFE0F", title: _('ai_hs_title'), desc: _('ai_hs_desc'), color: T.pri },
+          { icon: "\uD83D\uDCB0", title: _('ai_landed_title'), desc: _('ai_landed_desc'), color: T.acc },
+          { icon: "\uD83C\uDF10", title: _('ai_fta_title'), desc: _('ai_fta_desc'), color: T.ok },
+          { icon: "\uD83D\uDCAC", title: _('ai_translation_title'), desc: _('ai_translation_desc'), color: T.purple },
+          { icon: "\uD83D\uDEE1\uFE0F", title: _('ai_verification_title'), desc: _('ai_verification_desc'), color: T.pri },
+          { icon: "\uD83D\uDCC4", title: _('ai_documents_title'), desc: _('ai_documents_desc'), color: T.acc },
         ].map((f, i) => (
           <Fade key={i} delay={i * 0.08}>
             <div style={{ ...s.card, padding: 28, height: "100%", borderColor: `${f.color}15` }}>
@@ -319,9 +1567,9 @@ function App() {
       <Fade delay={0.8}>
         <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 32, flexWrap: "wrap" }}>
           {[
-            { label: "UN Comtrade", sub: "190+ countries" },
-            { label: "Real-Time Data", sub: "Live market feeds" },
-            { label: "AI Models", sub: "Multi-engine analysis" },
+            { label: _('ai_data_comtrade'), sub: _('ai_data_comtrade_sub') },
+            { label: _('ai_data_realtime'), sub: _('ai_data_realtime_sub') },
+            { label: _('ai_data_models'), sub: _('ai_data_models_sub') },
           ].map((b, i) => (
             <div key={i} style={{ padding: "10px 20px", borderRadius: 10, background: T.w08, border: `1px solid ${T.border}`, textAlign: "center" }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.w90 }}>{b.label}</div>
@@ -336,12 +1584,12 @@ function App() {
   /* ═══ CATEGORIES ═══ */
   const categoriesSection = (
     <div id="categories" style={s.section}>
-      <Fade><h2 style={s.heading}>Product Categories</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>Starting with Korea's premium manufacturers — expanding across Asia and beyond.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('cat_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('cat_sub')}</p></Fade>
       <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginTop: 48 }}>
         {CATEGORIES.map((c, i) => (
           <Fade key={i} delay={i * 0.06}>
-            <a href="/app/buyer?lang=en" style={{ ...s.card, padding: 24, cursor: "pointer", transition: "all .2s", textDecoration: "none", display: "block" }}>
+            <a href={"/app/buyer?lang=" + langParam} style={{ ...s.card, padding: 24, cursor: "pointer", transition: "all .2s", textDecoration: "none", display: "block" }}>
               <div style={{ fontSize: 36, marginBottom: 12 }}>{c.icon}</div>
               <div style={{ fontSize: 16, fontWeight: 700, color: T.w, marginBottom: 4 }}>{c.name}</div>
               <div style={{ fontSize: 13, color: T.w40 }}>{c.desc}</div>
@@ -353,8 +1601,8 @@ function App() {
         <div style={{ textAlign: "center", marginTop: 24 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 8, background: T.w08 }}>
             {["🇰🇷"].map((f, i) => <span key={i} style={{ fontSize: 18 }}>{f}</span>)}
-            <span style={{ fontSize: 12, color: T.w, fontWeight: 600 }}>Your gateway to premium Korean manufacturers</span>
-            <span style={{ fontSize: 11, color: T.w40 }}>K-Beauty · K-Food · K-Tech · K-Culture</span>
+            <span style={{ fontSize: 12, color: T.w, fontWeight: 600 }}>{_('cat_gateway')}</span>
+            <span style={{ fontSize: 11, color: T.w40 }}>{_('cat_gateway_sub')}</span>
           </div>
         </div>
       </Fade>
@@ -364,13 +1612,13 @@ function App() {
   /* ═══ PAYMENT SECURITY ═══ */
   const paymentSection = (
     <div style={{ ...s.section, padding: "80px 24px" }}>
-      <Fade><h2 style={s.heading}>Safe and secure payments</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>All payments processed through Stripe. Your money is protected.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('pay_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('pay_sub')}</p></Fade>
       <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20, marginTop: 48 }}>
         {[
-          { icon: "🔐", title: "Stripe-Powered", desc: "PCI DSS Level 1 compliant payment processing. The same infrastructure used by Amazon, Google, and Shopify." },
-          { icon: "💳", title: "Payment Protection", desc: "Funds are processed securely. Track every transaction with full transparency and dispute support." },
-          { icon: "🌍", title: "Global Currencies", desc: "Pay in USD, EUR, GBP, JPY, KRW, and more. Automatic currency conversion at competitive rates." },
+          { icon: "\uD83D\uDD10", title: _('pay_stripe_title'), desc: _('pay_stripe_desc') },
+          { icon: "\uD83D\uDCB3", title: _('pay_protection_title'), desc: _('pay_protection_desc') },
+          { icon: "\uD83C\uDF0D", title: _('pay_global_title'), desc: _('pay_global_desc') },
         ].map((p, i) => (
           <Fade key={i} delay={i * 0.1}>
             <div style={{ ...s.card, padding: 28, textAlign: "center" }}>
@@ -388,28 +1636,28 @@ function App() {
   const freeSection = (
     <div style={{ ...s.section, padding: "80px 24px" }}>
       {/* Two-column: Free + Single Analysis */}
-      <Fade><h2 style={s.heading}>Get Started</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>Free for all buyers. Or try a single AI analysis with no subscription.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('start_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('start_sub')}</p></Fade>
 
       <div className="grid-2-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 24, marginTop: 48, maxWidth: 900, margin: "48px auto 0" }}>
         {/* Free Plan */}
         <Fade delay={0.1}>
           <div style={{ ...s.card, padding: 36, textAlign: "center", border: `1px solid ${T.ok}30`, background: `linear-gradient(135deg, ${T.bgCard}, rgba(0,230,118,.03))`, height: "100%" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>{"\uD83C\uDF89"}</div>
-            <h3 style={{ fontSize: 24, fontWeight: 800, color: T.w, marginBottom: 8 }}>Free for Buyers</h3>
+            <h3 style={{ fontSize: 24, fontWeight: 800, color: T.w, marginBottom: 8 }}>{_('start_free_title')}</h3>
             <p style={{ fontSize: 14, color: T.w60, lineHeight: 1.7, marginBottom: 20 }}>
-              Search manufacturers, request quotes, chat with suppliers, use AI tools — all free. A small commission (3-5%) applies only on completed deals.
+              {_('start_free_desc')}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 280, margin: "0 auto 24px" }}>
-              {["Manufacturer search & discovery", "AI cost analysis", "Direct messaging", "Trade document generation", "Stripe-secured payments"].map((f, i) => (
+              {[_('start_free_f1'), _('start_free_f2'), _('start_free_f3'), _('start_free_f4'), _('start_free_f5')].map((f, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill={T.ok} /></svg>
                   <span style={{ fontSize: 13, color: T.w90, textAlign: "left" }}>{f}</span>
                 </div>
               ))}
             </div>
-            <a href="/app/buyer?lang=en" style={{ ...s.btn("pri"), fontSize: 15, padding: "14px 36px", textDecoration: "none" }}>Start Sourcing Free</a>
-            <div style={{ fontSize: 11, color: T.w20, marginTop: 10 }}>No credit card required</div>
+            <a href={"/app/buyer?lang=" + langParam} style={{ ...s.btn("pri"), fontSize: 15, padding: "14px 36px", textDecoration: "none" }}>{_('start_free_btn')}</a>
+            <div style={{ fontSize: 11, color: T.w20, marginTop: 10 }}>{_('start_free_note')}</div>
           </div>
         </Fade>
 
@@ -417,24 +1665,24 @@ function App() {
         <Fade delay={0.2}>
           <div style={{ ...s.card, padding: 36, textAlign: "center", border: `1px solid ${T.acc}30`, background: `linear-gradient(135deg, ${T.bgCard}, rgba(255,184,0,.03))`, height: "100%" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>{"\u26A1"}</div>
-            <h3 style={{ fontSize: 24, fontWeight: 800, color: T.w, marginBottom: 8 }}>Single AI Analysis</h3>
+            <h3 style={{ fontSize: 24, fontWeight: 800, color: T.w, marginBottom: 8 }}>{_('start_single_title')}</h3>
             <div style={{ marginBottom: 16 }}>
-              <span style={{ fontSize: 36, fontWeight: 800, background: T.accG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>$9.90</span>
-              <span style={{ fontSize: 14, color: T.w40, marginLeft: 4 }}>one-time</span>
+              <span style={{ fontSize: 36, fontWeight: 800, background: T.accG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{_('start_single_price')}</span>
+              <span style={{ fontSize: 14, color: T.w40, marginLeft: 4 }}>{_('start_single_price_label')}</span>
             </div>
             <p style={{ fontSize: 14, color: T.w60, lineHeight: 1.7, marginBottom: 20 }}>
-              Try one AI analysis — no subscription needed. Get full market analysis, HS classification, landed cost calculation, and FTA optimization for a single product.
+              {_('start_single_desc')}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 280, margin: "0 auto 24px" }}>
-              {["Full AI market analysis", "HS code classification", "Landed cost breakdown", "FTA optimization check", "Exportable PDF report"].map((f, i) => (
+              {[_('start_single_f1'), _('start_single_f2'), _('start_single_f3'), _('start_single_f4'), _('start_single_f5')].map((f, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill={T.acc} /></svg>
                   <span style={{ fontSize: 13, color: T.w90, textAlign: "left" }}>{f}</span>
                 </div>
               ))}
             </div>
-            <a href="/app/buyer?lang=en" style={{ ...s.btn("acc"), fontSize: 15, padding: "14px 36px", textDecoration: "none" }}>Try Single Analysis</a>
-            <div style={{ fontSize: 11, color: T.w20, marginTop: 10 }}>No subscription required</div>
+            <a href={"/app/buyer?lang=" + langParam} style={{ ...s.btn("acc"), fontSize: 15, padding: "14px 36px", textDecoration: "none" }}>{_('start_single_btn')}</a>
+            <div style={{ fontSize: 11, color: T.w20, marginTop: 10 }}>{_('start_single_note')}</div>
           </div>
         </Fade>
       </div>
@@ -443,14 +1691,14 @@ function App() {
       <Fade delay={0.4}>
         <div style={{ maxWidth: 900, margin: "48px auto 0" }}>
           <div style={{ textAlign: "center", marginBottom: 20 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: T.w40, textTransform: "uppercase", letterSpacing: 2 }}>Trusted & Certified</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: T.w40, textTransform: "uppercase", letterSpacing: 2 }}>{_('trust_certified')}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             {[
-              { icon: "🏛️", label: "Manufacturing Innovation Voucher", sub: "Government Certified" },
-              { icon: "📜", label: "Export Voucher", sub: "KOTRA Approved" },
-              { icon: "🤝", label: "Global Manufacturer Network", sub: "Verified Partners" },
-              { icon: "🔒", label: "Stripe Verified", sub: "PCI DSS Level 1" },
+              { icon: "\uD83C\uDFDB\uFE0F", label: _('trust_voucher'), sub: _('trust_voucher_sub') },
+              { icon: "\uD83D\uDCDC", label: _('trust_export'), sub: _('trust_export_sub') },
+              { icon: "\uD83E\uDD1D", label: _('trust_network'), sub: _('trust_network_sub') },
+              { icon: "\uD83D\uDD12", label: _('trust_stripe'), sub: _('trust_stripe_sub') },
             ].map((badge, i) => (
               <div key={i} style={{ padding: "14px 20px", borderRadius: 12, background: T.bgCard, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 12, minWidth: 200 }}>
                 <div style={{ fontSize: 24 }}>{badge.icon}</div>
@@ -471,19 +1719,19 @@ function App() {
     <div style={s.section}>
       <Fade>
         <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "rgba(0,136,255,.08)", color: "#0088FF", border: "1px solid rgba(0,136,255,.2)" }}>Global Infrastructure</span>
+          <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "rgba(0,136,255,.08)", color: "#0088FF", border: "1px solid rgba(0,136,255,.2)" }}>{_('global_badge')}</span>
         </div>
-        <h2 style={s.heading}>Built for Global Trade at Scale</h2>
+        <h2 style={s.heading}>{_('global_heading')}</h2>
       </Fade>
-      <Fade delay={0.1}><p style={s.sub}>31 countries. 12 languages. 15 currencies. One platform.</p></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('global_sub')}</p></Fade>
 
       {/* Stats Row */}
       <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 48, maxWidth: 900, margin: "48px auto 0" }}>
         {[
-          { value: "31", label: "Countries", sub: "Certification coverage", color: T.pri },
-          { value: "12", label: "Languages", sub: "Auto-detection", color: T.acc },
-          { value: "15", label: "Currencies", sub: "Live exchange rates", color: T.ok },
-          { value: "200+", label: "Data Sources", sub: "UN Comtrade powered", color: T.purple },
+          { value: "31", label: _('global_stat_countries'), sub: _('global_stat_countries_sub'), color: T.pri },
+          { value: "12", label: _('global_stat_languages'), sub: _('global_stat_languages_sub'), color: T.acc },
+          { value: "15", label: _('global_stat_currencies'), sub: _('global_stat_currencies_sub'), color: T.ok },
+          { value: "200+", label: _('global_stat_data'), sub: _('global_stat_data_sub'), color: T.purple },
         ].map((stat, i) => (
           <Fade key={i} delay={i * 0.1}>
             <div style={{ ...s.card, padding: 24, textAlign: "center" }}>
@@ -500,8 +1748,8 @@ function App() {
         <div style={{ ...s.card, padding: 28, maxWidth: 900, margin: "24px auto 0", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap", justifyContent: "center" }}>
           <div style={{ fontSize: 28 }}>{"\uD83C\uDF10"}</div>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <h4 style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 4 }}>FTA Network Database</h4>
-            <p style={{ fontSize: 13, color: T.w60, lineHeight: 1.6 }}>FTA benefits automatically applied based on trade routes. Save on duties without manual research.</p>
+            <h4 style={{ fontSize: 15, fontWeight: 700, color: T.w, marginBottom: 4 }}>{_('global_fta_title')}</h4>
+            <p style={{ fontSize: 13, color: T.w60, lineHeight: 1.6 }}>{_('global_fta_desc')}</p>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {["RCEP", "KORUS", "EU-Korea", "CPTPP"].map((fta, i) => (
@@ -518,18 +1766,18 @@ function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
               <div style={{ fontSize: 24 }}>{"\uD83D\uDE9A"}</div>
               <div>
-                <h4 style={{ fontSize: 15, fontWeight: 700, color: T.w }}>Shipping Timeline Tracking</h4>
-                <p style={{ fontSize: 12, color: T.w40 }}>Track shipments through 6 stages from factory to your door</p>
+                <h4 style={{ fontSize: 15, fontWeight: 700, color: T.w }}>{_('global_shipping_title')}</h4>
+                <p style={{ fontSize: 12, color: T.w40 }}>{_('global_shipping_sub')}</p>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 0, overflowX: "auto", paddingBottom: 8 }}>
               {[
-                { label: "Booked", icon: "📋", color: T.pri },
-                { label: "Picked Up", icon: "📦", color: T.acc },
-                { label: "In Transit", icon: "🚢", color: T.purple },
-                { label: "Customs", icon: "🏛️", color: T.acc },
-                { label: "Out for Delivery", icon: "🚛", color: T.ok },
-                { label: "Delivered", icon: "✅", color: T.ok },
+                { label: _('ship_booked'), icon: "\uD83D\uDCCB", color: T.pri },
+                { label: _('ship_picked'), icon: "\uD83D\uDCE6", color: T.acc },
+                { label: _('ship_transit'), icon: "\uD83D\uDEA2", color: T.purple },
+                { label: _('ship_customs'), icon: "\uD83C\uDFDB\uFE0F", color: T.acc },
+                { label: _('ship_delivery'), icon: "\uD83D\uDE9B", color: T.ok },
+                { label: _('ship_delivered'), icon: "\u2705", color: T.ok },
               ].map((stage, i) => (
                 <React.Fragment key={i}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 80, textAlign: "center" }}>
@@ -560,17 +1808,17 @@ function App() {
     <div style={{ ...s.section, padding: "80px 24px" }}>
       <Fade>
         <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "rgba(0,230,118,.08)", color: T.ok, border: "1px solid rgba(0,230,118,.2)" }}>Compliance Verified</span>
+          <span style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "rgba(0,230,118,.08)", color: T.ok, border: "1px solid rgba(0,230,118,.2)" }}>{_('compliance_badge')}</span>
         </div>
-        <h2 style={s.heading}>Trade Compliance & Trust</h2>
+        <h2 style={s.heading}>{_('compliance_heading')}</h2>
       </Fade>
-      <Fade delay={0.1}><p style={s.sub}>Every transaction is screened. Every supplier is verified. Every certification is checked.</p></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('compliance_sub')}</p></Fade>
       <div className="grid-2-responsive" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginTop: 48, maxWidth: 800, margin: "48px auto 0" }}>
         {[
-          { icon: "🚫", title: "Denied Party Screening", desc: "Every supplier screened against OFAC, EU, UN denied party lists before you connect.", color: T.err },
-          { icon: "🔍", title: "Certification Gap Analysis", desc: "AI identifies which certifications suppliers need for your specific target market.", color: T.acc },
-          { icon: "📋", title: "Country Certification DB", desc: "Database of required certifications for 31 countries — know exactly what's needed.", color: T.pri },
-          { icon: "⚖️", title: "Sanctions Compliance", desc: "Real-time sanctions screening built into every transaction. Trade with confidence.", color: T.ok },
+          { icon: "\uD83D\uDEAB", title: _('compliance_denied_title'), desc: _('compliance_denied_desc'), color: T.err },
+          { icon: "\uD83D\uDD0D", title: _('compliance_cert_title'), desc: _('compliance_cert_desc'), color: T.acc },
+          { icon: "\uD83D\uDCCB", title: _('compliance_db_title'), desc: _('compliance_db_desc'), color: T.pri },
+          { icon: "\u2696\uFE0F", title: _('compliance_sanctions_title'), desc: _('compliance_sanctions_desc'), color: T.ok },
         ].map((item, i) => (
           <Fade key={i} delay={i * 0.1}>
             <div style={{ ...s.card, padding: 24, display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -599,9 +1847,9 @@ function App() {
       <Fade>
         <div style={{ ...s.card, padding: "40px 36px", maxWidth: 700, margin: "0 auto", textAlign: "center", border: `1px solid ${T.purple}25`, background: `linear-gradient(135deg, ${T.bgCard}, rgba(168,85,247,.04))` }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>{"\uD83D\uDCE8"}</div>
-          <h3 style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 8 }}>Stay Ahead with Whistle Brief</h3>
-          <p style={{ fontSize: 14, color: T.w60, lineHeight: 1.7, maxWidth: 480, margin: "0 auto 24px" }}>Stay informed with Whistle Brief — free global trade intelligence</p>
-          <a href="/brief.html" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 28px", borderRadius: 10, background: T.purpleG, color: T.w, fontSize: 14, fontWeight: 700, textDecoration: "none", boxShadow: "0 0 24px rgba(168,85,247,.2)", cursor: "pointer" }}>Subscribe to Whistle Brief</a>
+          <h3 style={{ fontSize: 22, fontWeight: 800, color: T.w, marginBottom: 8 }}>{_('brief_title')}</h3>
+          <p style={{ fontSize: 14, color: T.w60, lineHeight: 1.7, maxWidth: 480, margin: "0 auto 24px" }}>{_('brief_desc')}</p>
+          <a href="/brief.html" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 28px", borderRadius: 10, background: T.purpleG, color: T.w, fontSize: 14, fontWeight: 700, textDecoration: "none", boxShadow: "0 0 24px rgba(168,85,247,.2)", cursor: "pointer" }}>{_('brief_btn')}</a>
         </div>
       </Fade>
     </div>
@@ -610,16 +1858,16 @@ function App() {
   /* ═══ ENHANCED TRUST SIGNALS ═══ */
   const enhancedTrustSection = (
     <div style={s.section}>
-      <Fade><h2 style={s.heading}>Built for Trust, End to End</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>Every layer of the sourcing process is protected.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('etrust_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('etrust_sub')}</p></Fade>
       <div style={{ maxWidth: 640, margin: "40px auto 0" }}>
         {[
-          { icon: "\uD83D\uDD0D", text: "4-level supplier verification", color: T.pri },
-          { icon: "\uD83E\uDD16", text: "AI-powered quality assessment", color: T.acc },
-          { icon: "\uD83D\uDEE1\uFE0F", text: "Escrow payment protection on every order", color: T.ok },
-          { icon: "\uD83D\uDE9A", text: "Logistics tracking", color: T.purple },
-          { icon: "\uD83D\uDCAC", text: "12-language platform with auto-detection", color: T.pri },
-          { icon: "\uD83D\uDCB1", text: "Live exchange rates for 15 currencies", color: T.acc },
+          { icon: "\uD83D\uDD0D", text: _('etrust_1'), color: T.pri },
+          { icon: "\uD83E\uDD16", text: _('etrust_2'), color: T.acc },
+          { icon: "\uD83D\uDEE1\uFE0F", text: _('etrust_3'), color: T.ok },
+          { icon: "\uD83D\uDE9A", text: _('etrust_4'), color: T.purple },
+          { icon: "\uD83D\uDCAC", text: _('etrust_5'), color: T.pri },
+          { icon: "\uD83D\uDCB1", text: _('etrust_6'), color: T.acc },
         ].map((item, i) => (
           <Fade key={i} delay={i * 0.08}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 0", borderBottom: i < 5 ? `1px solid ${T.border}` : "none" }}>
@@ -635,12 +1883,12 @@ function App() {
   /* ═══ MARKET COVERAGE ═══ */
   const marketCoverageSection = (
     <div style={{ ...s.section, padding: "80px 24px" }}>
-      <Fade><h2 style={s.heading}>Global Manufacturer Network — Verified & Growing</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>Access verified manufacturers from around the world — a growing network spanning multiple countries and industries.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('market_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('market_sub')}</p></Fade>
       <div style={{ maxWidth: 700, margin: "40px auto 0" }}>
         {[
-          { icon: "\uD83C\uDF0F", text: "Access manufacturers from Korea, SE Asia, India, Japan, and more — markets traditional B2B platforms underserve" },
-          { icon: "\uD83D\uDCA1", text: "Discover premium, certified manufacturers you won't find on typical B2B platforms" },
+          { icon: "\uD83C\uDF0F", text: _('market_text_1') },
+          { icon: "\uD83D\uDCA1", text: _('market_text_2') },
         ].map((item, i) => (
           <Fade key={i} delay={i * 0.1}>
             <div style={{ ...s.card, padding: "20px 24px", marginBottom: 12, display: "flex", alignItems: "center", gap: 14 }}>
@@ -654,7 +1902,7 @@ function App() {
         <Fade delay={0.3}>
           <div style={{ textAlign: "center", marginTop: 32, padding: "20px 24px", borderRadius: 12, background: `linear-gradient(135deg, rgba(0,212,255,.06), rgba(168,85,247,.06))`, border: `1px solid ${T.border}` }}>
             <div style={{ fontSize: 36, fontWeight: 800, background: T.priG, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>1.4B+</div>
-            <div style={{ fontSize: 13, color: T.w60, marginTop: 4 }}>Non-Chinese manufacturers worldwide — the market Whistle AI unlocks</div>
+            <div style={{ fontSize: 13, color: T.w60, marginTop: 4 }}>{_('market_tam_label')}</div>
           </div>
         </Fade>
 
@@ -665,7 +1913,7 @@ function App() {
                 <span key={i} style={{ fontSize: 28, padding: "2px 4px" }}>{flag}</span>
               ))}
             </div>
-            <div style={{ fontSize: 12, color: T.w40, marginTop: 8 }}>Korea · Japan · India · Vietnam · Thailand · Indonesia · Taiwan</div>
+            <div style={{ fontSize: 12, color: T.w40, marginTop: 8 }}>{_('market_countries')}</div>
           </div>
         </Fade>
       </div>
@@ -674,36 +1922,18 @@ function App() {
 
   /* ═══ FAQ ═══ */
   const FAQ_ITEMS = [
-    {
-      q: "Is Whistle AI really free for buyers?",
-      a: "Yes. Signing up, searching for manufacturers, and connecting with them is 100% free. You only pay when you place an order or purchase a premium analysis.",
-    },
-    {
-      q: "How does AI manufacturer matching work?",
-      a: "Describe what you need in plain language — product type, quantity, budget, and destination. Our AI analyzes your requirements against our verified manufacturer database and returns the best matches with estimated landed costs.",
-    },
-    {
-      q: "What countries do you source from?",
-      a: "We started with Korea's premium manufacturers and are expanding across Asia — Japan, Vietnam, Thailand, India, Indonesia, and Taiwan. New regions are added regularly.",
-    },
-    {
-      q: "How are manufacturers verified?",
-      a: "Every manufacturer goes through a multi-step verification process including business registration checks, production capacity review, and quality certification validation before appearing on the platform.",
-    },
-    {
-      q: "How are payments secured?",
-      a: "All transactions are processed through Stripe with escrow protection. Funds are held securely and released to the manufacturer only after you confirm receipt of goods.",
-    },
-    {
-      q: "Can I request samples before placing a bulk order?",
-      a: "Absolutely. You can chat directly with manufacturers using our AI translation feature, request samples, negotiate pricing, and review quality before committing to a larger order.",
-    },
+    { q: _('faq_q1'), a: _('faq_a1') },
+    { q: _('faq_q2'), a: _('faq_a2') },
+    { q: _('faq_q3'), a: _('faq_a3') },
+    { q: _('faq_q4'), a: _('faq_a4') },
+    { q: _('faq_q5'), a: _('faq_a5') },
+    { q: _('faq_q6'), a: _('faq_a6') },
   ];
   const [faqOpen, setFaqOpen] = useState(null);
   const faqSection = (
     <div id="faq" style={{ ...s.section, padding: "80px 24px" }}>
-      <Fade><h2 style={s.heading}>Frequently Asked Questions</h2></Fade>
-      <Fade delay={0.1}><p style={s.sub}>Everything you need to know about sourcing with Whistle AI.</p></Fade>
+      <Fade><h2 style={s.heading}>{_('faq_heading')}</h2></Fade>
+      <Fade delay={0.1}><p style={s.sub}>{_('faq_sub')}</p></Fade>
       <div style={{ maxWidth: 720, margin: "48px auto 0" }}>
         {FAQ_ITEMS.map((item, i) => (
           <Fade key={i} delay={i * 0.05}>
@@ -730,11 +1960,11 @@ function App() {
     <div style={{ padding: "80px 24px", position: "relative" }}>
       <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at center, rgba(0,212,255,.06) 0%, transparent 70%)" }} />
       <div style={{ maxWidth: 600, margin: "0 auto", textAlign: "center", position: "relative", zIndex: 1 }}>
-        <h2 style={{ fontSize: 32, fontWeight: 800, color: T.w, letterSpacing: -0.5, marginBottom: 12 }}>Ready to source smarter?</h2>
-        <p style={{ fontSize: 14, color: T.w40, marginBottom: 32, lineHeight: 1.7 }}>Join buyers using AI to find the best manufacturers. Starting with Korea's finest — expanding worldwide.</p>
+        <h2 style={{ fontSize: 32, fontWeight: 800, color: T.w, letterSpacing: -0.5, marginBottom: 12 }}>{_('cta_heading')}</h2>
+        <p style={{ fontSize: 14, color: T.w40, marginBottom: 32, lineHeight: 1.7 }}>{_('cta_sub')}</p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <a href="/app/buyer?lang=en" style={{ ...s.btn("pri"), textDecoration: "none" }}>Sign Up Free</a>
-          <a href="/en" style={{ ...s.btn("ghost"), textDecoration: "none" }}>I'm a Manufacturer</a>
+          <a href={"/app/buyer?lang=" + langParam} style={{ ...s.btn("pri"), textDecoration: "none" }}>{_('cta_signup')}</a>
+          <a href="/en" style={{ ...s.btn("ghost"), textDecoration: "none" }}>{_('cta_manufacturer')}</a>
         </div>
       </div>
     </div>
@@ -754,10 +1984,10 @@ function App() {
         </div>
         <div className="footer-links" style={{ display: "flex", gap: 32 }}>
           {[
-            ["Platform", [["How It Works", "#howitworks"], ["Features", "#features"], ["Categories", "#categories"]]],
-            ["For Buyers", [["Sign Up", "/app/buyer?lang=en"], ["Buyer Portal", "/app/buyer"]]],
-            ["For Manufacturers", [["Seller Portal", "/en"], ["Export Tools", "/app"]]],
-            ["Legal", [["Terms of Service", "/terms/en", true], ["Privacy Policy", "/privacy/en", true], ["Refund Policy", "/refund/en", true]]],
+            [_('footer_platform'), [[_('nav_how'), "#howitworks"], [_('nav_features'), "#features"], [_('nav_categories'), "#categories"]]],
+            [_('footer_for_buyers'), [[_('footer_signup'), "/app/buyer?lang=" + langParam], [_('footer_buyer_portal'), "/app/buyer"]]],
+            [_('footer_for_manufacturers'), [[_('footer_seller_portal'), "/en"], [_('footer_export_tools'), "/app"]]],
+            [_('footer_legal'), [[_('footer_terms'), "/terms/en", true], [_('footer_privacy'), "/privacy/en", true], [_('footer_refund'), "/refund/en", true]]],
           ].map(([ft, links], i) => (
             <div key={i}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.w20, marginBottom: 8 }}>{ft}</div>
@@ -767,70 +1997,83 @@ function App() {
         </div>
       </div>
       <div style={{ maxWidth: 1140, margin: "0 auto", borderTop: `1px solid ${T.border}`, marginTop: 24, paddingTop: 16, display: "flex", justifyContent: "space-between", fontSize: 11, color: T.w20, flexWrap: "wrap", gap: 8 }}>
-        <span>&copy; 2026 MOTIVE Global, Inc. All rights reserved.</span>
-        <span>Whistle AI &middot; AI-Powered Global Sourcing</span>
+        <span>{_('footer_copyright')}</span>
+        <span>{_('footer_tagline')}</span>
       </div>
     </div>
   );
 
   /* ═══ RENDER ═══ */
   return (
-    <div style={{ fontFamily: "'Sora','Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", background: T.bg, color: T.w, minHeight: "100vh" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}a{text-decoration:none}
-        button{cursor:pointer;font-family:inherit}select,input,textarea{font-family:inherit}
-        ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.bg}}::-webkit-scrollbar-thumb{background:${T.w12};border-radius:3px}
-        input::placeholder{color:rgba(255,255,255,.3)}
-      `}</style>
-      {header}
-      {hero}
-      {painSection}
-      <GlowLine />
-      {howSection}
-      {aiSection}
-      <GlowLine />
-      {categoriesSection}
-      {paymentSection}
-      <GlowLine />
-      {enhancedTrustSection}
-      <GlowLine />
-      {globalLocalizationSection}
-      {sanctionsSection}
-      <GlowLine />
-      {marketCoverageSection}
-      {freeSection}
-      <GlowLine />
-      {faqSection}
-      {ctaSection}
-      {footer}
-      {/* Cookie Consent */}
-      {!localStorage.getItem('whistle_cookie_ok') && (
-        <div id="cookie-banner" style={{position:'fixed',bottom:0,left:0,right:0,padding:'14px 24px',background:'rgba(6,11,24,.96)',borderTop:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',gap:16,zIndex:9999,backdropFilter:'blur(12px)',flexWrap:'wrap'}}>
-          <span style={{fontSize:12,color:'rgba(255,255,255,.6)',maxWidth:600}}>We use cookies to improve your experience. By continuing, you agree to our <a href="/privacy/en" target="_blank" style={{color:'#00d4ff',textDecoration:'underline'}}>Privacy Policy</a>.</span>
-          <div style={{display:'flex',gap:8}}>
-            <button onClick={()=>{localStorage.setItem('whistle_cookie_ok','1');document.getElementById('cookie-banner').remove()}} style={{padding:'6px 16px',borderRadius:6,background:'#00d4ff',color:'#000',border:'none',fontSize:12,fontWeight:700,cursor:'pointer'}}>Accept</button>
-            <button onClick={()=>{document.getElementById('cookie-banner').remove()}} style={{padding:'6px 16px',borderRadius:6,background:'transparent',color:'rgba(255,255,255,.5)',border:'1px solid rgba(255,255,255,.12)',fontSize:12,cursor:'pointer'}}>Decline</button>
+    <LangContext.Provider value={{ lang: lang, setLang: setLang }}>
+      <div style={{ fontFamily: "'Sora','Noto Sans KR',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif", background: T.bg, color: T.w, minHeight: "100vh", direction: isRtl ? 'rtl' : 'ltr' }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&display=swap');
+          *{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}a{text-decoration:none}
+          button{cursor:pointer;font-family:inherit}select,input,textarea{font-family:inherit}
+          ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:${T.bg}}::-webkit-scrollbar-thumb{background:${T.w12};border-radius:3px}
+          input::placeholder{color:rgba(255,255,255,.3)}
+          html[dir="rtl"] *{text-align:right}
+          html[dir="rtl"] h1,html[dir="rtl"] h2,html[dir="rtl"] h3,html[dir="rtl"] h4{text-align:center}
+        `}</style>
+        {header}
+        {hero}
+        {painSection}
+        <GlowLine />
+        {howSection}
+        {aiSection}
+        <GlowLine />
+        {categoriesSection}
+        {paymentSection}
+        <GlowLine />
+        {enhancedTrustSection}
+        <GlowLine />
+        {globalLocalizationSection}
+        {sanctionsSection}
+        <GlowLine />
+        {marketCoverageSection}
+        {freeSection}
+        <GlowLine />
+        {faqSection}
+        {briefSection}
+        {ctaSection}
+        {footer}
+        <LanguageSwitcher />
+        {/* Cookie Consent */}
+        {!localStorage.getItem('whistle_cookie_ok') && (
+          <div id="cookie-banner" style={{position:'fixed',bottom:0,left:0,right:0,padding:'14px 24px',background:'rgba(6,11,24,.96)',borderTop:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',gap:16,zIndex:9999,backdropFilter:'blur(12px)',flexWrap:'wrap'}}>
+            <span style={{fontSize:12,color:'rgba(255,255,255,.6)',maxWidth:600}}>{_('cookie_text')} <a href="/privacy/en" target="_blank" style={{color:'#00d4ff',textDecoration:'underline'}}>{_('cookie_privacy')}</a>.</span>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>{localStorage.setItem('whistle_cookie_ok','1');document.getElementById('cookie-banner').remove()}} style={{padding:'6px 16px',borderRadius:6,background:'#00d4ff',color:'#000',border:'none',fontSize:12,fontWeight:700,cursor:'pointer'}}>{_('cookie_accept')}</button>
+              <button onClick={()=>{document.getElementById('cookie-banner').remove()}} style={{padding:'6px 16px',borderRadius:6,background:'transparent',color:'rgba(255,255,255,.5)',border:'1px solid rgba(255,255,255,.12)',fontSize:12,cursor:'pointer'}}>{_('cookie_decline')}</button>
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </LangContext.Provider>
   );
 }
 
+window.__whistleTranslations = translations;
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
 </script>
 
-<!-- i18n Auto-Detection -->
-<script src="/i18n-detect.js"></script>
 <script src="/motion-demo.js?v=3"></script>
 <script>
 setTimeout(function(){
   var features = document.getElementById('features');
   if(features && typeof createBuyerDemo === 'function'){
+    var lang = localStorage.getItem('whistle_buyer_lang') || 'en';
+    var tr = window.__whistleTranslations;
+    var heading = 'See It In Action';
+    var sub = 'From manufacturer search to FTA analysis, chat negotiation, secure payment, and delivery — the full sourcing journey';
+    if (tr && tr[lang]) {
+      heading = tr[lang].demo_heading || heading;
+      sub = tr[lang].demo_sub || sub;
+    }
     var demoDiv = document.createElement('div');
     demoDiv.style.cssText = 'max-width:1140px;margin:60px auto 0;padding:0 24px 80px';
-    demoDiv.innerHTML = '<h2 style="font-size:32px;font-weight:800;color:#fff;text-align:center;margin-bottom:8px">See It In Action</h2><p style="font-size:15px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:32px">From manufacturer search to FTA analysis, chat negotiation, secure payment, and delivery — the full sourcing journey</p>' + createBuyerDemo(false);
+    demoDiv.innerHTML = '<h2 style="font-size:32px;font-weight:800;color:#fff;text-align:center;margin-bottom:8px">' + heading + '</h2><p style="font-size:15px;color:rgba(255,255,255,0.4);text-align:center;margin-bottom:32px">' + sub + '</p>' + createBuyerDemo(false);
     features.insertAdjacentElement("afterend", demoDiv);
     var bootKeys = Object.keys(window).filter(function(k){return k.indexOf('__wdBoot_')===0;});
     bootKeys.forEach(function(k){ try{window[k]();}catch(e){} });
