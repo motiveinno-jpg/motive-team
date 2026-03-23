@@ -157,41 +157,13 @@ serve(async (req) => {
           );
         }
       } else {
-        // Fallback: no DB record found. Validate client amount strictly.
-        console.warn(
-          `[checkout] No escrow record in DB for deal ${deal_id}, using client amount with strict validation`,
+        // No DB record: reject escrow payment. Seller must set amount first.
+        console.error(
+          `[checkout] REJECTED: No escrow record in DB for deal ${deal_id}, user ${user.id}. Seller must create escrow request first.`,
         );
-        const clientAmount = Number(body.amount);
-
-        if (!isPositiveFiniteNumber(clientAmount)) {
-          return jsonResponse(
-            { error: "Invalid payment amount" },
-            400,
-          );
-        }
-
-        if (clientAmount < ESCROW_MIN_AMOUNT_DOLLARS) {
-          return jsonResponse(
-            {
-              error: `Amount must be at least $${ESCROW_MIN_AMOUNT_DOLLARS}`,
-            },
-            400,
-          );
-        }
-
-        if (clientAmount > ESCROW_MAX_AMOUNT_DOLLARS) {
-          return jsonResponse(
-            { error: "Amount exceeds maximum allowed" },
-            400,
-          );
-        }
-
-        verifiedAmountDollars = clientAmount;
-        verifiedCurrency = (currency || "USD").toLowerCase();
-
-        // Alert: client-provided amount used without DB verification
-        console.warn(
-          `[checkout] ALERT: Escrow using client amount $${clientAmount} ${verifiedCurrency} for deal ${deal_id}, user ${user.id}`,
+        return jsonResponse(
+          { error: "Escrow amount not set. The seller must confirm the deal amount before payment can proceed." },
+          400,
         );
       }
 
@@ -227,9 +199,6 @@ serve(async (req) => {
           // held in our Stripe account. Settlement to seller happens via
           // separate transfer after buyer confirms receipt.
         },
-        payment_method_options: {
-          card: { setup_future_usage: undefined },
-        },
         allow_promotion_codes: true,
         automatic_tax: { enabled: false },
         success_url: success_url || "https://whistle-ai.com/app/buyer#deals",
@@ -254,9 +223,6 @@ serve(async (req) => {
         customer: customerId,
         mode: "payment",
         line_items: [lineItem],
-        payment_method_options: {
-          card: { setup_future_usage: undefined },
-        },
         allow_promotion_codes: true,
         automatic_tax: { enabled: false },
         success_url: success_url || "https://whistle-ai.com/app#analysis",
@@ -360,7 +326,14 @@ serve(async (req) => {
     const stripeMsg = err?.message || String(err);
     const stripeCode = err?.code || "unknown";
     const stripeType = err?.type || "unknown";
-    console.error("[checkout] Unhandled error:", stripeMsg, "code:", stripeCode, "type:", stripeType);
+    const stripeParam = err?.param || "none";
+    console.error(
+      "[checkout] ERROR:", stripeMsg,
+      "| code:", stripeCode,
+      "| type:", stripeType,
+      "| param:", stripeParam,
+      "| stack:", err?.stack?.slice(0, 500),
+    );
     return jsonResponse(
       { error: "Payment processing failed. Please try again." },
       500,
