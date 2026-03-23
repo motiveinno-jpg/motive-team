@@ -1,8 +1,10 @@
 # Whistle AI QA 이슈 트래커
 
+## [Agent2 2차 테스트 완료] — 2026-03-23 모바일(390x844) 5개국 전체 재테스트
+
 ## 진행현황
 - Agent1 한국제조사: ✅ 완료 (STEP1~9 전체 테스트)
-- Agent2 글로벌바이어: ✅ 완료 (US/JP/DE/VN/UAE 5개국 STEP1~8 테스트, 이슈 13건)
+- Agent2 글로벌바이어: ✅ 1차+2차 완료 (1차 데스크톱 13건 + 2차 모바일 8건)
 - Agent2B 글로벌제조사: ✅ 완료 (US/JP/DE 3개국 STEP1~6 테스트, 이슈 19건)
 - Agent3 개발: ✅ 전체 수정 완료
 - Agent4 QA검토: ✅ 2차 검토 완료 (26건 중 26건 승인, 보류 5건)
@@ -54,6 +56,15 @@
 | 2-017 | Agent2 | AE/Ahmed Al-Rashid | buyer-app | STEP3-국가목록 UAE 누락 | 가입폼 Country 드롭다운에 UAE 없음 (Saudi Arabia만 존재) | /app/buyer → Sign Up → Country | 중 | ✅ 완료 |
 | 2-018 | Agent2 | 전체 글로벌 | buyer-app | STEP3-앱 전체 영어 고정 | buyer-app 전체 영어 전용, 다국어 i18n 미적용 (랜딩은 다국어 지원) | /app/buyer 로그인 후 전체 | 중 | 보류 |
 | 2-019 | Agent2 | 전체 글로벌 | buyer-app | STEP4-검색결과 한국어 | 제품명/카테고리/브랜드가 한국어로 표시 (글로벌 바이어에게) | Product Search → Snail Cream 검색 | 중 | ✅ 완료 |
+| **2차 모바일 QA (390x844, isMobile)** | | | | | | | | |
+| 2M-001 | Agent2 | 전체 5개국 | buyer-app | STEP3-모바일 언어감지 오류 | buyer-app이 localStorage lang 무시, navigator.language(ko-KR) 사용 → 글로벌 유저에게 한국어 표시 | 모바일(390px) /app/buyer 접속 | **상** | 수정완료-검토대기 |
+| 2M-002 | Agent2 | 전체 5개국 | buyer-app | STEP3-모바일 로그인폼 한국어 | 로그인/회원가입/이메일/비밀번호 전부 한국어 (로그인→회원가입, 이메일→이메일, 비밀번호→비밀번호) | 모바일 /app/buyer | **상** | 수정완료-검토대기 |
+| 2M-003 | Agent2 | US/James Carter | buyer-app | STEP3-모바일 대시보드 한국어 | "환영합니다, James Carter" / "한국 제품 소싱 가이드" / 전체 한국어 | 모바일 로그인 후 대시보드 | **상** | 수정완료-검토대기 |
+| 2M-004 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-모바일 온보딩 한국어 | 온보딩 전체 한국어: 기본정보/회사명/담당자명/국가/전화번호, 전화 placeholder 010-1234-5678 (한국식) | 모바일 JP 로그인 후 온보딩 | **상** | 수정완료-검토대기 |
+| 2M-005 | Agent2 | DE/VN/AE | buyer-landing | STEP1-모바일 카테고리 태그 영어 | 히어로 아래 카테고리 태그 K-Beauty/Electronics/Food&Beverage 영어 고정 (JP만 일본어 정상) | 모바일 /buyer lang=de,vi,ar | 중 | 수정완료-검토대기 |
+| 2M-006 | Agent2 | DE/VN/AE | buyer-landing | STEP2-모바일 하단배지 영어 | "Powered Matching"/"Secure Payments"/"+Asia"/"Free" 미번역 | 모바일 /buyer 히어로 아래 | 하 | 수정완료-검토대기 |
+| 2M-007 | Agent2 | DE | buyer-landing | STEP1-모바일 검색 placeholder 영어 | 독일어 페이지인데 검색창 "e.g. I need organic skincare products, 500" 영어 | 모바일 /buyer lang=de 검색창 | 하 | 수정완료-검토대기 |
+| 2M-008 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 검색 UI 한국어 | 필터/탭/결과 카운트 전부 한국어: "전체 결과"/"전체 카테고리"/"최소 가격"/"40 개 제품 검색됨" | 모바일 Product Search | **상** | 수정완료-검토대기 |
 
 ## 심각도기준
 - 상: 가입/로그인/결제/저장 불가
