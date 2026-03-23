@@ -31,19 +31,14 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  let step = "init";
   try {
-    // Step 1: Stripe init
-    step = "stripe_init";
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      return jsonResponse({ error: "Payment service unavailable", step }, 500);
+      return jsonResponse({ error: "Payment service unavailable" }, 500);
     }
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
 
-    // Step 2: Auth
-    step = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return jsonResponse({ error: "Unauthorized" }, 401);
@@ -62,8 +57,6 @@ serve(async (req) => {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
-    // Step 3: Parse body
-    step = "parse_body";
     const supabaseKey =
       Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -86,15 +79,12 @@ serve(async (req) => {
     const success_url = validateRedirectUrl(body.success_url);
     const cancel_url = validateRedirectUrl(body.cancel_url);
 
-    // Step 4: Find or create Stripe customer
-    step = "get_profile";
-    const { data: profile, error: profileErr } = await supabase
+    const { data: profile, error: profileErr } = await sbAdmin
       .from("users")
       .select("stripe_customer_id, email, company_name")
       .eq("id", user.id)
       .single();
 
-    step = "create_customer";
     let customerId: string | undefined;
     if (profile?.stripe_customer_id) {
       customerId = profile.stripe_customer_id;
@@ -107,15 +97,13 @@ serve(async (req) => {
         },
       });
       customerId = customer.id;
-      // Save customer ID (best-effort, don't block on failure)
-      await supabase
+      // Use sbAdmin to bypass RLS WITH CHECK policy on users table
+      await sbAdmin
         .from("users")
         .update({ stripe_customer_id: customer.id })
         .eq("id", user.id);
     }
 
-    // Step 5: Build session config
-    step = "build_config";
     let sessionConfig: Stripe.Checkout.SessionCreateParams;
 
     if (type === "escrow") {
@@ -248,20 +236,12 @@ serve(async (req) => {
       return jsonResponse({ error: "Invalid payment type" }, 400);
     }
 
-    // Step 6: Create checkout session
-    step = "create_session";
     const session = await stripe.checkout.sessions.create(sessionConfig);
 
     return jsonResponse({ url: session.url, sessionId: session.id });
   } catch (err) {
     const msg = err?.message || String(err);
-    const code = err?.code || "unknown";
-    const type = err?.type || "unknown";
-    const param = err?.param || "none";
-    console.error("[checkout] STEP:", step, "| ERROR:", msg, "| code:", code, "| type:", type, "| param:", param);
-    return jsonResponse(
-      { error: `Payment failed at step: ${step}`, debug_msg: msg, debug_code: code, debug_type: type, debug_param: param },
-      500,
-    );
+    console.error("[checkout] ERROR:", msg);
+    return jsonResponse({ error: "Payment processing failed. Please try again." }, 500);
   }
 });
