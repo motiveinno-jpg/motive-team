@@ -9,8 +9,6 @@ const corsHeaders = {
 };
 
 const ONE_ANALYSIS_AMOUNT_CENTS = 990;
-const ESCROW_MIN_AMOUNT_DOLLARS = 1;
-const ESCROW_MAX_AMOUNT_DOLLARS = 1_000_000;
 const ALLOWED_CURRENCIES = ["usd", "eur", "gbp", "jpy", "krw", "cny"];
 
 function jsonResponse(
@@ -33,18 +31,19 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  let step = "init";
   try {
+    // Step 1: Stripe init
+    step = "stripe_init";
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeKey) {
-      console.error("[checkout] STRIPE_SECRET_KEY not configured");
-      return jsonResponse({ error: "Payment service unavailable" }, 500);
+      return jsonResponse({ error: "Payment service unavailable", step }, 500);
     }
 
-    const stripe = new Stripe(stripeKey, {
-      apiVersion: "2023-10-16",
-      httpClient: Stripe.createFetchHttpClient(),
-    });
+    const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
 
+    // Step 2: Auth
+    step = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return jsonResponse({ error: "Unauthorized" }, 401);
@@ -63,6 +62,8 @@ serve(async (req) => {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
+    // Step 3: Parse body
+    step = "parse_body";
     const supabaseKey =
       Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -70,16 +71,9 @@ serve(async (req) => {
     });
 
     const body = await req.json();
-    const {
-      type,
-      deal_id,
-      currency,
-      price_id,
-      plan,
-      billing_cycle,
-    } = body;
+    const { type, deal_id, price_id, plan, billing_cycle } = body;
 
-    // Validate redirect URLs — prevent open redirect
+    // Validate redirect URLs
     const ALLOWED_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com"];
     const validateRedirectUrl = (url: string | undefined): string | undefined => {
       if (!url) return undefined;
@@ -92,14 +86,16 @@ serve(async (req) => {
     const success_url = validateRedirectUrl(body.success_url);
     const cancel_url = validateRedirectUrl(body.cancel_url);
 
-    // Find or create Stripe customer
-    let customerId: string | undefined;
-    const { data: profile } = await supabase
+    // Step 4: Find or create Stripe customer
+    step = "get_profile";
+    const { data: profile, error: profileErr } = await supabase
       .from("users")
       .select("stripe_customer_id, email, company_name")
       .eq("id", user.id)
       .single();
 
+    step = "create_customer";
+    let customerId: string | undefined;
     if (profile?.stripe_customer_id) {
       customerId = profile.stripe_customer_id;
     } else {
@@ -111,23 +107,22 @@ serve(async (req) => {
         },
       });
       customerId = customer.id;
+      // Save customer ID (best-effort, don't block on failure)
       await supabase
         .from("users")
         .update({ stripe_customer_id: customer.id })
         .eq("id", user.id);
     }
 
+    // Step 5: Build session config
+    step = "build_config";
     let sessionConfig: Stripe.Checkout.SessionCreateParams;
 
     if (type === "escrow") {
-      // --- ESCROW: Server-side amount verification ---
       if (!deal_id || typeof deal_id !== "string") {
         return jsonResponse({ error: "Missing or invalid deal_id" }, 400);
       }
 
-      // Look up the escrow request from service_requests to get the
-      // seller-set amount. The seller creates a record with
-      // type = 'escrow_<dealId>' containing the agreed amount.
       const { data: escrowRecord, error: escrowErr } = await sbAdmin
         .from("service_requests")
         .select("details")
@@ -140,27 +135,13 @@ serve(async (req) => {
       let verifiedCurrency: string;
 
       if (escrowRecord?.details?.amount && !escrowErr) {
-        // Use the seller-set amount from the database
         verifiedAmountDollars = Number(escrowRecord.details.amount);
-        verifiedCurrency = (
-          escrowRecord.details.currency || "USD"
-        ).toLowerCase();
+        verifiedCurrency = (escrowRecord.details.currency || "USD").toLowerCase();
 
         if (!isPositiveFiniteNumber(verifiedAmountDollars)) {
-          console.error(
-            `[checkout] Invalid escrow amount in DB for deal ${deal_id}:`,
-            escrowRecord.details.amount,
-          );
-          return jsonResponse(
-            { error: "Invalid escrow amount on record" },
-            422,
-          );
+          return jsonResponse({ error: "Invalid escrow amount on record" }, 422);
         }
       } else {
-        // No DB record: reject escrow payment. Seller must set amount first.
-        console.error(
-          `[checkout] REJECTED: No escrow record in DB for deal ${deal_id}, user ${user.id}. Seller must create escrow request first.`,
-        );
         return jsonResponse(
           { error: "Escrow amount not set. The seller must confirm the deal amount before payment can proceed." },
           400,
@@ -171,7 +152,6 @@ serve(async (req) => {
         return jsonResponse({ error: "Unsupported currency" }, 400);
       }
 
-      // Zero-decimal currencies (JPY, KRW) — amount is already in smallest unit
       const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
       const unitAmountCents = ZERO_DECIMAL_CURRENCIES.includes(verifiedCurrency)
         ? Math.round(verifiedAmountDollars)
@@ -180,73 +160,45 @@ serve(async (req) => {
       sessionConfig = {
         customer: customerId,
         mode: "payment",
-        line_items: [
-          {
-            price_data: {
-              currency: verifiedCurrency,
-              product_data: {
-                name: `Escrow Payment`,
-                description: "Secure escrow payment via Whistle AI",
-              },
-              unit_amount: unitAmountCents,
-            },
-            quantity: 1,
+        line_items: [{
+          price_data: {
+            currency: verifiedCurrency,
+            product_data: { name: "Escrow Payment", description: "Secure escrow payment via Whistle AI" },
+            unit_amount: unitAmountCents,
           },
-        ],
+          quantity: 1,
+        }],
         payment_intent_data: {
           metadata: { deal_id, user_id: user.id, type: "escrow" },
-          // Full capture (no manual hold). Funds are charged immediately and
-          // held in our Stripe account. Settlement to seller happens via
-          // separate transfer after buyer confirms receipt.
         },
-        allow_promotion_codes: true,
-        automatic_tax: { enabled: false },
         success_url: success_url || "https://whistle-ai.com/app/buyer#deals",
         cancel_url: cancel_url || "https://whistle-ai.com/app/buyer#deals",
         metadata: { deal_id, user_id: user.id, type: "escrow" },
       };
     } else if (type === "one_analysis") {
-      // --- ONE-TIME ANALYSIS: Always use price_data to avoid live/test mode mismatch ---
-      const lineItem = {
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: "Whistle AI — Export Analysis",
-            description: "One-time market analysis report",
-          },
-          unit_amount: ONE_ANALYSIS_AMOUNT_CENTS,
-        },
-        quantity: 1,
-      };
-
       sessionConfig = {
         customer: customerId,
         mode: "payment",
-        line_items: [lineItem],
-        allow_promotion_codes: true,
-        automatic_tax: { enabled: false },
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            product_data: { name: "Whistle AI — Export Analysis", description: "One-time market analysis report" },
+            unit_amount: ONE_ANALYSIS_AMOUNT_CENTS,
+          },
+          quantity: 1,
+        }],
         success_url: success_url || "https://whistle-ai.com/app#analysis",
         cancel_url: cancel_url || "https://whistle-ai.com/app#analysis",
         metadata: { user_id: user.id, type: "one_analysis" },
       };
     } else if (price_id || plan) {
-      // --- SUBSCRIPTION ---
-      // Map plan + billing_cycle to price_data to avoid live/test mode mismatch
-      const PLAN_PRICES: Record<string, number> = {
-        starter: 9900,
-        pro: 19900,
-        enterprise: 44900,
-      };
+      const PLAN_PRICES: Record<string, number> = { starter: 9900, pro: 19900, enterprise: 44900 };
       const BILLING_INTERVALS: Record<string, { interval: string; count: number; multiplier: number }> = {
         m: { interval: "month", count: 1, multiplier: 1 },
         s: { interval: "month", count: 6, multiplier: 6 },
         a: { interval: "year", count: 1, multiplier: 12 },
       };
-      const BILLING_DISCOUNTS: Record<string, number> = {
-        m: 1.0,
-        s: 0.9,
-        a: 0.8,
-      };
+      const BILLING_DISCOUNTS: Record<string, number> = { m: 1.0, s: 0.9, a: 0.8 };
 
       const planKey = (plan || "starter").toLowerCase();
       const cycleKey = (billing_cycle || "m").toLowerCase();
@@ -259,20 +211,12 @@ serve(async (req) => {
       }
 
       const unitAmount = Math.round(baseAmount * discount * billingInfo.multiplier);
-      const planNames: Record<string, string> = {
-        starter: "Starter",
-        pro: "Professional",
-        enterprise: "Enterprise",
-      };
+      const planNames: Record<string, string> = { starter: "Starter", pro: "Professional", enterprise: "Enterprise" };
 
-      // Try using price_id first, fall back to price_data if it fails
-      let lineItem: Stripe.Checkout.SessionCreateParams.LineItem;
-      let usePriceData = false;
-
-      // Detect test mode by checking if key starts with sk_test_
       const isTestMode = stripeKey?.startsWith("sk_test_");
+      let lineItem: Stripe.Checkout.SessionCreateParams.LineItem;
+
       if (isTestMode || !price_id) {
-        usePriceData = true;
         lineItem = {
           price_data: {
             currency: "usd",
@@ -281,10 +225,7 @@ serve(async (req) => {
               description: `${planNames[planKey] || planKey} subscription`,
             },
             unit_amount: unitAmount,
-            recurring: {
-              interval: billingInfo.interval as "month" | "year",
-              interval_count: billingInfo.count,
-            },
+            recurring: { interval: billingInfo.interval as "month" | "year", interval_count: billingInfo.count },
           },
           quantity: 1,
         };
@@ -296,46 +237,30 @@ serve(async (req) => {
         customer: customerId,
         mode: "subscription",
         line_items: [lineItem],
-        allow_promotion_codes: true,
-        automatic_tax: { enabled: false },
-        success_url:
-          success_url || "https://whistle-ai.com/app#subscription",
-        cancel_url:
-          cancel_url || "https://whistle-ai.com/app#subscription",
+        success_url: success_url || "https://whistle-ai.com/app#subscription",
+        cancel_url: cancel_url || "https://whistle-ai.com/app#subscription",
         subscription_data: {
-          metadata: {
-            user_id: user.id,
-            plan: plan || "",
-            billing_cycle: billing_cycle || "m",
-          },
+          metadata: { user_id: user.id, plan: plan || "", billing_cycle: billing_cycle || "m" },
         },
-        metadata: {
-          user_id: user.id,
-          type: "subscription",
-          plan: plan || "",
-        },
+        metadata: { user_id: user.id, type: "subscription", plan: plan || "" },
       };
     } else {
       return jsonResponse({ error: "Invalid payment type" }, 400);
     }
 
+    // Step 6: Create checkout session
+    step = "create_session";
     const session = await stripe.checkout.sessions.create(sessionConfig);
 
     return jsonResponse({ url: session.url, sessionId: session.id });
   } catch (err) {
-    const stripeMsg = err?.message || String(err);
-    const stripeCode = err?.code || "unknown";
-    const stripeType = err?.type || "unknown";
-    const stripeParam = err?.param || "none";
-    console.error(
-      "[checkout] ERROR:", stripeMsg,
-      "| code:", stripeCode,
-      "| type:", stripeType,
-      "| param:", stripeParam,
-      "| stack:", err?.stack?.slice(0, 500),
-    );
+    const msg = err?.message || String(err);
+    const code = err?.code || "unknown";
+    const type = err?.type || "unknown";
+    const param = err?.param || "none";
+    console.error("[checkout] STEP:", step, "| ERROR:", msg, "| code:", code, "| type:", type, "| param:", param);
     return jsonResponse(
-      { error: "Payment processing failed. Please try again." },
+      { error: `Payment failed at step: ${step}`, debug_msg: msg, debug_code: code, debug_type: type, debug_param: param },
       500,
     );
   }
