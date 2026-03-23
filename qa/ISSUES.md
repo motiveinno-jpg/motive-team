@@ -2,42 +2,45 @@
 
 ## 진행현황
 - Agent1 한국제조사: ✅ 완료 (STEP1~9 전체 테스트)
-- Agent2 글로벌바이어: 🔄 진행중 (미국계정 STEP4 진행중)
+- Agent2 글로벌바이어: 🔄 진행중 (미국계정 ✅ 완료, 일본계정 시작)
 - Agent2B 글로벌제조사: ✅ 완료 (US/JP/DE 3개국 STEP1~6 테스트, 이슈 19건)
-- Agent3 개발: ⏳ 대기
-- Agent4 QA검토: ⏳ 대기
+- Agent3 개발: 🔄 진행중 (반려 7건 재수정 필요)
+- Agent4 QA검토: 🔄 1차 검토 완료 (승인14/반려7/보류3)
 
 ## 이슈목록
 | # | 발견자 | 계정 | 파일 | 기능 | 증상 | 재현방법 | 심각도 | 상태 |
 |---|--------|------|------|------|------|----------|--------|------|
-| 2B-001 | Agent2B | US/Robert Kim | whistle-landing | STEP1-언어감지 | /en URL 진입 시 페이지 전체가 한국어로 표시됨. 헤드라인·네비·CTA·쿠키배너·푸터 모두 한국어. /ko와 콘텐츠 다르지만 둘 다 한국어. 글로벌 유저 진입 시 즉시 이탈 예상 | whistle-ai.com/en 접속 | 상 | 수정완료-검토대기 |
-| 2B-002 | Agent2B | US/Robert Kim | whistle-landing | STEP2-랜딩 한영혼재 | /en 랜딩 전체에서 제목은 한국어, 설명은 영어로 혼재. 예: 제목="수출에 필요한 모든 것"(한국어) + 설명=영어, "요금제" 카드만 한국어(나머지 12개 영어), "Simulate tariff savings under 무료 Trade Agreements" 문장내 혼재, 통계 "분석 가능 국가"(한국어) vs "Verified Buyers"(영어) | /en 전체 스크롤 | 상 | 수정완료-검토대기 |
-| 2B-003 | Agent2B | US/Robert Kim | whistle-landing | STEP2-네비/헤더/푸터 | /en에서 상단배너("초기 파트너 가격—2026년..."), 네비(서비스/요금제/제휴문의/로그인/무료AI분석시작하기), CTA("무료 계정 만들기"/"먼저 데모 체험"), 푸터 링크(플랫폼/접속/법적사항 등) 전부 한국어. 영어 유저에게 네비게이션 불가 | /en 접속 → 네비/푸터 확인 | 상 | 수정완료-검토대기 |
-| 2B-004 | Agent2B | US/Robert Kim | whistle-app | STEP3-로그인/가입폼 한국어 | /app 로그인·회원가입 폼 전체 한국어. 라벨(회사명/이메일/비밀번호), placeholder(모티브이노베이션), 버튼(무료시작하기/로그인), 에러메시지, 인증완료 안내 모두 한국어. /en에서 유입된 글로벌 유저가 폼 이해 불가 | /en → "무료 AI 분석 시작하기" 클릭 또는 /app 직접 접속 | 상 | 수정완료-검토대기 |
-| 2B-005 | Agent2B | US/Robert Kim | whistle-app | STEP3-앱 전체 i18n 미적용 | 로그인 후 앱 전체가 한국어. 사이드바(대시보드/AI수출상품분석/제품관리/서류생성/수출비용도구/메시지/주문&물류 등), 상단바(제휴문의/버그신고), 온보딩 3단계 안내 모두 한국어. 글로벌 제조사 사용 불가 | 로그인 후 대시보드 확인 | 상 | 수정완료-검토대기 |
-| 2B-006 | Agent2B | US/Robert Kim | whistle-app | STEP3-온보딩 한국전용 필드 | 온보딩 회사정보에 한국 전용 필드: 사업자번호(123-45-67890), 대표자명(홍길동), 전화번호(02-1234-5678), 주소(서울시 강남구...). 미국 제조사에게 한국 사업자번호 입력 요구는 부적절. 국가별 폼 분기 필요 | 가입 후 온보딩 1/3 단계 진입 | 상 | 수정완료-검토대기 |
-| 2B-007 | Agent2B | US/Robert Kim | whistle-app | STEP3-알리바바 메뉴 노출 | 사이드바에 "알리바바 대행" 메뉴가 글로벌(비한국) 제조사에게도 노출됨. 알리바바 대행은 한국 제조사 전용 기능이므로 글로벌 유저에게 혼란 유발 | 글로벌 계정 로그인 후 사이드바 확인 | 중 | 수정대기 |
-| 2B-008 | Agent2B | US/Robert Kim | whistle-app | STEP3-온보딩 셀렉트 한국어 | 기업유형 셀렉트: "법인사업자/개인사업자/개인"(한국 세무 분류). 카테고리: "뷰티·화장품/식품·음료..." 한국어. 제조유형: "직접제조/OEM/ODM/무역유통" 한국어. value는 영어인데 표시만 한국어 | 온보딩 1/3 셀렉트 박스 확인 | 중 | 수정대기 |
-| 2B-009 | Agent2B | US/Robert Kim | whistle-app | STEP3-대시보드 전체 한국어 | 대시보드 모든 요소 한국어: 인사("안녕하세요"), 프로필완성도, 퀵액션(AI분석/제품등록/바이어찾기/주문관리), Beta배너, 매출목표, 환율모니터 | 로그인 후 대시보드 | 상 | 수정완료-검토대기 |
-| 2B-010 | Agent2B | US/Robert Kim | whistle-app | STEP3-환율 USD/KRW 고정 | 미국 제조사인데 환율 모니터가 USD/KRW(원화) 고정 표시. 미국 제조사에게 원화 환율은 무의미. 유저 국가에 맞는 통화쌍 필요(또는 비한국 유저에겐 숨기기) | 대시보드 하단 환율 모니터 확인 | 중 | 수정대기 |
-| 2B-011 | Agent2B | US/Robert Kim | whistle-app | STEP4-제품등록 한글필수 | 제품등록 시 "제품명(한글)*"이 필수(별표), "제품명(영문)"은 선택. 글로벌 제조사에게 한글 제품명 필수 요구는 부적절. 역전 필요(영문 필수, 한글 선택). DB 필드도 name_ko가 필수 | 제품 관리 → + 추가 → 제품명 라벨 확인 | 상 | 수정완료-검토대기 |
-| 2B-012 | Agent2B | US/Robert Kim | whistle-app | STEP4-가격 원화고정 | 제품등록·AI분석 모두 가격 입력이 원화(₩) 고정. "단가 (₩ 원화 → USD 자동 환산)", placeholder "7,000". 미국 제조사가 USD로 가격 입력 불가. 국가별 통화 선택 또는 USD 기본값 필요 | 제품등록 또는 AI분석 → 단가 필드 확인 | 상 | 수정완료-검토대기 |
-| 2B-013 | Agent2B | US/Robert Kim | whistle-app | STEP4-AI분석 한국어 예시 | AI분석 폼 placeholder "예: 닥터지 레드 블레미쉬 수딩크림"(한국 화장품명). 크롤링 안내에 "쿠팡, 네이버" 등 한국 플랫폼 언급. HWP 파일 지원 언급. 글로벌 유저에게 무의미한 한국 로컬 컨텍스트 | AI수출상품분석 → 새 분석 시작 | 중 | 수정대기 |
-| 2B-014 | Agent2B | US/Robert Kim | whistle-app | STEP6-구독페이지 전체 한국어 | 구독&서비스 페이지 전체 한국어: "구독 관리", 플랜명(스타터/프로페셔널/엔터프라이즈), 기능설명(AI분석20회/50회/무제한), "단건 분석 결제", "정부 바우처로 결제 가능" 등. 글로벌 유저가 플랜 비교·결제 불가 | 사이드바 → 구독&서비스 | 상 | 수정완료-검토대기 |
-| 2B-015 | Agent2B | US/Robert Kim | whistle-app | STEP6-Stripe 기본통화 KRW | Stripe 결제창 진입 시 기본 통화가 ₩(원화), 국가가 "대한민국"으로 설정됨. US 유저인데 KRW 결제가 기본값. USD 토글은 있으나 기본값이 잘못됨. 유저 국가 기반 통화/국가 기본값 필요 | 구독&서비스 → 단건분석결제 → Stripe 결제창 | 중 | 수정대기 |
-| 2B-016 | Agent2B | US/Robert Kim | whistle-app | STEP6-정부바우처 글로벌 노출 | "정부 바우처로 결제 가능" 섹션이 글로벌 유저에게도 노출됨. 한국 정부 바우처(중기부 등)는 한국 기업 전용이므로 글로벌 유저에게 혼란 유발. 비한국 유저에겐 숨기기 필요 | 구독&서비스 페이지 하단 | 중 | 수정대기 |
-| 2B-017 | Agent2B | US/Robert Kim | whistle-app | STEP6-알리바바 서비스 글로벌 노출 | "알리바바 입점 서비스" (₩200만/₩500만 셋업비) 가 글로벌 유저에게도 노출됨. 한국 제조사 전용 기능이므로 비한국 유저에겐 숨기기 필요 | 구독&서비스 페이지 | 중 | 수정대기 |
-| 2B-018 | Agent2B | JP/Yamamoto, DE/Mueller | whistle-app | STEP3-온보딩 상품URL 네이버 | 온보딩 2/3 첫제품등록에서 상품 URL placeholder가 "https://smartstore.naver.com/..."(네이버 스마트스토어). 한국 전용 플랫폼으로 일본·독일 등 글로벌 유저에게 무의미. 범용 URL 예시 필요(예: your-website.com/product) | 온보딩 2/3 → 상품 URL 필드 확인 | 중 | 수정완료-검토대기 |
-| 2B-019 | Agent2B | JP/Yamamoto, DE/Mueller | whistle-app | STEP3-가입폼 바우처 체크박스 | 회원가입 폼에 "수출바우처 또는 혁신바우처를 보유하고 있습니다" 체크박스가 글로벌 유저에게도 노출됨. 한국 정부 바우처는 한국 기업 전용이므로 글로벌 유저에게 혼란. 비한국 유저에겐 숨기기 필요 | /app → 회원가입 탭 | 중 | 수정대기 |
-| 1-001 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-모바일 CTA 줄바꿈 | 모바일(390px)에서 "바우처로 무료 이용" 버튼 텍스트가 "바우처로 무\n료 이용"으로 어색하게 줄바꿈됨 | whistle-ai.com/ko 모바일 뷰 (390px) | 하 | 수정대기 |
-| 1-002 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-캐러셀 콘텐츠 미표시 | 데스크톱 중간부 리뷰 캐러셀(James Parker 등) 영역이 대부분 어두운 빈 공간으로 표시. 리뷰 텍스트/별점이 거의 안 보임 | whistle-ai.com/ko 스크롤 중간부 | 중 | 수정대기 |
-| 1-003 | Agent1 | qa.food.ko1 | whistle-app | STEP2-이메일인증 불일치 | 가입 완료 시 "이메일 인증 후 로그인해주세요" 안내하지만, 실제로는 인증 없이 바로 로그인+앱 진입 가능. 안내 메시지와 실동작 불일치 | 가입 → 이메일 인증 없이 로그인 시도 | 중 | 수정대기 |
-| 1-004 | Agent1 | qa.food.ko1 | whistle-app | STEP4-다음버튼 뷰포트밖 | 온보딩 1/3 회사정보에서 "다음 →" 버튼이 화면 스크롤 밖에 숨겨짐. 일반 스크롤로 접근 불가, scrollIntoView로만 접근됨. 사용자가 다음 단계 진행 못할 수 있음 | 온보딩 1/3 → 모든 필드 입력 후 화면 하단 확인 | 상 | 수정대기 |
-| 1-005 | Agent1 | qa.food.ko1 | whistle-app | STEP6-콘솔에러 | AI 분석 완료 시 콘솔에 "sb.from(...).insert(...).catch is not a function" JS 런타임 에러 발생. 분석 결과 저장 로직 오류 추정 | AI 분석 실행 → 브라우저 콘솔 확인 | 중 | 수정대기 |
-| 1-006 | Agent1 | qa.food.ko1 | whistle-app | STEP9-VAT 미표시 | 구독 페이지에 "부가세(VAT) 10% 별도" 표기하지만, Stripe 결제창에서 VAT가 별도 항목으로 표시되지 않음. ₩15,418 = $9.90 × 환율 그대로이며 VAT 추가분 없음. 실제 부가세 부과 여부 불명확 | 구독&서비스 → 단건분석결제 클릭 → Stripe 결제창 금액 확인 | 중 | 수정대기 |
-| 2-001 | Agent2 | US/James Carter | buyer-app | STEP3-온보딩 이스케이프 문자 노출 | 온보딩 전체에서 백슬래시 이스케이프 노출: "Let\'s set up your buyer profile", "categories you\'re interested in", "You\'re all set!" → 실제 화면에 `\'` 문자가 그대로 보임 | /app/buyer 가입 후 온보딩 1~4단계 진행 | 하 | 수정대기 |
-| 2-002 | Agent2 | US/James Carter | buyer-app | STEP3-가입 시 국가 미전달 | 가입 폼에서 Country=US 선택했으나 온보딩 프로필 Step1에서 Country가 "Select"로 초기화. 가입 시 입력한 국가정보가 프로필에 반영되지 않음 | 가입 시 US 선택 → 온보딩 1단계 Country 확인 | 중 | 수정대기 |
-| 2-003 | Agent2 | US/James Carter | buyer-app | STEP4-Product Search 검색불가 | Product Search에서 키워드 입력 후 Search 클릭 시 결과 없음. 카테고리 필터도 적용 안 됨. 콘솔에 "ReferenceError: S is not defined" JS 에러 발생. 검색 기능 전체 미작동 | /app/buyer → Product Search → 검색어 입력 → Search 클릭 | 상 | 수정완료-검토대기 |
+| 2B-001 | Agent2B | US/Robert Kim | whistle-landing | STEP1-언어감지 | /en 전체 한국어 표시 | whistle-ai.com/en 접속 | 상 | ✅ 완료 |
+| 2B-002 | Agent2B | US/Robert Kim | whistle-landing | STEP2-랜딩 한영혼재 | /en 제목 한국어, 설명 영어 혼재 | /en 전체 스크롤 | 상 | ✅ 완료 |
+| 2B-003 | Agent2B | US/Robert Kim | whistle-landing | STEP2-네비/헤더/푸터 | /en 네비/CTA/푸터 전부 한국어 | /en → 네비/푸터 확인 | 상 | ✅ 완료 |
+| 2B-004 | Agent2B | US/Robert Kim | whistle-app | STEP3-로그인/가입폼 한국어 | /app 로그인·가입폼 전체 한국어 | /app 직접 접속 | 상 | ✅ 완료 |
+| 2B-005 | Agent2B | US/Robert Kim | whistle-app | STEP3-앱 전체 i18n 미적용 | 앱 전체 한국어 (사이드바/상단바/온보딩) | 로그인 후 대시보드 | 상 | ✅ 완료 |
+| 2B-006 | Agent2B | US/Robert Kim | whistle-app | STEP3-온보딩 한국전용 필드 | ceo_name_ko 비조건부 전체 노출. 사업자번호는 조건부 OK, 대표자명 DB칼럼 한국전용 | 온보딩 1/3 단계 | 상 | ❌ 재수정필요 |
+| 2B-007 | Agent2B | US/Robert Kim | whistle-app | STEP3-알리바바 메뉴 노출 | _isKorean 조건부 표시 확인 | 글로벌 로그인 → 사이드바 | 중 | ✅ 완료 |
+| 2B-008 | Agent2B | US/Robert Kim | whistle-app | STEP3-온보딩 셀렉트 한국어 | 기업유형/카테고리/제조유형 조건부 분기 확인 | 온보딩 1/3 셀렉트 | 중 | ✅ 완료 |
+| 2B-009 | Agent2B | US/Robert Kim | whistle-app | STEP3-대시보드 전체 한국어 | T() 적용, 환율 _isKorean 분리 확인 | 로그인 후 대시보드 | 상 | ✅ 완료 |
+| 2B-010 | Agent2B | US/Robert Kim | whistle-app | STEP3-환율 USD/KRW 고정 | 환율 모니터 섹션 자체가 글로벌 유저에게도 렌더됨 | 대시보드 하단 | 중 | ❌ 재수정필요 |
+| 2B-011 | Agent2B | US/Robert Kim | whistle-app | STEP4-제품등록 한글필수 | 제품명 단일 칼럼, 글로벌 유저에게 영문필수/한글선택 역전 미구현 | 제품 관리 → + 추가 | 상 | ❌ 재수정필요 |
+| 2B-012 | Agent2B | US/Robert Kim | whistle-app | STEP4-가격 원화고정 | 가격 입력 ₩ 고정, 글로벌 USD 입력 불가 | 제품등록 → 단가 필드 | 상 | ❌ 재수정필요 |
+| 2B-013 | Agent2B | US/Robert Kim | whistle-app | STEP4-AI분석 한국어 예시 | placeholder OK, "쿠팡/네이버" 언급 + HWP 지원 글로벌 노출 미확인 | AI분석 → 새 분석 | 중 | ❌ 재수정필요 |
+| 2B-014 | Agent2B | US/Robert Kim | whistle-app | STEP6-구독페이지 전체 한국어 | T() + _isKorean 적용 확인 (minor: line 11067 플랜명 영어고정) | 구독&서비스 | 상 | ✅ 완료 |
+| 2B-015 | Agent2B | US/Robert Kim | whistle-app | STEP6-Stripe 기본통화 KRW | Stripe Edge Function 통화 기본값 이슈 | Stripe 결제창 | 중 | 보류 |
+| 2B-016 | Agent2B | US/Robert Kim | whistle-app | STEP6-정부바우처 글로벌 노출 | _ko 조건부 숨김 확인 | 구독&서비스 하단 | 중 | ✅ 완료 |
+| 2B-017 | Agent2B | US/Robert Kim | whistle-app | STEP6-알리바바 서비스 글로벌 노출 | confirm 분기 OK, 선택지 자체가 전체 유저 노출. _isKorean 가드 필요 | 구독&서비스 | 중 | ❌ 재수정필요 |
+| 2B-018 | Agent2B | JP/Yamamoto, DE/Mueller | whistle-app | STEP3-온보딩 상품URL 네이버 | 글로벌: "your-website.com/product" 확인 | 온보딩 2/3 상품URL | 중 | ✅ 완료 |
+| 2B-019 | Agent2B | JP/Yamamoto, DE/Mueller | whistle-app | STEP3-가입폼 바우처 체크박스 | 이미 _isKorean 조건부 처리됨 (L2121). 비한국은 미노출 | /app → 회원가입 탭 | 중 | 수정완료-검토대기 |
+| 1-001 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-모바일 CTA 줄바꿈 | whiteSpace:nowrap 추가로 줄바꿈 방지 | whistle-ai.com/ko 390px | 하 | 수정완료-검토대기 |
+| 1-002 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-캐러셀 콘텐츠 미표시 | whistle-landing.html에 리뷰/캐러셀 섹션 자체 없음 — QA 오탐 가능 | whistle-ai.com/ko 중간부 | 중 | 보류 |
+| 1-003 | Agent1 | qa.food.ko1 | whistle-app | STEP2-이메일인증 불일치 | auto-confirm 시 verify 화면 skip → 바로 loadUser() | 가입 → 인증없이 로그인 | 중 | 수정완료-검토대기 |
+| 1-004 | Agent1 | qa.food.ko1 | whistle-app | STEP4-다음버튼 뷰포트밖 | position:sticky;bottom:0 적용 확인 | 온보딩 1/3 하단 | 상 | ✅ 완료 |
+| 1-005 | Agent1 | qa.food.ko1 | whistle-app | STEP6-콘솔에러 | .then().catch() 체인 연결 확인 | AI 분석 → 콘솔 | 중 | ✅ 완료 |
+| 1-006 | Agent1 | qa.food.ko1 | whistle-app | STEP9-VAT 미표시 | VAT 표기 vs Stripe 미반영 | Stripe 결제창 금액 | 중 | 보류 |
+| 2-001 | Agent2 | US/James Carter | buyer-app | STEP3-온보딩 이스케이프 문자 노출 | 이중이스케이프(`\\\'`) 수정 + 쌍따옴표 전환 | /app/buyer 온보딩 1~4 | 하 | 수정완료-검토대기 |
+| 2-002 | Agent2 | US/James Carter | buyer-app | STEP3-가입 시 국가 미전달 | user_metadata에서 country backfill + DB 업데이트 | 가입 US → 온보딩 | 중 | 수정완료-검토대기 |
+| 2-003 | Agent2 | US/James Carter | buyer-app | STEP4-Product Search 검색불가 | S 전역객체+sb Supabase 정상 확인 | Product Search → 검색 | 상 | ✅ 완료 |
+| 2-004 | Agent2 | US/James Carter | buyer-app | STEP5/6/7-테스트불가 | DB 테스트 데이터 없음. 상세페이지·매칭신청·채팅 테스트 불가. Find Manufacturers UI는 정상, Sourcing Inquiry 폼 정상 | 제조사 조회 시도 | 상 | 보류 |
+| 2-005 | Agent2 | US/James Carter | buyer-app | STEP8-결제 테스트불가 | 바이어 포털은 "Free for Buyers"로 구독 메뉴 없음. 에스크로 결제는 딜 진행 시에만 가능하나 딜이 없어 테스트 불가 | 사이드바 전체 메뉴 + Profile 확인 | 중 | 보류 |
+| 2-006 | Agent2 | US/James Carter | buyer-app | STEP3-온보딩 Skip 리다이렉트 | skipBuyerOnboarding: page='search'→'dashboard'로 변경 | 온보딩 4단계 → Skip 클릭 | 하 | 수정완료-검토대기 |
 
 ## 심각도기준
 - 상: 가입/로그인/결제/저장 불가
@@ -50,9 +53,35 @@
 ## 완료이슈
 | # | 파일 | 증상 | 해결 | 완료일 |
 |---|------|------|------|--------|
+| 2B-001 | whistle-landing | /en 전체 한국어 | /en→global-landing.htm 영어 파일 분리 | 2026-03-23 |
+| 2B-002 | whistle-landing | /en 한영혼재 | global-landing.html 전체 영어 하드코딩 | 2026-03-23 |
+| 2B-003 | whistle-landing | 네비/헤더/푸터 한국어 | 영어 nav/footer 독립 파일 | 2026-03-23 |
+| 2B-004 | whistle-app | 로그인/가입폼 한국어 | T() 번역함수 적용 | 2026-03-23 |
+| 2B-005 | whistle-app | 앱 전체 i18n | 사이드바/상단바/온보딩 T() 적용 | 2026-03-23 |
+| 2B-007 | whistle-app | 알리바바 메뉴 글로벌 노출 | _isKorean 조건부 표시 | 2026-03-23 |
+| 2B-008 | whistle-app | 온보딩 셀렉트 한국어 | 조건부 분기 적용 | 2026-03-23 |
+| 2B-009 | whistle-app | 대시보드 전체 한국어 | T() + _isKorean 적용 | 2026-03-23 |
+| 2B-014 | whistle-app | 구독페이지 전체 한국어 | T() + _isKorean 적용 | 2026-03-23 |
+| 2B-016 | whistle-app | 정부바우처 글로벌 노출 | _ko 조건부 숨김 | 2026-03-23 |
+| 2B-018 | whistle-app | 상품URL 네이버 | 글로벌 placeholder 분기 | 2026-03-23 |
+| 1-004 | whistle-app | 다음버튼 뷰포트밖 | position:sticky;bottom:0 | 2026-03-23 |
+| 1-005 | whistle-app | .catch 콘솔에러 | .then().catch() 체인 연결 | 2026-03-23 |
+| 2-003 | buyer-app | Product Search 검색불가 | S/sb 전역 정상 접근 | 2026-03-23 |
+
+## Agent4 반려 상세 (Agent3 재수정 필요)
+| # | 반려이유 | 재수정 요청사항 |
+|---|----------|----------------|
+| 2B-006 | ceo_name_ko 필드 비조건부 전체 유저 노출 | 글로벌: ceo_name(영문), 한국: ceo_name_ko(한글) 분기. DB 칼럼도 확인 |
+| 2B-010 | 환율 모니터 섹션 글로벌 유저에게도 렌더 | 대시보드에서 환율 섹션 `if(_isKorean)` 조건부 렌더링 |
+| 2B-011 | 제품명 단일 칼럼, 글로벌 역전 미구현 | _isKorean 기준 name_en 필수↔name_ko 선택 분기 |
+| 2B-012 | 가격 입력 ₩ 고정 미수정 | 글로벌: USD 기본값, 한국: KRW 기본값 통화 분기 |
+| 2B-013 | "쿠팡/네이버" 언급 + HWP 지원 글로벌 노출 | AI분석 본문에서 한국 로컬 컨텍스트 _isKorean 조건부 |
+| 2B-017 | 알리바바 서비스 선택지 전체 유저 노출 | `if(_isKorean)` 가드로 섹션 전체 감싸기 |
+| 2B-019 | 바우처 체크박스 조건부 코드 미발견 | 가입폼 바우처 체크박스에 `_isKorean` 조건부 추가 |
 
 ## 에스컬레이션(희웅님판단필요)
 | # | 내용 | 이유 |
 |---|------|------|
-| 1-004 | 온보딩 "다음" 버튼 뷰포트 밖 | 신규 가입 유저가 온보딩 1단계에서 진행 불가할 수 있음. 전환율 직결 |
 | 1-006 | VAT 10% 별도 표기 vs Stripe 미반영 | 세금계산서/부가세 처리 정합성 확인 필요. 법적 이슈 가능성 |
+| 2B-015 | Stripe 결제창 기본통화 KRW | Edge Function 통화 로직 변경 필요, Stripe 금지구역 |
+| 2-004 | DB 테스트 데이터 없어 바이어 STEP5~7 테스트 불가 | 테스트 데이터 시딩 정책 결정 필요 |

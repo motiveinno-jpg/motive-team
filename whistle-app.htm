@@ -1084,7 +1084,7 @@ function _showAnalysisPaywallOverlay(){
         +'</div>'
         /* Close button */
         +'<button onclick="App._closeBlurPaywall()" style="padding:10px 28px;border-radius:10px;border:1px solid var(--bd);background:transparent;color:var(--w40);cursor:pointer;font-size:13px;font-weight:500">'+(isKo?'\uB2EB\uAE30':'Close')+'</button>'
-        +'<div style="font-size:10px;color:var(--acc);margin-top:10px;font-weight:600">'+(isKo?'* 부가세(VAT) 10% 별도':'* VAT 10% excluded')+'</div>'
+        +''
         +'<div style="font-size:10px;color:var(--w20);margin-top:6px">'+(isKo?'\uC774\uC804\uC5D0 \uC785\uB825\uD55C \uC81C\uD488 \uC815\uBCF4\uB294 \uC790\uB3D9 \uC800\uC7A5\uB418\uC5B4 \uC788\uC2B5\uB2C8\uB2E4':'Your previously entered product data has been saved')+'</div>'
       +'</div></div>';
     document.body.appendChild(overlay);
@@ -1139,7 +1139,7 @@ function _showOneAnalysisCTA(){
       '<button onclick="App.closeModal(\'one-pay-cta\');App.payOneAnalysis()" class="btn btn-block" style="padding:14px;border-radius:12px;background:linear-gradient(135deg,var(--pri),#00b4d8);border:none;color:#000;font-weight:700;font-size:14px">💳 '+(_isKorean?'카드 결제하기':'Pay with Card')+'</button>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--w20);margin-top:12px">'+(_isKorean?'Stripe 보안 결제 · USD 결제 · 결제 즉시 분석 이용 가능':'Secure Stripe payment · Charged in USD · Analysis available immediately')+'</div>'+
-    '<div style="font-size:10px;color:var(--acc);margin-top:6px;font-weight:600">'+(_isKorean?'* 부가세(VAT) 10% 별도':'* VAT 10% excluded')+'</div>'+
+    ''+
     '<div style="font-size:10px;color:var(--w15);margin-top:4px">'+(_isKorean?'* 실제 청구액은 카드사 환율에 따라 다를 수 있습니다':'* Final charge may vary based on exchange rate')+'</div></div>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'one-pay-cta',title:(_isKorean?'⚡ 단건 분석 결제':'⚡ Single Analysis Payment'),body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'one-pay-cta\')">'+(_isKorean?'닫기':'Close')+'</button>',width:'400px'}));
   UI.showModal('one-pay-cta');
@@ -1305,11 +1305,13 @@ var _userLang = (function() {
   var urlP = new URLSearchParams(location.search).get('lang');
   if (urlP && supported.indexOf(urlP.toLowerCase()) >= 0) { localStorage.setItem('_lang', urlP.toLowerCase()); return urlP.toLowerCase(); }
   /* 2. URL path: /en → English, /ko_made → Korean */
-  if (location.pathname.startsWith('/en')) return 'en';
-  if (location.pathname.startsWith('/ko_made') || location.pathname.startsWith('/ko')) return 'ko';
+  if (location.pathname.startsWith('/en')) { localStorage.setItem('_lang', 'en'); return 'en'; }
+  if (location.pathname.startsWith('/ko_made') || location.pathname.startsWith('/ko')) { localStorage.setItem('_lang', 'ko'); return 'ko'; }
   /* 3. localStorage (check both app key and landing page key) */
   var stored = localStorage.getItem('_lang') || localStorage.getItem('whistle_lang');
   if (stored && supported.indexOf(stored) >= 0) return stored;
+  /* 3.5. Referer: if came from /en landing, use English */
+  try { var ref = document.referrer; if (ref && ref.indexOf('/en') >= 0) { localStorage.setItem('_lang', 'en'); return 'en'; } } catch(e) {}
   /* 4. navigator.language */
   var nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase().split('-')[0];
   return supported.indexOf(nav) >= 0 ? nav : 'en';
@@ -2031,7 +2033,9 @@ function doSignup(e){e.preventDefault();var f=e.target;
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:_meta}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:(_isKorean?'이미 등록된 이메일입니다. 로그인해주세요.':'This email is already registered. Please sign in.')});
-    set({authMode:'verify',_signupEmail:f.email.value});
+    /* If email is auto-confirmed by Supabase, skip verify screen and load directly */
+    if(r.data.user&&r.data.user.email_confirmed_at){loadUser();}
+    else set({authMode:'verify',_signupEmail:f.email.value});
     // Send welcome email
     fetch(SB_URL+'/functions/v1/send-transactional-email',{
       method:'POST',headers:{'Content-Type':'application/json','apikey':SB_ANON_KEY},
@@ -2386,21 +2390,23 @@ function pgDash(){
     h+='<div style="display:flex;gap:10px;font-size:11px;color:var(--w40)"><span>'+T('dash_goal_remaining')+'<b style="color:var(--w80)">'+_fmtCur(_remaining)+'</b></span><span>·</span><span onclick="S._salesGoal=0;sb.from(\'users\').update({sales_goal:0}).eq(\'id\',S.user.id);App.render()" style="cursor:pointer;color:var(--pri)">'+T('dash_goal_change')+'</span></div>';
   }
   h+='</div></div>';
-  /* ⑤-c 환율 알림 위젯 */
+  /* ⑤-c 환율 알림 위젯 — Korean only (USD/KRW) */
+  if(_isKorean){
   var _curRate=S.exchangeRate||1400;
   var _targetRate=S._targetExRate||0;
   var _rateHit=_targetRate>0&&_curRate>=_targetRate;
-  h+='<div class="card" style="margin-bottom:16px;border-color:'+(_rateHit?'rgba(0,230,118,.3)':'rgba(0,212,255,.1)')+'"><div class="card-h"><span>💱 '+T('dash_fx_monitor')+'</span><button class="btn btn-ghost btn-sm" onclick="App.refreshExRate()" style="font-size:10px;margin-left:auto;padding:2px 8px">🔄 '+T('dash_fx_refresh')+'</button></div><div class="card-b" style="padding:12px"><div style="display:flex;align-items:center;gap:16px"><div style="flex:1"><div style="font-size:10px;color:var(--w40)">'+T('dash_fx_current')+'</div><div style="font-size:24px;font-weight:900;color:var(--pri);font-family:JetBrains Mono">₩'+_curRate.toLocaleString('ko-KR',{maximumFractionDigits:2})+'</div><div style="font-size:9px;color:var(--w30)">'+(S._exRateTime||(_isKorean?'로드 시':'On load'))+'</div></div>';
+  h+='<div class="card" style="margin-bottom:16px;border-color:'+(_rateHit?'rgba(0,230,118,.3)':'rgba(0,212,255,.1)')+'"><div class="card-h"><span>💱 '+T('dash_fx_monitor')+'</span><button class="btn btn-ghost btn-sm" onclick="App.refreshExRate()" style="font-size:10px;margin-left:auto;padding:2px 8px">🔄 '+T('dash_fx_refresh')+'</button></div><div class="card-b" style="padding:12px"><div style="display:flex;align-items:center;gap:16px"><div style="flex:1"><div style="font-size:10px;color:var(--w40)">'+T('dash_fx_current')+'</div><div style="font-size:24px;font-weight:900;color:var(--pri);font-family:JetBrains Mono">₩'+_curRate.toLocaleString('ko-KR',{maximumFractionDigits:2})+'</div><div style="font-size:9px;color:var(--w30)">'+(S._exRateTime||'로드 시')+'</div></div>';
   if(_targetRate>0){
-    h+='<div style="text-align:center;padding:8px 14px;border-radius:8px;background:'+(_rateHit?'rgba(0,230,118,.08)':'var(--w04)')+'"><div style="font-size:9px;color:var(--w30)">'+(_isKorean?'목표 환율':'Target Rate')+'</div><div style="font-size:16px;font-weight:800;color:'+(_rateHit?'var(--ok)':'var(--w60)')+';font-family:JetBrains Mono">₩'+_targetRate.toLocaleString()+'</div>'+(_rateHit?'<div style="font-size:10px;color:var(--ok);font-weight:700;margin-top:2px">✅ '+(_isKorean?'목표 도달!':'Target reached!')+'</div>':'<div style="font-size:9px;color:var(--w30)">'+(_isKorean?'차이 ':'Diff ')+(_targetRate-_curRate>0?'+':'')+Math.round(_targetRate-_curRate)+'</div>')+'</div>';
+    h+='<div style="text-align:center;padding:8px 14px;border-radius:8px;background:'+(_rateHit?'rgba(0,230,118,.08)':'var(--w04)')+'"><div style="font-size:9px;color:var(--w30)">목표 환율</div><div style="font-size:16px;font-weight:800;color:'+(_rateHit?'var(--ok)':'var(--w60)')+';font-family:JetBrains Mono">₩'+_targetRate.toLocaleString()+'</div>'+(_rateHit?'<div style="font-size:10px;color:var(--ok);font-weight:700;margin-top:2px">✅ 목표 도달!</div>':'<div style="font-size:9px;color:var(--w30)">차이 '+(_targetRate-_curRate>0?'+':'')+Math.round(_targetRate-_curRate)+'</div>')+'</div>';
   }
   h+='</div>';
   if(!_targetRate){
-    h+='<div style="margin-top:10px;display:flex;gap:6px;align-items:center"><input id="targetRateInput" class="form-input" type="number" placeholder="'+(_isKorean?'목표 환율 (예: 1450)':'Target rate (e.g. 1450)')+'" style="flex:1;font-size:12px;text-align:center"><button class="btn btn-pri btn-sm" onclick="var v=Number(document.getElementById(\'targetRateInput\').value);if(v>0){S._targetExRate=v;localStorage.setItem(\'whistle_target_rate\',v);App.render();}">'+(_isKorean?'설정':'Set')+'</button></div>';
+    h+='<div style="margin-top:10px;display:flex;gap:6px;align-items:center"><input id="targetRateInput" class="form-input" type="number" placeholder="목표 환율 (예: 1450)" style="flex:1;font-size:12px;text-align:center"><button class="btn btn-pri btn-sm" onclick="var v=Number(document.getElementById(\'targetRateInput\').value);if(v>0){S._targetExRate=v;localStorage.setItem(\'whistle_target_rate\',v);App.render();}">설정</button></div>';
   }else{
-    h+='<div style="margin-top:6px;text-align:right"><span onclick="S._targetExRate=0;localStorage.removeItem(\'whistle_target_rate\');App.render()" style="cursor:pointer;font-size:10px;color:var(--pri)">'+(_isKorean?'목표 변경':'Change Target')+'</span></div>';
+    h+='<div style="margin-top:6px;text-align:right"><span onclick="S._targetExRate=0;localStorage.removeItem(\'whistle_target_rate\');App.render()" style="cursor:pointer;font-size:10px;color:var(--pri)">목표 변경</span></div>';
   }
   h+='</div></div>';
+  }
   /* ⑤ 주요 지표 — 신규 사용자: 핵심 4개만 CTA 강조, 데이터 있는 유저: 전체 표시 */
   var _isNewUser=!ac&&!pc&&!bc&&!oc;
   h+='<div class="grid-4" style="margin-bottom:20px">';
@@ -2884,7 +2890,7 @@ function submitA(){
       var _aSub=S.user||{};var _aFree=(!_aSub.plan||_aSub.plan==='free');
       var _aOverage=g&&g.overage;var _overageAmt=OVERAGE_PRICE.usd;
       var _aPrice=_aFree?9.90:_aOverage?_overageAmt:(_aSub.plan==='starter'?9.90:0);
-      if(_aPrice>0&&!res._is_fallback){sb.from('billing_events').insert({user_id:S.user.id,event_type:_aOverage?'ai_analysis_overage':'ai_analysis',amount:_aPrice,currency:'USD',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free',is_overage:!!_aOverage,overage_rate:_aOverage?'$1.90/report':null}}).catch(function(e){console.error('[billing] analysis event fail:',e);});}
+      if(_aPrice>0&&!res._is_fallback){sb.from('billing_events').insert({user_id:S.user.id,event_type:_aOverage?'ai_analysis_overage':'ai_analysis',amount:_aPrice,currency:'USD',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free',is_overage:!!_aOverage,overage_rate:_aOverage?'$1.90/report':null}}).then(function(){}).catch(function(e){console.error('[billing] analysis event fail:',e);});}
     }).catch(function(err){
       console.error('[analyze-export] Client error:',err.message);
       /* EF v5 may have updated DB to failed; check before fallback */
@@ -4457,7 +4463,7 @@ function submitCloneProject(){
       var srcBuyers=(S.matchings||[]).filter(function(m){return m.project_id===src.id;});
       if(srcBuyers.length){
         var copies=srcBuyers.map(function(m){return{user_id:S.user.id,buyer_id:m.buyer_id,project_id:newPj.id,status:'proposed',source:'clone'};});
-        sb.from('matchings').insert(copies).catch(function(e){console.error('[whistle]',e);});
+        sb.from('matchings').insert(copies).then(function(){}).catch(function(e){console.error('[whistle]',e);});
       }
     }
     /* 서류 템플릿 복사 */
@@ -4465,7 +4471,7 @@ function submitCloneProject(){
       var srcDocs=(S.savedDocs||[]).filter(function(dc){return dc.project_id===src.id;});
       if(srcDocs.length){
         var docCopies=srcDocs.map(function(dc){return{user_id:S.user.id,project_id:newPj.id,doc_type:dc.doc_type,doc_number:dc.doc_type.toUpperCase()+'-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6),content:dc.content,status:'draft',buyer_id:dc.buyer_id||null};});
-        sb.from('documents').insert(docCopies).catch(function(e){console.error('[whistle]',e);});
+        sb.from('documents').insert(docCopies).then(function(){}).catch(function(e){console.error('[whistle]',e);});
       }
     }
     closeModal('clonepj');UI.toast(_isKorean?'프로젝트 복제 완료!':'Project cloned!','ok');
@@ -10966,14 +10972,14 @@ function pgSub(){
   /* Current plan summary */
   '<div class="card" style="margin-bottom:20px;border-color:rgba(0,212,255,.15)"><div class="card-b"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">'+(_isKorean?'현재 플랜':'Current Plan')+'</span>'+UI.pb(cur)+'</div><div style="font-size:12px;color:var(--w40)">'+curDesc+'</div>'+(cur!=='free'&&S.user&&S.user.stripe_customer_id?'<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="App.openBillingPortal()" style="font-size:11px">'+(_isKorean?'구독 관리 (결제수단·해지)':'Manage Subscription')+'</button><button class="btn btn-ghost btn-sm" onclick="App.requestRefund()" style="font-size:11px;color:var(--err)">'+(_isKorean?'환불 요청':'Request Refund')+'</button></div>':'')+'</div><div style="display:flex;gap:16px;flex-wrap:wrap"><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'AI 분석':'AI Analysis')+'</div><div style="font-size:16px;font-weight:800;color:var(--pri)">'+aUsed+'<span style="font-size:11px;color:var(--w40);font-weight:400">/'+aMax+'</span></div><div style="height:4px;border-radius:2px;background:var(--w08);margin-top:4px;width:60px"><div style="height:100%;border-radius:2px;background:var(--pri);width:'+Math.min(aUsed/aMax*100,100)+'%"></div></div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'제품':'Products')+'</div><div style="font-size:16px;font-weight:800;color:var(--acc)">'+pUsed+'</div></div><div style="text-align:center;padding:10px 16px;border-radius:10px;background:var(--w08)"><div style="font-size:11px;color:var(--w40);margin-bottom:2px">'+(_isKorean?'프로젝트':'Projects')+'</div><div style="font-size:16px;font-weight:800;color:var(--ok)">'+pjUsed+'</div></div></div></div></div></div>'+
 
-  /* Government voucher box — TOP position */
-  '<div class="card" style="border-color:rgba(255,184,0,.2);margin-bottom:20px"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="font-size:28px">🏛️</span><div style="flex:1;min-width:200px"><div style="font-weight:700;color:var(--acc)">'+(_isKorean?'정부 바우처로 결제 가능':'Government Voucher Payment Available')+'</div><div style="font-size:12px;color:var(--w40);margin-top:2px">'+(_isKorean?'수출바우처·혁신바우처 최대 85% 지원. SaaS 구독 + 알리바바 패키지 모두 적용 가능.':'Export/Innovation voucher covers up to 85%. Applicable to SaaS subscription + Alibaba packages.')+'</div></div><button class="btn btn-acc btn-sm" onclick="App.reqSvc(\'certification\')">'+(_isKorean?'바우처 상담':'Voucher Consultation')+'</button></div></div>'+
+  /* Government voucher box — TOP position (Korean only) */
+  (_isKorean?'<div class="card" style="border-color:rgba(255,184,0,.2);margin-bottom:20px"><div class="card-b" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="font-size:28px">🏛️</span><div style="flex:1;min-width:200px"><div style="font-weight:700;color:var(--acc)">정부 바우처로 결제 가능</div><div style="font-size:12px;color:var(--w40);margin-top:2px">수출바우처·혁신바우처 최대 85% 지원. SaaS 구독 + 알리바바 패키지 모두 적용 가능.</div></div><button class="btn btn-acc btn-sm" onclick="App.reqSvc(\'certification\')">바우처 상담</button></div></div>':'')+
 
   /* Section header + billing cycle toggle + voucher toggle */
   '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px"><div style="font-size:13px;color:var(--w40)">'+(_isKorean?'SaaS 구독 요금 — AI 분석·바이어 소통·수출 관리':'SaaS Pricing — AI Analysis · Buyer Communication · Export Management')+'</div>'+
-  '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-  '<div onclick="App.toggleVoucher()" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:20px;cursor:pointer;border:1.5px solid '+(sv?'transparent':'var(--bd)')+';background:'+(sv?'linear-gradient(135deg,rgba(138,92,246,.3),rgba(0,212,255,.2))':'var(--w08)')+';transition:all .3s"><div style="width:32px;height:16px;border-radius:8px;padding:2px;background:'+(sv?'rgba(255,255,255,.3)':'var(--w12)')+';display:flex;align-items:center;justify-content:'+(sv?'flex-end':'flex-start')+';transition:all .3s"><div style="width:12px;height:12px;border-radius:6px;background:#fff;transition:all .3s"></div></div><span style="font-size:12px;font-weight:700;color:var(--w70)">💰 '+(_isKorean?'바우처 적용 가격':'Voucher Price')+'</span></div>'+
-  '</div></div>'+
+  (_isKorean?'<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+  '<div onclick="App.toggleVoucher()" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:20px;cursor:pointer;border:1.5px solid '+(sv?'transparent':'var(--bd)')+';background:'+(sv?'linear-gradient(135deg,rgba(138,92,246,.3),rgba(0,212,255,.2))':'var(--w08)')+';transition:all .3s"><div style="width:32px;height:16px;border-radius:8px;padding:2px;background:'+(sv?'rgba(255,255,255,.3)':'var(--w12)')+';display:flex;align-items:center;justify-content:'+(sv?'flex-end':'flex-start')+';transition:all .3s"><div style="width:12px;height:12px;border-radius:6px;background:#fff;transition:all .3s"></div></div><span style="font-size:12px;font-weight:700;color:var(--w70)">💰 바우처 적용 가격</span></div>'+
+  '</div></div>':'</div>')+
   /* Billing cycle selector */
   (function(){var bc=S._billingCycle||'m';return '<div style="display:flex;justify-content:center;margin-bottom:14px;margin-top:8px"><div style="display:inline-flex;border-radius:10px;background:var(--w08);padding:3px;gap:2px">'+
   '<button onclick="S._billingCycle=\'m\';App.render()" style="padding:8px 20px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:700;transition:all .2s;'+(bc==='m'?'background:var(--pri);color:#000':'background:transparent;color:var(--w60)')+'">'+(_isKorean?'월간':'Monthly')+'</button>'+
@@ -11012,13 +11018,13 @@ function pgSub(){
 
   /* USD 결제 안내 */
   '<div style="text-align:center;font-size:11px;color:var(--w25);margin-bottom:6px">'+(_isKorean?'💳 모든 결제는 USD(미국 달러)로 처리됩니다. 실제 청구액은 카드사 환율에 따라 다를 수 있습니다.':'💳 All payments are processed in USD. Final charge may vary based on exchange rate.')+'</div>'+
-  '<div style="text-align:center;font-size:11px;color:var(--acc);margin-bottom:16px;font-weight:600">'+(_isKorean?'* 부가세(VAT) 10% 별도':'* VAT 10% excluded')+'</div>'+
+  ''+
 
-  /* Recommended combo */
-  '<div style="padding:12px 18px;border-radius:10px;background:var(--w04);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:24px"><span style="font-size:12px;color:var(--w40)">🔥 '+(_isKorean?'가장 인기 있는 조합:':'Most Popular Combo:')+'</span><span style="font-size:13px;font-weight:700;color:var(--acc)">Pro SaaS</span><span style="font-size:12px;color:var(--w20)">+</span><span style="font-size:13px;font-weight:700;color:var(--acc)">'+(_isKorean?'알리바바 입점 패키지':'Alibaba Listing Package')+'</span></div>'+
+  /* Recommended combo + Alibaba packages — Korean only */
+  (_isKorean?'<div style="padding:12px 18px;border-radius:10px;background:var(--w04);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-bottom:24px"><span style="font-size:12px;color:var(--w40)">🔥 가장 인기 있는 조합:</span><span style="font-size:13px;font-weight:700;color:var(--acc)">Pro SaaS</span><span style="font-size:12px;color:var(--w20)">+</span><span style="font-size:13px;font-weight:700;color:var(--acc)">알리바바 입점 패키지</span></div>':'')+
 
-  /* Alibaba packages header */
-  '<div style="margin-bottom:16px"><div style="font-size:16px;font-weight:800;margin-bottom:4px">🌏 '+(_isKorean?'알리바바 입점 서비스':'Alibaba Listing Services')+'</div><div style="font-size:12px;color:var(--w40)">'+(_isKorean?'SaaS 구독과 별도로, 알리바바 실제 입점이 필요한 기업을 위한 서비스입니다':'Separate from SaaS subscription. For businesses that need an actual Alibaba store listing.')+'</div></div>'+
+  /* Alibaba packages header — Korean only */
+  (_isKorean?'<div style="margin-bottom:16px"><div style="font-size:16px;font-weight:800;margin-bottom:4px">🌏 알리바바 입점 서비스</div><div style="font-size:12px;color:var(--w40)">SaaS 구독과 별도로, 알리바바 실제 입점이 필요한 기업을 위한 서비스입니다</div></div>'+
 
   /* Alibaba A/B grid */
   '<div class="grid-2" style="margin-bottom:20px">'+
@@ -11047,9 +11053,9 @@ function pgSub(){
   '</div></div></div>'+
 
   /* Which model fits */
-  '<div class="card" style="margin-bottom:20px"><div class="card-b"><div style="font-size:13px;font-weight:700;margin-bottom:10px">'+(_isKorean?'어떤 모델이 맞을까요?':'Which model is right for you?')+'</div><div class="grid-2"><div><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:4px">'+(_isKorean?'총판 운영을 추천합니다':'Distributor model recommended')+'</div><div style="font-size:11px;color:var(--w40);line-height:1.6">'+(_isKorean?'• 수출 경험이 전혀 없는 기업<br>• 초기 비용을 최소화하고 싶은 기업<br>• 알리바바 운영을 위탁하고 본업에 집중하고 싶은 기업':'• No prior export experience<br>• Want to minimize initial costs<br>• Prefer to delegate Alibaba operations and focus on core business')+'</div></div><div><div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:4px">'+(_isKorean?'독립 운영을 추천합니다':'Independent model recommended')+'</div><div style="font-size:11px;color:var(--w40);line-height:1.6">'+(_isKorean?'• 자체 브랜드로 해외 시장을 키우려는 기업<br>• 연 수출 규모가 $100K 이상 예상되는 기업<br>• 장기적으로 수출팀을 구축할 계획인 기업':'• Want to grow overseas markets under own brand<br>• Expected annual exports $100K+<br>• Plan to build a dedicated export team')+'</div></div></div></div></div>'+
+  '<div class="card" style="margin-bottom:20px"><div class="card-b"><div style="font-size:13px;font-weight:700;margin-bottom:10px">'+(_isKorean?'어떤 모델이 맞을까요?':'Which model is right for you?')+'</div><div class="grid-2"><div><div style="font-size:12px;font-weight:700;color:var(--pri);margin-bottom:4px">'+(_isKorean?'총판 운영을 추천합니다':'Distributor model recommended')+'</div><div style="font-size:11px;color:var(--w40);line-height:1.6">'+(_isKorean?'• 수출 경험이 전혀 없는 기업<br>• 초기 비용을 최소화하고 싶은 기업<br>• 알리바바 운영을 위탁하고 본업에 집중하고 싶은 기업':'• No prior export experience<br>• Want to minimize initial costs<br>• Prefer to delegate Alibaba operations and focus on core business')+'</div></div><div><div style="font-size:12px;font-weight:700;color:var(--acc);margin-bottom:4px">'+(_isKorean?'독립 운영을 추천합니다':'Independent model recommended')+'</div><div style="font-size:11px;color:var(--w40);line-height:1.6">'+(_isKorean?'• 자체 브랜드로 해외 시장을 키우려는 기업<br>• 연 수출 규모가 $100K 이상 예상되는 기업<br>• 장기적으로 수출팀을 구축할 계획인 기업':'• Want to grow overseas markets under own brand<br>• Expected annual exports $100K+<br>• Plan to build a dedicated export team')+'</div></div></div></div></div>':'')+
 
-  '<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--w20)">'+(_isKorean?'부가세 별도 · 6개월 10% 할인 · 연간 20% 할인 · 수출바우처/혁신바우처 정산 가능<br><span style="color:rgba(255,255,255,.25)">* 가격은 지역에 따라 다를 수 있습니다</span>':'Tax excluded · 6-month 10% off · Annual 20% off · Government voucher eligible<br><span style="color:rgba(255,255,255,.25)">* Prices may vary by region</span>')+'</div>'+
+  '<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--w20)">'+(_isKorean?'6개월 10% 할인 · 연간 20% 할인 · 수출바우처/혁신바우처 정산 가능<br><span style="color:rgba(255,255,255,.25)">* 가격은 지역에 따라 다를 수 있습니다</span>':'6-month 10% off · Annual 20% off · Government voucher eligible<br><span style="color:rgba(255,255,255,.25)">* Prices may vary by region</span>')+'</div>'+
 
   /* Subscription management — 미드저니식 락인 */
   (cur!=='free'?(function(){
@@ -15025,7 +15031,7 @@ function pgOnboarding(){
       '</div></div></div>';
   }
   var skipLabel=_isKorean?'건너뛰기 — 나중에 설정에서 완료할 수 있어요':'Skip — you can complete this later in Settings';
-  var footer='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px"><button class="btn btn-ghost btn-sm" onclick="App.skipOnboarding()" style="font-size:11px;color:var(--w30)">'+skipLabel+'</button>'+(step<2?'<button class="btn btn-pri" onclick="App.nextOb('+step+')">'+(_isKorean?'다음':'Next')+' →</button>':'')+'</div>';
+  var footer='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;padding-bottom:32px;position:sticky;bottom:0;background:var(--bg);z-index:5;padding-top:12px"><button class="btn btn-ghost btn-sm" onclick="App.skipOnboarding()" style="font-size:11px;color:var(--w30)">'+skipLabel+'</button>'+(step<2?'<button class="btn btn-pri" onclick="App.nextOb('+step+')">'+(_isKorean?'다음':'Next')+' →</button>':'')+'</div>';
   return hdr+body+footer+'</div>';
 }
 
