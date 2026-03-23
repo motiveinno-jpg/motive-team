@@ -71,6 +71,12 @@ serve(async (req) => {
             ? renderManufacturerEmail(contact)
             : template === "buyer"
             ? renderBuyerEmail(contact)
+            : template === "forwarder_3pl"
+            ? renderForwarder3PLEmail(contact)
+            : template === "brand"
+            ? renderBrandEmail(contact)
+            : template === "government"
+            ? renderGovernmentEmail(contact)
             : html_content || "";
 
           const emailSubject = subject || getDefaultSubject(template, contact);
@@ -165,6 +171,9 @@ serve(async (req) => {
           forwarder: contacts?.filter(c => c.category === "forwarder").length || 0,
           manufacturer: contacts?.filter(c => c.category === "manufacturer").length || 0,
           buyer: contacts?.filter(c => c.category === "buyer").length || 0,
+          forwarder_3pl: contacts?.filter(c => c.category === "forwarder_3pl").length || 0,
+          brand: contacts?.filter(c => c.category === "brand").length || 0,
+          government: contacts?.filter(c => c.category === "government").length || 0,
         },
         campaigns: campaigns || [],
       };
@@ -198,7 +207,15 @@ serve(async (req) => {
             ? renderForwarderEmail(fullContact)
             : template === "manufacturer"
             ? renderManufacturerEmail(fullContact)
-            : renderBuyerEmail(fullContact);
+            : template === "buyer"
+            ? renderBuyerEmail(fullContact)
+            : template === "forwarder_3pl"
+            ? renderForwarder3PLEmail(fullContact)
+            : template === "brand"
+            ? renderBrandEmail(fullContact)
+            : template === "government"
+            ? renderGovernmentEmail(fullContact)
+            : renderManufacturerEmail(fullContact);
 
           const emailSubject = getDefaultSubject(template, fullContact);
           let fromEmail = FROM_EMAIL;
@@ -275,6 +292,9 @@ function getDefaultSubject(template: string, contact: Record<string, string>): s
     case "forwarder": return `[Whistle AI] ${name} 담당자님, AI 수출 물류 제휴 제안드립니다`;
     case "manufacturer": return `[Whistle AI] ${name} 대표님, AI가 수출을 도와드립니다 — 무료 분석 제공`;
     case "buyer": return `[Whistle AI] Source Quality Korean Products with AI — Free Analysis`;
+    case "forwarder_3pl": return `[Whistle AI] ${name} 담당자님, AI 수출 플랫폼 3PL/물류 파트너 제안드립니다`;
+    case "brand": return `[Whistle AI] ${name} 대표님, 사장님 제품도 수출할 수 있습니다 — 무료 AI 분석`;
+    case "government": return `[Whistle AI] ${name} 담당자님, AI 수출지원 플랫폼 협력 제안드립니다`;
     default: return `[Whistle AI] Partnership Opportunity`;
   }
 }
@@ -382,5 +402,95 @@ function renderBuyerEmail(contact: Record<string, string>): string {
     <p>Create a free account to browse verified manufacturers and get instant product analysis.</p>
     ${btn("Explore Korean Manufacturers", "https://whistle-ai.com/buyer")}
     <p style="color:#64748b;font-size:13px;margin-top:20px">* This is a one-time business introduction email. Reply to unsubscribe.</p>
+  `);
+}
+
+function renderForwarder3PLEmail(contact: Record<string, string>): string {
+  const name = contact.company_name || "담당자님";
+  return wrapEmail(`
+    <h2 style="color:#0f172a;margin:0 0 16px;font-size:20px">${name} 담당자님께</h2>
+    <p>안녕하세요, AI 기반 수출 통합 관리 플랫폼 <strong>Whistle AI</strong>를 운영하는 (주)모티브이노베이션 채희웅 대표입니다.</p>
+    <p>저희는 한국 중소 제조사의 수출을 AI로 지원하며, <strong>3PL/물류 전문 파트너</strong>를 모시고 있습니다.</p>
+
+    <div style="background:#faf5ff;padding:20px;border-radius:10px;margin:20px 0;border-left:4px solid #8b5cf6">
+      <p style="font-weight:700;color:#6b21a8;margin:0 0 8px">3PL 파트너 제휴 혜택</p>
+      <ul style="margin:0;padding-left:20px;color:#334155">
+        <li>AI 기반 화주-물류사 자동 매칭 → <strong>신규 고객 지속 유입</strong></li>
+        <li>수출 건별 풀필먼트/창고/라스트마일 연동</li>
+        <li>플랫폼 내 3PL 전용 대시보드 → 주문·재고·출고 통합 관리</li>
+        <li>건당 수수료 정산 → 초기 비용 없는 파트너십</li>
+        <li>중소기업 수출 물량 집하 → 규모의 경제 실현</li>
+      </ul>
+    </div>
+
+    <p>현재 플랫폼에 등록된 <strong>수출 준비 중인 제조사</strong>들이 물류 파트너를 찾고 있습니다. 짧은 미팅으로 구체적인 협력 방안을 논의하고 싶습니다.</p>
+    ${btn("파트너 등록하기", "https://whistle-ai.com/ko#partner")}
+    ${btn("무료 AI 수출분석 체험", "https://whistle-ai.com/ko")}
+    <p style="color:#64748b;font-size:13px;margin-top:20px">* 본 메일은 업무 제휴 목적으로 발송되었습니다. 수신을 원치 않으시면 회신 부탁드립니다.</p>
+  `);
+}
+
+function renderBrandEmail(contact: Record<string, string>): string {
+  const name = contact.company_name || "대표님";
+  const industry = contact.industry || "제품";
+  return wrapEmail(`
+    <h2 style="color:#0f172a;margin:0 0 16px;font-size:20px">${name} 대표님께</h2>
+    <p>안녕하세요, AI 기반 수출 통합 관리 플랫폼 <strong>Whistle AI</strong>입니다.</p>
+    <p><strong>사장님 제품도 수출할 수 있습니다.</strong></p>
+    <p>${name}의 <strong>${industry}</strong> 제품이 해외에서 어떤 가능성이 있는지, AI가 <strong>60초 만에 무료 분석</strong>해 드립니다.</p>
+
+    <div style="background:#fff7ed;padding:20px;border-radius:10px;margin:20px 0;border-left:4px solid #f97316">
+      <p style="font-weight:700;color:#c2410c;margin:0 0 8px">무료 AI 수출분석 — 이런 걸 알 수 있습니다</p>
+      <ul style="margin:0;padding-left:20px;color:#334155">
+        <li>우리 제품 HS코드 + 수출국별 관세율 비교</li>
+        <li>FTA 활용 시 관세 절감액 시뮬레이션</li>
+        <li>수출 인증/규제 요건 (FDA, CE, HALAL 등)</li>
+        <li>해외 바이어 매칭 + 경쟁 제품 가격 분석</li>
+        <li>K-Beauty, K-Food 등 한류 프리미엄 활용 전략</li>
+      </ul>
+    </div>
+
+    <div style="background:#f0fdf4;padding:16px;border-radius:10px;margin:20px 0">
+      <p style="margin:0;color:#065f46;font-size:14px"><strong>수출이 처음이셔도 괜찮습니다.</strong> 관세사·포워더·바이어 매칭까지 AI가 한 번에 도와드립니다. 가입 후 첫 분석은 <strong>완전 무료</strong>입니다.</p>
+    </div>
+
+    ${btn("무료 수출분석 시작하기", "https://whistle-ai.com/ko")}
+    <p style="color:#64748b;font-size:13px;margin-top:20px">* 본 메일은 한국 중소 브랜드 수출 지원 목적으로 발송되었습니다. 수신을 원치 않으시면 회신 부탁드립니다.</p>
+  `);
+}
+
+function renderGovernmentEmail(contact: Record<string, string>): string {
+  const name = contact.company_name || "담당자님";
+  return wrapEmail(`
+    <h2 style="color:#0f172a;margin:0 0 16px;font-size:20px">${name} 담당자님께</h2>
+    <p>안녕하세요, AI 기반 수출 통합 관리 플랫폼 <strong>Whistle AI</strong>를 운영하는 (주)모티브이노베이션 채희웅 대표입니다.</p>
+    <p>저희는 <strong>한국 중소기업의 수출 역량 강화</strong>를 AI 기술로 지원하는 스타트업으로, 귀 기관과의 협력을 제안드립니다.</p>
+
+    <div style="background:#eff6ff;padding:20px;border-radius:10px;margin:20px 0;border-left:4px solid #1d4ed8">
+      <p style="font-weight:700;color:#1e3a8a;margin:0 0 8px">Whistle AI 소개</p>
+      <ul style="margin:0;padding-left:20px;color:#334155">
+        <li>AI 기반 HS코드 분류 + FTA 원산지 판정 자동화</li>
+        <li>수출 규제·인증 요건 실시간 분석 (13개 항목)</li>
+        <li>해외 바이어 매칭 + 에스크로 결제 + 선적 추적</li>
+        <li>관세사·포워더 연계 → 수출 원스톱 플랫폼</li>
+      </ul>
+    </div>
+
+    <div style="background:#fefce8;padding:20px;border-radius:10px;margin:20px 0;border-left:4px solid #eab308">
+      <p style="font-weight:700;color:#854d0e;margin:0 0 8px">협력 제안</p>
+      <ul style="margin:0;padding-left:20px;color:#334155">
+        <li><strong>수출바우처 수행기관</strong> 등록 — 중소기업 수출 지원 프로그램 연계</li>
+        <li><strong>MOU 체결</strong> — 수출 교육·컨설팅 공동 사업</li>
+        <li>지자체 수출 지원 사업 내 AI 도구 도입</li>
+        <li>KOTRA 해외무역관·바이코리아 연계 협력</li>
+        <li>수출 성공 사례 데이터 공유 및 정책 연구 협력</li>
+      </ul>
+    </div>
+
+    <p>현재 플랫폼에서 <strong>무료 AI 수출분석</strong>을 제공하고 있으며, 중소기업의 수출 진입 장벽을 낮추는 데 실질적 기여를 하고 있습니다.</p>
+    <p>구체적인 협력 방안을 논의하기 위해 미팅을 요청드립니다.</p>
+    ${btn("Whistle AI 둘러보기", "https://whistle-ai.com/ko")}
+    ${btn("파트너 페이지", "https://whistle-ai.com/ko#partner")}
+    <p style="color:#64748b;font-size:13px;margin-top:20px">* 본 메일은 공공기관 협력 제안 목적으로 발송되었습니다. 수신을 원치 않으시면 회신 부탁드립니다.</p>
   `);
 }
