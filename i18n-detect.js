@@ -40,8 +40,8 @@
     if (urlLang && SUPPORTED_LANGS.indexOf(urlLang) !== -1) return urlLang;
 
     // 2. Check URL path prefix (/ko, /ja, etc.)
-    // Skip /en and /global — these are global landing pages that should auto-detect language
-    var GLOBAL_PATHS = ['en', 'global'];
+    // Skip /global — auto-detect language. /en should explicitly return 'en'
+    var GLOBAL_PATHS = ['global'];
     var pathSegments = window.location.pathname.split('/').filter(Boolean);
     if (pathSegments.length > 0) {
       var pathLang = pathSegments[0].toLowerCase();
