@@ -39,11 +39,13 @@
     var urlLang = new URLSearchParams(window.location.search).get('lang');
     if (urlLang && SUPPORTED_LANGS.indexOf(urlLang) !== -1) return urlLang;
 
-    // 2. Check URL path prefix (/en, /ko, /ja, etc.)
+    // 2. Check URL path prefix (/ko, /ja, etc.)
+    // Skip /en and /global — these are global landing pages that should auto-detect language
+    var GLOBAL_PATHS = ['en', 'global'];
     var pathSegments = window.location.pathname.split('/').filter(Boolean);
     if (pathSegments.length > 0) {
       var pathLang = pathSegments[0].toLowerCase();
-      if (SUPPORTED_LANGS.indexOf(pathLang) !== -1) return pathLang;
+      if (GLOBAL_PATHS.indexOf(pathLang) === -1 && SUPPORTED_LANGS.indexOf(pathLang) !== -1) return pathLang;
     }
 
     // 3. Check localStorage
