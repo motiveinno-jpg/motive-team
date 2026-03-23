@@ -7,7 +7,7 @@
 - Agent2 글로벌바이어: ✅ 1차+2차 완료 (1차 데스크톱 13건 + 2차 모바일 8건)
 - Agent2B 글로벌제조사: ✅ 완료 (US/JP/DE 3개국 STEP1~6 테스트, 이슈 19건)
 - Agent3 개발: ✅ 전체 수정 완료
-- Agent4 QA검토: ✅ 2차 검토 완료 (26건 중 26건 승인, 보류 5건)
+- Agent4 QA검토: 🔄 3차 검토 중 (모바일 8건: 승인7/반려1)
 
 ## 이슈목록
 | # | 발견자 | 계정 | 파일 | 기능 | 증상 | 재현방법 | 심각도 | 상태 |
@@ -57,14 +57,14 @@
 | 2-018 | Agent2 | 전체 글로벌 | buyer-app | STEP3-앱 전체 영어 고정 | buyer-app 전체 영어 전용, 다국어 i18n 미적용 (랜딩은 다국어 지원) | /app/buyer 로그인 후 전체 | 중 | 보류 |
 | 2-019 | Agent2 | 전체 글로벌 | buyer-app | STEP4-검색결과 한국어 | 제품명/카테고리/브랜드가 한국어로 표시 (글로벌 바이어에게) | Product Search → Snail Cream 검색 | 중 | ✅ 완료 |
 | **2차 모바일 QA (390x844, isMobile)** | | | | | | | | |
-| 2M-001 | Agent2 | 전체 5개국 | buyer-app | STEP3-모바일 언어감지 오류 | buyer-app이 localStorage lang 무시, navigator.language(ko-KR) 사용 → 글로벌 유저에게 한국어 표시 | 모바일(390px) /app/buyer 접속 | **상** | 수정완료-검토대기 |
-| 2M-002 | Agent2 | 전체 5개국 | buyer-app | STEP3-모바일 로그인폼 한국어 | 로그인/회원가입/이메일/비밀번호 전부 한국어 (로그인→회원가입, 이메일→이메일, 비밀번호→비밀번호) | 모바일 /app/buyer | **상** | 수정완료-검토대기 |
-| 2M-003 | Agent2 | US/James Carter | buyer-app | STEP3-모바일 대시보드 한국어 | "환영합니다, James Carter" / "한국 제품 소싱 가이드" / 전체 한국어 | 모바일 로그인 후 대시보드 | **상** | 수정완료-검토대기 |
-| 2M-004 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-모바일 온보딩 한국어 | 온보딩 전체 한국어: 기본정보/회사명/담당자명/국가/전화번호, 전화 placeholder 010-1234-5678 (한국식) | 모바일 JP 로그인 후 온보딩 | **상** | 수정완료-검토대기 |
-| 2M-005 | Agent2 | DE/VN/AE | buyer-landing | STEP1-모바일 카테고리 태그 영어 | 히어로 아래 카테고리 태그 K-Beauty/Electronics/Food&Beverage 영어 고정 (JP만 일본어 정상) | 모바일 /buyer lang=de,vi,ar | 중 | 수정완료-검토대기 |
-| 2M-006 | Agent2 | DE/VN/AE | buyer-landing | STEP2-모바일 하단배지 영어 | "Powered Matching"/"Secure Payments"/"+Asia"/"Free" 미번역 | 모바일 /buyer 히어로 아래 | 하 | 수정완료-검토대기 |
-| 2M-007 | Agent2 | DE | buyer-landing | STEP1-모바일 검색 placeholder 영어 | 독일어 페이지인데 검색창 "e.g. I need organic skincare products, 500" 영어 | 모바일 /buyer lang=de 검색창 | 하 | 수정완료-검토대기 |
-| 2M-008 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 검색 UI 한국어 | 필터/탭/결과 카운트 전부 한국어: "전체 결과"/"전체 카테고리"/"최소 가격"/"40 개 제품 검색됨" | 모바일 Product Search | **상** | 수정완료-검토대기 |
+| 2M-001 | Agent2 | 전체 5개국 | buyer-app | STEP3-모바일 언어감지 오류 | localStorage>URL>navigator 순서 확인, _t() 정상 | 모바일(390px) /app/buyer | **상** | ✅ 완료 |
+| 2M-002 | Agent2 | 전체 5개국 | buyer-app | STEP3-모바일 로그인폼 한국어 | _t() 적용 확인, 모바일/데스크톱 동일 i18n | 모바일 /app/buyer | **상** | ✅ 완료 |
+| 2M-003 | Agent2 | US/James Carter | buyer-app | STEP3-모바일 대시보드 한국어 | _t('Welcome','환영합니다') 확인 | 모바일 로그인 후 대시보드 | **상** | ✅ 완료 |
+| 2M-004 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-모바일 온보딩 한국어 | 전화 placeholder _t() 적용됨. 단, EN/KO 2개 포맷만 지원 (DE/JP 등 미분기) | 모바일 JP 온보딩 | **상** | 수정완료-검토대기 |
+| 2M-005 | Agent2 | DE/VN/AE | buyer-landing | STEP1-모바일 카테고리 태그 영어 | 13개 언어 hero_cat_* 번역 완성 확인 | 모바일 /buyer lang=de,vi,ar | 중 | ✅ 완료 |
+| 2M-006 | Agent2 | DE/VN/AE | buyer-landing | STEP2-모바일 하단배지 영어 | hero_stat_* 13개 언어 번역 완성 확인 | 모바일 /buyer 히어로 아래 | 하 | ✅ 완료 |
+| 2M-007 | Agent2 | DE | buyer-landing | STEP1-모바일 검색 placeholder 영어 | hero_search_placeholder DE 번역 확인 | 모바일 /buyer lang=de 검색창 | 하 | ✅ 완료 |
+| 2M-008 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 검색 UI 한국어 | _t('All Results','전체 결과') 등 적용 확인 | 모바일 Product Search | **상** | ✅ 완료 |
 
 ## 심각도기준
 - 상: 가입/로그인/결제/저장 불가
@@ -111,6 +111,13 @@
 | 2-016 | buyer-landing | AR 푸터 링크 영어 | footer_* 13개 언어 번역 완성 | 2026-03-23 |
 | 2-017 | buyer-app | UAE 국가목록 누락 | 이미 AE(UAE) 존재 확인 — QA 오탐 | 2026-03-23 |
 | 2-019 | buyer-app | 검색결과 한국어 | name_en\|\|name_ko 우선순위 이미 적용 (데이터 이슈) | 2026-03-23 |
+| 2M-001 | buyer-app | 모바일 언어감지 오류 | localStorage>URL>navigator 순서 정상 | 2026-03-24 |
+| 2M-002 | buyer-app | 모바일 로그인폼 한국어 | _t() 적용 | 2026-03-24 |
+| 2M-003 | buyer-app | 모바일 대시보드 한국어 | _t('Welcome','환영합니다') | 2026-03-24 |
+| 2M-005 | buyer-landing | 모바일 카테고리 태그 영어 | 13개 언어 번역 완성 | 2026-03-24 |
+| 2M-006 | buyer-landing | 모바일 하단배지 영어 | hero_stat_* 13개 언어 번역 | 2026-03-24 |
+| 2M-007 | buyer-landing | 모바일 검색 placeholder 영어 | hero_search_placeholder 번역 | 2026-03-24 |
+| 2M-008 | buyer-app | 모바일 검색 UI 한국어 | _t() 적용 | 2026-03-24 |
 
 ## 보류이슈 (5건)
 | # | 내용 | 보류 이유 |
