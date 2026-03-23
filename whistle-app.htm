@@ -11382,34 +11382,35 @@ function _ckStripeGlobal(planId){
 
 function confirmCheckout(planId){
   var ckBody=document.getElementById('ck-body');
-  var method='transfer';
-  if(ckBody){
-    var sel=ckBody.querySelector('select[name=voucher_type]');
-    if(sel)method='voucher';
-    else if(ckBody.querySelector('a[href*="kakao"]'))method='kakao';
-  }
+  var vt=ckBody?ckBody.querySelector('select[name=voucher_type]'):null;
+  var bn=ckBody?ckBody.querySelector('input[name=biz_no]'):null;
+  var vn=ckBody?ckBody.querySelector('input[name=voucher_no]'):null;
 
-  if(method==='kakao'){
-    UI.toast(_isKorean?'카카오톡 상담을 통해 결제를 진행해주세요':'Please proceed with payment through customer support','info');
-    closeModal('ckm');return;
-  }
+  if(!vt||!vt.value){UI.toast(_isKorean?'바우처 유형을 선택해주세요':'Please select voucher type','warn');return;}
+  if(!bn||!bn.value.trim()){UI.toast(_isKorean?'사업자번호를 입력해주세요':'Please enter business number','warn');return;}
 
-  /* 텔레그램 알림 발송 */
-  var msg='[결제 알림]\n플랜: '+planId.toUpperCase()+'\n방식: '+(method==='voucher'?'바우처':'계좌이체')+'\n사용자: '+(S.user.name||S.user.email||S.user.id);
-  if(method==='voucher'){
-    var vt=ckBody.querySelector('select[name=voucher_type]');
-    var bn=ckBody.querySelector('input[name=biz_no]');
-    var vn=ckBody.querySelector('input[name=voucher_no]');
-    msg+='\n바우처유형: '+(vt?vt.value:'')+'\n사업자번호: '+(bn?bn.value:'')+'\n바우처번호: '+(vn?vn.value:'');
-  }
+  var details={
+    plan:planId,
+    voucher_type:vt.value,
+    biz_no:bn.value.trim(),
+    voucher_no:(vn?vn.value.trim():''),
+    user_email:S.user.email||'',
+    user_name:S.user.name||S.user.company_name||''
+  };
 
-  UI.toast(_isKorean?'신청이 접수되었습니다. 확인 후 플랜이 활성화됩니다.':'Your request has been received. Your plan will be activated after confirmation.','ok');
-
-  /* relay-server의 /api/chat 통해 텔레그램 알림 (best effort) */
-  fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'PAYMENT_NOTIFY: '+msg,userId:'system'})}).catch(function(e){console.error('[whistle]',e);});
-
-  /* 서비스 요청으로도 기록 */
-  sb.from('service_requests').insert({user_id:S.user.id,service_type:'payment',description:msg,status:'pending'}).then(function(){loadSR();}).catch(function(e){console.error('[whistle]',e);UI.toast(_isKorean?'오류가 발생했습니다':'An error occurred','err');});
+  sb.from('service_requests').insert({
+    user_id:S.user.id,
+    service_type:'voucher_'+planId,
+    description:(_isKorean?'바우처 결제 신청':'Voucher payment request')+' — '+planId.toUpperCase()+' ('+vt.value+')',
+    status:'pending',
+    details:details
+  }).then(function(){
+    UI.toast(_isKorean?'바우처 신청이 접수되었습니다. 확인 후 플랜이 활성화됩니다.':'Voucher request submitted. Your plan will be activated after verification.','ok');
+    loadSR();
+  }).catch(function(e){
+    console.error('[voucher]',e);
+    UI.toast(_isKorean?'신청 중 오류가 발생했습니다. 다시 시도해주세요.':'Error submitting request. Please try again.','err');
+  });
   closeModal('ckm');
 }
 
