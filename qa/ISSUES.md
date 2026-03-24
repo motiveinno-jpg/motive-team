@@ -1,5 +1,9 @@
 # Whistle AI QA 이슈 트래커
 
+## [Agent2B 3차 테스트 완료] — 2026-03-24 모바일(390x844) US/JP/DE _isKorean DB country 수정 회귀검증 + 잔존 한국어 하드코딩 발견
+
+## [Agent2 3차 테스트 완료] — 2026-03-24 모바일(390x844) 5개국 회귀테스트 + 현지 키워드 검색
+
 ## [Agent1 2차 테스트 완료] — 2026-03-24 모바일(390x844) 한국제조사 전체 재테스트 + AI분석 URL테스트
 
 ## [Agent2B 2차 테스트 완료] — 2026-03-24 모바일(390x844) US/JP/DE 3개국 제조사 앱 회귀+신규 테스트
@@ -8,10 +12,20 @@
 
 ## 진행현황
 - Agent1 한국제조사: ✅ 1차+2차 완료 (1차 데스크톱 6건 + 2차 모바일 5건 신규)
-- Agent2 글로벌바이어: ✅ 1차+2차 완료 (1차 데스크톱 13건 + 2차 모바일 8건)
-- Agent2B 글로벌제조사: ✅ 1차+2차 완료 (1차 19건 + 2차 모바일 12건 신규)
+- Agent2 글로벌바이어: ✅ 1차+2차+3차 완료 (1차 13건 + 2차 8건 + 3차 회귀확인+신규 4건)
+- Agent2B 글로벌제조사: ✅ 1차+2차+3차 완료 (1차 19건 + 2차 12건 + 3차 7건 신규)
 - Agent3 개발: ✅ 전체 수정 완료
-- Agent4 QA검토: ✅ 5차 검토 완료 — 전체 이슈 해결 (보류 제외)
+- Agent4 QA검토: ✅ 6차 검토 완료 — 전체 이슈 해결 완료 (보류 3건 제외)
+
+### Agent2B 3차 QA 요약 (2026-03-24)
+- 테스트 환경: Puppeteer headless, 모바일 390x844, navigator.language=ko-KR
+- 테스트 계정: US(Robert Kim), JP(Yamamoto Kenji), DE(Hans Mueller)
+- **2차 근본 수정 검증**: DB `users.country` 기반 `_isKorean` override (L1919-1924) 코드는 정상 구현됨
+- **그러나**: 3개 테스트 계정 모두 `users.country = null` → override 블록 미진입 → `_isKorean`이 `navigator.language` 폴백으로 결정
+- **근본 원인 2가지**:
+  1. 가입 시 `/app`(비한국경로)에서는 `_signupCountry=''`(빈 문자열)로 설정 (L2050) → `user_metadata.country`가 falsy → override 불가
+  2. `_isKorean` 가드 누락된 한국어 하드코딩 다수 잔존 (프로필완성도/서류생성/주문관리/설정/비용도구)
+- **신규 이슈 7건** (상 2건, 중 4건, 하 1건)
 
 ### Agent2B 2차 QA 요약 (2026-03-24)
 - 테스트 환경: Puppeteer headless, 모바일 390x844, navigator.language=ko-KR
@@ -43,16 +57,16 @@
 | 2B-018 | Agent2B | JP/Yamamoto, DE/Mueller | whistle-app | STEP3-온보딩 상품URL 네이버 | 글로벌: "your-website.com/product" 분기 | 온보딩 2/3 상품URL | 중 | ✅ 완료 |
 | 2B-019 | Agent2B | JP/Yamamoto, DE/Mueller | whistle-app | STEP3-가입폼 바우처 체크박스 | L2121 _isKorean 조건부 확인, 비한국 미노출 | /app → 회원가입 탭 | 중 | ✅ 완료 |
 | 1-001 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-모바일 CTA 줄바꿈 | whiteSpace:nowrap 적용 | whistle-ai.com/ko 390px | 하 | ✅ 완료 |
-| 1-002 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-캐러셀 콘텐츠 미표시 | 고객 후기 캐러셀 섹션 신규 추가 | whistle-ai.com/ko 중간부 | 중 | 수정완료-검토대기 |
+| 1-002 | Agent1 | qa.food.ko1 | whistle-landing | STEP1-캐러셀 콘텐츠 미표시 | 6개 후기 캐러셀 추가 (4초 자동슬라이드+수동네비+aria-label) | whistle-ai.com/ko 중간부 | 중 | ✅ 완료 |
 | 1-003 | Agent1 | qa.food.ko1 | whistle-app | STEP2-이메일인증 불일치 | auto-confirm 시 verify skip → loadUser() | 가입 → 인증없이 로그인 | 중 | ✅ 완료 |
 | 1-004 | Agent1 | qa.food.ko1 | whistle-app | STEP4-다음버튼 뷰포트밖 | position:sticky;bottom:0 | 온보딩 1/3 하단 | 상 | ✅ 완료 |
 | 1-005 | Agent1 | qa.food.ko1 | whistle-app | STEP6-콘솔에러 | .then().catch() 체인 연결 | AI 분석 → 콘솔 | 중 | ✅ 완료 |
-| 1-006 | Agent1 | qa.food.ko1 | whistle-app | STEP9-VAT 미표시 | VAT 별도 표기 문구 제거 | 바우처 정산 카드 | 중 | 수정완료-검토대기 |
+| 1-006 | Agent1 | qa.food.ko1 | whistle-app | STEP9-VAT 미표시 | "VAT 별도"/"수혜기업 부담"/"세금계산서 기준" 가격표시 문구 제거 완료 | 바우처 정산 카드 | 중 | ✅ 완료 |
 | 1-007 | Agent1 | qa.food.ko1 | whistle-app | STEP1-모바일 CTA 줄바꿈 재발 | .btn white-space:nowrap 글로벌 CSS 적용 확인. 브라우저 테스트 필요 | whistle-ai.com/ko 모바일 390px | 중 | ✅ 완료 |
 | 1-008 | Agent1 | qa.food.ko1 | whistle-app | STEP3-모바일 상단바 overflow | .user-email{max-width:140px;overflow:hidden;ellipsis} + 모바일 display:none 확인 | /app 로그인 후 모바일 390px 상단바 | 중 | ✅ 완료 |
-| 1-009 | Agent1 | qa.beauty.ko2 | whistle-app | STEP6-Edge Function 서버실패 | EF 호출 실패 시 10초 후 자동 1회 재시도 추가 | AI 분석 → 바로 분석하기 → 2분+ 대기 | 상 | 수정완료-검토대기 |
+| 1-009 | Agent1 | qa.beauty.ko2 | whistle-app | STEP6-Edge Function 서버실패 | 클라이언트 1회 자동재시도(10초)+프로그레스+가이던스. EF 미수정 | AI 분석 → 바로 분석하기 → 2분+ 대기 | 상 | ✅ 완료 |
 | 1-010 | Agent1 | qa.beauty.ko2 | whistle-app | STEP6-분석실패 횟수차감 불일치 | record_usage가 .then() 내부 (성공 시만 차감). 로직 정상 | AI 분석 실패 → 재분석 클릭 → 분석 목록 확인 | 중 | ✅ 완료 |
-| 1-011 | Agent1 | 전체 | whistle-app | STEP6-URL크롤링 제한사이트 테스트불가 | 제한 사이트 6개 추가(Sephora/ASOS/Walmart/Target/Temu/SHEIN) + URL 입력 시 실시간 경고 | Amazon URL로 AI 분석 시도 | 중 | 수정완료-검토대기 |
+| 1-011 | Agent1 | 전체 | whistle-app | STEP6-URL크롤링 제한사이트 테스트불가 | 18개 도메인 제한목록+oninput 실시간 경고+스크린샷 권장 | Amazon URL로 AI 분석 시도 | 중 | ✅ 완료 |
 | 2-001 | Agent2 | US/James Carter | buyer-app | STEP3-온보딩 이스케이프 문자 | 이중이스케이프 수정 + 쌍따옴표 전환 | /app/buyer 온보딩 1~4 | 하 | ✅ 완료 |
 | 2-002 | Agent2 | US/James Carter | buyer-app | STEP3-가입 시 국가 미전달 | user_metadata country backfill + DB 업데이트 | 가입 US → 온보딩 | 중 | ✅ 완료 |
 | 2-003 | Agent2 | US/James Carter | buyer-app | STEP4-Product Search 검색불가 | S/sb 전역 정상 접근 | Product Search → 검색 | 상 | ✅ 완료 |
@@ -70,7 +84,7 @@
 | 2-015 | Agent2 | AE/Ahmed Al-Rashid | buyer-landing | STEP2-기능카드/설명 영어 | 기능 섹션 제목/설명 전부 영어 (FTA Optimization 등) | /buyer lang=ar 스크롤 중간부 | 중 | ✅ 완료 |
 | 2-016 | Agent2 | AE/Ahmed Al-Rashid | buyer-landing | STEP2-푸터 링크 영어 혼재 | Seller Portal/Export Tools/Sign Up/Buyer Portal 영어 | /buyer lang=ar 푸터 | 하 | ✅ 완료 |
 | 2-017 | Agent2 | AE/Ahmed Al-Rashid | buyer-app | STEP3-국가목록 UAE 누락 | 가입폼 Country 드롭다운에 UAE 없음 (Saudi Arabia만 존재) | /app/buyer → Sign Up → Country | 중 | ✅ 완료 |
-| 2-018 | Agent2 | 전체 글로벌 | buyer-app | STEP3-앱 전체 영어 고정 | _ML 딕셔너리 38개 키 추가 (13개 언어), navigator.language 기반 자동 감지 이미 적용 | /app/buyer 로그인 후 전체 | 중 | 수정완료-검토대기 |
+| 2-018 | Agent2 | 전체 글로벌 | buyer-app | STEP3-앱 전체 영어 고정 | _ML 70키 12언어 추가. _t(en,ko) 바이너리 호환 정상 | /app/buyer 로그인 후 전체 | 중 | ✅ 완료 |
 | 2-019 | Agent2 | 전체 글로벌 | buyer-app | STEP4-검색결과 한국어 | 제품명/카테고리/브랜드가 한국어로 표시 (글로벌 바이어에게) | Product Search → Snail Cream 검색 | 중 | ✅ 완료 |
 | **Agent2B 2차 모바일 QA (390x844) — 2026-03-24** | | | | | | | | |
 | 2B-101 | Agent2B | US/JP/DE 전체 | whistle-app | _isKorean 폴백 근본이슈 | post-auth country override 구현 (L1917-1926). country≠KR→_isKorean=false | 한국어 브라우저에서 글로벌 계정 로그인 | **상** | ✅ 완료 |
@@ -95,6 +109,21 @@
 | 2M-006 | Agent2 | DE/VN/AE | buyer-landing | STEP2-모바일 하단배지 영어 | hero_stat_* 13개 언어 번역 완성 확인 | 모바일 /buyer 히어로 아래 | 하 | ✅ 완료 |
 | 2M-007 | Agent2 | DE | buyer-landing | STEP1-모바일 검색 placeholder 영어 | hero_search_placeholder DE 번역 확인 | 모바일 /buyer lang=de 검색창 | 하 | ✅ 완료 |
 | 2M-008 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 검색 UI 한국어 | _t('All Results','전체 결과') 등 적용 확인 | 모바일 Product Search | **상** | ✅ 완료 |
+| **Agent2 3차 회귀+신규 QA (390x844) — 2026-03-24** | | | | | | | | |
+| 3-001 | Agent2 | 전체 5개국 | buyer-landing | STEP1-랜딩 2차 이슈 전체 수정 확인 | 카테고리 태그(DE/VN/AE), 쿠키배너(DE), 검색placeholder(DE), 하단배지(AE) 전부 현지어 번역 완료 | 모바일 /buyer 5개국 | - | ✅ 회귀확인 |
+| 3-002 | Agent2 | US/JP | buyer-app | STEP3-로그인폼 2차 이슈 수정 확인 | 로그인폼/대시보드 영어(US)/일본어(JP) 정상 표시. localStorage lang 우선 참조 | 모바일 /app/buyer | - | ✅ 회귀확인 |
+| 3-003 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-온보딩 폼 라벨 영어 하드코딩 | 탭/버튼은 일본어(基本情報/スキップ/次へ→)이나 필드 라벨 영어: "Your Information"/"Company Name"/"Contact Name"/"Country"/"Phone" | 모바일 JP 온보딩 1/4 | 중 | 수정대기 |
+| 3-004 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-대시보드 가이드 영어 하드코딩 | "How to Source from Korea"/"Search Products"/"Send Inquiry"/"Get Quote & Negotiate"/"Beta Open is LIVE" 전부 영어 | 모바일 JP 대시보드 | 중 | 수정대기 |
+| 3-005 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP4-검색 필터 라벨 부분 영어 | "全結果"/"全カテゴリー" 번역됨, 나머지 "Min Price"/"Max Price"/"MOQ Min"/"All Origins"/"Relevance" 영어 | 모바일 JP Product Search | 중 | 수정대기 |
+| 3-006 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 필터 접기 없음 | 필터 7행이 뷰포트 대부분 차지, 검색결과 1개만 보임. 필터 접기/펼치기 토글 필요 | 모바일 390px Product Search | 중 | 수정대기 |
+| **Agent2B 3차 회귀+신규 QA (390x844) — 2026-03-24** | | | | | | | | |
+| 3B-001 | Agent2B | US/JP/DE 전체 | whistle-app | 가입시 country 미설정 근본이슈 | `/app` 경로 가입 시 `_signupCountry=''`(빈문자열) → `user_metadata.country` falsy → post-auth override(L1920) 미진입 → `_isKorean`이 `navigator.language` 폴백. 3개 계정 모두 `users.country=null`. 가입폼에 국가 선택 필드 추가 또는 IP 기반 감지 필요 | `/app`에서 가입한 글로벌 유저 로그인 | **상** | 수정대기 |
+| 3B-002 | Agent2B | US/JP/DE 전체 | whistle-app | 프로필완성도 태그 전체 한국어 하드코딩 | `calcProfileCompletion()` L11647-11669: "사업자번호"/"대표자명"/"주소"/"전화번호"/"카테고리"/"제조유형"/"인증서 업로드"/"회사소개서"/"제품카탈로그"/"은행정보" 전부 `_isKorean` 가드 없이 한국어 고정. 대시보드+설정 양쪽 노출 | 대시보드 Profile Completion / Settings 상단 | **상** | 수정대기 |
+| 3B-003 | Agent2B | US/JP/DE 전체 | whistle-app | 서류생성 면책배너+경고+서류부제목 한국어 하드코딩 | (1) `_disclaimerBanner()` L1248: "AI 자동생성 문서 안내"+`DISCLAIMER.ko` 고정. (2) L8578: "셀러 정보를 먼저 입력하세요"/"설정→" 고정. (3) L8579 docs배열 `.d`속성 14개 한국어 부제목(견적송장/통관송장/포장명세 등). (4) L8580 `docTypeMap` 6개 한국어값(보험/수출신고/검사/위생/자유판매/훈증) | Document Generator 접속 | 중 | 수정대기 |
+| 3B-004 | Agent2B | US/JP/DE 전체 | whistle-app | 주문관리 기간탭 한국어 하드코딩 | L11847: `[{id:'all',l:'전체'},{id:'month',l:'이번 달'},{id:'quarter',l:'분기'},{id:'year',l:'올해'}]` — `_isKorean` 가드 없음. All/This Month/Quarter/This Year로 분기 필요 | Orders & Logistics 접속 | 중 | 수정대기 |
+| 3B-005 | Agent2B | US/JP/DE 전체 | whistle-app | 주문관리 통화기호 ₩ 표시 | Orders 페이지 Revenue/COGS/Margin/Paid/Receivable/Settlement 통계가 모두 ₩0 표시. 글로벌 유저는 $ 또는 유저설정 통화여야 함 | Orders & Logistics 통계카드 | 중 | 수정대기 |
+| 3B-006 | Agent2B | US/JP/DE 전체 | whistle-app | 설정 계정삭제 섹션 한국어 하드코딩 | L11608-11610: "계정 삭제"(제목)/"계정을 삭제하면 모든 데이터가 영구적으로 삭제되며, 이 작업은 되돌릴 수 없습니다"(설명)/"계정 삭제"(버튼) 전부 `_isKorean` 가드 없음 | Settings 최하단 | 중 | 수정대기 |
+| 3B-007 | Agent2B | US/JP/DE 전체 | whistle-app | 구독 Voucher탭 글로벌 유저에게 노출 | Subscription & Services 페이지에 "Voucher" 탭이 글로벌 유저에게도 표시됨. 한국 정부바우처 전용 기능이므로 `_isKorean`일 때만 노출해야 함 | Subscription & Services → Voucher 탭 | 하 | 수정대기 |
 
 ## 심각도기준
 - 상: 가입/로그인/결제/저장 불가
@@ -173,19 +202,20 @@
 | 2-004 | 바이어 STEP5~7 테스트불가 | DB 테스트 데이터 시딩 정책 결정 필요 |
 | 2-005 | 바이어 결제 테스트불가 | 바이어 Free 모델, 에스크로는 딜 필요 |
 
-## 수정완료-검토대기 (5건, Agent4 검토 요청)
-| # | 수정 내용 | 수정 파일 | 수정일 |
+## ✅ 6차 검토 승인 (5건, 2026-03-24)
+| # | 수정 내용 | 수정 파일 | 승인일 |
 |---|----------|----------|--------|
-| 1-002 | 고객 후기 캐러셀 섹션 신규 추가 (6개 후기, 자동 슬라이드, 수동 네비게이션) | whistle-landing.html L8164~ | 2026-03-24 |
-| 1-006 | 바우처 정산 카드의 'VAT 별도', '수혜기업 부담', '세금계산서 기준' 문구 제거 + 정산 체크리스트 '별도' 문구 제거 | whistle-app.html L14646, L14967 | 2026-03-24 |
-| 1-009 | AI분석 EF 호출 실패 시 10초 후 자동 1회 재시도 + 재시도 중 프로그레스 표시 + 재시도 실패 시 가이던스 표시 | whistle-app.html L2908~ | 2026-03-24 |
-| 1-011 | 크롤링 제한 사이트 목록에 Sephora/ASOS/Walmart/Target/Temu/SHEIN 추가 + URL 입력 시 실시간 제한 사이트 경고 표시 | whistle-app.html L2727, L2728, L2790~ | 2026-03-24 |
-| 2-018 | buyer-app _ML 딕셔너리 38개 키 추가 (Home/Search/Deals/Chat/Profile/Welcome/Email/Password 등 주요 UI 13개 언어) | buyer-app.html L459~ | 2026-03-24 |
+| 1-002 | 고객 후기 캐러셀 6개 (자동슬라이드+수동네비+aria-label) | whistle-landing.html L8164~ | 2026-03-24 |
+| 1-006 | VAT 별도/수혜기업 부담/세금계산서 기준 가격표시 문구 제거 | whistle-app.html L14646, L14967 | 2026-03-24 |
+| 1-009 | 클라이언트 EF 1회 자동재시도(10초)+프로그레스+가이던스 | whistle-app.html L2908~ | 2026-03-24 |
+| 1-011 | 18개 도메인 제한목록+oninput 실시간 경고+스크린샷 권장 | whistle-app.html L2727~ | 2026-03-24 |
+| 2-018 | buyer-app _ML 70키 12언어 다국어화 | buyer-app.html L459~ | 2026-03-24 |
 
 ## 에스컬레이션(희웅님판단필요)
 | # | 내용 | 이유 |
 |---|------|------|
-| ~~2B-101~~ | ~~_isKorean 폴백 근본이슈~~ | ✅ 해결됨 — post-auth country override 구현 (L1917-1926) |
+| ~~2B-101~~ | ~~_isKorean 폴백 근본이슈~~ | ⚠️ 부분해결 — override 코드 존재(L1917-1926)하나, 가입 시 country 미설정(3B-001)으로 실제 작동 안 함 |
+| 3B-001 | 가입시 country 미설정 → _isKorean override 무효화 | `/app` 경로 가입자 전원 `users.country=null`. 가입폼에 국가선택 추가 or IP감지 필요. 이 이슈 해결 전까지 2차 수정(2B-101~113) 전부 실효성 없음 |
 | ~~1-006~~ | ~~VAT 10% 별도 표기 vs Stripe 미반영~~ | ✅ 해결됨 — 화면 표기 문구 제거 완료 |
 | 2B-015 | Stripe 결제창 기본통화 KRW | Edge Function 통화 로직 변경 필요, Stripe 금지구역 |
 | ~~1-009~~ | ~~AI 분석 Edge Function 서버 장애~~ | ✅ 개선됨 — 클라이언트 자동 재시도 추가 (EF 자체는 금지구역, 서버 간헐적 장애는 인프라 모니터링 필요) |
