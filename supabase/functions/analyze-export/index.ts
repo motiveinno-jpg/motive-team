@@ -8,9 +8,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CRAWL_TIMEOUT_MS = 12000;
+const CRAWL_TIMEOUT_MS = 8000; // 8s — tight to stay under 150s total
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
+const AI_CALL_TIMEOUT_MS = 60000; // 60s per AI call (increased from 35s)
+const AI_CALL_RETRY_DELAY_MS = 3000; // 3s delay before retry
+const WALL_CLOCK_LIMIT_MS = 130000; // 130s — hard cutoff with 20s buffer before Supabase 150s
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -300,7 +303,7 @@ serve(async (req: Request) => {
     // ─── Plan enforcement: check user's plan and usage limits ───
     const PLAN_LIMITS: Record<string, number> = {
       free: 1,
-      starter: 10,
+      starter: 20,
       pro: 50,
       professional: 50,
       enterprise: -1, // unlimited
@@ -568,9 +571,9 @@ MOQ: ${moq || na}
       prompt: string,
       maxTokens: number,
       imageData?: VisionImage,
+      wallClockStart?: number,
     ): Promise<{ result: any; model: string }> {
       const MODEL = "claude-haiku-4-5-20251001";
-      const TIMEOUT = 50000; // 50s generous timeout
 
       // Build message content: image block + text block when vision is used
       const userContent: any[] = [];
@@ -587,10 +590,15 @@ MOQ: ${moq || na}
       userContent.push({ type: "text", text: prompt });
 
       const doCall = async (attempt: number): Promise<{ result: any; model: string }> => {
+        // Wall clock guard: abort if nearing 150s limit
+        if (wallClockStart && (Date.now() - wallClockStart) > WALL_CLOCK_LIMIT_MS) {
+          throw new Error("WALL_CLOCK_EXCEEDED");
+        }
+
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), TIMEOUT);
+        const timer = setTimeout(() => ctrl.abort(), AI_CALL_TIMEOUT_MS);
         try {
-          console.log(`[AI] Attempt ${attempt}, model: ${MODEL}, maxTokens: ${maxTokens}${imageData ? ", +vision" : ""}`);
+          console.log(`[AI] Attempt ${attempt}, model: ${MODEL}, maxTokens: ${maxTokens}${imageData ? ", +vision" : ""}, elapsed: ${wallClockStart ? Date.now() - wallClockStart : 0}ms`);
           const resp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
@@ -622,17 +630,22 @@ MOQ: ${moq || na}
         }
       };
 
-      // Try up to 2 times (original + 1 retry)
+      // Attempt 1
       try {
         return await doCall(1);
-      } catch (err1) {
-        console.warn("[AI] Attempt 1 failed:", (err1 as Error).message, "— retrying...");
-        try {
-          return await doCall(2);
-        } catch (err2) {
-          console.error("[AI] Attempt 2 also failed:", (err2 as Error).message);
-          throw err2;
+      } catch (firstErr) {
+        const errMsg = (firstErr as Error).message || "";
+        // Don't retry if wall clock exceeded
+        if (errMsg === "WALL_CLOCK_EXCEEDED") throw firstErr;
+        // Don't retry if we don't have enough time for another attempt
+        if (wallClockStart && (Date.now() - wallClockStart) > (WALL_CLOCK_LIMIT_MS - AI_CALL_TIMEOUT_MS)) {
+          console.warn(`[AI] No time for retry, elapsed: ${Date.now() - (wallClockStart || 0)}ms`);
+          throw firstErr;
         }
+        // Retry once after delay
+        console.warn(`[AI] Attempt 1 failed (${errMsg}), retrying in ${AI_CALL_RETRY_DELAY_MS}ms...`);
+        await new Promise((r) => setTimeout(r, AI_CALL_RETRY_DELAY_MS));
+        return await doCall(2);
       }
     }
 
@@ -767,7 +780,7 @@ ${isEn ? "Analyze pricing strategy and create actionable export plan. Output JSO
 }
 ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic advice." : "규칙: 실무 수준 액션 (기관명/URL/비용/기간). 일반론 금지. 존댓말 필수."}`;
 
-    // ─── Run all 3 calls in parallel ───
+    // ─── Run all 3 calls in parallel with wall clock guard ───
     console.log("[parallel] Starting 3 AI calls simultaneously...");
     const startTime = Date.now();
 
@@ -775,7 +788,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     const completedResults: any = {};
 
     const [r1, r2, r3] = await Promise.allSettled([
-      callAI(prompt1, 5000, visionImage).then(async (res) => {
+      callAI(prompt1, 5000, visionImage, startTime).then(async (res) => {
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         await sbAdmin.from("analyses").update({
@@ -789,7 +802,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
         }).eq("id", analysis_id).eq("user_id", user.id);
         return res;
       }),
-      callAI(prompt2, 5000).then(async (res) => {
+      callAI(prompt2, 5000, undefined, startTime).then(async (res) => {
         console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         await sbAdmin.from("analyses").update({
@@ -803,7 +816,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
         }).eq("id", analysis_id).eq("user_id", user.id);
         return res;
       }),
-      callAI(prompt3, 3000).then(async (res) => {
+      callAI(prompt3, 3000, undefined, startTime).then(async (res) => {
         console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         return res;
@@ -811,6 +824,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     ]);
 
     const totalTime = Date.now() - startTime;
+    const elapsedSinceStart = Date.now() - startTime;
     console.log("[parallel] All calls settled in", totalTime, "ms");
 
     // ─── Merge results ───
@@ -842,27 +856,92 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       failedCalls++;
     }
 
-    // If ALL 3 failed, report failure
-    if (failedCalls === 3) {
+    // ─── Wall clock check: if nearing 150s, save partial and return ───
+    if (failedCalls > 0 && (Date.now() - startTime) > WALL_CLOCK_LIMIT_MS) {
+      console.warn(`[wall-clock] Exceeded ${WALL_CLOCK_LIMIT_MS}ms, returning partial results (${3 - failedCalls}/3 calls succeeded)`);
+
+      const isKo = language !== "en";
+      // If we have at least 1 successful call, save as partial completion
+      if (failedCalls < 3) {
+        result._partial_failure = true;
+        result._failed_calls = failedCalls;
+        result._timeout = true;
+        result.crawl_results = crawlMeta;
+        result.language = language;
+        result.analysis_version = "EF-v11-timeout-partial";
+        result.model_used = usedModels.join("+");
+        result.analyzed_at = new Date().toISOString();
+        result.processing_time_ms = Date.now() - startTime;
+
+        await sbAdmin.from("analyses").update({
+          status: "completed",
+          ai_result: result,
+        }).eq("id", analysis_id).eq("user_id", user.id);
+
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            partial: true,
+            result,
+            message: isKo
+              ? "분석 시간이 초과되어 일부 결과만 반환되었습니다. 잠시 후 다시 시도해주세요."
+              : "Analysis timed out. Partial results returned. Please try again later for full analysis.",
+          }),
+          { status: 200, headers },
+        );
+      }
+
+      // All 3 failed + wall clock exceeded
       await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
       await sbAdmin.from("analyses").update({
         status: "failed",
-        ai_result: { error: "All 3 parallel AI calls failed" },
+        ai_result: {
+          error: "Wall clock timeout — all AI calls failed",
+          _timeout: true,
+          crawl_results: crawlMeta,
+        },
+      }).eq("id", analysis_id).eq("user_id", user.id);
+
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: isKo
+            ? "분석 시간이 초과됐습니다. 잠시 후 다시 시도해주세요."
+            : "Analysis timed out. Please try again shortly.",
+          code: "ANALYSIS_TIMEOUT",
+        }),
+        { status: 504, headers },
+      );
+    }
+
+    // If ALL 3 failed (within wall clock), report failure
+    if (failedCalls === 3) {
+      const isKo = language !== "en";
+      await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
+      await sbAdmin.from("analyses").update({
+        status: "failed",
+        ai_result: { error: "All 3 parallel AI calls failed", crawl_results: crawlMeta },
       }).eq("id", analysis_id).eq("user_id", user.id);
       return new Response(
-        JSON.stringify({ ok: false, error: "AI 분석 서버 오류" }),
+        JSON.stringify({
+          ok: false,
+          error: isKo
+            ? "AI 분석 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."
+            : "Unable to connect to AI analysis server. Please try again shortly.",
+          code: "AI_SERVER_ERROR",
+        }),
         { status: 502, headers },
       );
     }
 
-    // ─── RESCUE: If 1-2 calls failed, retry the missing sections ───
-    if (failedCalls > 0) {
-      console.log(`[rescue] ${failedCalls} call(s) failed, attempting rescue...`);
+    // ─── RESCUE: If 1-2 calls failed AND we have time, retry ───
+    if (failedCalls > 0 && (Date.now() - startTime) < (WALL_CLOCK_LIMIT_MS - AI_CALL_TIMEOUT_MS)) {
+      console.log(`[rescue] ${failedCalls} call(s) failed, attempting rescue (elapsed: ${Date.now() - startTime}ms)...`);
       const rescuePromises: Promise<void>[] = [];
 
       if (r1.status !== "fulfilled") {
         rescuePromises.push(
-          callAI(prompt1, 5000).then((res) => {
+          callAI(prompt1, 5000, undefined, startTime).then((res) => {
             Object.assign(result, res.result);
             usedModels.push(res.model + "-rescue");
             failedCalls--;
@@ -872,7 +951,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       }
       if (r2.status !== "fulfilled") {
         rescuePromises.push(
-          callAI(prompt2, 5000).then((res) => {
+          callAI(prompt2, 5000, undefined, startTime).then((res) => {
             Object.assign(result, res.result);
             usedModels.push(res.model + "-rescue");
             failedCalls--;
@@ -882,7 +961,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       }
       if (r3.status !== "fulfilled") {
         rescuePromises.push(
-          callAI(prompt3, 3000).then((res) => {
+          callAI(prompt3, 3000, undefined, startTime).then((res) => {
             Object.assign(result, res.result);
             usedModels.push(res.model + "-rescue");
             failedCalls--;
@@ -893,6 +972,8 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
 
       await Promise.allSettled(rescuePromises);
       console.log(`[rescue] Done. Remaining failures: ${failedCalls}`);
+    } else if (failedCalls > 0) {
+      console.warn(`[rescue] Skipped — not enough time (elapsed: ${Date.now() - startTime}ms)`);
     }
 
     // Attach metadata
@@ -900,7 +981,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     result.crawl_results = crawlMeta;
     if (firstImage?.image) result.thumbnail = firstImage.image;
     result.language = language;
-    result.analysis_version = "EF-v10-reliable";
+    result.analysis_version = "EF-v11-resilient";
     result.model_used = usedModels.join("+");
     result.analyzed_at = new Date().toISOString();
     result.processing_time_ms = totalTime;
@@ -952,9 +1033,48 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       { status: 200, headers },
     );
   } catch (err) {
-    console.error("analyze-export error:", err);
+    const errMsg = (err as Error).message || "";
+    console.error("analyze-export error:", errMsg, err);
+
+    // Refund credit + mark analysis as failed on unhandled errors
+    const body = await req.clone().json().catch(() => ({}));
+    const failAnalysisId = body?.analysis_id;
+    if (failAnalysisId) {
+      const sbUrl = Deno.env.get("SUPABASE_URL")!;
+      const sbServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const sbFail = createClient(sbUrl, sbServiceRole);
+      const token = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
+      const { data: { user: failUser } } = await sbFail.auth.getUser(token).catch(() => ({ data: { user: null } }));
+      if (failUser) {
+        await sbFail.rpc("refund_analysis_credit", { p_user_id: failUser.id }).catch(() => {});
+        await sbFail.from("analyses").update({
+          status: "failed",
+          ai_result: { error: errMsg, _timeout: errMsg.includes("WALL_CLOCK") || errMsg.includes("abort") || errMsg.includes("timeout") },
+        }).eq("id", failAnalysisId).eq("user_id", failUser.id);
+        console.log(`[catch] Refunded credit + marked analysis ${failAnalysisId} as failed`);
+      }
+    }
+
+    // Detect timeout-related errors and return user-friendly message
+    if (errMsg.includes("WALL_CLOCK") || errMsg.includes("abort") || errMsg.includes("timeout")) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "분석 시간이 초과됐습니다. 잠시 후 다시 시도해주세요.",
+          error_en: "Analysis timed out. Please try again shortly.",
+          code: "ANALYSIS_TIMEOUT",
+        }),
+        { status: 504, headers },
+      );
+    }
+
     return new Response(
-      JSON.stringify({ ok: false, error: "서버 오류가 발생했습니다" }),
+      JSON.stringify({
+        ok: false,
+        error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        error_en: "Server error occurred. Please try again shortly.",
+        code: "SERVER_ERROR",
+      }),
       { status: 500, headers },
     );
   }
