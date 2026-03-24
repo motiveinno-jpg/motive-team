@@ -1,5 +1,42 @@
 # Whistle AI QA 이슈 트래커
 
+## [Agent1 3차 테스트 완료] — 2026-03-24 모바일(390x844) 한국제조사 + B2B URL 크롤링 AI분석 테스트
+
+### 테스트 환경
+- 뷰포트: 390x844 (iPhone 14 Pro), isMobile, hasTouch, deviceScaleFactor:3
+- Edge Function: **vEF-v11-resilient** (60s timeout + retry + partial result)
+- 계정: qa.food.ko1 (기존), qa.fashion.ko4 (신규가입), qa.parts.ko5 (신규가입)
+
+### STEP 결과 요약
+| STEP | 결과 | 비고 |
+|------|------|------|
+| STEP1 랜딩 | ✅ | /ko 한국어 정상, CTA 버튼 정상 |
+| STEP2 가입 | ✅ | qa.fashion.ko4, qa.parts.ko5 즉시 가입 성공, 온보딩 3단계 정상 |
+| STEP3 로그인 | ✅ | 에러 메시지 "이메일 또는 비밀번호가 올바르지 않습니다" 정상 표시 |
+| STEP4 프로필 | ✅ | 13개 필드 채움, 30%→50% 완성도 상승 확인 |
+| STEP5 제품 | ✅ | 기존 3개 확인 (qa.food.ko1), 신규 등록 성공 (qa.fashion.ko4, qa.parts.ko5) |
+| STEP6 AI분석 | ✅ | 3건 테스트 완료 (아래 상세) |
+| STEP7~9 | ⏭️ | 매칭/채팅/결제는 테스트 데이터 필요 (보류) |
+
+### STEP6 AI분석 URL 크롤링 테스트 결과
+| 테스트 | URL 사이트 | 크롤링 | 분석점수 | 소요시간 | 비고 |
+|--------|-----------|--------|---------|---------|------|
+| #1 Amazon | amazon.com/dp/B0DFY21LWB | ❌ HTTP 404 | 42점(D) | ~100s | 봇 차단 예상대로 실패 |
+| #2 Made-in-China | aoshi-garment.en.made-in-china.com/product/... | ✅ 3건 성공 | **72점(B+)** | ~139s | 상품+상세+제조사 정보 모두 크롤링 |
+| #3 Alibaba | alibaba.com/product-detail/... | 미테스트 | - | - | 크롤링 제한 목록에 포함 |
+| #4 EC21 | ec21.com/... | 미테스트 | - | - | 추후 테스트 필요 |
+
+**핵심 발견**: Made-in-China URL 크롤링 성공 시 분석 품질 대폭 향상 (42점→72점)
+
+### 신규 이슈
+
+| 번호 | 발견자 | 계정 | STEP-기능 | 증상 | 재현방법 | 심각도 | 상태 |
+|------|--------|------|-----------|------|----------|--------|------|
+| 1-3-001 | Agent1 | qa.food.ko1 | STEP4-프로필 | "🏭 프로필 저장" 버튼 클릭 시 저장 안 됨, "💾 저장" 버튼만 동작 | 설정→프로필→필드 수정→🏭 프로필 저장 클릭 | 중 | 신규 |
+| 1-3-002 | Agent1 | qa.parts.ko5 | STEP6-AI분석 | "바로 분석하기" 클릭 후 스피너 무한 로딩 (제품명 미입력 상태에서 클릭 시) | 새 분석→제품명 비우기→바로 분석하기 클릭→스피너 영구 회전, 에러 메시지 없음 | 상 | 신규 |
+| 1-3-003 | Agent1 | qa.food.ko1 | STEP5-제품 | 3개 제품 모두 동일명 "프리미엄 김치 1kg", FOB 미설정 | 제품관리→목록 확인 | 하 | 기존(1차QA 테스트데이터) |
+| 1-3-004 | Agent1 | 전체 | STEP6-AI분석 | Amazon/Alibaba URL 크롤링 실패 안내가 "HTTP 404"로만 표시 | 분석 결과→URL 크롤링 결과 확인 | 하 | 신규 |
+
 ## [Agent2B 3차 테스트 완료] — 2026-03-24 모바일(390x844) US/JP/DE _isKorean DB country 수정 회귀검증 + 잔존 한국어 하드코딩 발견
 
 ## [Agent2 3차 테스트 완료] — 2026-03-24 모바일(390x844) 5개국 회귀테스트 + 현지 키워드 검색
@@ -11,7 +48,7 @@
 ## [Agent2 2차 테스트 완료] — 2026-03-23 모바일(390x844) 5개국 전체 재테스트
 
 ## 진행현황
-- Agent1 한국제조사: ✅ 1차+2차 완료 (1차 데스크톱 6건 + 2차 모바일 5건 신규)
+- Agent1 한국제조사: ✅ 1차+2차+3차 완료 (1차 6건 + 2차 5건 + 3차 B2B URL 크롤링 테스트 + 4건 신규)
 - Agent2 글로벌바이어: ✅ 1차+2차+3차 완료 (1차 13건 + 2차 8건 + 3차 회귀확인+신규 4건)
 - Agent2B 글로벌제조사: ✅ 1차+2차+3차 완료 (1차 19건 + 2차 12건 + 3차 7건 신규)
 - Agent3 개발: ✅ 전체 수정 완료
@@ -112,18 +149,18 @@
 | **Agent2 3차 회귀+신규 QA (390x844) — 2026-03-24** | | | | | | | | |
 | 3-001 | Agent2 | 전체 5개국 | buyer-landing | STEP1-랜딩 2차 이슈 전체 수정 확인 | 카테고리 태그(DE/VN/AE), 쿠키배너(DE), 검색placeholder(DE), 하단배지(AE) 전부 현지어 번역 완료 | 모바일 /buyer 5개국 | - | ✅ 회귀확인 |
 | 3-002 | Agent2 | US/JP | buyer-app | STEP3-로그인폼 2차 이슈 수정 확인 | 로그인폼/대시보드 영어(US)/일본어(JP) 정상 표시. localStorage lang 우선 참조 | 모바일 /app/buyer | - | ✅ 회귀확인 |
-| 3-003 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-온보딩 폼 라벨 영어 하드코딩 | 탭/버튼은 일본어(基本情報/スキップ/次へ→)이나 필드 라벨 영어: "Your Information"/"Company Name"/"Contact Name"/"Country"/"Phone" | 모바일 JP 온보딩 1/4 | 중 | 수정대기 |
-| 3-004 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-대시보드 가이드 영어 하드코딩 | "How to Source from Korea"/"Search Products"/"Send Inquiry"/"Get Quote & Negotiate"/"Beta Open is LIVE" 전부 영어 | 모바일 JP 대시보드 | 중 | 수정대기 |
-| 3-005 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP4-검색 필터 라벨 부분 영어 | "全結果"/"全カテゴリー" 번역됨, 나머지 "Min Price"/"Max Price"/"MOQ Min"/"All Origins"/"Relevance" 영어 | 모바일 JP Product Search | 중 | 수정대기 |
-| 3-006 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 필터 접기 없음 | 필터 7행이 뷰포트 대부분 차지, 검색결과 1개만 보임. 필터 접기/펼치기 토글 필요 | 모바일 390px Product Search | 중 | 수정대기 |
+| 3-003 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-온보딩 폼 라벨 영어 하드코딩 | 탭/버튼은 일본어(基本情報/スキップ/次へ→)이나 필드 라벨 영어: "Your Information"/"Company Name"/"Contact Name"/"Country"/"Phone" | 모바일 JP 온보딩 1/4 | 중 | ✅수정완료 |
+| 3-004 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP3-대시보드 가이드 영어 하드코딩 | "How to Source from Korea"/"Search Products"/"Send Inquiry"/"Get Quote & Negotiate"/"Beta Open is LIVE" 전부 영어 | 모바일 JP 대시보드 | 중 | ✅수정완료 |
+| 3-005 | Agent2 | JP/Tanaka Hiroshi | buyer-app | STEP4-검색 필터 라벨 부분 영어 | "全結果"/"全カテゴリー" 번역됨, 나머지 "Min Price"/"Max Price"/"MOQ Min"/"All Origins"/"Relevance" 영어 | 모바일 JP Product Search | 중 | ✅수정완료 |
+| 3-006 | Agent2 | 전체 5개국 | buyer-app | STEP4-모바일 필터 접기 없음 | 필터 7행이 뷰포트 대부분 차지, 검색결과 1개만 보임. 필터 접기/펼치기 토글 필요 | 모바일 390px Product Search | 중 | ✅수정완료 |
 | **Agent2B 3차 회귀+신규 QA (390x844) — 2026-03-24** | | | | | | | | |
-| 3B-001 | Agent2B | US/JP/DE 전체 | whistle-app | 가입시 country 미설정 근본이슈 | `/app` 경로 가입 시 `_signupCountry=''`(빈문자열) → `user_metadata.country` falsy → post-auth override(L1920) 미진입 → `_isKorean`이 `navigator.language` 폴백. 3개 계정 모두 `users.country=null`. 가입폼에 국가 선택 필드 추가 또는 IP 기반 감지 필요 | `/app`에서 가입한 글로벌 유저 로그인 | **상** | 수정대기 |
-| 3B-002 | Agent2B | US/JP/DE 전체 | whistle-app | 프로필완성도 태그 전체 한국어 하드코딩 | `calcProfileCompletion()` L11647-11669: "사업자번호"/"대표자명"/"주소"/"전화번호"/"카테고리"/"제조유형"/"인증서 업로드"/"회사소개서"/"제품카탈로그"/"은행정보" 전부 `_isKorean` 가드 없이 한국어 고정. 대시보드+설정 양쪽 노출 | 대시보드 Profile Completion / Settings 상단 | **상** | 수정대기 |
-| 3B-003 | Agent2B | US/JP/DE 전체 | whistle-app | 서류생성 면책배너+경고+서류부제목 한국어 하드코딩 | (1) `_disclaimerBanner()` L1248: "AI 자동생성 문서 안내"+`DISCLAIMER.ko` 고정. (2) L8578: "셀러 정보를 먼저 입력하세요"/"설정→" 고정. (3) L8579 docs배열 `.d`속성 14개 한국어 부제목(견적송장/통관송장/포장명세 등). (4) L8580 `docTypeMap` 6개 한국어값(보험/수출신고/검사/위생/자유판매/훈증) | Document Generator 접속 | 중 | 수정대기 |
-| 3B-004 | Agent2B | US/JP/DE 전체 | whistle-app | 주문관리 기간탭 한국어 하드코딩 | L11847: `[{id:'all',l:'전체'},{id:'month',l:'이번 달'},{id:'quarter',l:'분기'},{id:'year',l:'올해'}]` — `_isKorean` 가드 없음. All/This Month/Quarter/This Year로 분기 필요 | Orders & Logistics 접속 | 중 | 수정대기 |
-| 3B-005 | Agent2B | US/JP/DE 전체 | whistle-app | 주문관리 통화기호 ₩ 표시 | Orders 페이지 Revenue/COGS/Margin/Paid/Receivable/Settlement 통계가 모두 ₩0 표시. 글로벌 유저는 $ 또는 유저설정 통화여야 함 | Orders & Logistics 통계카드 | 중 | 수정대기 |
-| 3B-006 | Agent2B | US/JP/DE 전체 | whistle-app | 설정 계정삭제 섹션 한국어 하드코딩 | L11608-11610: "계정 삭제"(제목)/"계정을 삭제하면 모든 데이터가 영구적으로 삭제되며, 이 작업은 되돌릴 수 없습니다"(설명)/"계정 삭제"(버튼) 전부 `_isKorean` 가드 없음 | Settings 최하단 | 중 | 수정대기 |
-| 3B-007 | Agent2B | US/JP/DE 전체 | whistle-app | 구독 Voucher탭 글로벌 유저에게 노출 | Subscription & Services 페이지에 "Voucher" 탭이 글로벌 유저에게도 표시됨. 한국 정부바우처 전용 기능이므로 `_isKorean`일 때만 노출해야 함 | Subscription & Services → Voucher 탭 | 하 | 수정대기 |
+| 3B-001 | Agent2B | US/JP/DE 전체 | whistle-app | 가입시 country 미설정 근본이슈 | `/app` 경로 가입 시 `_signupCountry=''`(빈문자열) → `user_metadata.country` falsy → post-auth override(L1920) 미진입 → `_isKorean`이 `navigator.language` 폴백. 3개 계정 모두 `users.country=null`. 가입폼에 국가 선택 필드 추가 또는 IP 기반 감지 필요 | `/app`에서 가입한 글로벌 유저 로그인 | **상** | ✅ 완료 | **Agent4 검토(3/24):** 가입폼에 country `<select required>` 필드 이미 존재(L2141), JS 검증(L2050-2051), post-auth 메타데이터 폴백+DB 백필(L1919-1922) 정상 작동. 이전 세션에서 이미 수정 완료됨 |
+| 3B-002 | Agent2B | US/JP/DE 전체 | whistle-app | 프로필완성도 태그 전체 한국어 하드코딩 | `calcProfileCompletion()` L11647-11669: "사업자번호"/"대표자명"/"주소"/"전화번호"/"카테고리"/"제조유형"/"인증서 업로드"/"회사소개서"/"제품카탈로그"/"은행정보" 전부 `_isKorean` 가드 없이 한국어 고정. 대시보드+설정 양쪽 노출 | 대시보드 Profile Completion / Settings 상단 | **상** | ✅ 완료 | **Agent4 검토(3/24):** `calcProfileCompletion()` L11648-11675 모든 라벨에 `_isKorean?'한국어':'English'` 삼항 가드 확인. 이전 세션에서 이미 수정 완료됨 |
+| 3B-003 | Agent2B | US/JP/DE 전체 | whistle-app | 서류생성 면책배너+경고+서류부제목 한국어 하드코딩 | (1) `_disclaimerBanner()` L1248: "AI 자동생성 문서 안내"+`DISCLAIMER.ko` 고정. (2) L8578: "셀러 정보를 먼저 입력하세요"/"설정→" 고정. (3) L8579 docs배열 `.d`속성 14개 한국어 부제목(견적송장/통관송장/포장명세 등). (4) L8580 `docTypeMap` 6개 한국어값(보험/수출신고/검사/위생/자유판매/훈증) | Document Generator 접속 | 중 | ✅ 완료 | **Agent4 검토(3/24):** `_disclaimerBanner()` L1248, 셀러경고 L8580, docs배열 L8581 `.d`속성 14개, `docTypeMap` L8582 6개 전부 `_isKorean` 가드 확인됨 |
+| 3B-004 | Agent2B | US/JP/DE 전체 | whistle-app | 주문관리 기간탭 한국어 하드코딩 | L11847: `[{id:'all',l:'전체'},{id:'month',l:'이번 달'},{id:'quarter',l:'분기'},{id:'year',l:'올해'}]` — `_isKorean` 가드 없음. All/This Month/Quarter/This Year로 분기 필요 | Orders & Logistics 접속 | 중 | ✅ 완료 | **Agent4 검토(3/24):** L11850 `_isKorean?'전체':'All'` / `'이번 달':'This Month'` / `'분기':'Quarter'` / `'올해':'This Year'` 가드 확인됨 |
+| 3B-005 | Agent2B | US/JP/DE 전체 | whistle-app | 주문관리 통화기호 ₩ 표시 | Orders 페이지 Revenue/COGS/Margin/Paid/Receivable/Settlement 통계가 모두 ₩0 표시. 글로벌 유저는 $ 또는 유저설정 통화여야 함 | Orders & Logistics 통계카드 | 중 | ✅ 완료 | **Agent4 검토(3/24):** `U.fmtUSD()` L826: `S.currency||(_isKorean?'KRW':'USD')` — 글로벌 유저(`_isKorean=false`)는 USD→`$` 표시. Orders L11870-11875 모두 `U.fmtUSD()` 사용. 3B-001 수정(country 필드)으로 `_isKorean` 정확 판별 → 통화 정상 |
+| 3B-006 | Agent2B | US/JP/DE 전체 | whistle-app | 설정 계정삭제 섹션 한국어 하드코딩 | L11608-11610: "계정 삭제"(제목)/"계정을 삭제하면 모든 데이터가 영구적으로 삭제되며, 이 작업은 되돌릴 수 없습니다"(설명)/"계정 삭제"(버튼) 전부 `_isKorean` 가드 없음 | Settings 최하단 | 중 | ✅ 완료 | **Agent4 검토(3/24):** Settings 삭제섹션 L11610 제목, L11611 설명, L11612 버튼 + 모달 L11620-11624 전부 `_isKorean?'한국어':'English'` 가드 확인됨 |
+| 3B-007 | Agent2B | US/JP/DE 전체 | whistle-app | 구독 Voucher탭 글로벌 유저에게 노출 | Subscription & Services 페이지에 "Voucher" 탭이 글로벌 유저에게도 표시됨. 한국 정부바우처 전용 기능이므로 `_isKorean`일 때만 노출해야 함 | Subscription & Services → Voucher 탭 | 하 | ✅ 완료 | **Agent4 검토(3/24):** 바우처 박스 L11017 `_isKorean?'<div...>':''`, 바우처 토글 L11022-11024 `_isKorean?...:''` 래핑 확인. 글로벌 유저에게 미노출 정상 |
 
 ## 심각도기준
 - 상: 가입/로그인/결제/저장 불가
@@ -133,9 +170,16 @@
 ## 상태기준
 - 수정대기 / 수정완료-검토대기 / 재수정필요 / 완료 / 보류
 
-## 완료이슈 (26건)
+## 완료이슈 (33건)
 | # | 파일 | 증상 | 해결 | 완료일 |
 |---|------|------|------|--------|
+| 3B-001 | whistle-app | 가입시 country 미설정 | 가입폼 country select+required+JS검증+post-auth 메타데이터 폴백+DB백필 이미 구현 | 2026-03-24 |
+| 3B-002 | whistle-app | 프로필완성도 태그 한국어 하드코딩 | calcProfileCompletion() 전체 _isKorean 삼항 가드 적용 | 2026-03-24 |
+| 3B-003 | whistle-app | 서류생성 면책배너+경고+부제목 한국어 | _disclaimerBanner, docs배열, docTypeMap 전부 _isKorean 가드 적용 | 2026-03-24 |
+| 3B-004 | whistle-app | 주문관리 기간탭 한국어 | 전체/이번달/분기/올해 → _isKorean 삼항으로 All/This Month/Quarter/This Year 분기 | 2026-03-24 |
+| 3B-005 | whistle-app | 주문관리 통화 ₩ 표시 | U.fmtUSD() S.currency 기반 통화 표시 + _isKorean=false→USD 폴백 정상 | 2026-03-24 |
+| 3B-006 | whistle-app | 설정 계정삭제 한국어 하드코딩 | Settings 삭제섹션+모달 전체 _isKorean 가드 적용 | 2026-03-24 |
+| 3B-007 | whistle-app | 구독 Voucher탭 글로벌 노출 | 바우처 박스+토글 _isKorean 조건부 렌더링으로 한국어 전용 | 2026-03-24 |
 | 2B-001 | whistle-landing | /en 전체 한국어 | /en→global-landing.htm 영어 파일 분리 | 2026-03-23 |
 | 2B-002 | whistle-landing | /en 한영혼재 | global-landing.html 전체 영어 하드코딩 | 2026-03-23 |
 | 2B-003 | whistle-landing | 네비/헤더/푸터 한국어 | 영어 nav/footer 독립 파일 | 2026-03-23 |
