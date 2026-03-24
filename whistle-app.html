@@ -1915,9 +1915,8 @@ function loadUser(){
       if(r.data.role==='admin'&&!location.search.includes('stay=app')){window.location.href='/admin';return;}
       S.user=r.data;
       /* Post-auth: override _isKorean based on user's COUNTRY, not browser language.
-         Priority: DB users.country → user_metadata.country → Cloudflare header → keep current */
-      var _cfMeta=document.querySelector('meta[name="cf-ipcountry"]');
-      var _authCountry=r.data.country||(session.user.user_metadata&&session.user.user_metadata.country)||(_cfMeta&&_cfMeta.getAttribute('content'))||null;
+         Priority: DB users.country → user_metadata.country → keep current */
+      var _authCountry=r.data.country||(session.user.user_metadata&&session.user.user_metadata.country)||null;
       if(_authCountry){
         /* Backfill country to DB if missing */
         if(!r.data.country){r.data.country=_authCountry;sb.from('users').update({country:_authCountry}).eq('id',r.data.id).then(function(){}).catch(function(){});}
@@ -1926,7 +1925,9 @@ function loadUser(){
         if(!_isKorean&&_userLang==='ko'){_userLang='en';}
         else if(_isKorean&&_userLang!=='ko'){_userLang='ko';}
         localStorage.setItem('_lang',_userLang);
+        localStorage.setItem('whistle_lang',_userLang);
         document.documentElement.setAttribute('lang',_userLang);
+        window.__isKorean=_isKorean;window.__whistleLang=_userLang;
         if(_wasKorean!==_isKorean){PL=_buildPL();}
       }
       _acceptInvite(r.data.id);
@@ -2046,7 +2047,8 @@ function doLogin(e){e.preventDefault();var f=e.target;S.authError='';S._loggingI
 }
 function doSignup(e){e.preventDefault();var f=e.target;
   var _pw=f.password.value;if(_pw.length<8||!/[a-zA-Z]/.test(_pw)||!/[0-9]/.test(_pw)||!/[^a-zA-Z0-9]/.test(_pw))return set({authError:(_isKorean?'비밀번호는 8자 이상, 영문+숫자+특수문자를 포함해야 합니다.':'Password must be 8+ characters with letters, numbers, and special characters.')});
-  S.authError='';var _meta={role:'client',company_name:f.company_name.value,country:_isKorean?'KR':'',terms_accepted_at:new Date().toISOString()};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;
+  S.authError='';var _signupCountry=(location.pathname.startsWith('/ko_made')||location.pathname.startsWith('/ko'))?'KR':'';
+  var _meta={role:'client',company_name:f.company_name.value,country:_signupCountry,terms_accepted_at:new Date().toISOString()};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:_meta}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:(_isKorean?'이미 등록된 이메일입니다. 로그인해주세요.':'This email is already registered. Please sign in.')});
