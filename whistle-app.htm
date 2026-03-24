@@ -1914,15 +1914,20 @@ function loadUser(){
       /* Admin users → redirect to admin portal */
       if(r.data.role==='admin'&&!location.search.includes('stay=app')){window.location.href='/admin';return;}
       S.user=r.data;
-      /* Post-auth: override _isKorean based on user's country, not browser language */
-      if(r.data.country && r.data.country !== 'KR') {
-        _isKorean = false;
-        _userLang = _userLang === 'ko' ? 'en' : _userLang;
-        window.__isKorean = false;
-        window.__whistleLang = _userLang;
-      } else if(r.data.country === 'KR') {
-        _isKorean = true;
-        window.__isKorean = true;
+      /* Post-auth: override _isKorean based on user's COUNTRY, not browser language.
+         Priority: DB users.country → user_metadata.country → Cloudflare header → keep current */
+      var _cfMeta=document.querySelector('meta[name="cf-ipcountry"]');
+      var _authCountry=r.data.country||(session.user.user_metadata&&session.user.user_metadata.country)||(_cfMeta&&_cfMeta.getAttribute('content'))||null;
+      if(_authCountry){
+        /* Backfill country to DB if missing */
+        if(!r.data.country){r.data.country=_authCountry;sb.from('users').update({country:_authCountry}).eq('id',r.data.id).then(function(){}).catch(function(){});}
+        var _wasKorean=_isKorean;
+        _isKorean=(_authCountry==='KR');
+        if(!_isKorean&&_userLang==='ko'){_userLang='en';}
+        else if(_isKorean&&_userLang!=='ko'){_userLang='ko';}
+        localStorage.setItem('_lang',_userLang);
+        document.documentElement.setAttribute('lang',_userLang);
+        if(_wasKorean!==_isKorean){PL=_buildPL();}
       }
       _acceptInvite(r.data.id);
       if(r.data.preferred_currency)S.currency=r.data.preferred_currency;
@@ -2041,7 +2046,7 @@ function doLogin(e){e.preventDefault();var f=e.target;S.authError='';S._loggingI
 }
 function doSignup(e){e.preventDefault();var f=e.target;
   var _pw=f.password.value;if(_pw.length<8||!/[a-zA-Z]/.test(_pw)||!/[0-9]/.test(_pw)||!/[^a-zA-Z0-9]/.test(_pw))return set({authError:(_isKorean?'비밀번호는 8자 이상, 영문+숫자+특수문자를 포함해야 합니다.':'Password must be 8+ characters with letters, numbers, and special characters.')});
-  S.authError='';var _meta={role:'client',company_name:f.company_name.value,terms_accepted_at:new Date().toISOString()};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;
+  S.authError='';var _meta={role:'client',company_name:f.company_name.value,country:_isKorean?'KR':'',terms_accepted_at:new Date().toISOString()};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:_meta}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:(_isKorean?'이미 등록된 이메일입니다. 로그인해주세요.':'This email is already registered. Please sign in.')});
@@ -15021,7 +15026,8 @@ function nav(p){if(S.page===p&&!S.currentAnalysis&&!S.currentProject)return;S.pa
 try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:p,role:S.user?S.user.role:null,session_id:window._pvSid,portal:'whistle'}).then(function(){});}catch(e){console.error('[whistle]',e);}}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){document.querySelectorAll('[id="'+id+'"]').forEach(function(e){e.remove();});},300);}
 
-var PL=_isKorean?{dashboard:'📊 대시보드',analysis:'🔬 AI 수출 분석',products:'📦 제품 관리',projects:'🚀 프로젝트 관리',deals:'🚀 프로젝트 관리',orders:'📋 주문관리',tracking:'📍 물류 추적',services:'💼 대행서비스 신청',docgen:'📄 서류',chat:'💬 바이어 채팅',emailhub:'✉️ 이메일',cost:'🧮 원가',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🚀 프로젝트 관리',meetings:'📅 일정관리',alibaba:'🏪 알리바바',alibaba_agency:'🏪 알리바바 대행',marketplace:'🛍️ 바이어 장터',guide:'📚 가이드 센터',trends:'🔥 검색 트렌드',processmap:'🗺️ 제작 이동 맵',invite:'📨 초대/레퍼럴',buyerhub:'🚀 프로젝트 관리',comms:'💬 메시지',ordershipping:'📋 주문 & 물류',bizhub:'💼 구독 & 서비스',partnership:'🤝 제휴 문의'}:{dashboard:'📊 Dashboard',analysis:'🔬 AI Export Analysis',products:'📦 Product Management',projects:'🚀 Project Management',deals:'🚀 Project Management',orders:'📋 Orders',tracking:'📍 Logistics Tracking',services:'💼 Services',docgen:'📄 Documents',chat:'💬 Buyer Chat',emailhub:'✉️ Email',cost:'🧮 Cost Tool',costsim:'🧮 Cost Tool',subscription:'💎 Subscription',voucherreport:'🏛️ Voucher',settings:'⚙️ Settings',buyers:'🚀 Project Management',meetings:'📅 Meetings',alibaba:'🏪 Alibaba',alibaba_agency:'🏪 Alibaba Agency',marketplace:'🛍️ Buyer Marketplace',guide:'📚 Guide Center',trends:'🔥 Search Trends',processmap:'🗺️ Process Map',invite:'📨 Invite/Referral',buyerhub:'🚀 Project Management',comms:'💬 Messages',ordershipping:'📋 Orders & Logistics',bizhub:'💼 Subscription & Services',partnership:'🤝 Partnership'};
+function _buildPL(){return _isKorean?{dashboard:'📊 대시보드',analysis:'🔬 AI 수출 분석',products:'📦 제품 관리',projects:'🚀 프로젝트 관리',deals:'🚀 프로젝트 관리',orders:'📋 주문관리',tracking:'📍 물류 추적',services:'💼 대행서비스 신청',docgen:'📄 서류',chat:'💬 바이어 채팅',emailhub:'✉️ 이메일',cost:'🧮 원가',costsim:'🧮 원가',subscription:'💎 구독',voucherreport:'🏛️ 바우처',settings:'⚙️ 설정',buyers:'🚀 프로젝트 관리',meetings:'📅 일정관리',alibaba:'🏪 알리바바',alibaba_agency:'🏪 알리바바 대행',marketplace:'🛍️ 바이어 장터',guide:'📚 가이드 센터',trends:'🔥 검색 트렌드',processmap:'🗺️ 제작 이동 맵',invite:'📨 초대/레퍼럴',buyerhub:'🚀 프로젝트 관리',comms:'💬 메시지',ordershipping:'📋 주문 & 물류',bizhub:'💼 구독 & 서비스',partnership:'🤝 제휴 문의'}:{dashboard:'📊 Dashboard',analysis:'🔬 AI Export Analysis',products:'📦 Product Management',projects:'🚀 Project Management',deals:'🚀 Project Management',orders:'📋 Orders',tracking:'📍 Logistics Tracking',services:'💼 Services',docgen:'📄 Documents',chat:'💬 Buyer Chat',emailhub:'✉️ Email',cost:'🧮 Cost Tool',costsim:'🧮 Cost Tool',subscription:'💎 Subscription',voucherreport:'🏛️ Voucher',settings:'⚙️ Settings',buyers:'🚀 Project Management',meetings:'📅 Meetings',alibaba:'🏪 Alibaba',alibaba_agency:'🏪 Alibaba Agency',marketplace:'🛍️ Buyer Marketplace',guide:'📚 Guide Center',trends:'🔥 Search Trends',processmap:'🗺️ Process Map',invite:'📨 Invite/Referral',buyerhub:'🚀 Project Management',comms:'💬 Messages',ordershipping:'📋 Orders & Logistics',bizhub:'💼 Subscription & Services',partnership:'🤝 Partnership'};}
+var PL=_buildPL();
 
 /* === ONBOARDING WIZARD === */
 function pgOnboarding(){
