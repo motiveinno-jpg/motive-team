@@ -14,6 +14,12 @@ PAIRS=(
   "global-landing"
   "global-buyer-landing"
   "buyer-landing"
+  "terms-of-service"
+  "terms-of-service-en"
+  "privacy-policy"
+  "privacy-policy-en"
+  "refund-policy"
+  "refund-policy-en"
 )
 
 CHANGED=0

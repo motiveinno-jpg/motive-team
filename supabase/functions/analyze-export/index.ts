@@ -11,9 +11,10 @@ const corsHeaders = {
 const CRAWL_TIMEOUT_MS = 8000; // 8s — tight to stay under 150s total
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
-const AI_CALL_TIMEOUT_MS = 60000; // 60s per AI call (increased from 35s)
-const AI_CALL_RETRY_DELAY_MS = 3000; // 3s delay before retry
-const WALL_CLOCK_LIMIT_MS = 130000; // 130s — hard cutoff with 20s buffer before Supabase 150s
+const AI_CALL_TIMEOUT_MS = 50000; // 50s per AI call (reduced from 60s for more rescue time)
+const AI_CALL_RETRY_DELAY_MS = 2000; // 2s delay before retry
+const WALL_CLOCK_LIMIT_MS = 135000; // 135s — hard cutoff with 15s buffer before Supabase 150s
+const CALL_STAGGER_MS = 300; // 300ms stagger between parallel calls to avoid rate limit spikes
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -721,7 +722,7 @@ ${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시
   "cert_details": [
     {
       "name": "", "market": "", "duration": "", "cost": "", "priority": "${isEn ? "Required/Recommended" : "필수/권장"}",
-      "note": "${isEn ? "Step-by-step: (1) agency+website, (2) required docs, (3) Korean labs (KTL/KTC/KOTITI), (4) tips. 3-5 sentences." : "단계별: (1) 기관+웹사이트, (2) 필요서류, (3) 한국 시험기관(KTL/KTC/KOTITI), (4) 팁. 3~5문장."}"
+      "note": "${isEn ? "(1) agency+website, (2) required docs, (3) Korean labs. 2-3 sentences." : "(1) 기관+웹사이트, (2) 필요서류, (3) 한국 시험기관. 2~3문장."}"
     }
   ],
   "recommended_markets": ["US", "JP"],
@@ -787,6 +788,12 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     // Track completed results for progressive merge
     const completedResults: any = {};
 
+    // Stagger calls to avoid Anthropic rate limit spikes
+    const staggeredCall = (fn: () => Promise<any>, delayMs: number) =>
+      new Promise<any>((resolve, reject) => {
+        setTimeout(() => fn().then(resolve).catch(reject), delayMs);
+      });
+
     const [r1, r2, r3] = await Promise.allSettled([
       callAI(prompt1, 5000, visionImage, startTime).then(async (res) => {
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
@@ -802,7 +809,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
         }).eq("id", analysis_id).eq("user_id", user.id);
         return res;
       }),
-      callAI(prompt2, 5000, undefined, startTime).then(async (res) => {
+      staggeredCall(() => callAI(prompt2, 4000, undefined, startTime).then(async (res) => {
         console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         await sbAdmin.from("analyses").update({
@@ -815,12 +822,12 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
           },
         }).eq("id", analysis_id).eq("user_id", user.id);
         return res;
-      }),
-      callAI(prompt3, 3000, undefined, startTime).then(async (res) => {
+      }), CALL_STAGGER_MS),
+      staggeredCall(() => callAI(prompt3, 3000, undefined, startTime).then(async (res) => {
         console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         return res;
-      }),
+      }), CALL_STAGGER_MS * 2),
     ]);
 
     const totalTime = Date.now() - startTime;
@@ -950,14 +957,75 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
         );
       }
       if (r2.status !== "fulfilled") {
-        rescuePromises.push(
-          callAI(prompt2, 5000, undefined, startTime).then((res) => {
-            Object.assign(result, res.result);
-            usedModels.push(res.model + "-rescue");
-            failedCalls--;
-            console.log("[rescue] Call 2 recovered");
-          }).catch((e) => console.error("[rescue] Call 2 still failed:", (e as Error).message))
-        );
+        // Split Call 2 into two smaller calls for better reliability
+        const remainingMs = WALL_CLOCK_LIMIT_MS - (Date.now() - startTime);
+        if (remainingMs > AI_CALL_TIMEOUT_MS + 5000) {
+          // Enough time: try split rescue (market + certs separately)
+          const prompt2a = `${isEn ? "# Export Analysis — Market & Competition" : "# 수출 분석 — 시장 & 경쟁"}
+${productContext}
+${crawlCtx}
+${toneRule}
+${isEn ? "Output JSON:" : "JSON 출력:"}
+{
+  "recommended_markets": ["US", "JP"],
+  "market_analysis": [{"name": "", "size": "", "grow": "", "entry": "", "note": "2${isEn ? " sentences" : "문장"}", "key_channel": ""}],
+  "competitor_analysis": {
+    "overview": "2${isEn ? " sentences" : "문장"}",
+    "swot": {"strength": "", "weakness": "", "opportunity": "", "threat": ""},
+    "global_competitors": [{"name": "", "price": "", "note": ""}],
+    "local_competitors": [{"name": "", "price": ""}],
+    "price_range": "", "our_positioning": ""
+  },
+  "industry_trend": "2${isEn ? " sentences" : "문장"}",
+  "recommended_channels": [""],
+  "opportunities": ["", ""],
+  "risks": ["", ""]
+}`;
+          const prompt2b = `${isEn ? "# Export Analysis — Certifications" : "# 수출 분석 — 인증"}
+${productContext}
+${crawlCtx}
+${toneRule}
+${isEn ? "Output JSON:" : "JSON 출력:"}
+{
+  "required_certs": ["cert1"],
+  "existing_certs": ${JSON.stringify(existing_certs)},
+  "cert_details": [{"name": "", "market": "", "duration": "", "cost": "", "priority": "${isEn ? "Required/Recommended" : "필수/권장"}", "note": "2${isEn ? " sentences" : "문장"}"}]
+}`;
+          rescuePromises.push(
+            Promise.allSettled([
+              callAI(prompt2a, 2500, undefined, startTime),
+              staggeredCall(() => callAI(prompt2b, 2000, undefined, startTime), 200),
+            ]).then(([ra, rb]) => {
+              let recovered = false;
+              if (ra.status === "fulfilled") {
+                Object.assign(result, ra.value.result);
+                usedModels.push(ra.value.model + "-rescue-market");
+                recovered = true;
+              }
+              if (rb.status === "fulfilled") {
+                Object.assign(result, rb.value.result);
+                usedModels.push(rb.value.model + "-rescue-cert");
+                recovered = true;
+              }
+              if (recovered) {
+                failedCalls--;
+                console.log("[rescue] Call 2 recovered via split");
+              } else {
+                console.error("[rescue] Call 2 split rescue also failed");
+              }
+            })
+          );
+        } else {
+          // Not enough time: try single rescue with reduced tokens
+          rescuePromises.push(
+            callAI(prompt2, 3000, undefined, startTime).then((res) => {
+              Object.assign(result, res.result);
+              usedModels.push(res.model + "-rescue");
+              failedCalls--;
+              console.log("[rescue] Call 2 recovered");
+            }).catch((e) => console.error("[rescue] Call 2 still failed:", (e as Error).message))
+          );
+        }
       }
       if (r3.status !== "fulfilled") {
         rescuePromises.push(
