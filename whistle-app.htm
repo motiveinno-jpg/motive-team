@@ -2115,6 +2115,16 @@ function loadUser(){
       /* Post-auth: override _isKorean based on user's COUNTRY, not browser language.
          Priority: DB users.country → user_metadata.country → keep current */
       var _authCountry=r.data.country||(session.user.user_metadata&&session.user.user_metadata.country)||null;
+      /* DB language 필드 fallback: country 없어도 언어 반영 */
+      if(!_authCountry&&r.data.language){
+        _userLang=r.data.language;
+        _isKorean=_userLang==='ko';
+        localStorage.setItem('_lang',_userLang);
+        localStorage.setItem('whistle_lang',_userLang);
+        document.documentElement.setAttribute('lang',_userLang);
+        window.__isKorean=_isKorean;window.__whistleLang=_userLang;
+        PL=_buildPL();
+      }
       if(_authCountry){
         /* Backfill country to DB if missing */
         if(!r.data.country){r.data.country=_authCountry;sb.from('users').update({country:_authCountry}).eq('id',r.data.id).then(function(){}).catch(function(){});}
@@ -6403,8 +6413,8 @@ function _pjTabDocs(p){
     h+='</div>';
   }
   var filteredDocs=S._pjDocFilter?docs.filter(function(d){return d.buyer_id===S._pjDocFilter;}):docs;
-  var typeIcons={pi:'📄',ci:'📋',pl:'📦',co:'📜',sc:'📝'};
-  var typeLabels={pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract'};
+  var typeIcons={pi:'📄',ci:'📋',pl:'📦',co:'📜',sc:'📝',bl:'🚢',ed:'🏛️',sli:'✉️',isf:'🔒',ams:'📡',ins:'🛡️',ic:'🔍',hc:'🏥',lc:'🏦'};
+  var typeLabels={pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract',bl:'Bill of Lading',ed:'Export Declaration',sli:"Shipper's Letter of Instruction",isf:'Importer Security Filing',ams:'Automated Manifest System',ins:'Insurance Certificate',ic:'Inspection Certificate',hc:'Health/Phytosanitary Certificate',lc:'Letter of Credit Application'};
   filteredDocs.forEach(function(d){
     var icon=typeIcons[d.doc_type]||'📄';var label=typeLabels[d.doc_type]||d.doc_type||'Document';
     var stColor=d.status==='approved'?'var(--ok)':d.status==='sent'?'var(--pri)':'var(--acc)';
@@ -6420,8 +6430,8 @@ function openPjDocModal(docType){
   var p=S.currentProject;if(!p){UI.toast(_isKorean?'프로젝트를 선택해주세요':'Please select a project','warn');return;}
   S._pjDocType=docType;
   try{
-  var typeNames=_isKorean?{pi:'견적서 (Proforma Invoice)',ci:'상업송장 (Commercial Invoice)',pl:'포장명세서 (Packing List)',co:'원산지증명서 (Certificate of Origin)',sc:'매매계약서 (Sales Contract)'}:{pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract'};
-  var typeDescs=_isKorean?{pi:'바이어에게 제품 가격과 거래 조건을 제시하는 견적서입니다. 바이어가 승인하면 정식 거래가 시작됩니다.',ci:'세관 통관과 관세 산정에 사용되는 공식 송장입니다. 실제 선적 수량과 금액으로 작성합니다.',pl:'각 박스의 수량, 순중량, 총중량, 용적을 기재하는 포장 명세서입니다. 통관과 물류에 필수입니다.',co:'제품이 한국산임을 증명하여 FTA 관세 혜택을 받기 위한 서류입니다.',sc:'품질, 결제, 납기, 보증 등 거래의 모든 조건을 법적으로 규정하는 계약서입니다.'}:{pi:'A quotation presenting product prices and trade terms to the buyer.',ci:'An official invoice used for customs clearance and duty calculation.',pl:'A packing list detailing quantity, weight, and volume per box.',co:'A certificate proving Korean origin for FTA tariff benefits.',sc:'A contract legally defining all trade conditions including quality, payment, and delivery.'};
+  var typeNames=_isKorean?{pi:'견적서 (Proforma Invoice)',ci:'상업송장 (Commercial Invoice)',pl:'포장명세서 (Packing List)',co:'원산지증명서 (Certificate of Origin)',sc:'매매계약서 (Sales Contract)',bl:'선하증권 (Bill of Lading)',ed:'수출신고서 (Export Declaration)',sli:'선적지시서 (SLI)',isf:'수입보안신고 (ISF)',ams:'자동적하목록 (AMS)',ins:'보험증권 (Insurance Certificate)',ic:'검사증명서 (Inspection Certificate)',hc:'위생검역증명서 (Health Certificate)',lc:'신용장 신청서 (L/C Application)'}:{pi:'Proforma Invoice',ci:'Commercial Invoice',pl:'Packing List',co:'Certificate of Origin',sc:'Sales Contract',bl:'Bill of Lading',ed:'Export Declaration',sli:"Shipper's Letter of Instruction",isf:'Importer Security Filing',ams:'Automated Manifest System',ins:'Insurance Certificate',ic:'Inspection Certificate',hc:'Health/Phytosanitary Certificate',lc:'Letter of Credit Application'};
+  var typeDescs=_isKorean?{pi:'바이어에게 제품 가격과 거래 조건을 제시하는 견적서입니다. 바이어가 승인하면 정식 거래가 시작됩니다.',ci:'세관 통관과 관세 산정에 사용되는 공식 송장입니다. 실제 선적 수량과 금액으로 작성합니다.',pl:'각 박스의 수량, 순중량, 총중량, 용적을 기재하는 포장 명세서입니다. 통관과 물류에 필수입니다.',co:'제품이 한국산임을 증명하여 FTA 관세 혜택을 받기 위한 서류입니다.',sc:'품질, 결제, 납기, 보증 등 거래의 모든 조건을 법적으로 규정하는 계약서입니다.',bl:'운송인이 화물 수령을 증명하는 운송서류입니다. 수입자가 화물을 인수하는 데 필수입니다.',ed:'세관에 수출 사실을 신고하는 공식 서류입니다. 수출통관에 필수입니다.',sli:'포워더에게 선적 방법과 조건을 지시하는 서류입니다.',isf:'미국 세관에 수입 전 보안 정보를 사전 신고하는 서류입니다 (10+2 규정).',ams:'미국향 화물의 적하목록을 세관에 자동 전송하는 시스템 서류입니다.',ins:'운송 중 화물 손실/손상을 보장하는 보험증권입니다.',ic:'제품 품질 검사 결과를 증명하는 서류입니다. 바이어 요구 시 필수입니다.',hc:'식품/농산물의 위생·검역 기준 적합을 증명하는 서류입니다.',lc:'은행에 신용장 개설을 신청하는 서류입니다. 대금 결제 보장에 사용됩니다.'}:{pi:'A quotation presenting product prices and trade terms to the buyer.',ci:'An official invoice used for customs clearance and duty calculation.',pl:'A packing list detailing quantity, weight, and volume per box.',co:'A certificate proving Korean origin for FTA tariff benefits.',sc:'A contract legally defining all trade conditions including quality, payment, and delivery.',bl:'A transport document proving the carrier has received the goods for shipment.',ed:'An official customs declaration documenting the export of goods.',sli:"Instructions from the shipper to the forwarding agent regarding shipment handling.",isf:'A US customs pre-arrival security filing required for ocean imports (10+2 rule).',ams:'Automated manifest submission to US customs for ocean cargo.',ins:'An insurance policy covering cargo loss or damage during transit.',ic:'A certificate documenting product quality inspection results.',hc:'A certificate proving compliance with health and phytosanitary standards.',lc:'An application to a bank to issue a letter of credit for trade payment guarantee.'};
   var uniqueBuyers=_getPjBuyerIds(p);
   var sellerComp=S.company?(_isKorean?(S.company.name_ko||S.company.name_en):(S.company.name_en||S.company.name_ko)||S.company.company_name||''):(_isKorean?'(회사명)':'(Company)');
   var sellerCompEN=S.company?(S.company.name_en||''):'';
