@@ -12781,21 +12781,49 @@ function saveBuyer(){
   d.source='manual';
   if(checkSanctionAndWarn(d.country))return;
   checkHighRiskAndNotify(d.country);
-  sb.from('buyers').insert(d).select().then(function(r){
-    if(r.error){_toastE(r.error);return;}
+  /* Check for existing buyer with same email to prevent duplicates */
+  var _afterBuyerReady=function(newBuyer){
     closeModal('bm');
-    var newBuyer=r.data&&r.data[0];
     /* If inside a project, auto-create matching to link buyer to project */
     if(newBuyer&&S.currentProject){
-      var mData={user_id:S.user.id,buyer_id:newBuyer.id,project_id:S.currentProject.id,product_id:S.currentProject.product_id||null,status:'proposed',match_score:80,match_reason:'Manual add by seller',buyer_name:d.company_name||d.contact_name||'',buyer_country:d.country||'',seller_name:S.user.company_name||S.user.name||'',product_name:S.currentProject.product_name||''};
-      sb.from('matchings').insert(mData).select().then(function(mr){
-        if(mr.error){console.error('[whistle] matching insert error',mr.error);}
-        else{if(!S.matchings)S.matchings=[];S.matchings.push(mr.data[0]);}
+      /* Check if matching already exists for this buyer+project */
+      var exists=(S.matchings||[]).some(function(m){return m.buyer_id===newBuyer.id&&m.project_id===S.currentProject.id;});
+      if(!exists){
+        var mData={user_id:S.user.id,buyer_id:newBuyer.id,project_id:S.currentProject.id,product_id:S.currentProject.product_id||null,status:'proposed',match_score:80,match_reason:'Manual add by seller',buyer_name:newBuyer.company_name||d.company_name||'',buyer_country:newBuyer.country||d.country||'',seller_name:S.user.company_name||S.user.name||'',product_name:S.currentProject.product_name||''};
+        sb.from('matchings').insert(mData).select().then(function(mr){
+          if(mr.error){console.error('[whistle] matching insert error',mr.error);}
+          else{if(!S.matchings)S.matchings=[];S.matchings.push(mr.data[0]);}
+          loadB().then(function(){render();});
+        });
+      }else{
+        UI.toast(_isKorean?'이미 연결된 바이어입니다':'Buyer already linked to this project','info');
         loadB().then(function(){render();});
-      });
+      }
     }else{
       loadB().then(function(){render();});
     }
+  };
+  /* Duplicate check: find existing buyer with same email */
+  if(d.email){
+    sb.from('buyers').select('*').ilike('email',d.email).limit(1).then(function(existR){
+      if(existR.data&&existR.data.length>0){
+        var existingBuyer=existR.data[0];
+        UI.toast(_isKorean?'기존 바이어를 프로젝트에 연결합니다':'Linking existing buyer to project','info');
+        _afterBuyerReady(existingBuyer);
+        return;
+      }
+      /* No duplicate — insert new */
+      sb.from('buyers').insert(d).select().then(function(r){
+        if(r.error){_toastE(r.error);return;}
+        _afterBuyerReady(r.data&&r.data[0]);
+      });
+    });
+  }else{
+    sb.from('buyers').insert(d).select().then(function(r){
+      if(r.error){_toastE(r.error);return;}
+      _afterBuyerReady(r.data&&r.data[0]);
+    });
+  }
     /* 바이어 초대 결과 모달 — 링크 + 쿠폰 */
     var refCode=S.user?(S.user.id||'').slice(0,8).toUpperCase():'';
     var couponCode='FREE1-'+refCode+'-'+(Date.now()%10000);
