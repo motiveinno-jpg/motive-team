@@ -8,13 +8,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-const CRAWL_TIMEOUT_MS = 8000; // 8s — tight to stay under 150s total
+const CRAWL_TIMEOUT_MS = 5000; // 5s — faster cutoff, most pages load in 2-3s
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
-const AI_CALL_TIMEOUT_MS = 50000; // 50s per AI call (reduced from 60s for more rescue time)
+const AI_CALL_TIMEOUT_MS = 50000; // 50s per AI call
 const AI_CALL_RETRY_DELAY_MS = 2000; // 2s delay before retry
 const WALL_CLOCK_LIMIT_MS = 135000; // 135s — hard cutoff with 15s buffer before Supabase 150s
-const CALL_STAGGER_MS = 300; // 300ms stagger between parallel calls to avoid rate limit spikes
 
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -223,33 +222,6 @@ async function crawlUrls(urls: string[]): Promise<{
       ? r.value
       : { url: validUrls[i], success: false, error: "Promise rejected" }
   );
-
-  // Phase 2: Follow detail/more links (1 level deep, max 2 links)
-  const detailLinks: string[] = [];
-  for (const cr of crawlResults) {
-    const dl = (cr as any)._detailLinks;
-    if (dl && Array.isArray(dl)) {
-      for (const link of dl) {
-        if (!detailLinks.includes(link) && !validUrls.includes(link)) {
-          detailLinks.push(link);
-        }
-      }
-    }
-  }
-
-  if (detailLinks.length > 0) {
-    console.log(`[crawl] Following ${detailLinks.length} detail link(s)...`);
-    const deepResults = await Promise.allSettled(
-      detailLinks.slice(0, 2).map((u) => crawlUrl(u)),
-    );
-    for (let i = 0; i < deepResults.length; i++) {
-      if (deepResults[i].status === "fulfilled") {
-        const dr = (deepResults[i] as PromiseFulfilledResult<CrawlResult>).value;
-        dr.url = `[상세] ${dr.url}`;
-        crawlResults.push(dr);
-      }
-    }
-  }
 
   let crawledText = "";
   for (const cr of crawlResults) {
@@ -650,19 +622,84 @@ MOQ: ${moq || na}
       }
     }
 
-    // Progressive update: AI analysis started
-    await sbAdmin
-      .from("analyses")
-      .update({
+    // ─── PHASE 1: Quick HS + Scores (show result in 5-10s) ───
+    console.log("[phase1] Starting quick analysis...");
+    const phase1Start = Date.now();
+
+    const phase1Prompt = `${isEn ? "# Quick Export Assessment" : "# 빠른 수출 평가"}
+${productContext}
+${visionCtx}
+${crawlCtx}
+${isEn ? "Output ONLY this JSON — no explanation:" : "이 JSON만 출력 — 설명 금지:"}
+{
+  "overall_score": 0~100,
+  "market_fit": 0~100,
+  "competition": 0~100,
+  "regulatory": 0~100,
+  "price_competitiveness": 0~100,
+  "hs_code": "XXXX.XX",
+  "hs_description": "${isEn ? "1 sentence" : "1문장"}",
+  "summary": "${isEn ? "2 sentences with key export insight" : "2문장, 핵심 수출 인사이트"}"
+}
+${isEn ? "Rules: Be specific. Real HS code with 6-digit precision. Conservative scoring." : "규칙: 구체적. 6자리 HS코드. 보수적 채점."}`;
+
+    try {
+      const phase1Res = await callAI(phase1Prompt, 800, visionImage, phase1Start);
+      console.log("[phase1] Done in", Date.now() - phase1Start, "ms");
+      // Save Phase 1 result immediately — frontend can display this
+      sbAdmin.from("analyses").update({
+        ai_result: {
+          ...phase1Res.result,
+          _progress: "phase1_done",
+          _progress_pct: 25,
+          _phase: 1,
+          crawl_results: crawlMeta,
+        },
+      }).eq("id", analysis_id).eq("user_id", user.id).then(() => {}).catch(() => {});
+    } catch (p1err) {
+      console.warn("[phase1] Failed:", (p1err as Error).message, "— continuing to full analysis");
+      // Phase 1 failure is non-blocking
+      sbAdmin.from("analyses").update({
         ai_result: {
           _progress: "ai_parallel_started",
           _progress_pct: 20,
           crawl_results: crawlMeta,
         },
-      })
-      .eq("id", analysis_id)
-      .eq("user_id", user.id);
+      }).eq("id", analysis_id).eq("user_id", user.id).then(() => {}).catch(() => {});
+    }
 
+    // ─── Category-specific certification reference data ───
+    const CERT_REFERENCE: Record<string, string> = {
+      cosmetics: "US: FDA registration+NDC, EU: CPNP notification+EU Cosmetics Regulation (EC 1223/2009), JP: PMDA notification+drug/quasi-drug classification, CN: NMPA registration, KR: MFDS notification. Labs: KTR, KCL, KOTITI.",
+      food: "US: FDA FCE/SID+FSMA compliance, EU: EFSA novel food+health claims, JP: MHLW import notification+JAS, CN: GACC registration, Halal (MUI/JAKIM), Kosher. Labs: KFRI, KAT, KOTITI.",
+      electronics: "US: FCC Part 15, EU: CE (RED/LVD/EMC), JP: PSE+TELEC, CN: CCC, KR: KC. Safety: IEC 62368-1, EMC: CISPR 32. Labs: KTL, KTC, TTA.",
+      medical_devices: "US: FDA 510(k)/PMA+establishment registration, EU: CE MDR 2017/745+notified body, JP: PMDA Shonin, CN: NMPA. ISO 13485 mandatory. Labs: KTL, MFDS designated labs.",
+      chemicals: "US: EPA TSCA, EU: REACH+CLP, JP: CSCL, CN: MEE/IECSC. GHS classification, MSDS mandatory. Labs: KTR, KIST, KRICT.",
+      textiles: "US: CPSIA (children's)+CA Prop 65+AATCC standards, EU: REACH Annex XVII+OEKO-TEX, JP: JIS. Fiber content labeling, flammability testing. Labs: FITI, KATRI, KOTITI.",
+      machinery: "US: OSHA/ANSI, EU: CE Machinery Directive 2006/42/EC, JP: Industrial Safety Act. ISO 12100 risk assessment. Labs: KTL, KGS.",
+      general: "Basic: Certificate of Origin, Phytosanitary (if applicable), Free Sale Certificate. Check destination country specific import requirements.",
+    };
+
+    const certRef = CERT_REFERENCE[category?.toLowerCase()] || CERT_REFERENCE["general"];
+
+    // ─── Scoring rubric for consistent, evidence-based scores ───
+    const scoringRubric = isEn
+      ? `SCORING RUBRIC (apply strictly):
+90-100: Clear competitive advantage, proven demand, minimal barriers
+70-89: Strong potential, some barriers manageable with preparation
+50-69: Moderate opportunity, significant preparation or investment needed
+30-49: Challenging, major barriers exist (regulatory, competition, logistics)
+0-29: Not recommended without fundamental changes
+Score CONSERVATIVELY when information is lacking. Do not inflate.`
+      : `채점 루브릭 (엄격 적용):
+90-100: 명확한 경쟁우위, 입증된 수요, 장벽 최소
+70-89: 강한 잠재력, 준비로 극복 가능한 장벽
+50-69: 중간 기회, 상당한 준비/투자 필요
+30-49: 도전적, 주요 장벽 존재 (규제/경쟁/물류)
+0-29: 근본적 변경 없이 비추천
+정보 부족 시 보수적 채점. 점수 부풀리기 금지.`;
+
+    // ─── PHASE 2: Full 3-Call Parallel Analysis ───
     // ─── CALL 1: Core (Scores + HS + FTA) — includes Vision when image provided ───
     const prompt1 = `${isEn ? "# Export Analysis — Core Scores & Trade Classification" : "# 수출 분석 — 핵심 점수 & 통관 분류"}
 
@@ -670,6 +707,7 @@ ${productContext}
 ${visionCtx}
 ${crawlCtx}
 ${hrWarning}
+${scoringRubric}
 ${toneRule}
 
 ${isEn ? "Analyze this product and output JSON:" : "이 제품을 분석하고 JSON으로 출력하세요:"}
@@ -709,20 +747,23 @@ ${isEn ? "Analyze this product and output JSON:" : "이 제품을 분석하고 J
 ${isEn ? "Rules: Specific HS code with GIR basis. Real FTA rates. Conservative scoring when info lacking." : "규칙: GIR 근거 포함한 HS코드. 실제 FTA 양허율. 정보 부족 시 보수적 채점. 존댓말 필수."}`;
 
     // ─── CALL 2: Market & Competition & Certs ───
-    const prompt2 = `${isEn ? "# Export Analysis — Market Intelligence & Certification" : "# 수출 분석 — 시장 인텔리전스 & 인증"}
+    const prompt2 = `${isEn ? "# Export Analysis — Market Intelligence & Certification" : "# 수출 분석 — 시장 인텔리���스 & 인증"}
 
 ${productContext}
 ${crawlCtx}
 ${toneRule}
 
-${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시장, 경쟁환경, 인증을 분석하세요. JSON 출력:"}
+${isEn ? "## Certification Reference (use as basis, verify and expand):" : "## 인증 참��� 데이터 (기반으로 활용, 검증 및 확장):"}
+${certRef}
+
+${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시장, 경쟁환경, 인증을 분��하세요. JSON 출력:"}
 {
   "required_certs": ["cert1"],
   "existing_certs": ${JSON.stringify(existing_certs)},
   "cert_details": [
     {
       "name": "", "market": "", "duration": "", "cost": "", "priority": "${isEn ? "Required/Recommended" : "필수/권장"}",
-      "note": "${isEn ? "(1) agency+website, (2) required docs, (3) Korean labs. 2-3 sentences." : "(1) 기관+웹사이트, (2) 필요서류, (3) 한국 시험기관. 2~3문장."}"
+      "note": "${isEn ? "(1) agency+website, (2) required docs, (3) Korean labs that can test. 2-3 sentences." : "(1) 인증기관+웹사이트, (2) 필요서류 목���, (3) 한국 내 시험기관명. 2~3문��."}"
     }
   ],
   "recommended_markets": ["US", "JP"],
@@ -742,7 +783,7 @@ ${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시
   "opportunities": ["${isEn ? "With figures" : "수치 포함"}", "", ""],
   "risks": ["${isEn ? "With mitigation" : "대응방안 포함"}", "", ""]
 }
-${isEn ? "Rules: Max 5 cert_details with ALL needed certs. Real competitor names. Max 3 global, 2 local competitors." : "규칙: cert_details 최대 5개, 필요인증 전부 포함. 경쟁사 실명. global 최대 3, local 최대 2. 존댓말 필수."}`;
+${isEn ? "Rules: Max 5 cert_details with ALL needed certs per target market. Use the certification reference above as starting point — add market-specific requirements. Include REAL agency names, websites, estimated costs (USD), and timeline. Real competitor names with actual price points. Max 3 global, 2 local competitors. Market size in USD with source year." : "규칙: cert_details 최대 5개, 타겟시장별 필요인증 전부 포함. 위 인증 참조 데이터를 기반으로 시장별 요구사항 추가. 실제 기관명, 웹사이트, 예상비용(USD), 소요기간 포함. 경쟁사 실명+실제 가격대. global 최대 3, local 최대 2. 시장규모 USD+출처연도. 존댓말 필수."}`;
 
     // ─── CALL 3: Pricing & Action Plan ───
     const prompt3 = `${isEn ? "# Export Analysis — Pricing Strategy & Action Plan" : "# 수출 분석 — 가격 전략 & 실행 계획"}
@@ -788,46 +829,38 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     // Track completed results for progressive merge
     const completedResults: any = {};
 
-    // Stagger calls to avoid Anthropic rate limit spikes
-    const staggeredCall = (fn: () => Promise<any>, delayMs: number) =>
-      new Promise<any>((resolve, reject) => {
-        setTimeout(() => fn().then(resolve).catch(reject), delayMs);
-      });
+    // Fire-and-forget DB progress update (don't await)
+    const saveProgress = (progress: string, pct: number) => {
+      sbAdmin.from("analyses").update({
+        ai_result: {
+          ...completedResults,
+          _progress: progress,
+          _progress_pct: pct,
+          _partial: { ...completedResults },
+          crawl_results: crawlMeta,
+        },
+      }).eq("id", analysis_id).eq("user_id", user.id).then(() => {}).catch(() => {});
+    };
 
+    // All 3 calls fire simultaneously — no stagger needed for Haiku
     const [r1, r2, r3] = await Promise.allSettled([
-      callAI(prompt1, 5000, visionImage, startTime).then(async (res) => {
+      callAI(prompt1, 5000, visionImage, startTime).then((res) => {
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
-        await sbAdmin.from("analyses").update({
-          ai_result: {
-            ...completedResults,
-            _progress: "core_done",
-            _progress_pct: 50,
-            _partial: { ...completedResults },
-            crawl_results: crawlMeta,
-          },
-        }).eq("id", analysis_id).eq("user_id", user.id);
+        saveProgress("core_done", 50);
         return res;
       }),
-      staggeredCall(() => callAI(prompt2, 4000, undefined, startTime).then(async (res) => {
+      callAI(prompt2, 4000, undefined, startTime).then((res) => {
         console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
-        await sbAdmin.from("analyses").update({
-          ai_result: {
-            ...completedResults,
-            _progress: "market_done",
-            _progress_pct: 75,
-            _partial: { ...completedResults },
-            crawl_results: crawlMeta,
-          },
-        }).eq("id", analysis_id).eq("user_id", user.id);
+        saveProgress("market_done", 75);
         return res;
-      }), CALL_STAGGER_MS),
-      staggeredCall(() => callAI(prompt3, 3000, undefined, startTime).then(async (res) => {
+      }),
+      callAI(prompt3, 3000, undefined, startTime).then((res) => {
         console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         return res;
-      }), CALL_STAGGER_MS * 2),
+      }),
     ]);
 
     const totalTime = Date.now() - startTime;
@@ -994,7 +1027,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
           rescuePromises.push(
             Promise.allSettled([
               callAI(prompt2a, 2500, undefined, startTime),
-              staggeredCall(() => callAI(prompt2b, 2000, undefined, startTime), 200),
+              callAI(prompt2b, 2000, undefined, startTime),
             ]).then(([ra, rb]) => {
               let recovered = false;
               if (ra.status === "fulfilled") {
