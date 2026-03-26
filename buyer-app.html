@@ -3135,23 +3135,94 @@ function pgProductDetail(){
     h+='<h2 style="font-size:22px;font-weight:800;margin-bottom:4px">'+esc(_isKorean?(p.name_ko||p.name_en||'제품'):(p.name_en||p.name_ko||_t('Product','제품')))+'</h2>';
     if(p.name_ko&&p.name_en)h+='<div style="font-size:13px;color:var(--w40);margin-bottom:16px">'+esc(_isKorean?p.name_en:p.name_ko)+'</div>';
 
-    // Price & MOQ
-    h+='<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:20px;padding:16px;background:var(--w08);border-radius:var(--r-s)">';
-    if(p.fob_price)h+='<div><div style="font-size:11px;color:var(--w40)">'+_t('FOB Price','FOB 가격')+'</div><div style="font-size:24px;font-weight:800;color:var(--acc)">'+fxFormat(p.fob_price)+'<span style="font-size:12px;font-weight:400;color:var(--w40)">/unit</span></div>'+(S.currency!=='USD'?'<div style="font-size:10px;color:var(--w20)">$'+p.fob_price+' USD</div>':'')+'</div>';
-    if(p.moq)h+='<div><div style="font-size:11px;color:var(--w40)">'+_t('MOQ','최소주문수량')+'</div><div style="font-size:24px;font-weight:800">'+p.moq.toLocaleString()+'<span style="font-size:12px;font-weight:400;color:var(--w40)"> '+_t('units','개')+'</span></div></div>';
-    h+='</div>';
+    // ── Volume Pricing Table (티어가 있으면 표시) ──
+    var _hasTiers=p.pricing_tiers&&p.pricing_tiers.length>0;
+    if(_hasTiers){
+      var _bp=p.pricing_tiers[0].unit_price;
+      h+='<div style="margin-bottom:20px;border:1px solid var(--bd);border-radius:var(--r-s);overflow:hidden">';
+      h+='<div style="padding:10px 14px;background:var(--w04);font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">&#x1F4B0; '+_t('Volume Pricing','수량별 가격')+'<span style="font-size:10px;font-weight:400;color:var(--w30)">'+_t('Order more, save more','많이 주문할수록 할인')+'</span></div>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+      h+='<thead><tr style="background:var(--w04)"><th style="padding:8px 14px;text-align:left;font-weight:600;font-size:11px;color:var(--w40)">'+_t('Quantity','수량')+'</th><th style="padding:8px 14px;text-align:right;font-weight:600;font-size:11px;color:var(--w40)">'+_t('Unit Price','단가')+'</th><th style="padding:8px 14px;text-align:right;font-weight:600;font-size:11px;color:var(--w40)">'+_t('Savings','할인')+'</th></tr></thead><tbody>';
+      p.pricing_tiers.forEach(function(t,i){
+        var disc=i>0&&_bp?Math.round((1-t.unit_price/_bp)*100):0;
+        var isLast=i===p.pricing_tiers.length-1;
+        h+='<tr style="border-top:1px solid var(--bd)'+(isLast?';background:rgba(0,212,255,.04)':'')+'">';
+        h+='<td style="padding:10px 14px;font-weight:'+(isLast?'700':'500')+'">'+(t.min_qty||1)+(t.max_qty?' — '+t.max_qty:'+')+'<span style="font-size:10px;color:var(--w30);margin-left:4px">'+_t('units','개')+'</span></td>';
+        h+='<td style="padding:10px 14px;text-align:right;font-family:JetBrains Mono,monospace;font-weight:700;color:var(--acc);font-size:14px">'+fxFormat(t.unit_price)+'</td>';
+        h+='<td style="padding:10px 14px;text-align:right">'+(disc>0?'<span style="background:rgba(0,200,100,.1);color:var(--ok);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">-'+disc+'%</span>':'<span style="color:var(--w20);font-size:11px">—</span>')+'</td>';
+        h+='</tr>';
+      });
+      h+='</tbody></table></div>';
+    } else {
+      // Single price display (fallback)
+      h+='<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:20px;padding:16px;background:var(--w08);border-radius:var(--r-s)">';
+      if(p.fob_price)h+='<div><div style="font-size:11px;color:var(--w40)">'+_t('FOB Price','FOB 가격')+'</div><div style="font-size:24px;font-weight:800;color:var(--acc)">'+fxFormat(p.fob_price)+'<span style="font-size:12px;font-weight:400;color:var(--w40)">/unit</span></div>'+(S.currency!=='USD'?'<div style="font-size:10px;color:var(--w20)">$'+p.fob_price+' USD</div>':'')+'</div>';
+      if(p.moq)h+='<div><div style="font-size:11px;color:var(--w40)">'+_t('MOQ','최소주문수량')+'</div><div style="font-size:24px;font-weight:800">'+p.moq.toLocaleString()+'<span style="font-size:12px;font-weight:400;color:var(--w40)"> '+_t('units','개')+'</span></div></div>';
+      h+='</div>';
+    }
+
+    // MOQ & Lead Time bar (always show if available)
+    var _infoItems=[];
+    if(p.moq)_infoItems.push({icon:'&#x1F4E6;',label:_t('MOQ','최소주문'),val:p.moq.toLocaleString()+' '+_t('units','개')});
+    if(p.lead_time)_infoItems.push({icon:'&#x23F1;',label:_t('Lead Time','리드타임'),val:esc(p.lead_time)});
+    if(p.incoterms)_infoItems.push({icon:'&#x1F6A2;',label:_t('Incoterms','인코텀즈'),val:esc(p.incoterms)});
+    if(p.sample_available!==false)_infoItems.push({icon:'&#x1F9EA;',label:_t('Sample','샘플'),val:(p.sample_price?fxFormat(p.sample_price):_t('Available','가능'))});
+    if(_infoItems.length){
+      h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">';
+      _infoItems.forEach(function(it){
+        h+='<div style="flex:1;min-width:100px;padding:10px;background:var(--w04);border-radius:var(--r-s);text-align:center;border:1px solid var(--bd)">';
+        h+='<div style="font-size:14px;margin-bottom:2px">'+it.icon+'</div>';
+        h+='<div style="font-size:10px;color:var(--w40)">'+it.label+'</div>';
+        h+='<div style="font-size:13px;font-weight:700;margin-top:2px">'+it.val+'</div>';
+        h+='</div>';
+      });
+      h+='</div>';
+    }
 
     // Total Cost Estimator
     h+=renderCostEstimator(p,'whistle');
 
-    // Category / HS Code / Origin / Lead Time
-    if(p.category)h+='<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--w40)">'+_t('Category:','카테고리:')+'</span> <span style="font-size:13px">'+esc(p.category)+'</span></div>';
-    if(p.hs_code)h+='<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--w40)">'+_t('HS Code:','HS 코드:')+'</span> <span style="font-size:13px;font-family:JetBrains Mono,monospace">'+esc(p.hs_code)+'</span></div>';
-    if(p.origin_country)h+='<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--w40)">'+_t('Origin:','원산지:')+'</span> <span class="origin-badge origin-verified">&#x2705; '+esc(p.origin_country)+'</span></div>';
-    if(p.lead_time)h+='<div style="margin-bottom:6px"><span style="font-size:11px;color:var(--w40)">'+_t('Lead Time:','리드타임:')+'</span> <span style="font-size:13px">'+esc(p.lead_time)+'</span></div>';
+    // ── Product Specifications ──
+    var _specs=p.specifications||{};
+    var _specKeys=Object.keys(_specs).filter(function(k){return _specs[k];});
+    if(_specKeys.length){
+      h+='<div style="margin-top:14px;border:1px solid var(--bd);border-radius:var(--r-s);overflow:hidden">';
+      h+='<div style="padding:10px 14px;background:var(--w04);font-size:12px;font-weight:700">&#x1F4CB; '+_t('Product Specifications','제품 스펙')+'</div>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      _specKeys.forEach(function(k,i){
+        h+='<tr style="'+(i>0?'border-top:1px solid var(--bd)':'')+'"><td style="padding:8px 14px;color:var(--w40);width:35%;font-weight:500">'+esc(k)+'</td><td style="padding:8px 14px;font-weight:600">'+esc(_specs[k])+'</td></tr>';
+      });
+      h+='</table></div>';
+    }
+
+    // ── Trade & Shipping Info ──
+    var _tradeInfo=[];
+    if(p.category)_tradeInfo.push({l:_t('Category','카테고리'),v:esc(p.category)});
+    if(p.hs_code)_tradeInfo.push({l:_t('HS Code','HS 코드'),v:'<span style="font-family:JetBrains Mono,monospace">'+esc(p.hs_code)+'</span>'});
+    if(p.origin_country)_tradeInfo.push({l:_t('Origin','원산지'),v:'<span class="origin-badge origin-verified">&#x2705; '+esc(p.origin_country)+'</span>'});
+    if(p.payment_terms)_tradeInfo.push({l:_t('Payment Terms','결제조건'),v:esc(p.payment_terms)});
+    if(p.supply_capacity)_tradeInfo.push({l:_t('Supply Capacity','월 공급량'),v:esc(p.supply_capacity)});
+    if(p.packaging_info)_tradeInfo.push({l:_t('Packaging','포장정보'),v:esc(p.packaging_info)});
+    if(_tradeInfo.length){
+      h+='<div style="margin-top:14px;border:1px solid var(--bd);border-radius:var(--r-s);overflow:hidden">';
+      h+='<div style="padding:10px 14px;background:var(--w04);font-size:12px;font-weight:700">&#x1F6A2; '+_t('Trade & Shipping','무역 및 배송')+'</div>';
+      h+='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      _tradeInfo.forEach(function(ti,i){
+        h+='<tr style="'+(i>0?'border-top:1px solid var(--bd)':'')+'"><td style="padding:8px 14px;color:var(--w40);width:35%;font-weight:500">'+ti.l+'</td><td style="padding:8px 14px">'+ti.v+'</td></tr>';
+      });
+      h+='</table></div>';
+    }
 
     // Description
-    if(p.description_en)h+='<div style="margin-top:14px;padding:14px;background:var(--w08);border-radius:var(--r-s);font-size:13px;color:var(--w60);line-height:1.7;border-left:3px solid var(--pri)">'+esc(p.description_en)+'</div>';
+    if(p.description_en)h+='<div style="margin-top:14px;padding:14px;background:var(--w08);border-radius:var(--r-s);font-size:13px;color:var(--w60);line-height:1.7;border-left:3px solid var(--pri)"><div style="font-size:11px;font-weight:600;color:var(--w40);margin-bottom:6px">&#x1F4DD; '+_t('Product Description','제품 설명')+'</div>'+esc(p.description_en)+'</div>';
+
+    // Certifications
+    if(p.certifications&&p.certifications.length){
+      h+='<div style="margin-top:14px;padding:14px;background:var(--w04);border-radius:var(--r-s);border:1px solid var(--bd)">';
+      h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px">&#x1F3C5; '+_t('Certifications','인증서')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+      p.certifications.forEach(function(c){h+='<span class="badge badge-ok" style="font-size:11px;padding:4px 12px">'+esc(c.name||c)+'</span>';});
+      h+='</div></div>';
+    }
 
     // Manufacturer info
     h+='<div style="margin-top:16px;padding:14px;background:var(--w08);border-radius:var(--r-s);border:1px solid var(--bd)">';
@@ -3161,13 +3232,6 @@ function pgProductDetail(){
     h+='<div style="font-size:11px;color:var(--w40);margin-bottom:8px">'+_t('This manufacturer has been verified by Whistle AI for product quality and export readiness.','이 제조사는 Whistle AI가 제품 품질 및 수출 준비 상태를 검증했습니다.')+'</div>';
     if(p.user_id)h+='<a href="#" onclick="event.preventDefault();B.openMakerProfile(\''+esc(p.user_id)+'\')" style="font-size:12px;font-weight:600;color:var(--pri);display:inline-flex;align-items:center;gap:4px">'+_t('View Manufacturer Profile','제조사 프로필 보기')+' &rarr;</a>';
     h+='</div>';
-
-    // Certifications
-    if(p.certifications&&p.certifications.length){
-      h+='<div style="margin-top:14px"><div style="font-size:12px;font-weight:600;color:var(--w40);margin-bottom:8px">'+_t('Certifications','인증서')+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
-      p.certifications.forEach(function(c){h+='<span class="badge badge-ok" style="font-size:11px;padding:4px 12px">'+esc(c.name||c)+'</span>';});
-      h+='</div></div>';
-    }
 
     // Public Buyer Reviews
     var _pubReviews=(S._productReviews||[]).filter(function(rv){return rv.product_id===p.id||rv.target_company===p.company_id||(rv.reviewer_id!==S.user.id&&rv.target_company&&p.company_id&&rv.target_company===p.company_id);});
