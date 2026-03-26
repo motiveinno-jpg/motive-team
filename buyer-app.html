@@ -5019,34 +5019,68 @@ function renderDealSidebar(deal,stageIdx){
   return h;
 }
 
-/* === ESCROW PAYMENT (localStorage simulation — shared with whistle.html) === */
-/* TODO: Migrate escrow status storage from localStorage to server-side (Supabase).
-   localStorage is used as a cache but the primary source should be the DB.
-   Current localStorage keys: 'escrow_<dealId>'. Need server-side migration to
-   ensure cross-device consistency and prevent data loss on cache clear. */
+/* === ESCROW PAYMENT (Server-Side — orders table as single source of truth) === */
 function _getEscrowStatus(dealId){
   var cached=S._escrowCache&&S._escrowCache[dealId];if(cached)return cached;
-  // Fallback: try localStorage as temporary cache, then trigger DB reload
-  var k='escrow_'+dealId;try{var ls=JSON.parse(localStorage.getItem(k));if(ls){if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=ls;_loadEscrowFromDB();return ls;}}catch(e){}
+  var k='escrow_'+dealId;try{var ls=JSON.parse(localStorage.getItem(k));if(ls){if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=ls;return ls;}}catch(e){}
   return null;
 }
 function _setEscrow(dealId,data){
-  localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
-  var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,deliveredAt:data.deliveredAt,method:data.method};
-  if(S.user){
-    sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('service_type','escrow_buyer_'+dealId).limit(1).single().then(function(sel){if(sel.data&&sel.data.id){return sb.from('service_requests').update({status:data.status,details:_escDetails,updated_at:new Date().toISOString()}).eq('id',sel.data.id);}else{return sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails});}}).catch(function(e){console.error('[escrow] buyer DB sync fail:',e);});
-    // Sync to seller's record so seller can read buyer's payment status
-    var deal=S.currentDeal||S.deals.find(function(d){return d.id===dealId;});
-    var _sellerUserId=deal&&deal.sellerId;
-    if(_sellerUserId)sb.from('service_requests').select('id').eq('user_id',_sellerUserId).eq('service_type','escrow_'+dealId).limit(1).single().then(function(sel){if(sel.data&&sel.data.id){return sb.from('service_requests').update({status:data.status,details:_escDetails,updated_at:new Date().toISOString()}).eq('id',sel.data.id);}else{return sb.from('service_requests').insert({user_id:_sellerUserId,service_type:'escrow_'+dealId,status:data.status,details:_escDetails});}}).catch(function(e){console.error('[buyer] seller escrow sync:',e);});
-  }
+  localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
+}
+/** Call escrow-transition Edge Function for server-side state machine */
+function _escrowTransition(dealId,newStatus,metadata){
+  return sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session)return Promise.reject(new Error('Not authenticated'));
+    return fetch(SB_URL+'/functions/v1/escrow-transition',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
+      body:JSON.stringify({deal_id:dealId,new_status:newStatus,metadata:metadata||{}})
+    });
+  }).then(function(r){return r.json();}).then(function(res){
+    if(res.error){console.error('[escrow-transition]',res.error);return Promise.reject(new Error(res.error));}
+    if(res.escrow){
+      var esc=_dbEscrowToLocal(res.escrow);
+      if(!S._escrowCache)S._escrowCache={};
+      S._escrowCache[dealId]=esc;
+      localStorage.setItem('escrow_'+dealId,JSON.stringify(esc));
+    }
+    return res;
+  });
+}
+function _dbEscrowToLocal(dbRow){
+  return{
+    status:dbRow.escrow_status||'none',
+    amount:Number(dbRow.escrow_amount)||0,
+    currency:dbRow.escrow_currency||'USD',
+    terms:dbRow.escrow_terms||'50/50',
+    confirmDays:dbRow.escrow_confirm_days||7,
+    method:dbRow.escrow_method||null,
+    fee:Number(dbRow.escrow_fee)||0,
+    netAmount:Number(dbRow.escrow_net_amount)||0,
+    requestedAt:dbRow.escrow_requested_at||null,
+    paidAt:dbRow.escrow_paid_at||null,
+    securedAt:dbRow.escrow_secured_at||null,
+    shippedAt:dbRow.escrow_shipped_at||null,
+    deliveredAt:dbRow.escrow_delivered_at||null,
+    releasedAt:dbRow.escrow_released_at||null,
+    disputedAt:dbRow.escrow_disputed_at||null,
+    stripe_payment_intent:dbRow.stripe_payment_intent||null,
+    dispute:dbRow.escrow_dispute||null
+  };
 }
 function _loadEscrowFromDB(){
   if(!S.user)return Promise.resolve();
-  return sb.from('service_requests').select('*').like('service_type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
-    if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
-  }).catch(function(e){console.error('[escrow] buyer load fail:',e);});
+  return sb.from('orders').select('deal_id, escrow_status, escrow_amount, escrow_currency, escrow_fee, escrow_net_amount, escrow_terms, escrow_method, escrow_confirm_days, escrow_requested_at, escrow_paid_at, escrow_secured_at, escrow_shipped_at, escrow_delivered_at, escrow_released_at, escrow_disputed_at, stripe_payment_intent, escrow_dispute').eq('buyer_id',S.user.id).neq('escrow_status','none').limit(200).then(function(r){
+    if(r.data){r.data.forEach(function(row){
+      if(!row.deal_id)return;
+      var esc=_dbEscrowToLocal(row);
+      if(!S._escrowCache)S._escrowCache={};
+      S._escrowCache[row.deal_id]=esc;
+      localStorage.setItem('escrow_'+row.deal_id,JSON.stringify(esc));
+    });}
+  }).catch(function(e){console.error('[escrow] buyer load from DB fail:',e);});
 }
 function _escrowBuyerLabel(st){var labels=_isKorean?{none:'없음',requested:'결제 요청됨',buyer_paid:'결제 완료',pending:'대기 중',secured:'결제 확인 (정산 대기)',shipping:'발송됨 — 수령 대기',delivered:'수령 확인',release_requested:'정산 처리 중',released:'정산 완료',disputed:'분쟁 진행중'}:{none:'None',requested:'Payment Requested',buyer_paid:'Paid',pending:'Pending',secured:'Payment Confirmed (Settlement Pending)',shipping:'Shipped — Awaiting Delivery',delivered:'Delivery Confirmed',release_requested:'Settlement Processing',released:'Settled',disputed:'Dispute In Progress'};return labels[st]||st;}
 function _escrowBuyerColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)',disputed:'var(--err)'}[st]||'var(--w12)';}
@@ -5135,14 +5169,16 @@ function confirmEscrowPay(dealId){
     return;
   }
 
-  /* Wire transfer flow (original) */
+  /* Wire transfer flow — server-side transition */
   var btn=document.getElementById('escrow-pay-btn');if(btn)btn.disabled=true;
-  escData.status='buyer_paid';escData.paidAt=new Date().toISOString();escData.method='wire';
-  _setEscrow(dealId,escData);
-  S.modal=null;S.modalData=null;
-  if(S.user)sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_payment',status:'pending',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency||'USD',method:'wire'}}).catch(function(e){console.error('[escrow] payment notify fail:',e);});
-  toast(_t('Payment confirmed! Settlement will proceed after delivery is verified.','결제가 확인되었습니다! 배송 확인 후 정산이 진행됩니다.'),'ok',5000);
-  render();
+  _escrowTransition(dealId,'buyer_paid',{method:'wire'}).then(function(){
+    S.modal=null;S.modalData=null;
+    toast(_t('Payment confirmed! Settlement will proceed after delivery is verified.','결제가 확인되었습니다! 배송 확인 후 정산이 진행됩니다.'),'ok',5000);
+    render();
+  }).catch(function(err){
+    if(btn)btn.disabled=false;
+    toast(_t('Payment failed: ','결제 실패: ')+err.message,'err');
+  });
 }
 
 /* Buyer confirms delivery → triggers seller settlement (escrow flow) */
@@ -5150,15 +5186,15 @@ function confirmEscrowDelivery(dealId){
   var escData=_getEscrowStatus(dealId);
   if(!escData||escData.status!=='shipping'){toast(_t('Goods must be shipped before confirming delivery','배송이 완료된 후에만 수령 확인이 가능합니다'),'warn');return;}
   if(!confirm(_t('Confirm that you have received the goods? This will release payment to the seller.','상품을 수령하셨습니까? 셀러에게 대금이 지급됩니다.')))return;
-  escData.status='delivered';escData.deliveredAt=new Date().toISOString();
-  _setEscrow(dealId,escData);
-  var deal=S.deals.find(function(d){return d.id===dealId;});
-  var matchingId=deal&&deal.matching&&deal.matching.id;
-  if(matchingId){
-    sb.from('matchings').update({buyer_confirmed_at:new Date().toISOString(),delivered_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',matchingId).then(function(){}).catch(function(e){console.error('[escrow] matchings update fail:',e);});
-  }
-  toast(_t('Delivery confirmed! Payment will be released to the seller.','수령이 확인되었습니다! 셀러에게 대금이 지급됩니다.'),'ok');
-  render();
+  _escrowTransition(dealId,'delivered').then(function(){
+    var deal=S.deals.find(function(d){return d.id===dealId;});
+    var matchingId=deal&&deal.matching&&deal.matching.id;
+    if(matchingId){
+      sb.from('matchings').update({buyer_confirmed_at:new Date().toISOString(),delivered_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',matchingId).catch(function(e){console.error('[escrow] matchings update fail:',e);});
+    }
+    toast(_t('Delivery confirmed! Payment will be released to the seller.','수령이 확인되었습니다! 셀러에게 대금이 지급됩니다.'),'ok');
+    render();
+  }).catch(function(err){toast(err.message,'err');});
 }
 
 /* Buyer raises dispute */
@@ -5167,15 +5203,14 @@ function raiseEscrowDispute(dealId){
   if(!escData)return;
   _bPrompt(_t('Please describe the issue with your order:','주문에 대한 문제를 설명해 주세요:'),function(reason){
     if(!reason||!reason.trim())return;
-    escData.dispute={reason:reason.trim(),raisedAt:new Date().toISOString(),status:'open'};
-    _setEscrow(dealId,escData);
-    toast(_t('Dispute raised. Our team will review and contact both parties within 48 hours.','이의가 제기되었습니다. 48시간 이내에 양측에 연락드리겠습니다.'),'warn',6000);
-    if(S.user){
-      sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_dispute',status:'pending',details:{deal_id:dealId,amount:escData.amount,reason:reason.trim()}}).catch(function(e){console.error('[escrow] dispute insert fail:',e);});
-      /* Insert into disputes table for admin dashboard */
-      sb.from('disputes').insert({reporter_id:S.user.id,type:'escrow',title:_t('Escrow Dispute — ','에스크로 분쟁 — ')+(escData.amount?'$'+Number(escData.amount).toLocaleString():''),description:reason.trim(),deal_id:dealId,priority:'high',status:'open',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency,buyer_user_id:S.user.id,raised_at:new Date().toISOString()}}).catch(function(e){console.error('[dispute] admin insert fail:',e);});
-    }
-    render();
+    var disputeData={reason:reason.trim(),raisedAt:new Date().toISOString(),status:'open',timeline:[],buyerEvidence:[],sellerEvidence:[]};
+    _escrowTransition(dealId,'disputed',{dispute:disputeData}).then(function(){
+      toast(_t('Dispute raised. Our team will review and contact both parties within 48 hours.','이의가 제기되었습니다. 48시간 이내에 양측에 연락드리겠습니다.'),'warn',6000);
+      if(S.user){
+        sb.from('disputes').insert({reporter_id:S.user.id,type:'escrow',title:_t('Escrow Dispute — ','에스크로 분쟁 — ')+(escData.amount?'$'+Number(escData.amount).toLocaleString():''),description:reason.trim(),deal_id:dealId,priority:'high',status:'open',details:{deal_id:dealId,amount:escData.amount,currency:escData.currency,buyer_user_id:S.user.id,raised_at:new Date().toISOString()}}).catch(function(e){console.error('[dispute] admin insert fail:',e);});
+      }
+      render();
+    }).catch(function(err){toast(err.message,'err');});
   },_t('Describe the issue in detail...','문제를 상세하게 설명해 주세요...'));
 }
 

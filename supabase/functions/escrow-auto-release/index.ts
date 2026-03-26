@@ -84,7 +84,7 @@ serve(async (req) => {
 
     const { data: unacceptedOrders, error: cancelFetchErr } = await supabase
       .from("orders")
-      .select("id, payment_intent_id, amount, currency, buyer_id, user_id, escrow_status, created_at")
+      .select("id, stripe_payment_intent, escrow_amount, escrow_currency, buyer_id, user_id, escrow_status, created_at")
       .eq("escrow_status", "buyer_paid")
       .lt("created_at", cancelCutoff.toISOString());
 
@@ -95,8 +95,8 @@ serve(async (req) => {
     for (const order of unacceptedOrders || []) {
       try {
         // Refund via Stripe
-        if (order.payment_intent_id) {
-          await stripeRefund(stripeKey, order.payment_intent_id);
+        if (order.stripe_payment_intent) {
+          await stripeRefund(stripeKey, order.stripe_payment_intent);
         }
 
         // Update order status
@@ -157,10 +157,10 @@ serve(async (req) => {
 
     const { data: shippedOrders, error: shippedFetchErr } = await supabase
       .from("orders")
-      .select("id, payment_intent_id, amount, currency, buyer_id, user_id, escrow_status, shipped_at")
+      .select("id, stripe_payment_intent, escrow_amount, escrow_currency, buyer_id, user_id, escrow_status, escrow_shipped_at")
       .in("escrow_status", ["shipping", "delivered"])
-      .not("shipped_at", "is", null)
-      .lt("shipped_at", confirmCutoff.toISOString());
+      .not("escrow_shipped_at", "is", null)
+      .lt("escrow_shipped_at", confirmCutoff.toISOString());
 
     if (shippedFetchErr) {
       console.error("Failed to fetch shipped orders:", shippedFetchErr.message);
@@ -169,10 +169,10 @@ serve(async (req) => {
     for (const order of shippedOrders || []) {
       try {
         // Capture remaining 50% via Stripe
-        if (order.payment_intent_id && order.amount) {
-          const remainingAmount = Math.round(order.amount * 0.5);
-          const captureAmount = toSmallestUnit(remainingAmount, order.currency);
-          await stripeCapture(stripeKey, order.payment_intent_id, captureAmount);
+        if (order.stripe_payment_intent && order.escrow_amount) {
+          const remainingAmount = Math.round(order.escrow_amount * 0.5);
+          const captureAmount = toSmallestUnit(remainingAmount, order.escrow_currency);
+          await stripeCapture(stripeKey, order.stripe_payment_intent, captureAmount);
         }
 
         // Update order status
@@ -181,7 +181,7 @@ serve(async (req) => {
           .update({
             status: "completed",
             escrow_status: "released",
-            released_at: now.toISOString(),
+            escrow_released_at: now.toISOString(),
             auto_confirmed: true,
             updated_at: now.toISOString(),
           })
@@ -202,12 +202,12 @@ serve(async (req) => {
 
         // Notify seller
         if (order.user_id) {
-          const netAmount = order.amount ? (order.amount * (1 - PLATFORM_FEE_RATE)).toFixed(2) : "0";
+          const netAmount = order.escrow_amount ? (order.escrow_amount * (1 - PLATFORM_FEE_RATE)).toFixed(2) : "0";
           await supabase.from("notifications").insert({
             user_id: order.user_id,
             type: "payment",
             title: "Payment Released (Auto-Confirmed)",
-            body: `Delivery was auto-confirmed after 14 days. ${order.currency || "USD"} ${netAmount} has been released (2.5% platform fee deducted).`,
+            body: `Delivery was auto-confirmed after 14 days. ${order.escrow_currency || "USD"} ${netAmount} has been released (2.5% platform fee deducted).`,
             link_page: "deals",
             link_id: order.id,
             is_read: false,
@@ -234,9 +234,9 @@ serve(async (req) => {
 
     const { data: expiringOrders, error: expiryFetchErr } = await supabase
       .from("orders")
-      .select("id, payment_intent_id, amount, currency, buyer_id, user_id, escrow_status, created_at")
+      .select("id, stripe_payment_intent, escrow_amount, escrow_currency, buyer_id, user_id, escrow_status, created_at")
       .in("escrow_status", ["buyer_paid", "secured"])
-      .not("payment_intent_id", "is", null)
+      .not("stripe_payment_intent", "is", null)
       .lt("created_at", authExpiryCutoff.toISOString());
 
     if (expiryFetchErr) {
@@ -246,9 +246,9 @@ serve(async (req) => {
     for (const order of expiringOrders || []) {
       try {
         // Capture full amount before Stripe 7-day expiry
-        if (order.payment_intent_id && order.amount) {
-          const captureAmount = toSmallestUnit(order.amount, order.currency);
-          await stripeCapture(stripeKey, order.payment_intent_id, captureAmount);
+        if (order.stripe_payment_intent && order.escrow_amount) {
+          const captureAmount = toSmallestUnit(order.escrow_amount, order.escrow_currency);
+          await stripeCapture(stripeKey, order.stripe_payment_intent, captureAmount);
         }
 
         // Update order: funds now held by platform

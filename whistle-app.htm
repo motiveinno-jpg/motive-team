@@ -16274,36 +16274,81 @@ function renderDealSidebar(deal,stIdx){
 }
 
 
-/* === ESCROW PAYMENT SYSTEM ===
+/* === ESCROW PAYMENT SYSTEM (Server-Side) ===
  * Flow: 제조사 요청 → 바이어 결제 → Whistle 보관 → 바이어 수령확인 → 제조사 정산
  * Statuses: requested → buyer_paid → secured → shipping → delivered → release_requested → released
+ * Primary source: orders table (escrow_* columns)
+ * localStorage: read-only cache for instant UI rendering
  */
 function _getEscrowStatus(dealId){
-  /* DB 우선, localStorage 폴백 */
+  /* In-memory cache first for instant render */
   var cached=S._escrowCache&&S._escrowCache[dealId];if(cached)return cached;
-  var k='escrow_'+dealId;try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}
+  /* localStorage as fallback cache (populated by _loadEscrowFromDB) */
+  var k='escrow_'+dealId;try{var ls=JSON.parse(localStorage.getItem(k));if(ls){if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=ls;return ls;}}catch(e){}
+  return null;
 }
 function _setEscrow(dealId,data){
-  localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
+  /* Update local cache immediately for responsive UI */
   if(!S._escrowCache)S._escrowCache={};S._escrowCache[dealId]=data;
-  var _escDetails={deal_id:dealId,amount:data.amount,currency:data.currency,terms:data.terms,status:data.status,requestedAt:data.requestedAt,paidAt:data.paidAt,shippedAt:data.shippedAt,deliveredAt:data.deliveredAt,releasedAt:data.releasedAt,netAmount:data.netAmount,confirmDays:data.confirmDays,method:data.method};
-  if(S.user){
-    sb.from('service_requests').select('id').eq('user_id',S.user.id).eq('service_type','escrow_'+dealId).limit(1).then(function(r){
-      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(e){console.error('[whistle]',e);});}
-      else{sb.from('service_requests').insert({user_id:S.user.id,service_type:'escrow_'+dealId,status:data.status,details:_escDetails}).catch(function(e){console.error('[whistle]',e);});}
-    }).catch(function(e){console.error('[whistle]',e);});
-    var _deal=S._currentDeal;var _buyerUserId=_deal&&_deal.buyer&&_deal.buyer.buyer_user_id;
-    if(_buyerUserId){sb.from('service_requests').select('id').eq('user_id',_buyerUserId).eq('service_type','escrow_buyer_'+dealId).limit(1).then(function(r){
-      if(r.data&&r.data.length){sb.from('service_requests').update({status:data.status,details:_escDetails}).eq('id',r.data[0].id).catch(function(e){console.error('[whistle]',e);});}
-      else{sb.from('service_requests').insert({user_id:_buyerUserId,service_type:'escrow_buyer_'+dealId,status:data.status,details:_escDetails}).catch(function(e){console.error('[whistle]',e);});}
-    }).catch(function(e){console.error('[whistle]',e);});}
-  }
+  localStorage.setItem('escrow_'+dealId,JSON.stringify(data));
+}
+/** Call escrow-transition Edge Function for server-side state machine */
+function _escrowTransition(dealId,newStatus,metadata){
+  return sb.auth.getSession().then(function(r){
+    if(!r.data||!r.data.session)return Promise.reject(new Error('Not authenticated'));
+    return fetch(SB_URL+'/functions/v1/escrow-transition',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
+      body:JSON.stringify({deal_id:dealId,new_status:newStatus,metadata:metadata||{}})
+    });
+  }).then(function(r){return r.json();}).then(function(res){
+    if(res.error){console.error('[escrow-transition]',res.error);return Promise.reject(new Error(res.error));}
+    /* Update local cache from server response */
+    if(res.escrow){
+      var esc=_dbEscrowToLocal(res.escrow);
+      if(!S._escrowCache)S._escrowCache={};
+      S._escrowCache[dealId]=esc;
+      localStorage.setItem('escrow_'+dealId,JSON.stringify(esc));
+    }
+    return res;
+  });
+}
+/** Convert DB escrow columns to localStorage-compatible format */
+function _dbEscrowToLocal(dbRow){
+  return{
+    status:dbRow.escrow_status||'none',
+    amount:Number(dbRow.escrow_amount)||0,
+    currency:dbRow.escrow_currency||'USD',
+    terms:dbRow.escrow_terms||'50/50',
+    confirmDays:dbRow.escrow_confirm_days||7,
+    method:dbRow.escrow_method||null,
+    fee:Number(dbRow.escrow_fee)||0,
+    netAmount:Number(dbRow.escrow_net_amount)||0,
+    requestedAt:dbRow.escrow_requested_at||null,
+    paidAt:dbRow.escrow_paid_at||null,
+    securedAt:dbRow.escrow_secured_at||null,
+    shippedAt:dbRow.escrow_shipped_at||null,
+    deliveredAt:dbRow.escrow_delivered_at||null,
+    releasedAt:dbRow.escrow_released_at||null,
+    disputedAt:dbRow.escrow_disputed_at||null,
+    stripe_payment_intent:dbRow.stripe_payment_intent||null,
+    dispute:dbRow.escrow_dispute||null
+  };
 }
 function _loadEscrowFromDB(dealId){
   if(!S.user)return Promise.resolve();
-  return sb.from('service_requests').select('*').like('service_type','escrow%').eq('user_id',S.user.id).limit(200).then(function(r){
-    if(r.data){r.data.forEach(function(sr){if(sr.details&&sr.details.deal_id){var did=sr.details.deal_id;if(!S._escrowCache)S._escrowCache={};S._escrowCache[did]=sr.details;localStorage.setItem('escrow_'+did,JSON.stringify(sr.details));}});}
-  }).catch(function(e){console.error('[whistle]',e);});
+  /* Load from orders table — single source of truth */
+  var q=sb.from('orders').select('deal_id, escrow_status, escrow_amount, escrow_currency, escrow_fee, escrow_net_amount, escrow_terms, escrow_method, escrow_confirm_days, escrow_requested_at, escrow_paid_at, escrow_secured_at, escrow_shipped_at, escrow_delivered_at, escrow_released_at, escrow_disputed_at, stripe_payment_intent, escrow_dispute').eq('user_id',S.user.id).neq('escrow_status','none');
+  if(dealId)q=q.eq('deal_id',dealId);
+  return q.limit(200).then(function(r){
+    if(r.data){r.data.forEach(function(row){
+      if(!row.deal_id)return;
+      var esc=_dbEscrowToLocal(row);
+      if(!S._escrowCache)S._escrowCache={};
+      S._escrowCache[row.deal_id]=esc;
+      localStorage.setItem('escrow_'+row.deal_id,JSON.stringify(esc));
+    });}
+  }).catch(function(e){console.error('[escrow] load from DB fail:',e);});
 }
 function _escrowLabel(st){if(_isKorean)return{none:'없음',requested:'요청됨',buyer_paid:'바이어 결제완료',secured:'결제 확인됨 (정산 대기)',shipping:'배송중',delivered:'수령 확인됨',release_requested:'정산 요청됨',released:'정산 완료',disputed:'분쟁 진행중'}[st]||st;return{none:'None',requested:'Requested',buyer_paid:'Buyer Paid',secured:'Secured (Pending Settlement)',shipping:'Shipping',delivered:'Delivered',release_requested:'Release Requested',released:'Settled',disputed:'Dispute In Progress'}[st]||st;}
 function _escrowColor(st){return{requested:'var(--acc)',buyer_paid:'#3182F6',secured:'var(--ok)',shipping:'var(--pri)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--w40)',disputed:'var(--err)'}[st]||'var(--w12)';}
@@ -16406,7 +16451,9 @@ function submitDisputeResponse(dealId){
   esc.dispute.respondedAt=new Date().toISOString();
   esc.dispute.timeline=esc.dispute.timeline||[];
   esc.dispute.timeline.push({date:new Date().toISOString(),action:(_isKorean?'셀러 응답: ':'Seller response: ')+el.value.trim().substring(0,80),type:'response'});
+  /* Update local cache + persist dispute data to orders table */
   _setEscrow(dealId,esc);
+  sb.from('orders').update({escrow_dispute:esc.dispute,updated_at:new Date().toISOString()}).eq('deal_id',dealId).catch(function(e){console.error('[dispute] DB update fail:',e);});
   if(S.user){
     sb.from('service_requests').insert({user_id:S.user.id,service_type:'dispute_seller_response',status:'pending',details:{deal_id:dealId,response:el.value.trim(),responded_at:new Date().toISOString()}}).catch(function(e){console.error('[dispute] response insert fail:',e);});
   }
@@ -16677,12 +16724,6 @@ function submitEscrowRequest(dealId){
   var terms=_el('esc-terms');
   var confirmDays=Number(_el('esc-confirm-days'))||7;
   if(!amt||amt<=0){UI.toast(_isKorean?'금액을 입력하세요':'Please enter an amount','warn');return;}
-  /* Escrow platform fee: 2.5% */
-  var fee=Math.round(amt*0.025*100)/100;
-  var net=Math.round((amt-fee)*100)/100;
-  var escData={status:'requested',amount:amt,currency:cur,terms:terms,confirmDays:confirmDays,fee:fee,netAmount:net,requestedAt:new Date().toISOString()};
-  _setEscrow(dealId,escData);
-  /* Also write escrow record for buyer so they can see it cross-device */
   var deal=S._currentDeal||S._dealRoomDealData;
   if(!deal||!deal.buyerId){
     console.error('[submitEscrowRequest] deal or buyerId not found, dealId='+dealId);
@@ -16690,39 +16731,36 @@ function submitEscrowRequest(dealId){
     UI.toast(_isKorean?'거래 정보를 찾을 수 없습니다. 거래 상세에서 다시 시도해주세요.':'Transaction not found. Please try again from transaction details.','warn');
     return;
   }
-  // Use buyer_user_id (auth ID) not buyerId (buyers table ID) for notifications
-  var _buyerAuthId=(deal.buyer&&deal.buyer.buyer_user_id)||deal.buyerId;
-  sb.from('service_requests').select('id').eq('user_id',_buyerAuthId).eq('service_type','escrow_buyer_'+dealId).limit(1).then(function(r){
-    var _d={status:escData.status,details:Object.assign({deal_id:dealId},escData)};
-    if(r.data&&r.data.length){sb.from('service_requests').update(_d).eq('id',r.data[0].id).catch(function(e){console.error('[whistle]',e);});}
-    else{sb.from('service_requests').insert(Object.assign({user_id:_buyerAuthId,service_type:'escrow_buyer_'+dealId},_d)).catch(function(e){console.error('[whistle]',e);});}
-  }).catch(function(e){console.error('[whistle]',e);});
-  _sendNotification(_buyerAuthId,'deal','Payment Requested','$'+amt.toLocaleString()+' '+cur+' secure payment requested for your deal.',{link_page:'deals',link_id:dealId});
   closeModal('escrow-req');
-  UI.toast(_isKorean?'안전결제 요청이 전송되었습니다.':'Secure payment request has been sent.','ok',4000);
-  render();
+  UI.toast(_isKorean?'안전결제 요청 처리 중...':'Processing secure payment request...','info');
+  _escrowTransition(dealId,'requested',{amount:amt,currency:cur,terms:terms,confirm_days:confirmDays}).then(function(){
+    var _buyerAuthId=(deal.buyer&&deal.buyer.buyer_user_id)||deal.buyerId;
+    _sendNotification(_buyerAuthId,'deal','Payment Requested','$'+amt.toLocaleString()+' '+cur+' secure payment requested for your deal.',{link_page:'deals',link_id:dealId});
+    UI.toast(_isKorean?'안전결제 요청이 전송되었습니다.':'Secure payment request has been sent.','ok',4000);
+    render();
+  }).catch(function(err){
+    UI.toast((_isKorean?'안전결제 요청 실패: ':'Payment request failed: ')+err.message,'err');
+  });
 }
 
 function _escrowConfirmSecured(dealId){
   var esc=_getEscrowStatus(dealId);if(!esc||esc.status!=='buyer_paid'){UI.toast(_isKorean?'바이어 결제가 아직 완료되지 않았습니다.':'Buyer payment has not been completed yet.','warn');return;}
-  esc.status='secured';esc.securedAt=new Date().toISOString();
-  _setEscrow(dealId,esc);
-  UI.toast(_isKorean?'결제 확인 완료! 안전결제가 확보되었습니다.':'Payment confirmed! Payment has been secured.','ok');
-  render();
+  _escrowTransition(dealId,'secured').then(function(){
+    UI.toast(_isKorean?'결제 확인 완료! 안전결제가 확보되었습니다.':'Payment confirmed! Payment has been secured.','ok');
+    render();
+  }).catch(function(err){UI.toast(err.message,'err');});
 }
 
 /* 제조사: 출하 확인 → 배송중 */
 function escrowMarkShipped(dealId){
   var esc=_getEscrowStatus(dealId);if(!esc||(esc.status!=='secured'&&esc.status!=='buyer_paid'))return;
-  /* auto-transition buyer_paid → secured if needed */
-  if(esc.status==='buyer_paid'){esc.status='secured';esc.securedAt=new Date().toISOString();}
-  esc.status='shipping';esc.shippedAt=new Date().toISOString();
-  _setEscrow(dealId,esc);
-  if(S._currentDeal&&S._currentDeal.id){
-    sb.from('matchings').update({shipped_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',S._currentDeal.id).catch(function(e){console.error('[escrow] shipped update fail:',e);});
-  }
-  UI.toast(_isKorean?'배송 시작이 기록되었습니다. 바이어가 수령 확인하면 정산됩니다.':'Shipment recorded. Settlement will proceed after buyer confirms receipt.','ok',4000);
-  render();
+  _escrowTransition(dealId,'shipping').then(function(){
+    if(S._currentDeal&&S._currentDeal.id){
+      sb.from('matchings').update({shipped_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',S._currentDeal.id).catch(function(e){console.error('[escrow] shipped update fail:',e);});
+    }
+    UI.toast(_isKorean?'배송 시작이 기록되었습니다. 바이어가 수령 확인하면 정산됩니다.':'Shipment recorded. Settlement will proceed after buyer confirms receipt.','ok',4000);
+    render();
+  }).catch(function(err){UI.toast(err.message,'err');});
 }
 
 
@@ -16733,11 +16771,11 @@ function requestEscrowRelease(dealId){
     UI.toast(_isKorean?'바이어 수령 확인 후 정산 가능합니다':'Settlement available after buyer confirms receipt','warn');return;
   }
   if(esc.dispute&&esc.dispute.status==='open'){UI.toast(_isKorean?'분쟁 진행 중에는 정산 요청이 불가합니다':'Settlement request unavailable during active dispute','warn');return;}
-  esc.status='release_requested';esc.releaseRequestedAt=new Date().toISOString();
-  _setEscrow(dealId,esc);
-  sb.from('matchings').update({settlement_status:'release_requested',updated_at:new Date().toISOString()}).eq('id',dealId).catch(function(e){console.error('[escrow] release request update fail:',e);});
-  UI.toast(_isKorean?'정산 요청이 접수되었습니다. 영업일 1~2일 내 입금됩니다.':'Settlement request received. Deposit expected within 1-2 business days.','ok',4000);
-  render();
+  _escrowTransition(dealId,'release_requested').then(function(){
+    sb.from('matchings').update({settlement_status:'release_requested',updated_at:new Date().toISOString()}).eq('id',dealId).catch(function(e){console.error('[escrow] release request update fail:',e);});
+    UI.toast(_isKorean?'정산 요청이 접수되었습니다. 영업일 1~2일 내 입금됩니다.':'Settlement request received. Deposit expected within 1-2 business days.','ok',4000);
+    render();
+  }).catch(function(err){UI.toast(err.message,'err');});
 }
 
 /* 관리자/시스템: 실제 정산 완료 */
@@ -16747,12 +16785,12 @@ function releaseEscrow(dealId){
   if(esc.dispute&&esc.dispute.status==='open'){UI.toast(_isKorean?'분쟁 진행 중에는 정산할 수 없습니다':'Cannot settle during active dispute','warn');return;}
   var sym=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
   if(!confirm(_isKorean?'결제 대금 '+sym+Number(esc.netAmount||esc.amount).toLocaleString()+' (수수료 '+sym+Number(esc.fee||0).toLocaleString()+' 차감)을 정산하시겠습니까?':'Settle payment '+sym+Number(esc.netAmount||esc.amount).toLocaleString()+' (fee '+sym+Number(esc.fee||0).toLocaleString()+' deducted)?'))return;
-  esc.status='released';esc.releasedAt=new Date().toISOString();
-  _setEscrow(dealId,esc);
-  sb.from('matchings').update({settlement_status:'settled',settled_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',dealId).catch(function(e){console.error('[escrow] settle update fail:',e);});
-  var _sym2=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
-  UI.toast((_isKorean?'결제 대금 ':'Payment amount ')+_sym2+Number(esc.netAmount||esc.amount).toLocaleString()+(_isKorean?'이 정산되었습니다':' has been settled'),'ok',5000);
-  render();
+  _escrowTransition(dealId,'released').then(function(){
+    sb.from('matchings').update({settlement_status:'settled',settled_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',dealId).catch(function(e){console.error('[escrow] settle update fail:',e);});
+    var _sym2=({KRW:'₩',EUR:'€',CNY:'¥',JPY:'¥'})[esc.currency]||'$';
+    UI.toast((_isKorean?'결제 대금 ':'Payment amount ')+_sym2+Number(esc.netAmount||esc.amount).toLocaleString()+(_isKorean?'이 정산되었습니다':' has been settled'),'ok',5000);
+    render();
+  }).catch(function(err){UI.toast(err.message,'err');});
 }
 
 /* === ELECTRONIC SIGNATURE (DB-backed) === */

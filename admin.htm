@@ -1455,7 +1455,7 @@ function loadAll(){
     sb.from('buyer_request_proposals').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.proposals=r.data||[];}),
     sb.from('payments').select('*').order('created_at',{ascending:false}).limit(300).then(function(r){S.payments=r.data||[];}),
     sb.from('subscriptions').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.subscriptions=r.data||[];}),
-    sb.from('escrow_transactions').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.escrowTxns=r.data||[];}),
+    sb.from('orders').select('id, user_id, buyer_id, deal_id, escrow_status, escrow_amount, escrow_currency, escrow_fee, escrow_net_amount, escrow_terms, escrow_method, escrow_confirm_days, escrow_requested_at, escrow_paid_at, escrow_secured_at, escrow_shipped_at, escrow_delivered_at, escrow_released_at, escrow_disputed_at, stripe_payment_intent, escrow_dispute, auto_confirmed, platform_captured_at, created_at, updated_at, status, notes').neq('escrow_status','none').order('created_at',{ascending:false}).limit(200).then(function(r){S.escrowTxns=(r.data||[]).map(function(o){return{id:o.id,seller_id:o.user_id,buyer_id:o.buyer_id,matching_id:o.deal_id,order_id:o.id,amount:Number(o.escrow_amount)||0,currency:o.escrow_currency||'USD',escrow_status:o.escrow_status,commission_amount:Number(o.escrow_fee)||0,net_amount:Number(o.escrow_net_amount)||0,terms:o.escrow_terms,method:o.escrow_method,stripe_pi:o.stripe_payment_intent,deposit_at:o.escrow_paid_at,release_at:o.escrow_released_at,created_at:o.created_at,updated_at:o.updated_at,notes:o.notes,dispute:o.escrow_dispute,auto_confirmed:o.auto_confirmed};});}),
     sb.from('billing_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.billingEvents=r.data||[];}),
     sb.from('usage_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.usageEvents=r.data||[];}),
     sb.from('invoices').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.invoices=r.data||[];}),
@@ -1669,13 +1669,13 @@ var PLAN_PRICE_MFR={starter:{m:99,s:534.60,a:950.40,krw_m:129000,krw_s:696600,kr
 var PLAN_PRICE={starter:{m:99,s:534.60,a:950.40},basic:{m:99,s:534.60,a:950.40},pro:{m:199,s:1074.60,a:1910.40},alibaba:{m:199,s:1074.60,a:1910.40},enterprise:{m:449,s:2424.60,a:4310.40}};
 var CYCLE_L={monthly:AT('monthly'),semi_annual:AT('n6_months'),annual:AT('annual')};
 var CYCLE_M={monthly:1,semi_annual:6,annual:12};
-var ESC_ST={pending_deposit:[AT('awaiting_deposit'),'ghost'],funded:[AT('funded'),'pri'],in_production:[AT('in_production'),'acc'],shipped:[AT('shipped'),'purple'],inspection:[AT('inspecting'),'acc'],released:[AT('released'),'ok'],refunded:[AT('refunded'),'err'],disputed:[AT('disputed'),'err']};
-var ESC_COL={pending_deposit:'var(--w40)',funded:'var(--pri)',in_production:'var(--acc)',shipped:'var(--purple)',inspection:'var(--warn)',released:'var(--ok)',refunded:'var(--err)',disputed:'var(--err)'};
+var ESC_ST={none:['None','ghost'],requested:['Requested','acc'],buyer_paid:['Buyer Paid','pri'],secured:['Secured','ok'],shipping:['Shipping','purple'],delivered:['Delivered','ok'],release_requested:['Release Requested','acc'],released:['Released','ok'],cancelled:['Cancelled','ghost'],disputed:['Disputed','err'],refunded:['Refunded','err'],platform_hold:['Platform Hold','warn'],pending_deposit:['Awaiting Deposit','ghost'],funded:['Funded','pri'],in_production:['In Production','acc'],shipped:['Shipped','purple'],inspection:['Inspecting','acc']};
+var ESC_COL={none:'var(--w40)',requested:'var(--acc)',buyer_paid:'var(--pri)',secured:'var(--ok)',shipping:'var(--purple)',delivered:'var(--ok)',release_requested:'var(--acc)',released:'var(--ok)',cancelled:'var(--w40)',disputed:'var(--err)',refunded:'var(--err)',platform_hold:'var(--warn)'};
 function escBadge(s){var e=ESC_ST[s];return e?UI.badge(e[0],e[1]):UI.badge(s||'\u2014','ghost');}
 function calcMRR(){var mrr=0;if(S.subscriptions.length){S.subscriptions.filter(function(s){return s.status==='active';}).forEach(function(s){var a=Number(s.amount)||0;if(s.billing_cycle==='semi_annual')mrr+=a/6;else if(s.billing_cycle==='annual')mrr+=a/12;else mrr+=a;});}else{S.users.forEach(function(u){var isMfr=(u.role==='client'&&u.preferred_currency==='KRW');var k=u.plan==='basic'?'starter':u.plan;if(isMfr){var mp=PLAN_PRICE_MFR[k];if(mp)mrr+=mp.m;}else{var bp=PLAN_PRICE[k];if(bp)mrr+=bp.m;}});}return mrr;}
-function calcEscrowHold(){return S.escrowTxns.filter(function(e){return['funded','in_production','shipped','inspection'].indexOf(e.escrow_status)>=0;}).reduce(function(s,e){return s+(Number(e.amount)||0);},0);}
+function calcEscrowHold(){return S.escrowTxns.filter(function(e){return['buyer_paid','secured','shipping','delivered','release_requested','platform_hold'].indexOf(e.escrow_status)>=0;}).reduce(function(s,e){return s+(Number(e.amount)||0);},0);}
 function calcEscrowComm(){return S.escrowTxns.filter(function(e){return e.escrow_status==='released';}).reduce(function(s,e){return s+(Number(e.commission_amount)||0);},0);}
-function calcFloat(){return S.escrowTxns.reduce(function(s,e){return s+(Number(e.float_revenue_estimate)||0);},0);}
+function calcFloat(){var total=0;S.escrowTxns.forEach(function(e){if(['buyer_paid','secured','shipping','delivered','release_requested','platform_hold'].indexOf(e.escrow_status)>=0&&e.deposit_at){var days=Math.ceil((Date.now()-new Date(e.deposit_at).getTime())/(1000*60*60*24));total+=Number(e.amount||0)*0.04/365*days;}});return total;}
 
 /* === ENHANCED KPI FUNCTIONS === */
 function calcARPU(){var paid=S.users.filter(function(u){return u.plan&&u.plan!=='free';});if(!paid.length)return 0;return calcMRR()/paid.length;}
@@ -3507,8 +3507,8 @@ function manualEscrowRelease(escrowId){
         return;
       }
       var fee=Number(esc.amount)*0.025;var net=Number(esc.amount)-fee;
-      sb.from('escrow_transactions').update({escrow_status:'released',release_at:new Date().toISOString(),commission_amount:fee,float_days:Math.ceil((Date.now()-new Date(esc.deposit_at||esc.created_at).getTime())/(1000*60*60*24)),updated_at:new Date().toISOString()}).eq('id',escrowId).select().then(function(r2){
-        if(r2.data&&r2.data[0]){var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx]=r2.data[0];}
+      sb.from('orders').update({escrow_status:'released',escrow_released_at:new Date().toISOString(),escrow_fee:fee,escrow_net_amount:net,status:'completed',updated_at:new Date().toISOString()}).eq('id',escrowId).then(function(r2){
+        var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0){S.escrowTxns[idx].escrow_status='released';S.escrowTxns[idx].commission_amount=fee;}
         UI.toast(AT('escrow_released')+': '+(esc.currency||'USD')+' '+net.toLocaleString(),'ok');render();
       });
       notifyEscrowParties(esc,'released');
@@ -3535,8 +3535,8 @@ function manualEscrowRefund(escrowId){
       body:JSON.stringify({refund_type:'escrow_dispute',payment_intent_id:payment.stripe_payment_intent,deal_id:payment.deal_id||esc.matching_id,reason:'admin_manual: '+reason})
     }).then(function(r){return r.json();}).then(function(res){
       if(res.error){UI.toast(AT('refund_failed')+': '+res.error,'err');return;}
-      sb.from('escrow_transactions').update({escrow_status:'refunded',notes:(esc.notes||'')+'\n[REFUND] '+reason,updated_at:new Date().toISOString()}).eq('id',escrowId).select().then(function(r2){
-        if(r2.data&&r2.data[0]){var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx]=r2.data[0];}
+      sb.from('orders').update({escrow_status:'refunded',status:'cancelled',cancel_reason:'admin_refund: '+reason,cancelled_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',escrowId).then(function(r2){
+        var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx].escrow_status='refunded';
         UI.toast(AT('refund_completed')+': '+(esc.currency||'USD')+' '+Number(esc.amount).toLocaleString(),'ok');render();
       });
       notifyEscrowParties(esc,'refunded');
@@ -3545,7 +3545,7 @@ function manualEscrowRefund(escrowId){
 }
 function showEscrowOverride(escrowId){
   var esc=S.escrowTxns.find(function(x){return x.id===escrowId;});if(!esc)return;
-  var statuses=['pending_deposit','funded','in_production','shipped','inspection','released','refunded','disputed'];
+  var statuses=['requested','buyer_paid','secured','shipping','delivered','release_requested','released','cancelled','disputed','refunded','platform_hold'];
   var body='<div class="modal-overlay show" id="modal-escrow-override"><div class="modal" style="max-width:480px"><div class="modal-h"><h3>'+AT('escrow_override')+'</h3><button class="modal-close" onclick="Adm.closeModal(\'modal-escrow-override\')">×</button></div><div class="modal-b">'+
     '<div class="card" style="margin-bottom:16px"><div class="card-b">'+
       '<div class="detail-row"><div class="detail-label">'+AT('manufacturer')+'</div><div class="detail-value">'+getUserName(esc.seller_id)+'</div></div>'+
@@ -3566,11 +3566,13 @@ function confirmEscrowOverride(escrowId){
   if(!reason){UI.toast(AT('enter_override_reason'),'err');return;}
   var esc=S.escrowTxns.find(function(x){return x.id===escrowId;});
   if(!confirm(AT('confirm_override')+'\n\n'+((ESC_ST[esc.escrow_status]&&ESC_ST[esc.escrow_status][0])||esc.escrow_status)+' → '+((ESC_ST[newStatus]&&ESC_ST[newStatus][0])||newStatus)))return;
-  var upd={escrow_status:newStatus,notes:(esc.notes||'')+'\n[OVERRIDE '+new Date().toISOString().slice(0,10)+'] '+esc.escrow_status+' → '+newStatus+': '+reason,updated_at:new Date().toISOString()};
-  if(newStatus==='released')upd.release_at=new Date().toISOString();
-  sb.from('escrow_transactions').update(upd).eq('id',escrowId).select().then(function(r){
+  var upd={escrow_status:newStatus,updated_at:new Date().toISOString()};
+  if(newStatus==='released'){upd.escrow_released_at=new Date().toISOString();upd.status='completed';}
+  if(newStatus==='cancelled'||newStatus==='refunded'){upd.status='cancelled';upd.cancel_reason='admin_override: '+reason;upd.cancelled_at=new Date().toISOString();}
+  if(newStatus==='disputed'){upd.escrow_disputed_at=new Date().toISOString();}
+  sb.from('orders').update(upd).eq('id',escrowId).then(function(r){
     if(r.error)return UI.toast(AT('change_failed'),'err');
-    var d=r.data[0];var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx]=d;
+    var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx].escrow_status=newStatus;
     closeModal('modal-escrow-override');
     UI.toast(AT('status_changed')+': '+((ESC_ST[newStatus]&&ESC_ST[newStatus][0])||newStatus),'ok');render();
     if(esc.matching_id){
@@ -3582,11 +3584,12 @@ function confirmEscrowOverride(escrowId){
   });
 }
 function forceEscrowStatusUpdate(escrowId,status,reason){
-  var upd={escrow_status:status,notes:'[FORCE '+new Date().toISOString().slice(0,10)+'] '+reason,updated_at:new Date().toISOString()};
-  if(status==='released')upd.release_at=new Date().toISOString();
-  sb.from('escrow_transactions').update(upd).eq('id',escrowId).select().then(function(r){
+  var upd={escrow_status:status,updated_at:new Date().toISOString()};
+  if(status==='released'){upd.escrow_released_at=new Date().toISOString();upd.status='completed';}
+  if(status==='refunded'||status==='cancelled'){upd.status='cancelled';upd.cancel_reason='force: '+reason;upd.cancelled_at=new Date().toISOString();}
+  sb.from('orders').update(upd).eq('id',escrowId).then(function(r){
     if(r.error)return UI.toast(AT('change_failed'),'err');
-    var d=r.data[0];var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx]=d;
+    var idx=S.escrowTxns.findIndex(function(x){return x.id===escrowId;});if(idx>=0)S.escrowTxns[idx].escrow_status=status;
     UI.toast(AT('status_changed')+' ('+AT('db_only')+'): '+((ESC_ST[status]&&ESC_ST[status][0])||status),'ok');render();
   });
 }
@@ -4084,7 +4087,7 @@ function pgPayRevenue(){
   var pendingDocCount=pendingBilling.filter(function(e){return e.event_type==='document_generation';}).length;
   var pendingAICount=pendingBilling.filter(function(e){return e.event_type==='ai_analysis';}).length;
   var activeSubs=S.subscriptions.filter(function(s){return s.status==='active';}).length||S.users.filter(function(u){return PLAN_PRICE[u.plan];}).length;
-  var activeEsc=S.escrowTxns.filter(function(e){return['funded','in_production','shipped','inspection'].indexOf(e.escrow_status)>=0;}).length;
+  var activeEsc=S.escrowTxns.filter(function(e){return['buyer_paid','secured','shipping','delivered','release_requested','platform_hold'].indexOf(e.escrow_status)>=0;}).length;
 
   /* Plan revenue breakdown */
   var planRev={starter:0,pro:0,alibaba:0,enterprise:0};
