@@ -85,7 +85,9 @@ serve(async (req: Request) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { text, target } = await req.json();
+    const body = await req.json();
+    const text = String(body.text || "").substring(0, 5000);
+    const target = String(body.target || "").substring(0, 10);
 
     if (!text || !target) {
       return new Response(

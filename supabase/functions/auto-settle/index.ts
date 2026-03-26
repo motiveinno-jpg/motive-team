@@ -120,7 +120,7 @@ serve(async (req) => {
 
     if (fetchErr) {
       console.error("Fetch error:", fetchErr);
-      return new Response(JSON.stringify({ error: fetchErr.message }), {
+      return new Response(JSON.stringify({ error: "An error occurred. Please try again." }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -257,7 +257,7 @@ serve(async (req) => {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("Auto-settle error:", errMsg);
-    return new Response(JSON.stringify({ error: errMsg }), {
+    return new Response(JSON.stringify({ error: "An error occurred. Please try again." }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });

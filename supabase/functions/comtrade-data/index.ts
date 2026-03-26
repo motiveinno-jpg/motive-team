@@ -48,58 +48,59 @@ serve(async (req: Request) => {
     const sbServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sbAdmin = createClient(sbUrl, sbServiceRole);
 
-    // --- Soft auth ---
-    let user: { id: string; email?: string } | null = null;
+    // --- Mandatory auth ---
     const authHeader = req.headers.get("Authorization");
-    if (authHeader) {
-      try {
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user: authUser }, error: userErr } = await sbAdmin.auth.getUser(token);
-        if (authUser && !userErr) {
-          user = authUser;
-        } else {
-          console.warn("[comtrade-data] JWT validation failed:", userErr?.message);
-        }
-      } catch (authErr) {
-        console.warn("[comtrade-data] Auth error:", authErr);
-      }
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Authentication required", code: "AUTH_REQUIRED" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user: authUser }, error: userErr } = await sbAdmin.auth.getUser(token);
+    if (!authUser || userErr) {
+      console.warn("[comtrade-data] JWT validation failed:", userErr?.message);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Authentication required", code: "AUTH_REQUIRED" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const user = authUser;
+
     // --- Rate limiting ---
-    if (user) {
-      const { data: userData } = await sbAdmin
-        .from("users")
-        .select("plan")
-        .eq("id", user.id)
-        .single();
+    const { data: userData } = await sbAdmin
+      .from("users")
+      .select("plan")
+      .eq("id", user.id)
+      .single();
 
-      const userPlan = userData?.plan || "free";
-      const isFree = userPlan === "free";
+    const userPlan = userData?.plan || "free";
+    const isFree = userPlan === "free";
 
-      if (isFree) {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+    if (isFree) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
 
-        const { count } = await sbAdmin
-          .from("analyses")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id)
-          .eq("analysis_type", "comtrade_query")
-          .gte("created_at", todayStart.toISOString());
+      const { count } = await sbAdmin
+        .from("analyses")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("analysis_type", "comtrade_query")
+        .gte("created_at", todayStart.toISOString());
 
-        if ((count || 0) >= ANONYMOUS_DAILY_LIMIT) {
-          const isKo = req.headers.get("accept-language")?.includes("ko");
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              error: isKo
-                ? "무료 플랜은 하루 1회 실시간 데이터 조회가 가능합니다. 플랜을 업그레이드해주세요."
-                : "Free plan allows 1 live data query per day. Please upgrade your plan.",
-              code: "DAILY_LIMIT_EXCEEDED",
-            }),
-            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
+      if ((count || 0) >= ANONYMOUS_DAILY_LIMIT) {
+        const isKo = req.headers.get("accept-language")?.includes("ko");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: isKo
+              ? "무료 플랜은 하루 1회 실시간 데이터 조회가 가능합니다. 플랜을 업그레이드해주세요."
+              : "Free plan allows 1 live data query per day. Please upgrade your plan.",
+            code: "DAILY_LIMIT_EXCEEDED",
+          }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
     }
 
@@ -246,15 +247,13 @@ serve(async (req: Request) => {
       }, { onConflict: "cache_key" });
 
     // --- Track usage ---
-    if (user) {
-      await sbAdmin.from("analyses").insert({
-        user_id: user.id,
-        product_name: `Comtrade: ${hsCode} (${reporterIso} ${flow})`,
-        analysis_type: "comtrade_query",
-        status: "completed",
-        ai_result: { hs_code: hsCode, reporter: reporterIso, flow },
-      });
-    }
+    await sbAdmin.from("analyses").insert({
+      user_id: user.id,
+      product_name: `Comtrade: ${hsCode} (${reporterIso} ${flow})`,
+      analysis_type: "comtrade_query",
+      status: "completed",
+      ai_result: { hs_code: hsCode, reporter: reporterIso, flow },
+    });
 
     const result = buildResponse(rawData, hsCode, reporterIso, flow, topPartners);
     return new Response(

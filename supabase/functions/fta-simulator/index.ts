@@ -61,24 +61,27 @@ serve(async (req: Request) => {
     const sbServiceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sbAdmin = createClient(sbUrl, sbServiceRole);
 
-    // Soft auth: try to extract user from JWT but do not block on failure
-    let user: { id: string; email?: string } | null = null;
+    // Mandatory auth: reject unauthenticated requests
     const authHeader = req.headers.get("Authorization");
-    if (authHeader) {
-      try {
-        const token = authHeader.replace("Bearer ", "");
-        const { data: { user: authUser }, error: userErr } = await sbAdmin.auth.getUser(token);
-        if (authUser && !userErr) {
-          user = authUser;
-        } else {
-          console.warn("[fta-simulator] JWT validation failed (proceeding without user):", userErr?.message);
-        }
-      } catch (authErr) {
-        console.warn("[fta-simulator] Auth error (proceeding without user):", authErr);
-      }
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Authentication required", code: "AUTH_REQUIRED" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    // ─── Plan enforcement: only if user is authenticated ───
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user: authUser }, error: userErr } = await sbAdmin.auth.getUser(token);
+    if (!authUser || userErr) {
+      console.warn("[fta-simulator] JWT validation failed:", userErr?.message);
+      return new Response(
+        JSON.stringify({ ok: false, error: "Authentication required", code: "AUTH_REQUIRED" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const user = authUser;
+
+    // ─── Plan enforcement ───
     const PLAN_LIMITS: Record<string, number> = {
       free: 0,         // blocked for free users
       starter: -1,     // unlimited
@@ -88,57 +91,55 @@ serve(async (req: Request) => {
       alibaba: -1,
     };
 
-    if (user) {
-      const { data: userData } = await sbAdmin
-        .from("users")
-        .select("plan, analysis_credits")
-        .eq("id", user.id)
-        .single();
+    const { data: userData } = await sbAdmin
+      .from("users")
+      .select("plan, analysis_credits")
+      .eq("id", user.id)
+      .single();
 
-      const userPlan = userData?.plan || "free";
-      const singleCredits = userData?.analysis_credits || 0;
-      const monthlyLimit = PLAN_LIMITS[userPlan] ?? 5;
+    const userPlan = userData?.plan || "free";
+    const singleCredits = userData?.analysis_credits || 0;
+    const monthlyLimit = PLAN_LIMITS[userPlan] ?? 5;
 
-      if (monthlyLimit !== -1) {
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
+    if (monthlyLimit !== -1) {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
 
-        const { count: monthlyUsage } = await sbAdmin
-          .from("analyses")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", user.id)
-          .eq("analysis_type", "fta_simulation")
-          .gte("created_at", startOfMonth.toISOString());
+      const { count: monthlyUsage } = await sbAdmin
+        .from("analyses")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("analysis_type", "fta_simulation")
+        .gte("created_at", startOfMonth.toISOString());
 
-        const used = monthlyUsage || 0;
+      const used = monthlyUsage || 0;
 
-        if (used >= monthlyLimit && singleCredits <= 0) {
-          const isKo = req.headers.get("accept-language")?.includes("ko");
+      if (used >= monthlyLimit && singleCredits <= 0) {
+        const isKo = req.headers.get("accept-language")?.includes("ko");
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: isKo
+              ? `월간 FTA 시뮬레이션 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
+              : `Monthly FTA simulation limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
+            code: "PLAN_LIMIT_EXCEEDED",
+            limit: monthlyLimit,
+            used,
+          }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      if (used >= monthlyLimit && singleCredits > 0) {
+        const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
+        if (rpcErr || remaining === -1) {
           return new Response(
-            JSON.stringify({
-              ok: false,
-              error: isKo
-                ? `월간 FTA 시뮬레이션 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
-                : `Monthly FTA simulation limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
-              code: "PLAN_LIMIT_EXCEEDED",
-              limit: monthlyLimit,
-              used,
-            }),
+            JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
             { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
-
-        if (used >= monthlyLimit && singleCredits > 0) {
-          const { data: remaining, error: rpcErr } = await sbAdmin.rpc("deduct_analysis_credit", { p_user_id: user.id });
-          if (rpcErr || remaining === -1) {
-            return new Response(
-              JSON.stringify({ ok: false, error: "No credits available", code: "PLAN_LIMIT_EXCEEDED", limit: monthlyLimit, used }),
-              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          console.log(`[plan] User ${user.id} used single credit for FTA sim (${remaining} remaining)`);
-        }
+        console.log(`[plan] User ${user.id} used single credit for FTA sim (${remaining} remaining)`);
       }
     }
     // ─── End plan enforcement ───
@@ -197,16 +198,14 @@ serve(async (req: Request) => {
       const aiPrompt = buildMultiPrompt(effectiveHsCode, effectiveDestinations, destInfo, originLabel);
       const aiResult = await callAI(anthropicKey, aiPrompt);
 
-      // Track usage if user is authenticated
-      if (user) {
-        await sbAdmin.from("analyses").insert({
-          user_id: user.id,
-          product_name: `FTA: ${effectiveHsCode} → ${effectiveDestinations.join(",")}`,
-          analysis_type: "fta_simulation",
-          status: "completed",
-          ai_result: aiResult,
-        });
-      }
+      // Track usage
+      await sbAdmin.from("analyses").insert({
+        user_id: user.id,
+        product_name: `FTA: ${effectiveHsCode} → ${effectiveDestinations.join(",")}`,
+        analysis_type: "fta_simulation",
+        status: "completed",
+        ai_result: aiResult,
+      });
 
       return new Response(
         JSON.stringify({ ok: true, results: aiResult }),
@@ -228,16 +227,14 @@ serve(async (req: Request) => {
     const aiPrompt = buildSinglePrompt(effectiveHsCode, effectiveDestination, countryName, ftas, originLabel);
     const result = await callAI(anthropicKey, aiPrompt);
 
-    // Track usage if user is authenticated
-    if (user) {
-      await sbAdmin.from("analyses").insert({
-        user_id: user.id,
-        product_name: `FTA: ${effectiveHsCode} → ${effectiveDestination}`,
-        analysis_type: "fta_simulation",
-        status: "completed",
-        ai_result: result,
-      });
-    }
+    // Track usage
+    await sbAdmin.from("analyses").insert({
+      user_id: user.id,
+      product_name: `FTA: ${effectiveHsCode} → ${effectiveDestination}`,
+      analysis_type: "fta_simulation",
+      status: "completed",
+      ai_result: result,
+    });
 
     return new Response(
       JSON.stringify({ ok: true, result }),

@@ -7,6 +7,26 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const RATE_LIMITS = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 30;
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000;
+
+function checkRateLimit(
+  userId: string,
+  max: number = RATE_LIMIT_MAX,
+  windowMs: number = RATE_LIMIT_WINDOW,
+): boolean {
+  const now = Date.now();
+  const entry = RATE_LIMITS.get(userId);
+  if (!entry || now > entry.resetAt) {
+    RATE_LIMITS.set(userId, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= max) return false;
+  entry.count++;
+  return true;
+}
+
 /* 주요국 무역 환경 레퍼런스 — AI 프롬프트에 주입 */
 const TRADE_CONTEXT: Record<string, string> = {
   US: "미국: FDA(식품/화장품/의약품), CPSC(소비재), FCC(전자기기), USDA(농산물). 수입관세 평균 3-5%. Sales Tax 주별 상이(0-10%). FSVP 대리인 필수(식품). MoCRA 2023 시행(화장품 시설등록 의무화). CBP 통관. Prior Notice(식품). 301조 추가관세(중국산 일부). Buy American Act(정부조달).",
@@ -55,19 +75,25 @@ serve(async (req: Request) => {
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (!checkRateLimit(user.id)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Rate limit exceeded. Please try again later." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Create user-scoped client for RLS operations
     const sbAnon = Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
     const sb = createClient(sbUrl, sbAnon, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const {
-      origin_country,
-      dest_country,
-      category,
-      hs_code = "",
-      product_name = "",
-    } = await req.json();
+    const body = await req.json();
+    const origin_country = String(body.origin_country || "").substring(0, 100);
+    const dest_country = String(body.dest_country || "").substring(0, 100);
+    const category = String(body.category || "").substring(0, 200);
+    const hs_code = String(body.hs_code || "").substring(0, 20);
+    const product_name = String(body.product_name || "").substring(0, 200);
 
     if (!origin_country || !dest_country) {
       return new Response(

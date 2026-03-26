@@ -11,6 +11,26 @@ const corsHeaders = {
 const ONE_ANALYSIS_AMOUNT_CENTS = 990;
 const ALLOWED_CURRENCIES = ["usd", "eur", "gbp", "jpy", "krw", "cny"];
 
+const RATE_LIMITS = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000;
+
+function checkRateLimit(
+  userId: string,
+  max: number = RATE_LIMIT_MAX,
+  windowMs: number = RATE_LIMIT_WINDOW,
+): boolean {
+  const now = Date.now();
+  const entry = RATE_LIMITS.get(userId);
+  if (!entry || now > entry.resetAt) {
+    RATE_LIMITS.set(userId, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= max) return false;
+  entry.count++;
+  return true;
+}
+
 function jsonResponse(
   body: Record<string, unknown>,
   status = 200,
@@ -57,6 +77,10 @@ serve(async (req) => {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
+    if (!checkRateLimit(user.id)) {
+      return jsonResponse({ error: "Rate limit exceeded. Please try again later." }, 429);
+    }
+
     const supabaseKey =
       Deno.env.get("CUSTOM_ANON_KEY") || Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -66,13 +90,17 @@ serve(async (req) => {
     const body = await req.json();
     const { type, deal_id, price_id, plan, billing_cycle } = body;
 
-    // Validate redirect URLs
+    // Validate redirect URLs — hostname comparison to prevent open redirect
     const ALLOWED_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com"];
     const validateRedirectUrl = (url: string | undefined): string | undefined => {
       if (!url) return undefined;
       try {
         const parsed = new URL(url);
-        if (ALLOWED_ORIGINS.includes(parsed.origin)) return url;
+        const isAllowed = ALLOWED_ORIGINS.some((origin) => {
+          const allowedHost = new URL(origin).hostname;
+          return parsed.hostname === allowedHost || parsed.hostname.endsWith("." + allowedHost);
+        });
+        if (isAllowed && parsed.protocol === "https:") return url;
       } catch { /* invalid URL */ }
       return undefined;
     };

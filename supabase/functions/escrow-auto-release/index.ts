@@ -297,7 +297,7 @@ serve(async (req) => {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("escrow-auto-release fatal error:", errMsg);
     return new Response(
-      JSON.stringify({ ok: false, error: errMsg }),
+      JSON.stringify({ ok: false, error: "An error occurred. Please try again." }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

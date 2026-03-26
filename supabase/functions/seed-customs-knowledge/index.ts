@@ -899,7 +899,7 @@ serve(async (req: Request) => {
   } catch (err) {
     console.error("seed-customs-knowledge error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: err.message || "서버 오류" }),
+      JSON.stringify({ ok: false, error: "An error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

@@ -164,17 +164,16 @@ serve(async (req: Request) => {
     }
     // ─── End plan enforcement ───
 
-    const {
-      product_name,
-      description = "",
-      category = "",
-      ingredients = "",
-      usage = "",
-      material = "",
-      process = "",
-      weight = "",
-      origin_country = "KR",
-    } = await req.json();
+    const body = await req.json();
+    const product_name = String(body.product_name || "").substring(0, 200);
+    const description = String(body.description || "").substring(0, 2000);
+    const category = String(body.category || "").substring(0, 500);
+    const ingredients = String(body.ingredients || "").substring(0, 500);
+    const usage = String(body.usage || "").substring(0, 500);
+    const material = String(body.material || "").substring(0, 500);
+    const process = String(body.process || "").substring(0, 500);
+    const weight = String(body.weight || "").substring(0, 500);
+    const origin_country = String(body.origin_country || "KR").substring(0, 10);
 
     const ORIGIN_LABELS: Record<string, string> = {
       KR: "한국/South Korea", US: "미국/United States", JP: "일본/Japan", CN: "중국/China",

@@ -10,6 +10,26 @@ const corsHeaders = {
 const MAX_CONTEXT_ENTRIES = 5;
 const MAX_CONTEXT_LENGTH = 4000;
 
+const RATE_LIMITS = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 20;
+const RATE_LIMIT_WINDOW = 60 * 60 * 1000;
+
+function checkRateLimit(
+  userId: string,
+  max: number = RATE_LIMIT_MAX,
+  windowMs: number = RATE_LIMIT_WINDOW,
+): boolean {
+  const now = Date.now();
+  const entry = RATE_LIMITS.get(userId);
+  if (!entry || now > entry.resetAt) {
+    RATE_LIMITS.set(userId, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= max) return false;
+  entry.count++;
+  return true;
+}
+
 interface KnowledgeEntry {
   id: string;
   title: string;
@@ -210,7 +230,18 @@ serve(async (req: Request) => {
       );
     }
 
-    const { prompt, question, product, country } = await req.json();
+    if (!checkRateLimit(user.id)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Rate limit exceeded. Please try again later." }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const body = await req.json();
+    const prompt = String(body.prompt || "").substring(0, 2000);
+    const question = String(body.question || "").substring(0, 2000);
+    const product = String(body.product || "").substring(0, 500);
+    const country = String(body.country || "").substring(0, 100);
 
     if (!question && !prompt) {
       return new Response(
@@ -313,7 +344,7 @@ ${ragContext}`;
   } catch (err) {
     console.error("customs-ai error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: err.message || "서버 오류" }),
+      JSON.stringify({ ok: false, error: "An error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

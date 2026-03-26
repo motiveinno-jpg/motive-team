@@ -64,7 +64,11 @@ serve(async (req) => {
     if (body.return_url) {
       try {
         const parsed = new URL(body.return_url);
-        if (ALLOWED_ORIGINS.includes(parsed.origin)) {
+        const isAllowed = ALLOWED_ORIGINS.some((origin) => {
+          const allowedHost = new URL(origin).hostname;
+          return parsed.hostname === allowedHost || parsed.hostname.endsWith("." + allowedHost);
+        });
+        if (isAllowed && parsed.protocol === "https:") {
           safeReturnUrl = body.return_url;
         }
       } catch { /* invalid URL, use default */ }
@@ -136,7 +140,7 @@ serve(async (req) => {
   } catch (err: any) {
     console.error("Billing portal error:", err);
     return new Response(
-      JSON.stringify({ error: err.message || "Internal error" }),
+      JSON.stringify({ error: "An error occurred. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

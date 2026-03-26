@@ -1,6 +1,26 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
+const RATE_LIMITS = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW = 24 * 60 * 60 * 1000;
+
+function checkRateLimit(
+  userId: string,
+  max: number = RATE_LIMIT_MAX,
+  windowMs: number = RATE_LIMIT_WINDOW,
+): boolean {
+  const now = Date.now();
+  const entry = RATE_LIMITS.get(userId);
+  if (!entry || now > entry.resetAt) {
+    RATE_LIMITS.set(userId, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= max) return false;
+  entry.count++;
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", {
@@ -36,6 +56,16 @@ serve(async (req) => {
       });
     }
 
+    if (!checkRateLimit(user.id)) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded. Please try again later." }),
+        {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const body = await req.json();
     const { email, type, inviter_name, inviter_company } = body;
 
@@ -64,7 +94,7 @@ serve(async (req) => {
 
     if (insertErr) {
       console.error("Insert error:", insertErr);
-      return new Response(JSON.stringify({ error: insertErr.message }), {
+      return new Response(JSON.stringify({ error: "An error occurred. Please try again." }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       });
@@ -193,7 +223,7 @@ serve(async (req) => {
   } catch (err: any) {
     console.error("Send invite error:", err);
     return new Response(
-      JSON.stringify({ error: err.message }),
+      JSON.stringify({ error: "An error occurred. Please try again." }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },

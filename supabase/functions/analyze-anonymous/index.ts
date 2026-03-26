@@ -10,24 +10,43 @@ const corsHeaders = {
 // ---------------------------------------------------------------------------
 // In-memory rate limiting (resets on cold start)
 // ---------------------------------------------------------------------------
-const rateMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 3;
-const RATE_WINDOW_MS = 3_600_000; // 1 hour
+const hourlyMap = new Map<string, { count: number; resetAt: number }>();
+const dailyMap = new Map<string, { count: number; resetAt: number }>();
+const HOURLY_LIMIT = 1;
+const HOURLY_WINDOW_MS = 3_600_000; // 1 hour
+const DAILY_LIMIT = 2;
+const DAILY_WINDOW_MS = 86_400_000; // 24 hours
+const MAX_BODY_SIZE = 10_240; // 10KB
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
-  const entry = rateMap.get(ip);
 
-  if (!entry || now > entry.resetAt) {
-    rateMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+  // Daily cap check
+  const daily = dailyMap.get(ip);
+  if (!daily || now > daily.resetAt) {
+    dailyMap.set(ip, { count: 1, resetAt: now + DAILY_WINDOW_MS });
+  } else {
+    if (daily.count >= DAILY_LIMIT) {
+      return false;
+    }
+    daily.count++;
+  }
+
+  // Hourly check
+  const hourly = hourlyMap.get(ip);
+  if (!hourly || now > hourly.resetAt) {
+    hourlyMap.set(ip, { count: 1, resetAt: now + HOURLY_WINDOW_MS });
     return true;
   }
 
-  if (entry.count >= RATE_LIMIT) {
+  if (hourly.count >= HOURLY_LIMIT) {
+    // Roll back daily increment since hourly blocked it
+    const d = dailyMap.get(ip);
+    if (d) d.count--;
     return false;
   }
 
-  entry.count++;
+  hourly.count++;
   return true;
 }
 
@@ -242,10 +261,19 @@ serve(async (req: Request) => {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "Rate limit exceeded. Max 3 requests per hour.",
+          error: "Rate limit exceeded. Max 1 request per hour, 2 per day.",
           code: "RATE_LIMITED",
         }),
         { status: 429, headers: { ...headers, "Retry-After": "3600" } },
+      );
+    }
+
+    // Body size check
+    const contentLength = req.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Request body too large (max 10KB)", code: "PAYLOAD_TOO_LARGE" }),
+        { status: 413, headers },
       );
     }
 

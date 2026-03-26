@@ -65,6 +65,49 @@ serve(async (req) => {
       }
     }
 
+    // Check if caller is admin
+    const { data: callerProfile } = await sbAdmin
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', user.id)
+      .single()
+
+    const isAdmin = callerProfile?.is_admin === true
+
+    // Authorization: verify caller has relationship with each target user
+    if (!isAdmin) {
+      for (const n of notifications) {
+        if (n.target_user_id === user.id) continue
+
+        const { data: matchingRel } = await sbAdmin
+          .from('matchings')
+          .select('id')
+          .or(
+            `and(user_id.eq.${user.id},buyer_id.eq.${n.target_user_id}),and(user_id.eq.${n.target_user_id},buyer_id.eq.${user.id})`,
+          )
+          .limit(1)
+
+        const { data: orderRel } = await sbAdmin
+          .from('orders')
+          .select('id')
+          .or(
+            `and(user_id.eq.${user.id},buyer_id.eq.${n.target_user_id}),and(user_id.eq.${n.target_user_id},buyer_id.eq.${user.id})`,
+          )
+          .limit(1)
+
+        const hasRelationship =
+          (matchingRel && matchingRel.length > 0) ||
+          (orderRel && orderRel.length > 0)
+
+        if (!hasRelationship) {
+          return new Response(
+            JSON.stringify({ error: 'Forbidden: no relationship with target user' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+      }
+    }
+
     // Insert in-app notifications
     const rows = notifications.map((n) => ({
       user_id: n.target_user_id,
