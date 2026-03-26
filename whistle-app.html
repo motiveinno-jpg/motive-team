@@ -12778,14 +12778,24 @@ function saveBuyer(){
   var d=UI.fd('#bf');if(!d.company_name){UI.toast(_isKorean?'회사명을 입력해주세요':'Please enter company name','warn');return;}
   if(d.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)){UI.toast(_isKorean?'올바른 이메일을 입력해주세요':'Please enter a valid email','warn');return;}
   d.registered_by=S.user.id;
-  d.source='direct';
+  d.source='manual';
   if(checkSanctionAndWarn(d.country))return;
   checkHighRiskAndNotify(d.country);
   sb.from('buyers').insert(d).select().then(function(r){
     if(r.error){_toastE(r.error);return;}
     closeModal('bm');
     var newBuyer=r.data&&r.data[0];
-    loadB().then(function(){render();});
+    /* If inside a project, auto-create matching to link buyer to project */
+    if(newBuyer&&S.currentProject){
+      var mData={user_id:S.user.id,buyer_id:newBuyer.id,project_id:S.currentProject.id,product_id:S.currentProject.product_id||null,status:'proposed',match_score:80,match_reason:'Manual add by seller',buyer_name:d.company_name||d.contact_name||'',buyer_country:d.country||'',seller_name:S.user.company_name||S.user.name||'',product_name:S.currentProject.product_name||''};
+      sb.from('matchings').insert(mData).select().then(function(mr){
+        if(mr.error){console.error('[whistle] matching insert error',mr.error);}
+        else{if(!S.matchings)S.matchings=[];S.matchings.push(mr.data[0]);}
+        loadB().then(function(){render();});
+      });
+    }else{
+      loadB().then(function(){render();});
+    }
     /* 바이어 초대 결과 모달 — 링크 + 쿠폰 */
     var refCode=S.user?(S.user.id||'').slice(0,8).toUpperCase():'';
     var couponCode='FREE1-'+refCode+'-'+(Date.now()%10000);
