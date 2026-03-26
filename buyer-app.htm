@@ -1595,6 +1595,18 @@ function _disableWebPush(){
   toast(_t('Browser notifications disabled','브라우저 알림이 비활성화되었습니다'),'info');
   render();
 }
+/* #30 Notification Preferences */
+function toggleNotifPref(key){
+  if(!S._notifPrefs)S._notifPrefs={chat:true,deal:true,order:true,payment:true,system:true,marketing:false};
+  S._notifPrefs[key]=!S._notifPrefs[key];
+  if(S.user)localStorage.setItem('whistle_notif_prefs_'+S.user.id,JSON.stringify(S._notifPrefs));
+  render();
+}
+function _loadNotifPrefs(){
+  if(!S.user)return;
+  try{var raw=localStorage.getItem('whistle_notif_prefs_'+S.user.id);if(raw)S._notifPrefs=JSON.parse(raw);}catch(e){console.error('[buyer]',e);}
+  if(!S._notifPrefs)S._notifPrefs={chat:true,deal:true,order:true,payment:true,system:true,marketing:false};
+}
 function _isWebPushEnabled(){
   return 'Notification' in window && Notification.permission==='granted' && localStorage.getItem('whistle_web_push')==='1';
 }
@@ -1646,7 +1658,20 @@ function _doRender(){
   var focusSel=ae&&ae.selectionStart!==undefined?{s:ae.selectionStart,e:ae.selectionEnd}:null;
 
   if(S.loading){root.innerHTML='<div class="auth-wrap"><div style="text-align:center"><div style="font-size:36px;margin-bottom:12px">W</div><div style="color:var(--w40)">Loading...</div></div></div>';return;}
-  if(!S.user){root.innerHTML=pgAuth();return;}
+  if(!S.user){
+    /* Allow guest access to search and marketplace */
+    if(S.page==='search'||S.page==='marketplace'||S.page==='product-detail'||S.page==='maker-profile'){
+      var _guestNav='<div style="position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--bd);padding:10px 20px;display:flex;align-items:center;gap:12px">';
+      _guestNav+='<span style="font-size:18px;font-weight:900;color:var(--pri);cursor:pointer" onclick="B.nav(\'search\')">WHISTLE</span>';
+      _guestNav+='<span style="flex:1"></span>';
+      _guestNav+='<button class="btn btn-pri btn-sm" onclick="S.page=\'dashboard\';B.render()">'+_t('Sign In','로그인')+'</button>';
+      _guestNav+='<button class="btn btn-ghost btn-sm" onclick="S.authMode=\'signup\';S.page=\'dashboard\';B.render()">'+_t('Sign Up','회원가입')+'</button>';
+      _guestNav+='</div>';
+      root.innerHTML=_guestNav+'<div style="padding:20px;max-width:1200px;margin:0 auto">'+renderPage()+'</div>';
+      return;
+    }
+    root.innerHTML=pgAuth();return;
+  }
   try{
   var isDealRoom=S.page==='deals'&&S.currentDeal;
   var _mobNav='<div class="mob-bottom-nav">';
@@ -2251,7 +2276,12 @@ function loadUser(){
   sb.auth.getSession().then(function(r){
     clearTimeout(_loadTimeout);
     var session=r.data.session;
-    if(!session)return set({loading:false,user:null});
+    if(!session){
+      var _guestHash=location.hash.replace('#','');
+      var _guestOk={search:1,marketplace:1,'product-detail':1,'maker-profile':1};
+      if(_guestHash&&_guestOk[_guestHash])S.page=_guestHash;
+      return set({loading:false,user:null});
+    }
     sb.from('users').select('*').eq('id',session.user.id).single().then(function(r){
       if(r.error){
         console.error('Failed to load user profile:', r.error.message);
@@ -2319,6 +2349,7 @@ function loadAllData(){
   loadRecentActivity();
   loadVerificationStatus();
   _loadEscrowFromDB();
+  _loadNotifPrefs();
   importLandingSavedProducts();
   var hp=location.hash.replace('#','');if(hp&&_BPL[hp])S.page=hp;
   _initRendered=true;clearTimeout(_initMasterTimeout);
@@ -2982,6 +3013,16 @@ function applySearchFilters(products){
   return products;
 }
 
+function _trackProductView(product){
+  if(!S.user||!product||!product.id||!product.user_id)return;
+  if(product.user_id===S.user.id)return;
+  sb.from('product_views').insert({
+    product_id:product.id,
+    viewer_id:S.user.id,
+    seller_id:product.user_id,
+    viewed_at:new Date().toISOString()
+  }).then(function(){}).catch(function(){});
+}
 function openProductDetail(source,idx){
   var products=[];
   if(S.searchSource==='all')products=applySearchFilters(mergeResults());
@@ -2991,6 +3032,7 @@ function openProductDetail(source,idx){
   if(!products.length&&S.whistleResults.length){products=S.whistleResults.map(function(p){return{source:'whistle',data:p};});}
   var item=products[idx];if(!item)return;
   S._productDetailPage={source:item.source||source,data:item.data,idx:idx,allProducts:products};
+  if(item.source==='whistle'&&item.data)_trackProductView(item.data);
   nav('product-detail');
 }
 
@@ -3664,6 +3706,11 @@ function saveProduct(source,id){
   });
 }
 
+function toggleCompareView(){
+  S._compareView=!S._compareView;
+  render();
+}
+
 function inquireAllSaved(){
   var names=S.savedProducts.slice(0,5).map(function(sp){
     if(sp.source==='naver'&&sp.naver_product_data)return stripHtml(sp.naver_product_data.title||'').substring(0,40);
@@ -4034,13 +4081,60 @@ function pgSaved(){
   h+='<span style="font-size:12px;color:var(--w40)">'+S.savedProducts.length+' '+_t('saved product(s)','개 저장된 제품')+'</span>';
   h+='<div style="display:flex;gap:8px;align-items:center">';
   h+='<select class="form-select" style="width:auto;padding:5px 10px;font-size:11px" onchange="B.set({_savedSort:this.value})"><option value="newest"'+(_savedSort==='newest'?' selected':'')+'>'+_t('Newest First','최신순')+'</option><option value="oldest"'+(_savedSort==='oldest'?' selected':'')+'>'+_t('Oldest First','오래된순')+'</option><option value="whistle"'+(_savedSort==='whistle'?' selected':'')+'>'+_t('Whistle First','Whistle 우선')+'</option><option value="naver"'+(_savedSort==='naver'?' selected':'')+'>'+_t('Korea Market First','한국 마켓 우선')+'</option></select>';
-  if(S.savedProducts.length>=2)h+='<button class="btn btn-ghost btn-sm" onclick="B.inquireAllSaved()" style="font-size:11px">'+_t('Inquire All','전체 문의')+'</button>';
+  if(S.savedProducts.length>=2){h+='<button class="btn btn-ghost btn-sm" onclick="B.toggleCompareView()" style="font-size:11px">'+(S._compareView?_t('Grid View','그리드 보기'):_t('Compare','비교'))+'</button>';h+='<button class="btn btn-ghost btn-sm" onclick="B.inquireAllSaved()" style="font-size:11px">'+_t('Inquire All','전체 문의')+'</button>';}
   h+='</div></div>';
   // Sort saved products
   var sortedSaved=S.savedProducts.slice();
   if(_savedSort==='oldest')sortedSaved.reverse();
   else if(_savedSort==='whistle')sortedSaved.sort(function(a,b){return(a.source==='whistle'?0:1)-(b.source==='whistle'?0:1);});
   else if(_savedSort==='naver')sortedSaved.sort(function(a,b){return(a.source==='naver'?0:1)-(b.source==='naver'?0:1);});
+  if(S._compareView&&sortedSaved.length>=2){
+    // Compare table view (horizontal scroll, max 5)
+    var cItems=sortedSaved.slice(0,5);
+    h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+    h+='<table style="width:100%;min-width:'+(cItems.length*180)+'px;border-collapse:collapse;font-size:12px">';
+    // Header row with images
+    h+='<tr><td style="padding:8px;font-weight:700;color:var(--w40);vertical-align:top;width:100px"></td>';
+    cItems.forEach(function(sp){
+      var img='';var name='';
+      if(sp.source==='naver'&&sp.naver_product_data){
+        var np=sp.naver_product_data;
+        img=np.image||'';name=stripHtml(np.title||'')||'Product';
+      } else {
+        img=sp.image_url||'';name=sp.product_name||'Product';
+      }
+      h+='<td style="padding:8px;text-align:center;vertical-align:top;min-width:160px">';
+      h+=img?'<img src="'+esc(img)+'" style="width:80px;height:80px;object-fit:cover;border-radius:8px;margin-bottom:6px" onerror="this.style.display=\'none\'">':'<div style="width:80px;height:80px;border-radius:8px;background:var(--w08);display:inline-flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:6px">&#x1F4E6;</div>';
+      h+='<div style="font-weight:700;font-size:11px;line-height:1.3">'+esc(name.substring(0,50))+'</div>';
+      h+='</td>';
+    });
+    h+='</tr>';
+    // Rows: Source, Price, Seller/Brand, MOQ, Category, Actions
+    var rows=[
+      {label:_t('Source','출처'),fn:function(sp){return sp.source==='naver'?'<span class="badge badge-acc" style="font-size:10px">&#x1F1F0;&#x1F1F7; Market</span>':'<span class="badge badge-pri" style="font-size:10px">&#x1F3C5; Whistle</span>';}},
+      {label:_t('Price','가격'),fn:function(sp){if(sp.source==='naver'&&sp.naver_product_data&&sp.naver_product_data.lprice)return '<span style="font-weight:700;color:var(--acc)">'+parseInt(sp.naver_product_data.lprice).toLocaleString()+' KRW</span>';return '<span style="color:var(--w30)">-</span>';}},
+      {label:_t('Brand / Seller','브랜드/셀러'),fn:function(sp){if(sp.source==='naver'&&sp.naver_product_data){var np=sp.naver_product_data;return esc(np.maker||np.brand1||np.mallName||'-');}return esc(sp.seller_name||'-');}},
+      {label:_t('Category','카테고리'),fn:function(sp){if(sp.source==='naver'&&sp.naver_product_data){return esc(sp.naver_product_data.category1||sp.naver_product_data.category2||'-');}return esc(sp.category||'-');}},
+      {label:_t('Saved','저장일'),fn:function(sp){return sp.created_at?new Date(sp.created_at).toLocaleDateString():'-';}},
+    ];
+    rows.forEach(function(row){
+      h+='<tr style="border-top:1px solid var(--w08)">';
+      h+='<td style="padding:8px;font-weight:600;color:var(--w40);white-space:nowrap">'+row.label+'</td>';
+      cItems.forEach(function(sp){h+='<td style="padding:8px;text-align:center">'+row.fn(sp)+'</td>';});
+      h+='</tr>';
+    });
+    // Action row
+    h+='<tr style="border-top:1px solid var(--w08)"><td style="padding:8px"></td>';
+    cItems.forEach(function(sp){
+      var src=sp.source==='naver'?'naver':'whistle';
+      var pid=sp.source==='naver'?(sp.naver_product_data&&sp.naver_product_data.productId||''):(sp.product_id||'');
+      h+='<td style="padding:8px;text-align:center"><button class="btn btn-pri btn-sm" style="font-size:10px;width:100%" onclick="B.openInquiry(\''+src+'\',\''+esc(pid)+'\')">'+_t('Inquire','문의')+'</button></td>';
+    });
+    h+='</tr></table></div>';
+    if(sortedSaved.length>5)h+='<p style="text-align:center;font-size:11px;color:var(--w30);margin-top:8px">'+_t('Showing top 5 of','상위 5개 표시 중, 전체')+' '+sortedSaved.length+'</p>';
+    return h;
+  }
+
   h+='<div class="product-grid">';
   sortedSaved.forEach(function(sp){
     h+='<div class="product-card">';
@@ -4361,6 +4455,27 @@ function pgProfile(){
   else{h+='<button class="btn btn-pri" style="font-size:12px;padding:8px 18px" onclick="B.requestWebPush()">'+_t('Enable Notifications','알림 활성화')+'</button>';}
   h+='</div></div></div>';
 
+  /* #30 Notification Preferences */
+  var _bnp=S._notifPrefs||{chat:true,deal:true,order:true,payment:true,system:true,marketing:false};
+  var _bCats=[
+    {k:'chat',icon:'💬',l:_t('Chat Messages','채팅 메시지'),d:_t('When a seller sends a message','판매자 메시지 수신 시')},
+    {k:'deal',icon:'🤝',l:_t('Deal Updates','딜 업데이트'),d:_t('Quote, stage changes, matching','견적, 단계 변경, 매칭')},
+    {k:'order',icon:'📋',l:_t('Orders & Shipping','주문/배송'),d:_t('Order confirmation, shipping status','주문 확인, 배송 상태')},
+    {k:'payment',icon:'💳',l:_t('Payment & Escrow','결제/에스크로'),d:_t('Payment, fund release, refund','결제, 자금 방출, 환불')},
+    {k:'system',icon:'🔧',l:_t('System','시스템'),d:_t('Security, account related','보안, 계정 관련')},
+    {k:'marketing',icon:'📢',l:_t('Marketing & News','마케팅/뉴스'),d:_t('Newsletter, events, promotions','뉴스레터, 이벤트, 프로모션')}
+  ];
+  h+='<div class="card" style="margin-top:14px"><div class="card-h">🔔 '+_t('Notification Preferences','알림 설정')+'</div><div class="card-b">';
+  h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+_t('Configure which notification types you want to receive','알림 유형별로 수신 여부를 설정하세요')+'</div>';
+  _bCats.forEach(function(c){
+    var on=_bnp[c.k]!==false;
+    h+='<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--w08)">';
+    h+='<span style="font-size:18px">'+c.icon+'</span>';
+    h+='<div style="flex:1"><div style="font-size:13px;font-weight:600">'+c.l+'</div><div style="font-size:11px;color:var(--w30)">'+c.d+'</div></div>';
+    h+='<div onclick="B.toggleNotifPref(\''+c.k+'\')" style="width:44px;height:24px;border-radius:12px;cursor:pointer;transition:background .2s;background:'+(on?'var(--pri)':'var(--w15)')+';position:relative"><div style="width:20px;height:20px;border-radius:10px;background:#fff;position:absolute;top:2px;transition:left .2s;left:'+(on?'22px':'2px')+';box-shadow:0 1px 3px rgba(0,0,0,.2)"></div></div></div>';
+  });
+  h+='</div></div>';
+
   // Delete Account
   h+='<div class="card" style="margin-top:24px;border-color:rgba(255,59,48,.2)"><div class="card-h" style="color:var(--err)">'+_t('Delete Account','계정 삭제')+'</div><div class="card-b">';
   h+='<div style="font-size:12px;color:var(--w40);margin-bottom:12px;line-height:1.6">'+_t('Deleting your account will permanently remove all your data. This action cannot be undone.','계정을 삭제하면 모든 데이터가 영구적으로 제거됩니다. 이 작업은 되돌릴 수 없습니다.')+'</div>';
@@ -4525,6 +4640,45 @@ function buildDeals(){
 
 function pgDeals(){
   var h='';
+  /* ★ Quote Comparison Table — when 2+ deals have documents/quotes */
+  var _quotedDeals=S.deals.filter(function(d){return d.matching&&(d.documents||[]).length>0;});
+  if(_quotedDeals.length>=2&&!S._hideQuoteCompare){
+    h+='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.2);background:linear-gradient(135deg,rgba(255,184,0,.04),rgba(0,212,255,.02))">';
+    h+='<div class="card-h" style="display:flex;align-items:center;gap:8px"><span style="font-size:15px">&#x1F4CA;</span><span style="font-weight:700">'+_t('Quote Comparison','견적 비교')+'</span><span class="badge badge-acc">'+_quotedDeals.length+_t(' sellers',' 셀러')+'</span><button onclick="S._hideQuoteCompare=true;B.render()" class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:10px">'+_t('Hide','숨기기')+'</button></div>';
+    h+='<div class="card-b" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    h+='<thead><tr style="background:var(--w04)">';
+    h+='<th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">'+_t('Seller','셀러')+'</th>';
+    h+='<th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">'+_t('Product','제품')+'</th>';
+    h+='<th style="padding:10px 12px;text-align:right;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">'+_t('Unit Price','단가')+'</th>';
+    h+='<th style="padding:10px 12px;text-align:right;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">MOQ</th>';
+    h+='<th style="padding:10px 12px;text-align:center;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">'+_t('Lead Time','납기')+'</th>';
+    h+='<th style="padding:10px 12px;text-align:center;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">'+_t('Docs','서류')+'</th>';
+    h+='<th style="padding:10px 12px;text-align:center;font-weight:600;color:var(--w60);border-bottom:1px solid var(--bd)">'+_t('Stage','단계')+'</th>';
+    h+='<th style="padding:10px 8px;text-align:center;border-bottom:1px solid var(--bd)"></th>';
+    h+='</tr></thead><tbody>';
+    _quotedDeals.forEach(function(d,idx){
+      var m=d.matching||{};
+      var pi=d.documents.find(function(doc){return doc.doc_type==='pi';});
+      var sellerName=getSellerName(d.sellerId)||_t('Seller','셀러')+' '+(idx+1);
+      var unitPrice=pi&&pi.metadata&&pi.metadata.unit_price?pi.metadata.unit_price:(m.quoted_price||m.unit_price||'-');
+      var moq=m.moq||m.min_order_qty||(pi&&pi.metadata&&pi.metadata.moq)||'-';
+      var leadTime=m.lead_time||(pi&&pi.metadata&&pi.metadata.lead_time)||'-';
+      var stg=DEAL_STAGES.find(function(s){return s.id===d.stage;})||DEAL_STAGES[0];
+      var stgColor=d.stage==='completed'?'var(--ok)':d.stage==='quotation'?'var(--acc)':'var(--pri)';
+      var rowBg=idx%2===0?'transparent':'var(--w02)';
+      h+='<tr style="background:'+rowBg+'">';
+      h+='<td style="padding:10px 12px;border-bottom:1px solid var(--w06)"><div style="font-weight:600;color:var(--w90)">'+esc(sellerName)+'</div></td>';
+      h+='<td style="padding:10px 12px;border-bottom:1px solid var(--w06);color:var(--w60)">'+esc(d.title).substring(0,30)+'</td>';
+      h+='<td style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--w06);font-weight:700;color:var(--pri)">'+esc(String(unitPrice))+'</td>';
+      h+='<td style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--w06);color:var(--w60)">'+esc(String(moq))+'</td>';
+      h+='<td style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--w06);color:var(--w60)">'+esc(String(leadTime))+'</td>';
+      h+='<td style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--w06)"><span style="color:var(--pri)">'+d.documents.length+'</span></td>';
+      h+='<td style="padding:10px 12px;text-align:center;border-bottom:1px solid var(--w06)"><span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+stgColor+'15;color:'+stgColor+'">'+stg.icon+' '+stg.label+'</span></td>';
+      h+='<td style="padding:10px 8px;text-align:center;border-bottom:1px solid var(--w06)"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();B.openDeal(\''+d.id+'\')" style="font-size:11px;padding:4px 10px">'+_t('View','보기')+'</button></td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div></div>';
+  }
   // Filter tabs
   var filters=['all','inquiry','matched','quotation','sample','negotiation','order','production','shipping','completed'];
   h+='<div class="order-pipeline">';
@@ -4582,7 +4736,7 @@ function openDeal(dealId){
   render();
   // Load chat if matched
   if(deal.sellerId&&deal.buyerLinkId){
-    sb.from('messages').select('*').eq('buyer_id',deal.buyerLinkId).eq('user_id',deal.sellerId).order('created_at',{ascending:true}).limit(100).then(function(r){
+    sb.from('messages').select('*').eq('buyer_id',deal.buyerLinkId).eq('user_id',deal.sellerId).order('created_at',{ascending:true}).limit(200).then(function(r){
       S.dealMessages=r.data||[];S._dealLoading=false;render();
       setTimeout(function(){var el=document.getElementById('dealChatMsgs');if(el)el.scrollTop=el.scrollHeight;},100);
       // Mark unread
@@ -4615,6 +4769,16 @@ function initDealChatRealtime(buyerLinkId,sellerId){
       if(m.sender_type!=='buyer'){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).then(function(){});}
     }
   }).subscribe(function(status,err){if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){console.error('Realtime subscription error:',status,err);}});
+  /* Escrow status Realtime sync */
+  if(S._escrowCh)sb.removeChannel(S._escrowCh);
+  S._escrowCh=sb.channel('esc-sync-'+buyerLinkId).on('postgres_changes',{event:'UPDATE',schema:'public',table:'orders',filter:'buyer_id=eq.'+buyerLinkId},function(payload){
+    var o=payload.new;if(!o||!o.escrow_status)return;
+    if(S._escrowCache)S._escrowCache[o.id]={status:o.escrow_status,amount:o.escrow_amount,currency:o.escrow_currency,updatedAt:o.updated_at};
+    var _escLabels={requested:_t('Escrow Requested','에스크로 요청됨'),buyer_paid:_t('Payment Sent','결제 완료'),secured:_t('Payment Secured','결제 확인됨'),shipping:_t('Shipment Confirmed','출하 확인'),delivered:_t('Delivery Confirmed','수취 확인'),release_requested:_t('Settlement Requested','정산 요청'),released:_t('Payment Released','정산 완료'),disputed:_t('Dispute Raised','분쟁 제기됨'),cancelled:_t('Cancelled','취소됨')};
+    var lbl=_escLabels[o.escrow_status]||o.escrow_status;
+    var sysMsg={id:'esc-'+o.id+'-'+Date.now(),body:'💰 '+lbl+(o.escrow_amount?' ('+(o.escrow_currency||'USD')+' '+(o.escrow_amount||'')+')':''),sender_type:'system',message_type:'system',created_at:new Date().toISOString(),metadata:{type:'escrow_update',escrow_status:o.escrow_status}};
+    if(!S.dealMessages.find(function(x){return x.metadata&&x.metadata.type==='escrow_update'&&x.metadata.escrow_status===o.escrow_status;})){S.dealMessages.push(sysMsg);render();}
+  }).subscribe();
 }
 
 function sendQuickMsg(deal,text){
@@ -4648,6 +4812,31 @@ function sendDealMessage(){
     if(!S.dealMessages.find(function(m){return m.id===r.data.id;}))S.dealMessages.push(r.data);
     render();
   });
+}
+
+function dealChatAttachFile(input){
+  if(!input.files||!input.files[0]||!S.currentDeal)return;
+  var deal=S.currentDeal;if(!deal.sellerId||!deal.buyerLinkId)return;
+  var file=input.files[0];
+  if(file.size>10*1024*1024){toast(_t('Max file size is 10MB','최대 파일 크기는 10MB입니다'),'warn');return;}
+  var ext=file.name.split('.').pop().toLowerCase();
+  var path='chat/'+S.user.id+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  toast(_t('Uploading...','업로드 중...'),'info');
+  sb.storage.from('documents').upload(path,file).then(function(r){
+    if(r.error){toast('Upload failed: '+r.error.message,'err');return;}
+    var url=sb.storage.from('documents').getPublicUrl(path).data.publicUrl;
+    var isImg=/^(jpg|jpeg|png|gif|webp)$/i.test(ext);
+    var body=isImg?'[Image] '+file.name:'[File] '+file.name;
+    var msg={user_id:deal.sellerId,buyer_id:deal.buyerLinkId,body:body,sender_type:'buyer',message_type:'file',metadata:{file_url:url,file_name:file.name,file_type:ext,is_image:isImg},channel:'platform',direction:'inbound'};
+    S.dealMessages.push(Object.assign({id:'tmp_'+Date.now(),created_at:new Date().toISOString()},msg));
+    render();
+    sb.from('messages').insert(msg).select().single().then(function(r){
+      if(r.error){toast(_t('Send failed','전송 실패'),'err');return;}
+      S.dealMessages=S.dealMessages.filter(function(m){return!String(m.id).startsWith('tmp_');});
+      S.dealMessages.push(r.data);toast(_t('File sent','파일 전송 완료'),'ok');render();
+    });
+  });
+  input.value='';
 }
 
 function pgDealRoom(){
@@ -4735,8 +4924,9 @@ function pgDealRoom(){
     // Chat input area with STAGE-SPECIFIC ACTION CHIPS
     h+='<div class="chat-input-area">';
     h+=renderDealActionChips(deal,stageIdx);
-    h+='<div class="chat-input-row">';
-    h+='<input class="form-input" id="dealChatInput" placeholder="'+_t('Type a message...','메시지를 입력하세요...')+'" style="border-radius:12px;font-size:13px;padding:10px 14px" onkeydown="if(event.key===\'Enter\')B.sendDealMessage()">';
+    h+='<div class="chat-input-row" style="display:flex;gap:6px;align-items:center">';
+    h+='<label style="cursor:pointer;padding:8px;border-radius:8px;background:var(--w08);display:flex;align-items:center;flex-shrink:0" title="'+_t('Attach file','파일 첨부')+'"><span style="font-size:14px">&#x1F4CE;</span><input type="file" onchange="B.dealChatAttachFile(this)" style="display:none" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"></label>';
+    h+='<input class="form-input" id="dealChatInput" placeholder="'+_t('Type a message...','메시지를 입력하세요...')+'" style="flex:1;border-radius:12px;font-size:13px;padding:10px 14px" onkeydown="if(event.key===\'Enter\')B.sendDealMessage()">';
     h+='<button class="btn btn-pri" onclick="B.sendDealMessage()" style="border-radius:12px;padding:10px 18px">'+_t('Send','보내기')+'</button>';
     h+='</div></div>';
 
@@ -6383,7 +6573,7 @@ function _renderBubbleContent(m,isMine){
 function openChat(buyerLinkId,sellerId){
   S.currentChat={buyerLinkId:buyerLinkId,sellerId:sellerId};
   S.chatMessages=[];render();
-  sb.from('messages').select('*').eq('buyer_id',buyerLinkId).eq('user_id',sellerId).order('created_at',{ascending:true}).limit(100).then(function(r){
+  sb.from('messages').select('*').eq('buyer_id',buyerLinkId).eq('user_id',sellerId).order('created_at',{ascending:true}).limit(200).then(function(r){
     S.chatMessages=r.data||[];render();
     setTimeout(scrollChatBottom,100);
     // Mark unread as read
@@ -8039,7 +8229,28 @@ function pgMakerProfile(){
   h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">';
   h+='<h2 style="font-size:22px;font-weight:800;margin:0">'+esc(cName||_t('Manufacturer','제조사'))+'</h2>';
   if(cVerified)h+='<span class="badge badge-ok" style="font-size:10px">&#x2705; '+_t('Verified','인증됨')+'</span>';
+  /* ★ Trade Performance Badges */
+  var _mProds=S._makerProducts||[];
+  var _mResponseRate=co?(co.response_rate||0):0;
+  if(_mProds.length>=10)h+='<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(139,92,246,.1);color:#8b5cf6;font-weight:600">&#x1F4E6; '+_t('10+ Products','10+ 제품')+'</span>';
+  else if(_mProds.length>=5)h+='<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(59,130,246,.1);color:#3b82f6;font-weight:600">&#x1F4E6; '+_t('5+ Products','5+ 제품')+'</span>';
+  if(cEstablished&&(new Date().getFullYear()-parseInt(cEstablished))>=10)h+='<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(245,158,11,.1);color:#f59e0b;font-weight:600">&#x1F3C6; '+_t('10yr+ Veteran','10년+')+'</span>';
+  if(_mResponseRate>=90)h+='<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(0,230,118,.1);color:var(--ok);font-weight:600">&#x26A1; '+_t('Fast Response','빠른 응답')+'</span>';
   h+='</div>';
+  /* ★ Certification Badges */
+  if(cCerts&&cCerts.length){
+    var _certList=Array.isArray(cCerts)?cCerts:(typeof cCerts==='string'?cCerts.split(','):[]);
+    if(_certList.length){
+      var _certIcons={fda:'🇺🇸',ce:'🇪🇺',iso:'🏭',gmp:'💊',halal:'☪️',kosher:'✡️',haccp:'🍽️',organic:'🌿',usda:'🇺🇸'};
+      h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">';
+      _certList.forEach(function(cert){
+        var cl=cert.trim().toLowerCase();
+        var ic=_certIcons[cl]||'📜';
+        h+='<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:3px 8px;border-radius:10px;background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.15);color:var(--ok);font-weight:600" title="'+esc(cert.trim())+'">'+ic+' '+esc(cert.trim().toUpperCase())+'</span>';
+      });
+      h+='</div>';
+    }
+  }
 
   // Location + Category + Type
   h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--w40)">';
@@ -8066,6 +8277,29 @@ function pgMakerProfile(){
   h+='</div>';
 
   h+='</div></div>';
+
+  /* ★ Trust Score Card — 거래 데이터 기반 신용 평가 */
+  var _trustScore=0;var _trustFactors=[];
+  if(cVerified){_trustScore+=25;_trustFactors.push({l:_t('Verified','인증됨'),s:25,c:'var(--ok)'});}
+  if(cCerts&&(Array.isArray(cCerts)?cCerts.length:(typeof cCerts==='string'&&cCerts.length))){_trustScore+=20;_trustFactors.push({l:_t('Certifications','인증서 보유'),s:20,c:'var(--ok)'});}
+  if(cEstablished&&(new Date().getFullYear()-parseInt(cEstablished))>=3){_trustScore+=15;_trustFactors.push({l:_t('3+ Years','3년 이상 운영'),s:15,c:'var(--pri)'});}
+  if(S._makerProducts.length>=3){_trustScore+=15;_trustFactors.push({l:_t('3+ Products','3개+ 제품'),s:15,c:'var(--pri)'});}
+  if(cDesc&&cDesc.length>50){_trustScore+=10;_trustFactors.push({l:_t('Profile Complete','프로필 완성'),s:10,c:'#3b82f6'});}
+  if(cLogo){_trustScore+=5;_trustFactors.push({l:_t('Has Logo','로고'),s:5,c:'#3b82f6'});}
+  if(cImages&&cImages.length){_trustScore+=10;_trustFactors.push({l:_t('Factory Photos','공장 사진'),s:10,c:'var(--purple)'});}
+  _trustScore=Math.min(100,_trustScore);
+  var _tsColor=_trustScore>=80?'var(--ok)':_trustScore>=50?'var(--pri)':'var(--acc)';
+  var _tsLabel=_trustScore>=80?_t('Excellent','우수'):_trustScore>=60?_t('Good','양호'):_trustScore>=40?_t('Fair','보통'):_t('New','신규');
+  h+='<div class="card"><div class="card-h" style="display:flex;align-items:center;gap:8px"><span>&#x1F6E1;</span><span style="font-weight:700">'+_t('Trust Score','신뢰도 점수')+'</span><span style="margin-left:auto;font-size:18px;font-weight:900;color:'+_tsColor+'">'+_trustScore+'</span><span style="font-size:11px;color:'+_tsColor+';font-weight:600">/100 ('+_tsLabel+')</span></div><div class="card-b" style="padding:12px">';
+  h+='<div style="height:8px;border-radius:4px;background:var(--w08);overflow:hidden;margin-bottom:12px"><div style="height:100%;width:'+_trustScore+'%;border-radius:4px;background:'+_tsColor+';transition:width .5s"></div></div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px">';
+  _trustFactors.forEach(function(tf){
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:var(--w04)"><span style="color:var(--ok);font-size:12px">&#x2713;</span><span style="font-size:11px;color:var(--w60)">'+tf.l+'</span><span style="margin-left:auto;font-size:10px;font-weight:700;color:'+tf.c+'">+'+tf.s+'</span></div>';
+  });
+  /* 미충족 항목 */
+  if(!cVerified)h+='<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:var(--w04);opacity:.5"><span style="color:var(--w30);font-size:12px">&#x25CB;</span><span style="font-size:11px;color:var(--w30)">'+_t('Not Verified','미인증')+'</span></div>';
+  if(!cCerts||!(Array.isArray(cCerts)?cCerts.length:cCerts))h+='<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;background:var(--w04);opacity:.5"><span style="color:var(--w30);font-size:12px">&#x25CB;</span><span style="font-size:11px;color:var(--w30)">'+_t('No Certs','인증서 없음')+'</span></div>';
+  h+='</div></div></div>';
 
   // === ABOUT SECTION ===
   var hasAboutInfo=cDesc||cEstablished||cEmployees||cCapacity||cCompetencies||cExportExp;
@@ -8188,8 +8422,8 @@ sb.auth.onAuthStateChange(function(event,session){
   else if(event==='SIGNED_OUT'){S.user=null;S.loading=false;render();}
   else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
 });
-window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
-window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&_BPL[hp]&&S.user){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
+window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');var _guestPages={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
+window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');var _guestPages2={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages2[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifOpen){S.notifOpen=false;render();return;}var modal=document.querySelector('.modal-overlay');if(modal){B.closeModal();return;}if(S.modal){B.closeModal();return;}}});
 /* Korean language banner for KR users */
 (function(){
@@ -8809,13 +9043,13 @@ window.B={
   doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,showDeleteAccountModal:showDeleteAccountModal,confirmDeleteAccount:confirmDeleteAccount,socialLogin:socialLogin,submitPartnership:submitPartnership,
   doSearch:doSearch,quickSearch:quickSearch,setSource:setSource,setFilter:setFilter,clearFilters:clearFilters,toggleFilters:toggleFilters,loadMoreResults:loadMoreResults,openProductDetail:openProductDetail,openProductById:openProductById,
   openInquiry:openInquiry,openCustomSourcing:openCustomSourcing,submitInquiry:submitInquiry,closeModal:closeModal,_updateCostEstimate:_updateCostEstimate,_checkMoqBudget:_checkMoqBudget,
-  saveProduct:saveProduct,unsaveProduct:unsaveProduct,inquireAllSaved:inquireAllSaved,
+  saveProduct:saveProduct,unsaveProduct:unsaveProduct,inquireAllSaved:inquireAllSaved,toggleCompareView:toggleCompareView,
   showInquiryDetail:showInquiryDetail,
   saveProfile:saveProfile,saveAvatarUrl:saveAvatarUrl,uploadAvatar:uploadAvatar,changePassword:changePassword,
   submitVerification:submitVerification,handleVerifyFile:handleVerifyFile,handleVerifyDrop:handleVerifyDrop,
   openBuyerCheckout:openBuyerCheckout,initBuyerStripe:initBuyerStripe,closeStripeModal:closeStripeModal,openBillingPortal:openBillingPortal,
   // Deals
-  openDeal:openDeal,closeDeal:closeDeal,sendDealMessage:sendDealMessage,sendQuickMsg:sendQuickMsg,
+  openDeal:openDeal,closeDeal:closeDeal,sendDealMessage:sendDealMessage,dealChatAttachFile:dealChatAttachFile,sendQuickMsg:sendQuickMsg,
   // Chat
   openChat:openChat,closeChat:closeChat,sendChat:sendChat,chatAttachFile:chatAttachFile,
   setChatConvFilter:setChatConvFilter,toggleChatAutoTranslate:toggleChatAutoTranslate,
@@ -8841,7 +9075,7 @@ window.B={
   // Electronic Signature
   openSignDocModal:openSignDocModal,clearSigCanvas:clearSigCanvas,submitDocSignature:submitDocSignature,
   // Notifications
-  toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,requestWebPush:_requestWebPush,disableWebPush:_disableWebPush,
+  toggleNotif:toggleNotif,clickNotif:clickNotif,markAllNotifRead:markAllNotifRead,requestWebPush:_requestWebPush,disableWebPush:_disableWebPush,toggleNotifPref:toggleNotifPref,
   // Translation
   translateMsg:translateMsg,
   // Marketplace
