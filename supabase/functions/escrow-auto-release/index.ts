@@ -84,7 +84,7 @@ serve(async (req) => {
 
     const { data: unacceptedOrders, error: cancelFetchErr } = await supabase
       .from("orders")
-      .select("id, payment_intent_id, amount, currency, buyer_id, seller_id, escrow_status, created_at")
+      .select("id, payment_intent_id, amount, currency, buyer_id, user_id, escrow_status, created_at")
       .eq("escrow_status", "buyer_paid")
       .lt("created_at", cancelCutoff.toISOString());
 
@@ -125,9 +125,9 @@ serve(async (req) => {
         }
 
         // Notify seller
-        if (order.seller_id) {
+        if (order.user_id) {
           await supabase.from("notifications").insert({
-            user_id: order.seller_id,
+            user_id: order.user_id,
             type: "payment",
             title: "Order Auto-Cancelled (Unaccepted)",
             body: "An order was automatically cancelled because it was not accepted within 3 business days.",
@@ -157,7 +157,7 @@ serve(async (req) => {
 
     const { data: shippedOrders, error: shippedFetchErr } = await supabase
       .from("orders")
-      .select("id, payment_intent_id, amount, currency, buyer_id, seller_id, escrow_status, shipped_at")
+      .select("id, payment_intent_id, amount, currency, buyer_id, user_id, escrow_status, shipped_at")
       .in("escrow_status", ["shipping", "delivered"])
       .not("shipped_at", "is", null)
       .lt("shipped_at", confirmCutoff.toISOString());
@@ -201,10 +201,10 @@ serve(async (req) => {
         }
 
         // Notify seller
-        if (order.seller_id) {
+        if (order.user_id) {
           const netAmount = order.amount ? (order.amount * (1 - PLATFORM_FEE_RATE)).toFixed(2) : "0";
           await supabase.from("notifications").insert({
-            user_id: order.seller_id,
+            user_id: order.user_id,
             type: "payment",
             title: "Payment Released (Auto-Confirmed)",
             body: `Delivery was auto-confirmed after 14 days. ${order.currency || "USD"} ${netAmount} has been released (2.5% platform fee deducted).`,
@@ -234,7 +234,7 @@ serve(async (req) => {
 
     const { data: expiringOrders, error: expiryFetchErr } = await supabase
       .from("orders")
-      .select("id, payment_intent_id, amount, currency, buyer_id, seller_id, escrow_status, created_at")
+      .select("id, payment_intent_id, amount, currency, buyer_id, user_id, escrow_status, created_at")
       .in("escrow_status", ["buyer_paid", "secured"])
       .not("payment_intent_id", "is", null)
       .lt("created_at", authExpiryCutoff.toISOString());
