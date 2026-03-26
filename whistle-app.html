@@ -1134,14 +1134,14 @@ function _stripeOneAnalysis(){
   document.body.appendChild(_payOverlay);
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();UI.toast(T('toast_login_required'),'warn');return;}
-    fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
+    _stripeFetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'?checkout=success#analysis',cancel_url:location.origin+location.pathname+'?checkout=cancel#analysis'})
     }).then(function(r){return r.json();}).then(function(data){
       if(data.url){window.location.href=data.url;}
       else if(data.error){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();var _dm=data.debug_msg?' ['+data.debug_msg+']':'';UI.toast(_payErr(data.error)+_dm,'err');}
-    }).catch(function(e){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();console.error('[one-analysis]',e);UI.toast(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.','err');});
+    }).catch(function(e){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();UI.toast(e.message||(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.'),'err');});
   });
 }
 
@@ -1976,6 +1976,19 @@ function _fetchWithTimeout(url,opts,timeoutMs){
   var timer=setTimeout(function(){ctrl.abort();},ms);
   var fetchOpts=Object.assign({},opts||{},{signal:ctrl.signal});
   return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);return r;}).catch(function(e){clearTimeout(timer);throw e;});
+}
+/* Stripe-specific fetch with 30s timeout + error logging */
+function _stripeFetch(url,opts){
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},30000);
+  var fetchOpts=Object.assign({},opts||{},{signal:ctrl.signal});
+  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);return r;}).catch(function(e){
+    clearTimeout(timer);
+    var isTimeout=e.name==='AbortError';
+    var msg=isTimeout?'Stripe API timeout (30s)':e.message||String(e);
+    window._errLog('stripe_timeout',msg,e.stack||'');
+    throw new Error(isTimeout?(_isKorean?'결제 처리 중 시간이 초과되었습니다. 다시 시도해주세요.':'Payment processing timed out. Please try again.'):msg);
+  });
 }
 /* 2차: Frankfurter API (완전 무료, 인증 불필요) */
 function _loadExRateFallback(){
@@ -7519,15 +7532,39 @@ function deletePjDoc(docId){
     loadDocs().then(function(){render();});
   });
 }
-/* 주문 취소 */
+/* 주문 취소 — includes Stripe refund for escrow orders */
 function cancelOrder(orderId){
   if(!confirm(_isKorean?'이 주문을 취소하시겠습니까?':'Cancel this order?'))return;
-  sb.from('orders').update({status:'cancelled'}).eq('id',orderId).eq('user_id',S.user.id).then(function(r){
-    if(r.error){UI.toast(_isKorean?'취소 실패':'Cancellation failed','err');return;}
-    UI.toast(_isKorean?'주문이 취소되었습니다':'Order cancelled','ok');
-    loadOrders().then(function(){render();});
+  var order=(S.orders||[]).find(function(o){return o.id===orderId;});
+  GP.start();
+  sb.from('orders').update({status:'cancelled',escrow_status:'cancelled',cancelled_at:new Date().toISOString(),cancel_reason:'seller_cancelled',updated_at:new Date().toISOString()}).eq('id',orderId).eq('user_id',S.user.id).then(function(r){
+    if(r.error){GP.done();UI.toast(_isKorean?'취소 실패':'Cancellation failed','err');return;}
+    /* Stripe refund for escrow orders with payment_intent */
+    if(order&&order.payment_intent_id&&(order.escrow_status==='buyer_paid'||order.escrow_status==='secured'||order.escrow_status==='platform_hold')){
+      sb.auth.getSession().then(function(sr){
+        if(!sr.data||!sr.data.session){GP.done();UI.toast(_isKorean?'주문 취소됨 (환불은 관리자에게 문의하세요)':'Order cancelled (contact support for refund)','warn');loadOrders().then(function(){render();});return;}
+        var ctrl=new AbortController();var timer=setTimeout(function(){ctrl.abort();},30000);
+        fetch(STRIPE_CONFIG.fn+'/process-refund',{
+          method:'POST',signal:ctrl.signal,
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+sr.data.session.access_token,'apikey':SB_ANON_KEY},
+          body:JSON.stringify({refund_type:'escrow_dispute',payment_intent_id:order.payment_intent_id,deal_id:order.deal_id||order.matching_id||'',reason:'seller_cancelled_order'})
+        }).then(function(r){clearTimeout(timer);return r.json();}).then(function(data){
+          GP.done();
+          if(data.ok||data.refund_id){UI.toast(_isKorean?'주문이 취소되고 바이어에게 환불되었습니다':'Order cancelled and buyer refunded','ok',5000);}
+          else{UI.toast(_isKorean?'주문 취소됨 (환불 처리 중 오류 — 관리자 확인 필요)':'Order cancelled (refund error — admin review needed)','warn',5000);}
+          loadOrders().then(function(){render();});
+        }).catch(function(e){clearTimeout(timer);GP.done();
+          window._errLog('cancel_refund_fail',e.message||String(e));
+          UI.toast(_isKorean?'주문 취소됨 (환불은 수동 처리 필요)':'Order cancelled (refund needs manual processing)','warn',5000);
+          loadOrders().then(function(){render();});
+        });
+      });
+    } else {
+      GP.done();
+      UI.toast(_isKorean?'주문이 취소되었습니다':'Order cancelled','ok');
+      loadOrders().then(function(){render();});
+    }
     /* 채팅에 시스템 메시지 */
-    var order=(S.orders||[]).find(function(o){return o.id===orderId;});
     if(order&&order.buyer_id){
       sb.from('messages').insert({buyer_id:order.buyer_id,user_id:S.user.id,sender_type:'seller',body:'[주문 취소] '+order.order_number,message_type:'system',channel:'platform',direction:'outbound'}).catch(function(e){console.error('[whistle]',e);});
     }
@@ -11525,7 +11562,7 @@ function initStripeCheckout(planId){
 
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){_rmOv();UI.toast(_isKorean?'로그인이 필요합니다.':'Please log in first.','warn');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
-    fetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
+    _stripeFetch(STRIPE_CONFIG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({price_id:priceId,plan:planId,billing_cycle:cycle,success_url:location.origin+location.pathname+'?checkout=success#subscription',cancel_url:location.origin+location.pathname+'?checkout=cancel#subscription'})
@@ -11533,7 +11570,7 @@ function initStripeCheckout(planId){
       if(data.error){_rmOv();UI.toast(_payErr(data.error),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
       if(data.url){_savePendingAnalysis();window.location.href=data.url;}
       else{_rmOv();UI.toast(_isKorean?'결제 세션 생성 실패. 잠시 후 다시 시도해주세요.':'Payment session creation failed. Please try again.','err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}}
-    }).catch(function(err){_rmOv();UI.toast(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.','err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
+    }).catch(function(err){_rmOv();UI.toast(err.message||(_isKorean?'결제 연결 오류. 네트워크를 확인해주세요.':'Payment connection error. Please check your network.'),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
   });
 }
 
@@ -11541,7 +11578,7 @@ function initStripeCheckout(planId){
 function _upgradeSubscription(planId,newPriceId,cycle,btn,btnReset){
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){UI.toast(_isKorean?'로그인이 필요합니다.':'Please log in first.','warn');if(btn){btn.disabled=false;btn.textContent=btnReset;}return;}
-    fetch(STRIPE_CONFIG.fn+'/manage-subscription',{
+    _stripeFetch(STRIPE_CONFIG.fn+'/manage-subscription',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({action:'upgrade',new_price_id:newPriceId,plan:planId,billing_cycle:cycle})

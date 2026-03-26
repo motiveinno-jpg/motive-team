@@ -146,7 +146,7 @@ serve(async (req) => {
           .gte("created_at", startOfMonth.toISOString());
 
         const limits: Record<string, number> = {
-          free: 1, starter: 10, pro: 50, enterprise: 999,
+          free: 1, starter: 20, pro: 50, enterprise: 999,
         };
         const plan = profile?.plan || "free";
         const limit = limits[plan] || 1;

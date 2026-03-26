@@ -15,10 +15,15 @@ const EMAIL_TYPE_MAP: Record<string, string> = {
   message: 'new_message',
   escrow: 'escrow_update',
   subscription: 'subscription_change',
+  shipment: 'shipment_update',
+  quote: 'quote_received',
+  order: 'order_update',
+  document: 'document_ready',
+  sample: 'sample_update',
 }
 
 // Types that should ALWAYS send email (high priority)
-const ALWAYS_EMAIL_TYPES = new Set(['payment', 'escrow', 'matching', 'deal'])
+const ALWAYS_EMAIL_TYPES = new Set(['payment', 'escrow', 'matching', 'deal', 'shipment', 'order', 'quote'])
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {

@@ -216,6 +216,92 @@ function getTemplate(
         ),
       };
 
+    case "shipment_update":
+      return {
+        subject: isKo
+          ? `배송 업데이트 — ${data.title || ""}`
+          : `Shipment Update — ${data.title || ""}`,
+        html: baseLayout(
+          isKo ? "배송 상태가 업데이트되었습니다 🚢" : "Shipment Update 🚢",
+          `<p style="color:#4b5563;line-height:1.6">${data.message || ""}</p>
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px;margin:16px 0">
+            ${data.tracking_no ? `<p style="margin:4px 0;color:#4b5563"><strong>${isKo ? "운송장" : "Tracking No"}:</strong> ${data.tracking_no}</p>` : ""}
+            ${data.carrier ? `<p style="margin:4px 0;color:#4b5563"><strong>${isKo ? "운송사" : "Carrier"}:</strong> ${data.carrier}</p>` : ""}
+            ${data.eta ? `<p style="margin:4px 0;color:#4b5563"><strong>ETA:</strong> ${data.eta}</p>` : ""}
+          </div>
+          ${ctaButton(isKo ? "배송 추적하기" : "Track Shipment", appUrl + "#deals")}`
+        ),
+      };
+
+    case "quote_received":
+      return {
+        subject: isKo
+          ? `견적서 수신 — ${data.title || ""}`
+          : `Quote Received — ${data.title || ""}`,
+        html: baseLayout(
+          isKo ? "새 견적서가 도착했습니다 📋" : "New Quote Received 📋",
+          `<p style="color:#4b5563;line-height:1.6">${data.message || ""}</p>
+          <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px;margin:16px 0">
+            ${data.amount ? `<p style="margin:4px 0;color:#92400e"><strong>${isKo ? "견적 금액" : "Quote Amount"}:</strong> ${data.amount}</p>` : ""}
+          </div>
+          <p style="color:#4b5563;font-size:13px">${
+            isKo
+              ? "견적서를 검토하고 승인 또는 수정 요청을 해주세요."
+              : "Please review the quote and approve or request changes."
+          }</p>
+          ${ctaButton(isKo ? "견적서 확인하기" : "Review Quote", appUrl + "#deals")}`
+        ),
+      };
+
+    case "order_update":
+      return {
+        subject: isKo
+          ? `주문 상태 변경 — ${data.title || ""}`
+          : `Order Status Update — ${data.title || ""}`,
+        html: baseLayout(
+          isKo ? "주문 상태가 변경되었습니다 📦" : "Order Status Updated 📦",
+          `<p style="color:#4b5563;line-height:1.6">${data.message || ""}</p>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin:16px 0">
+            ${data.order_status ? `<p style="margin:4px 0;color:#4b5563"><strong>${isKo ? "상태" : "Status"}:</strong> ${data.order_status}</p>` : ""}
+            ${data.order_id ? `<p style="margin:4px 0;color:#4b5563"><strong>${isKo ? "주문번호" : "Order No"}:</strong> ${data.order_id}</p>` : ""}
+          </div>
+          ${ctaButton(isKo ? "주문 확인하기" : "View Order", appUrl + "#deals")}`
+        ),
+      };
+
+    case "document_ready":
+      return {
+        subject: isKo
+          ? `서류 준비 완료 — ${data.title || ""}`
+          : `Document Ready — ${data.title || ""}`,
+        html: baseLayout(
+          isKo ? "서류가 준비되었습니다 📄" : "Document Ready 📄",
+          `<p style="color:#4b5563;line-height:1.6">${data.message || ""}</p>
+          <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:16px;margin:16px 0">
+            ${data.doc_type ? `<p style="margin:4px 0;color:#4b5563"><strong>${isKo ? "서류 유형" : "Document Type"}:</strong> ${data.doc_type}</p>` : ""}
+            ${data.doc_number ? `<p style="margin:4px 0;color:#4b5563"><strong>${isKo ? "문서 번호" : "Doc No"}:</strong> ${data.doc_number}</p>` : ""}
+          </div>
+          <p style="color:#4b5563;font-size:13px">${
+            isKo
+              ? "서류를 검토하고 서명해 주세요."
+              : "Please review and sign the document."
+          }</p>
+          ${ctaButton(isKo ? "서류 확인하기" : "View Document", appUrl + "#deals")}`
+        ),
+      };
+
+    case "sample_update":
+      return {
+        subject: isKo
+          ? `샘플 업데이트 — ${data.title || ""}`
+          : `Sample Update — ${data.title || ""}`,
+        html: baseLayout(
+          isKo ? "샘플 상태가 업데이트되었습니다 📦" : "Sample Update 📦",
+          `<p style="color:#4b5563;line-height:1.6">${data.message || ""}</p>
+          ${ctaButton(isKo ? "샘플 상태 확인" : "View Sample Status", appUrl + "#deals")}`
+        ),
+      };
+
     default:
       return {
         subject: data.subject || "Whistle AI Notification",

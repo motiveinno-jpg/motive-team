@@ -15,15 +15,36 @@ const AI_CALL_TIMEOUT_MS = 50000; // 50s per AI call
 const AI_CALL_RETRY_DELAY_MS = 2000; // 2s delay before retry
 const WALL_CLOCK_LIMIT_MS = 135000; // 135s — hard cutoff with 15s buffer before Supabase 150s
 
-const BROWSER_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept":
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-  "Accept-Encoding": "gzip, deflate",
-  "Cache-Control": "no-cache",
-};
+function makeBrowserHeaders(url?: string): Record<string, string> {
+  // Detect likely language from URL domain to get native-language content
+  let acceptLang = "en-US,en;q=0.9,ko-KR;q=0.8,ko;q=0.7";
+  if (url) {
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      if (hostname.endsWith(".kr") || hostname.includes("naver") || hostname.includes("coupang"))
+        acceptLang = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".jp") || hostname.includes("rakuten") || hostname.includes("yahoo.co.jp"))
+        acceptLang = "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".cn") || hostname.includes("taobao") || hostname.includes("tmall") || hostname.includes("jd.com"))
+        acceptLang = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".de")) acceptLang = "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".fr")) acceptLang = "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".es")) acceptLang = "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".it")) acceptLang = "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".vn")) acceptLang = "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7";
+      else if (hostname.endsWith(".th")) acceptLang = "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7";
+    } catch {}
+  }
+  return {
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept":
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": acceptLang,
+    "Accept-Encoding": "gzip, deflate",
+    "Cache-Control": "no-cache",
+  };
+}
 
 interface CrawlResult {
   url: string;
@@ -56,7 +77,7 @@ async function crawlUrl(url: string): Promise<CrawlResult> {
     const timer = setTimeout(() => controller.abort(), CRAWL_TIMEOUT_MS);
 
     const resp = await fetch(url, {
-      headers: BROWSER_HEADERS,
+      headers: makeBrowserHeaders(url),
       signal: controller.signal,
       redirect: "follow",
     });
@@ -368,10 +389,62 @@ serve(async (req: Request) => {
       weight_kg = "",
       package_dimensions = "",
       units_per_carton = "",
+      origin_country = "",
       language = "ko",
       image_base64 = "",
       image_type = "image/jpeg",
     } = body;
+
+    // Resolve origin country: explicit > auto-detect from URL > default KR
+    let resolvedOrigin = origin_country || "";
+    if (!resolvedOrigin && urls.length > 0) {
+      const firstUrl = urls.find((u: string) => u && u.trim());
+      if (firstUrl) {
+        try {
+          const hostname = new URL(firstUrl).hostname.toLowerCase();
+          if (hostname.endsWith(".jp") || hostname.includes("rakuten") || hostname.includes("yahoo.co.jp")) resolvedOrigin = "JP";
+          else if (hostname.endsWith(".cn") || hostname.includes("taobao") || hostname.includes("tmall") || hostname.includes("1688.com")) resolvedOrigin = "CN";
+          else if (hostname.endsWith(".de")) resolvedOrigin = "DE";
+          else if (hostname.endsWith(".fr")) resolvedOrigin = "FR";
+          else if (hostname.endsWith(".uk") || hostname.endsWith(".co.uk")) resolvedOrigin = "GB";
+          else if (hostname.includes("amazon.com") || hostname.endsWith(".us")) resolvedOrigin = "US";
+          else if (hostname.includes("amazon.co.jp")) resolvedOrigin = "JP";
+          else if (hostname.includes("amazon.de")) resolvedOrigin = "DE";
+          else if (hostname.includes("amazon.co.uk")) resolvedOrigin = "GB";
+          else if (hostname.includes("alibaba.com") || hostname.includes("aliexpress")) resolvedOrigin = "CN";
+          else if (hostname.endsWith(".vn")) resolvedOrigin = "VN";
+          else if (hostname.endsWith(".th")) resolvedOrigin = "TH";
+          else if (hostname.endsWith(".in") || hostname.includes("flipkart")) resolvedOrigin = "IN";
+          else if (hostname.endsWith(".kr") || hostname.includes("naver") || hostname.includes("coupang")) resolvedOrigin = "KR";
+        } catch {}
+      }
+    }
+    if (!resolvedOrigin) resolvedOrigin = "KR"; // default for Korean platform users
+
+    const ORIGIN_NAMES: Record<string, { ko: string; en: string }> = {
+      KR: { ko: "한국", en: "South Korea" },
+      US: { ko: "미국", en: "United States" },
+      JP: { ko: "일본", en: "Japan" },
+      CN: { ko: "중국", en: "China" },
+      DE: { ko: "독일", en: "Germany" },
+      FR: { ko: "프랑스", en: "France" },
+      GB: { ko: "영국", en: "United Kingdom" },
+      VN: { ko: "베트남", en: "Vietnam" },
+      TH: { ko: "태국", en: "Thailand" },
+      IN: { ko: "인도", en: "India" },
+      TW: { ko: "대만", en: "Taiwan" },
+      IT: { ko: "이탈리아", en: "Italy" },
+      AU: { ko: "호주", en: "Australia" },
+      CA: { ko: "캐나다", en: "Canada" },
+      BR: { ko: "브라질", en: "Brazil" },
+      MX: { ko: "멕시코", en: "Mexico" },
+      ID: { ko: "인도네시아", en: "Indonesia" },
+      MY: { ko: "말레이시아", en: "Malaysia" },
+      SG: { ko: "싱가포르", en: "Singapore" },
+      PH: { ko: "필리핀", en: "Philippines" },
+    };
+    const originLabel = ORIGIN_NAMES[resolvedOrigin]?.[language === "en" ? "en" : "ko"] || resolvedOrigin;
+    const isKoreaOrigin = resolvedOrigin === "KR";
 
     // Validate image if provided
     let validatedImageBase64 = "";
@@ -477,6 +550,7 @@ serve(async (req: Request) => {
     const productContext = isEn
       ? `Product: ${product_name}
 English Name: ${product_name_en || na}
+Origin Country: ${originLabel} (${resolvedOrigin})
 Category: ${category || na}
 FOB Price: ${fob_price || na}
 MOQ: ${moq || na}
@@ -492,6 +566,7 @@ Description: ${description || na}
 Target Markets: ${marketList}`
       : `제품명: ${product_name}
 영문명: ${product_name_en || na}
+원산지: ${originLabel} (${resolvedOrigin})
 카테고리: ${category || "미지정"}
 FOB가격: ${fob_price || na}
 MOQ: ${moq || na}
@@ -680,7 +755,11 @@ ${isEn ? "Rules: Be specific. Real HS code with 6-digit precision. Conservative 
       general: "Basic: Certificate of Origin, Phytosanitary (if applicable), Free Sale Certificate. Check destination country specific import requirements.",
     };
 
-    const certRef = CERT_REFERENCE[category?.toLowerCase()] || CERT_REFERENCE["general"];
+    let certRef = CERT_REFERENCE[category?.toLowerCase()] || CERT_REFERENCE["general"];
+    // For non-Korean origins, append a note to use origin-country labs instead
+    if (!isKoreaOrigin) {
+      certRef += ` Note: The product originates from ${originLabel}. Recommend testing labs and certification agencies accessible in ${originLabel}, not Korean labs.`;
+    }
 
     // ─── Scoring rubric for consistent, evidence-based scores ───
     const scoringRubric = isEn
@@ -744,7 +823,9 @@ ${isEn ? "Analyze this product and output JSON:" : "이 제품을 분석하고 J
   "summary": "3~4${isEn ? " sentences with key figures" : "문장, 핵심 수치 포함"}",
   "executive_summary": {"situation": "", "complication": "", "resolution": ""}
 }
-${isEn ? "Rules: Specific HS code with GIR basis. Real FTA rates. Conservative scoring when info lacking." : "규칙: GIR 근거 포함한 HS코드. 실제 FTA 양허율. 정보 부족 시 보수적 채점. 존댓말 필수."}`;
+${isEn
+  ? `Rules: Specific HS code with GIR basis. Real FTA rates between ${originLabel} and target markets (not just Korea FTAs). Conservative scoring when info lacking. The product origin is ${originLabel} — analyze FTAs applicable to ${originLabel} as the exporting country.`
+  : `규칙: GIR 근거 포함한 HS코드. ${originLabel}에서 타겟시장으로의 실제 FTA 양허율 (한국 FTA만이 아닌, ${originLabel}이 체결한 FTA 기준). 정보 부족 시 보수적 채점. 존댓말 필수.`}`;
 
     // ─── CALL 2: Market & Competition & Certs ───
     const prompt2 = `${isEn ? "# Export Analysis — Market Intelligence & Certification" : "# 수출 분석 — 시장 인텔리���스 & 인증"}
@@ -763,7 +844,7 @@ ${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시
   "cert_details": [
     {
       "name": "", "market": "", "duration": "", "cost": "", "priority": "${isEn ? "Required/Recommended" : "필수/권장"}",
-      "note": "${isEn ? "(1) agency+website, (2) required docs, (3) Korean labs that can test. 2-3 sentences." : "(1) 인증기관+웹사이트, (2) 필요서류 목���, (3) 한국 내 시험기관명. 2~3문��."}"
+      "note": "${isEn ? '(1) agency+website, (2) required docs, (3) labs in ' + originLabel + ' that can test. 2-3 sentences.' : '(1) 인증기관+웹사이트, (2) 필요서류 목록, (3) ' + originLabel + ' 내 시험기관명. 2~3문장.'}"
     }
   ],
   "recommended_markets": ["US", "JP"],

@@ -3,6 +3,16 @@ import Stripe from "https://esm.sh/stripe@14.14.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const COOLING_PERIOD_DAYS = 7;
+const ZERO_DECIMAL_CURRENCIES = [
+  "jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf",
+];
+
+function formatAmount(amount: number, currency?: string): string {
+  if (ZERO_DECIMAL_CURRENCIES.includes(currency?.toLowerCase() || "")) {
+    return Math.round(amount).toLocaleString();
+  }
+  return amount.toFixed(2);
+}
 
 const ALLOWED_ORIGINS = [
   "https://whistle-ai.com",
@@ -193,7 +203,7 @@ serve(async (req) => {
           user_id: payment.user_id,
           type: "payment",
           title: "Subscription Refund Processed",
-          body: `Your subscription has been canceled and ${payment.currency} ${payment.amount.toFixed(2)} will be refunded within 5-10 business days.`,
+          body: `Your subscription has been canceled and ${payment.currency} ${formatAmount(payment.amount, payment.currency)} will be refunded within 5-10 business days.`,
           is_read: false,
         });
 
@@ -290,7 +300,7 @@ serve(async (req) => {
               user_id: deal.user_id,
               type: "payment",
               title: "Escrow Dispute — Refund Issued",
-              body: `The buyer has disputed the escrow payment. ${payment.currency} ${payment.amount.toFixed(2)} has been refunded.`,
+              body: `The buyer has disputed the escrow payment. ${payment.currency} ${formatAmount(payment.amount, payment.currency)} has been refunded.`,
               link_page: "deals",
               link_id: targetDealId,
               is_read: false,
@@ -302,7 +312,7 @@ serve(async (req) => {
             user_id: payment.user_id,
             type: "payment",
             title: "Escrow Refund Processed",
-            body: `Your dispute has been processed. ${payment.currency} ${payment.amount.toFixed(2)} will be refunded within 5-10 business days.`,
+            body: `Your dispute has been processed. ${payment.currency} ${formatAmount(payment.amount, payment.currency)} will be refunded within 5-10 business days.`,
             link_page: "deals",
             link_id: targetDealId,
             is_read: false,
@@ -331,6 +341,23 @@ serve(async (req) => {
     const corsHeaders = getCorsHeaders(req);
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("process-refund error:", errMsg);
+
+    // Log to escrow_auto_log for traceability
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (supabaseUrl && serviceKey) {
+        const sbLog = createClient(supabaseUrl, serviceKey);
+        await sbLog.from("escrow_auto_log").insert({
+          action: "process_refund_error",
+          detail: errMsg.substring(0, 500),
+          created_at: new Date().toISOString(),
+        });
+      }
+    } catch (_logErr: unknown) {
+      // Logging failure should not mask the original error
+    }
+
     return jsonResponse(
       { error: "An error occurred. Please try again." },
       500,

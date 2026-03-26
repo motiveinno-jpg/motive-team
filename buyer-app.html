@@ -2077,6 +2077,7 @@ function renderSidebar(){
   var pendingInq=S.inquiries.filter(function(i){return i.status==='pending';}).length;
   var pipelineCount=activeDeals+(pendingInq||0);
   var activeOrders=S.orders.filter(function(o){return o.status!=='completed'&&o.status!=='cancelled';}).length;
+  var orderBadge=(S._orderNotifCount||0)+activeOrders;
   var items=[
     {id:'sec',label:_t('Home','홈')},
     {id:'dashboard',icon:'&#x1F4CA;',label:_t('Dashboard','대시보드')},
@@ -2087,7 +2088,7 @@ function renderSidebar(){
     {id:'marketplace',icon:'&#x1F3EA;',label:_t('Marketplace','마켓플레이스'),count:S.myRequests.filter(function(r){return r.status==='open';}).length},
     {id:'sec',label:_t('Trade','거래')},
     {id:'pipeline',icon:'&#x1F680;',label:_t('Sourcing Pipeline','소싱 파이프라인'),count:pipelineCount||0,subs:['deals','inquiries','pipeline']},
-    {id:'ordership',icon:'&#x1F4E6;',label:_t('Orders & Shipping','주문 및 배송'),count:activeOrders||0,subs:['orders','shipments','ordership']},
+    {id:'ordership',icon:'&#x1F4E6;',label:_t('Orders & Shipping','주문 및 배송'),count:orderBadge||0,subs:['orders','shipments','ordership']},
     {id:'samples',icon:'&#x1F9EA;',label:_t('Samples','샘플'),count:S.samples.filter(function(s){return s.status==='requested'||s.status==='preparing';}).length},
     {id:'documents',icon:'&#x1F4C4;',label:_t('Documents','서류')},
     {id:'fta',icon:'&#x1F310;',label:_t('FTA Simulator','FTA 시뮬레이터')},
@@ -2277,7 +2278,7 @@ function loadUser(){
   }).catch(function(){set({loading:false,user:null});});
 }
 
-var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,'maker-profile':1,pipeline:1,ordership:1,profilehub:1};
+var _BPL={dashboard:1,search:1,sourcing:1,deals:1,inquiries:1,marketplace:1,saved:1,profile:1,messages:1,orders:1,shipments:1,documents:1,partnership:1,'product-detail':1,'maker-profile':1,pipeline:1,ordership:1,profilehub:1,samples:1,fta:1};
 function loadAllData(){
   /* Master timeout: if page hasn't rendered within 15s, force it */
   var _initRendered=false;
@@ -2975,6 +2976,59 @@ function openProductDetail(source,idx){
   var item=products[idx];if(!item)return;
   S._productDetailPage={source:item.source||source,data:item.data,idx:idx,allProducts:products};
   nav('product-detail');
+}
+
+/* Load product by ID from Supabase for standalone detail view */
+function openProductById(productId){
+  if(!productId)return;
+  S._productDetailPage={source:'whistle',data:null,_loading:true};
+  nav('product-detail');
+  sb.from('products').select('*').eq('id',productId).single().then(function(r){
+    if(r.error||!r.data){
+      S._productDetailPage=null;render();
+      toast(_t('Product not found','제품을 찾을 수 없습니다'),'warn');
+      return;
+    }
+    var product=r.data;
+    _enrichProductWithCompany(product,function(enriched){
+      S._productDetailPage={
+        source:'whistle',data:enriched,idx:0,
+        allProducts:[]
+      };
+      render();
+      _loadRelatedByCategory(enriched.category,productId);
+    });
+  });
+}
+
+function _enrichProductWithCompany(product,cb){
+  if(!product.user_id)return cb(product);
+  sb.from('companies').select('name_en,name_ko,logo_url,website,categories')
+    .eq('user_id',product.user_id).limit(1).then(function(r){
+      if(r.data&&r.data[0]){
+        var c=r.data[0];
+        product.company_name=c.name_en||c.name_ko||'';
+        product._company_logo=c.logo_url||'';
+        product._company_website=c.website||'';
+      }
+      cb(product);
+    }).catch(function(){cb(product);});
+}
+
+function _loadRelatedByCategory(category,excludeId){
+  if(!category)return;
+  sb.from('products').select('*')
+    .eq('category',category).eq('is_public',true)
+    .neq('id',excludeId).limit(6)
+    .then(function(r){
+      if(!r.data||!r.data.length)return;
+      var pd=S._productDetailPage;
+      if(!pd)return;
+      pd.allProducts=r.data.map(function(p){
+        return{source:'whistle',data:p};
+      });
+      render();
+    });
 }
 
 function pgProductDetail(){
@@ -6374,7 +6428,94 @@ function loadOrders(){
   sb.from('orders').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.orders=r.data||[];render();
     loadShipments();
+    initOrderRealtime(bids);
   });
+}
+
+/* === REAL-TIME ORDER/SHIPMENT SYNC (Fix #9) === */
+function initOrderRealtime(bids){
+  if(S._orderRealtimeCh)return;
+  if(!bids||!bids.length)return;
+  S._orderRealtimeCh=sb.channel('buyer-order-sync')
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'orders'},function(payload){
+      _handleOrderUpdate(payload.new);
+    })
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'shipments'},function(payload){
+      _handleShipmentInsert(payload.new);
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'shipments'},function(payload){
+      _handleShipmentUpdate(payload.new);
+    })
+    .subscribe();
+}
+
+function _handleOrderUpdate(updated){
+  if(!updated||!updated.id)return;
+  var bids=getBuyerIds();
+  var isMine=bids.indexOf(updated.buyer_id)!==-1;
+  if(!isMine)return;
+  var prev=S.orders.find(function(o){return o.id===updated.id;});
+  var prevStatus=prev?prev.status:'';
+  if(prev){for(var k in updated)prev[k]=updated[k];}
+  else{S.orders.unshift(updated);}
+  S._orderNotifCount=(S._orderNotifCount||0)+1;
+  render();
+  if(prevStatus!==updated.status){
+    _showOrderToast(updated);
+    _notifyOrderChange(updated);
+  }
+}
+
+function _showOrderToast(order){
+  var labels={
+    confirmed:_t('Order confirmed by seller','판매자가 주문을 확인했습니다'),
+    production:_t('Order is in production','주문이 생산 중입니다'),
+    shipped:_t('Order has been shipped!','주문이 출하되었습니다!'),
+    delivered:_t('Order delivered','주문이 도착했습니다'),
+    completed:_t('Order completed','주문이 완료되었습니다'),
+    cancelled:_t('Order has been cancelled','주문이 취소되었습니다')
+  };
+  var msg=labels[order.status];
+  if(!msg)msg=_t('Order status updated: ','주문 상태 변경: ')+order.status;
+  var num=order.order_number||order.id.substring(0,8);
+  var type=order.status==='cancelled'?'err':'ok';
+  if(order.status==='shipped')type='info';
+  toast('📦 #'+num+' — '+msg,type,5000);
+}
+
+function _notifyOrderChange(order){
+  if(!S.user)return;
+  var events=['shipped','delivered','completed'];
+  if(events.indexOf(order.status)===-1)return;
+  var num=order.order_number||order.id.substring(0,8);
+  var title=_t('Order Update','주문 업데이트');
+  var body='#'+num+': '+order.status;
+  _sendNotification(S.user.id,'order',title,body,{
+    link_page:'orders',link_id:order.id
+  });
+  _showWebNotif(title,body,'order-'+order.id);
+}
+
+function _handleShipmentInsert(shipment){
+  if(!shipment)return;
+  var orderIds=S.orders.map(function(o){return o.id;});
+  if(orderIds.indexOf(shipment.order_id)===-1)return;
+  S.shipments.unshift(shipment);
+  S._orderNotifCount=(S._orderNotifCount||0)+1;
+  render();
+  var num=shipment.tracking_number||'';
+  toast('🚢 '+_t('New shipment created','새 배송이 생성되었습니다')+(num?' — '+num:''),'info',5000);
+}
+
+function _handleShipmentUpdate(updated){
+  if(!updated||!updated.id)return;
+  var idx=S.shipments.findIndex(function(s){return s.id===updated.id;});
+  if(idx===-1)return;
+  S.shipments[idx]=updated;
+  render();
+  if(updated.status==='delivered'){
+    toast('🚢 '+_t('Shipment delivered!','배송이 도착했습니다!'),'ok',5000);
+  }
 }
 
 /* Extract product info from an order + linked deal */
@@ -7985,7 +8126,7 @@ function formatDate(d){if(!d)return'';var dt=new Date(d);return dt.toLocaleDateS
 function _countryFlag(code){if(!code||code.length!==2)return'&#x1F30D;';var c=code.toUpperCase();return String.fromCodePoint(0x1F1E6+c.charCodeAt(0)-65)+String.fromCodePoint(0x1F1E6+c.charCodeAt(1)-65);}
 function _relDate(d){if(!d)return'';var ms=Date.now()-new Date(d).getTime();var days=Math.floor(ms/86400000);if(days<1)return'Today';if(days<7)return days+'d ago';if(days<30)return Math.floor(days/7)+'w ago';return Math.floor(days/30)+'mo ago';}
 function timeAgo(d){if(!d)return'';var s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';if(s<604800)return Math.floor(s/86400)+'d';return formatDate(d);}
-function nav(page){S._prevPage=S.page;S.page=page;S._inqFilter=null;S.notifOpen=false;if(page!=='deals'&&page!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(page!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(page!=='product-detail')S._productDetailPage=null;if(page!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;S._makerSaved=false;}if(history.pushState)history.pushState(null,null,'#'+page);else if(history.replaceState)history.replaceState(null,null,'#'+page);closeMob();render();window.scrollTo(0,0);
+function nav(page){S._prevPage=S.page;S.page=page;S._inqFilter=null;S.notifOpen=false;if(page==='orders'||page==='ordership'||page==='shipments')S._orderNotifCount=0;if(page!=='deals'&&page!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(page!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(page!=='product-detail')S._productDetailPage=null;if(page!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;S._makerSaved=false;}if(history.pushState)history.pushState(null,null,'#'+page);else if(history.replaceState)history.replaceState(null,null,'#'+page);closeMob();render();window.scrollTo(0,0);
 try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:page,role:S.user?S.user.role:'buyer',session_id:window._pvSid,portal:'buyer'}).then(function(){});}catch(e){}}
 
 /* === INIT === */

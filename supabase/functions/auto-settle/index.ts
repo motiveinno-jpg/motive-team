@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.14.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const PLATFORM_FEE_RATE = 0.025;
+const PLATFORM_FEE_RATE = Number(Deno.env.get("PLATFORM_FEE_RATE") || "0.025");
 const AUTO_SETTLE_DAYS = 7;
 
 // Zero-decimal currencies — amount is already in smallest unit
@@ -168,22 +168,38 @@ serve(async (req) => {
           .eq("id", deal.user_id)
           .single();
 
+        let transferSuccess = true;
         if (sellerProfile?.stripe_connect_account_id) {
-          // Transfer net amount to seller's connected Stripe account
-          await stripe.transfers.create({
-            amount: netAmountCents,
-            currency: payment.currency.toLowerCase(),
-            destination: sellerProfile.stripe_connect_account_id,
-            transfer_group: `escrow_${payment.deal_id}`,
-            metadata: {
-              deal_id: payment.deal_id,
-              payment_id: payment.id,
-              type: "escrow_settlement",
-            },
-          });
+          try {
+            await stripe.transfers.create({
+              amount: netAmountCents,
+              currency: payment.currency.toLowerCase(),
+              destination: sellerProfile.stripe_connect_account_id,
+              transfer_group: `escrow_${payment.deal_id}`,
+              metadata: {
+                deal_id: payment.deal_id,
+                payment_id: payment.id,
+                type: "escrow_settlement",
+              },
+            });
+          } catch (transferErr: unknown) {
+            transferSuccess = false;
+            const tMsg = transferErr instanceof Error ? transferErr.message : String(transferErr);
+            console.error(`[auto-settle] Transfer failed for payment ${payment.id}:`, tMsg);
+            // Mark as transfer_failed, do NOT mark as settled
+            await supabase
+              .from("payments")
+              .update({
+                status: "transfer_failed",
+                metadata: { transfer_error: tMsg, attempted_at: new Date().toISOString() },
+              })
+              .eq("id", payment.id);
+            results.push({ id: payment.id, status: "failed", error: `Transfer failed: ${tMsg}` });
+            continue;
+          }
         }
 
-        // Update payment status
+        // Update payment status — only if transfer succeeded or no connected account
         await supabase
           .from("payments")
           .update({

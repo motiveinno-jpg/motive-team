@@ -330,45 +330,114 @@ function toSmallestUnit(amount: number, currency?: string): number {
   return Math.round(amount * 100);
 }
 
-/** Refund a payment intent via Stripe REST API. */
-async function stripeRefund(apiKey: string, paymentIntentId: string): Promise<void> {
-  const response = await fetch("https://api.stripe.com/v1/refunds", {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${btoa(apiKey + ":")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: `payment_intent=${encodeURIComponent(paymentIntentId)}`,
-  });
+/** Refund a payment intent via Stripe REST API with retry. */
+async function stripeRefund(
+  apiKey: string,
+  paymentIntentId: string,
+  maxRetries = 3,
+): Promise<void> {
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Stripe refund failed (${response.status}): ${errorBody}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch("https://api.stripe.com/v1/refunds", {
+        method: "POST",
+        headers: {
+          "Authorization": `Basic ${btoa(apiKey + ":")}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: `payment_intent=${encodeURIComponent(paymentIntentId)}`,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (response.ok) return;
+
+      const errorBody = await response.text();
+
+      // Do not retry on client errors (4xx) except 429
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        throw new Error(`Stripe refund failed (${response.status}): ${errorBody}`);
+      }
+
+      lastError = new Error(`Stripe refund failed (${response.status}): ${errorBody}`);
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (lastError.name === "AbortError") {
+        lastError = new Error(`Stripe refund timeout after 30s (attempt ${attempt}/${maxRetries})`);
+      }
+      // Do not retry AbortError caused by non-timeout aborts or non-retryable errors
+      if (attempt < maxRetries && (lastError.message.includes("timeout") || lastError.message.includes("429") || lastError.message.includes("5"))) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+    }
+
+    if (attempt === maxRetries && lastError) {
+      throw lastError;
+    }
   }
+
+  if (lastError) throw lastError;
 }
 
-/** Capture a specific amount on a payment intent via Stripe REST API. */
+/** Capture a specific amount on a payment intent via Stripe REST API with retry. */
 async function stripeCapture(
   apiKey: string,
   paymentIntentId: string,
   amountInSmallestUnit: number,
+  maxRetries = 3,
 ): Promise<void> {
-  const response = await fetch(
-    `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}/capture`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${btoa(apiKey + ":")}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: `amount_to_capture=${amountInSmallestUnit}`,
-    },
-  );
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Stripe capture failed (${response.status}): ${errorBody}`);
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(
+        `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}/capture`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Basic ${btoa(apiKey + ":")}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: `amount_to_capture=${amountInSmallestUnit}`,
+          signal: controller.signal,
+        },
+      );
+
+      clearTimeout(timer);
+
+      if (response.ok) return;
+
+      const errorBody = await response.text();
+
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        throw new Error(`Stripe capture failed (${response.status}): ${errorBody}`);
+      }
+
+      lastError = new Error(`Stripe capture failed (${response.status}): ${errorBody}`);
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (lastError.name === "AbortError") {
+        lastError = new Error(`Stripe capture timeout after 30s (attempt ${attempt}/${maxRetries})`);
+      }
+    }
+
+    if (attempt < maxRetries) {
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
+
+  if (lastError) throw lastError;
 }
 
 /** Log an escrow auto-action to the escrow_auto_log table. */
