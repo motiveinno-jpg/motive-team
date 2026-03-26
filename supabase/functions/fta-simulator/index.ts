@@ -144,7 +144,14 @@ serve(async (req: Request) => {
     // ─── End plan enforcement ───
 
     const body = await req.json();
-    const { hs_code, destination, destinations, prompt } = body;
+    const { hs_code, destination, destinations, prompt, origin_country = "KR" } = body;
+
+    const ORIGIN_LABELS: Record<string, string> = {
+      KR: "한국", US: "미국", JP: "일본", CN: "중국", DE: "독일", FR: "프랑스",
+      GB: "영국", VN: "베트남", TH: "태국", IN: "인도", TW: "대만", IT: "이탈리아",
+      AU: "호주", CA: "캐나다", BR: "브라질", MX: "멕시코",
+    };
+    const originLabel = ORIGIN_LABELS[origin_country] || origin_country;
 
     // If only prompt is provided (from buyer app), extract hs_code and destination
     let effectiveHsCode = hs_code;
@@ -183,11 +190,11 @@ serve(async (req: Request) => {
     /* 복수 시장 비교 */
     if (effectiveDestinations && Array.isArray(effectiveDestinations) && effectiveDestinations.length > 0) {
       const destInfo = effectiveDestinations.map((d: string) => {
-        const ftas = COUNTRY_FTA[d] || ["확인 필요"];
+        const ftas = origin_country === "KR" ? (COUNTRY_FTA[d] || ["확인 필요"]) : ["Check applicable FTAs"];
         return `- ${d} (${COUNTRY_NAMES[d] || d}): 적용 가능 FTA = ${ftas.join(", ")}`;
       }).join("\n");
 
-      const aiPrompt = buildMultiPrompt(effectiveHsCode, effectiveDestinations, destInfo);
+      const aiPrompt = buildMultiPrompt(effectiveHsCode, effectiveDestinations, destInfo, originLabel);
       const aiResult = await callAI(anthropicKey, aiPrompt);
 
       // Track usage if user is authenticated
@@ -215,10 +222,10 @@ serve(async (req: Request) => {
       );
     }
 
-    const ftas = COUNTRY_FTA[effectiveDestination] || ["확인 필요"];
+    const ftas = origin_country === "KR" ? (COUNTRY_FTA[effectiveDestination] || ["확인 필요"]) : ["Check applicable FTAs between " + originLabel + " and " + (COUNTRY_NAMES[effectiveDestination] || effectiveDestination)];
     const countryName = COUNTRY_NAMES[effectiveDestination] || effectiveDestination;
 
-    const aiPrompt = buildSinglePrompt(effectiveHsCode, effectiveDestination, countryName, ftas);
+    const aiPrompt = buildSinglePrompt(effectiveHsCode, effectiveDestination, countryName, ftas, originLabel);
     const result = await callAI(anthropicKey, aiPrompt);
 
     // Track usage if user is authenticated
@@ -245,11 +252,12 @@ serve(async (req: Request) => {
   }
 });
 
-function buildSinglePrompt(hsCode: string, dest: string, countryName: string, ftas: string[]): string {
-  return `당신은 FTA 관세 전문가입니다. 아래 HS코드의 ${countryName} 수출 시 관세 정보를 분석하세요.
+function buildSinglePrompt(hsCode: string, dest: string, countryName: string, ftas: string[], originLabel: string = "한국"): string {
+  return `당신은 FTA 관세 전문가입니다. 아래 HS코드의 ${originLabel}에서 ${countryName}으로 수출 시 관세 정보를 분석하세요.
 
 ## 입력
 - HS코드: ${hsCode}
+- 수출국 (원산지): ${originLabel}
 - 수출 대상국: ${dest} (${countryName})
 - 적용 가능 FTA: ${ftas.join(", ")}
 
@@ -278,15 +286,17 @@ function buildSinglePrompt(hsCode: string, dest: string, countryName: string, ft
   "recommendation": "종합 추천사항 (2~3문장)"
 }
 
-관세율은 해당 HS코드 기준 실제 관세율에 최대한 가깝게 추정하세요.
+관세율은 ${originLabel}에서 수출 시 해당 HS코드 기준 실제 관세율에 최대한 가깝게 추정하세요.
+${originLabel}이 체결한 FTA를 기준으로 특혜세율을 산출하세요.
 JSON만 출력하세요.`;
 }
 
-function buildMultiPrompt(hsCode: string, destinations: string[], destInfo: string): string {
-  return `당신은 FTA 관세 전문가입니다. 아래 HS코드의 복수 시장 관세를 비교 분석하세요.
+function buildMultiPrompt(hsCode: string, destinations: string[], destInfo: string, originLabel: string = "한국"): string {
+  return `당신은 FTA 관세 전문가입니다. ${originLabel}에서 아래 HS코드의 복수 시장 관세를 비교 분석하세요.
 
 ## 입력
 - HS코드: ${hsCode}
+- 수출국 (원산지): ${originLabel}
 - 비교 대상국:
 ${destInfo}
 
@@ -307,7 +317,8 @@ ${destInfo}
 ]
 
 국가별로 배열 원소를 만들고, rank는 총 비용이 낮은 순서로 1부터 매기세요.
-관세율은 해당 HS코드 기준 실제 관세율에 최대한 가깝게 추정하세요.
+관세율은 ${originLabel}에서 수출 시 해당 HS코드 기준 실제 관세율에 최대한 가깝게 추정하세요.
+${originLabel}이 체결한 FTA를 기준으로 특혜세율을 산출하세요.
 JSON 배열만 출력하세요.`;
 }
 

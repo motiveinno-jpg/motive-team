@@ -370,16 +370,12 @@ async function stripeRefund(
       if (lastError.name === "AbortError") {
         lastError = new Error(`Stripe refund timeout after 30s (attempt ${attempt}/${maxRetries})`);
       }
-      // Do not retry AbortError caused by non-timeout aborts or non-retryable errors
-      if (attempt < maxRetries && (lastError.message.includes("timeout") || lastError.message.includes("429") || lastError.message.includes("5"))) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
     }
 
-    if (attempt === maxRetries && lastError) {
-      throw lastError;
+    if (attempt < maxRetries && lastError) {
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
     }
   }
 

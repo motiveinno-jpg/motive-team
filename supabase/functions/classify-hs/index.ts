@@ -173,7 +173,17 @@ serve(async (req: Request) => {
       material = "",
       process = "",
       weight = "",
+      origin_country = "KR",
     } = await req.json();
+
+    const ORIGIN_LABELS: Record<string, string> = {
+      KR: "한국/South Korea", US: "미국/United States", JP: "일본/Japan", CN: "중국/China",
+      DE: "독일/Germany", FR: "프랑스/France", GB: "영국/United Kingdom", VN: "베트남/Vietnam",
+      TH: "태국/Thailand", IN: "인도/India", TW: "대만/Taiwan", IT: "이탈리아/Italy",
+      AU: "호주/Australia", CA: "캐나다/Canada", BR: "브라질/Brazil", MX: "멕시코/Mexico",
+    };
+    const originLabel = ORIGIN_LABELS[origin_country] || origin_country;
+    const isKoreaOrigin = origin_country === "KR";
 
     if (!product_name) {
       return new Response(
@@ -216,52 +226,57 @@ serve(async (req: Request) => {
           .join("\n");
     }
 
-    const prompt = `당신은 대한민국 관세사 자격을 가진 HS코드 분류 전문가입니다.
-아래 제품 정보를 바탕으로 가장 적합한 HS코드(10자리)를 분류해주세요.
+    const prompt = `You are an international HS code classification expert with deep knowledge of the Harmonized System.
+Classify the product below with the most appropriate HS code (10 digits).
 
-## 제품 정보
-- 제품명: ${product_name}
-- 카테고리: ${category || "미지정"}
-- 주요 성분/원재료: ${ingredients || "미입력"}
-- 용도/기능: ${usage || "미입력"}
-- 재질/포장형태: ${material || "미입력"}
-- 제조방법: ${process || "미입력"}
-- 중량/용량: ${weight || "미입력"}
-- 추가 설명: ${description || "없음"}
+## Product Information
+- Product Name: ${product_name}
+- Origin Country: ${originLabel}
+- Category: ${category || "Not specified"}
+- Key Ingredients/Materials: ${ingredients || "Not provided"}
+- Usage/Function: ${usage || "Not provided"}
+- Material/Packaging: ${material || "Not provided"}
+- Manufacturing Process: ${process || "Not provided"}
+- Weight/Volume: ${weight || "Not provided"}
+- Description: ${description || "None"}
 
-${hsHint ? "## HS코드 참고 데이터\n" + hsHint : ""}
+${hsHint ? "## HS Code Reference Data\n" + hsHint : ""}
 
-## 분류 원칙
-1. 관세율표 통칙에 따라 분류 (통칙1→6 순서)
-2. 완성품은 주된 특성을 부여하는 재료/용도 기준
-3. 세트물품은 주된 특성 기준
-4. 혼합물/복합물은 가장 구체적 호에 분류
+## Classification Principles
+1. Follow General Interpretive Rules (GIR 1→6)
+2. Finished products: classify by material/use that gives essential character
+3. Sets: classify by essential character
+4. Mixtures/composites: classify under the most specific heading
 
-## 응답 형식 (반드시 JSON)
+## Response Format (JSON only)
 {
   "primary": {
     "code": "XXXX.XX.XXXX",
-    "description": "한글 품명",
+    "description": "품명 (Korean)",
     "description_en": "English description",
     "confidence": 85,
-    "basis": "분류 근거 설명 (어떤 통칙, 어떤 기준으로 이 코드를 선택했는지)"
+    "basis": "Classification basis (which GIR rule, which criteria)"
   },
   "alternatives": [
-    {"code": "YYYY.YY.YYYY", "description": "대안 품명", "confidence": 70, "reason": "이 코드가 대안인 이유"}
+    {"code": "YYYY.YY.YYYY", "description": "Alternative name", "confidence": 70, "reason": "Why this is an alternative"}
   ],
   "tariff_preview": [
-    {"market": "🇺🇸 미국", "country": "US", "mfn": "6.5%", "fta": "0% (KORUS)", "note": "한-미 FTA 원산지 증명 필요"},
-    {"market": "🇯🇵 일본", "country": "JP", "mfn": "5.8%", "fta": "0% (RCEP)", "note": ""},
-    {"market": "🇨🇳 중국", "country": "CN", "mfn": "10%", "fta": "5% (한-중 FTA)", "note": ""},
-    {"market": "🇪🇺 EU", "country": "DE", "mfn": "6.5%", "fta": "0% (한-EU FTA)", "note": ""},
-    {"market": "🇻🇳 베트남", "country": "VN", "mfn": "20%", "fta": "0% (한-ASEAN)", "note": ""}
+    {"market": "US", "country": "US", "mfn": "6.5%", "fta": "${isKoreaOrigin ? '0% (KORUS)' : 'Check applicable FTA'}", "note": "${isKoreaOrigin ? 'Korea-US FTA C/O required' : 'Check FTA between ' + origin_country + ' and US'}"},
+    {"market": "JP", "country": "JP", "mfn": "5.8%", "fta": "", "note": ""},
+    {"market": "CN", "country": "CN", "mfn": "10%", "fta": "", "note": ""},
+    {"market": "EU", "country": "DE", "mfn": "6.5%", "fta": "", "note": ""},
+    {"market": "VN", "country": "VN", "mfn": "20%", "fta": "", "note": ""}
   ],
-  "notes": "추가 분류 참고사항 (예: 기능성화장품은 3304.99 분류, 의약외품은 3004 가능성 등)",
-  "required_docs": ["원산지증명서", "성분분석표"]
+  "notes": "Additional classification notes",
+  "required_docs": ["Certificate of Origin", "Product composition analysis"]
 }
 
-tariff_preview의 관세율은 해당 HS코드 기준 실제 관세율에 최대한 가깝게 추정하세요.
-JSON만 출력하세요.`;
+IMPORTANT: The product originates from ${originLabel}.
+- In tariff_preview, show FTA rates applicable when exporting FROM ${originLabel} to each market.
+- If ${origin_country} has an FTA with the destination, show the preferential rate.
+- If no FTA exists, show "N/A" for fta field.
+- Estimate tariff rates as close to actual rates as possible for this HS code.
+Output JSON only.`;
 
     const aiController = new AbortController();
     const aiTimeout = setTimeout(() => aiController.abort(), 30000);

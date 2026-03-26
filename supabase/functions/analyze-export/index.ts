@@ -864,7 +864,9 @@ ${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시
   "opportunities": ["${isEn ? "With figures" : "수치 포함"}", "", ""],
   "risks": ["${isEn ? "With mitigation" : "대응방안 포함"}", "", ""]
 }
-${isEn ? "Rules: Max 5 cert_details with ALL needed certs per target market. Use the certification reference above as starting point — add market-specific requirements. Include REAL agency names, websites, estimated costs (USD), and timeline. Real competitor names with actual price points. Max 3 global, 2 local competitors. Market size in USD with source year." : "규칙: cert_details 최대 5개, 타겟시장별 필요인증 전부 포함. 위 인증 참조 데이터를 기반으로 시장별 요구사항 추가. 실제 기관명, 웹사이트, 예상비용(USD), 소요기간 포함. 경쟁사 실명+실제 가격대. global 최대 3, local 최대 2. 시장규모 USD+출처연도. 존댓말 필수."}`;
+${isEn
+  ? `Rules: Max 5 cert_details with ALL needed certs per target market. Use the certification reference above as starting point — add market-specific requirements. Include REAL agency names, websites, estimated costs (USD), and timeline. The product originates from ${originLabel} — recommend labs/agencies accessible from ${originLabel}. Real competitor names with actual price points. Max 3 global, 2 local competitors. Market size in USD with source year.`
+  : `규칙: cert_details 최대 5개, 타겟시장별 필요인증 전부 포함. 위 인증 참조 데이터를 기반으로 시장별 요구사항 추가. 실제 기관명, 웹사이트, 예상비용(USD), 소요기간 포함. 제품 원산지는 ${originLabel} — ${originLabel}에서 접근 가능한 시험기관/인증기관 추천. 경쟁사 실명+실제 가격대. global 최대 3, local 최대 2. 시장규모 USD+출처연도. 존댓말 필수.`}`;
 
     // ─── CALL 3: Pricing & Action Plan ───
     const prompt3 = `${isEn ? "# Export Analysis — Pricing Strategy & Action Plan" : "# 수출 분석 — 가격 전략 & 실행 계획"}
@@ -1171,6 +1173,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
       product_name_en, category, fob_price, moq, description,
       urls, file_urls, selling_points: selling_points.filter(Boolean),
       target_markets, existing_certs, brand_name, manufacturer,
+      origin_country: resolvedOrigin,
       thumbnail: firstImage?.image || "",
       has_vision_image: !!validatedImageBase64,
     };

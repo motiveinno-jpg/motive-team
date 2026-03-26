@@ -1462,6 +1462,19 @@ var STRIPE_CFG={
   prices:{starter:{m:'price_1TBDCuBEJTGmEnmcZNjeU27n',s:'price_1TCG17BEJTGmEnmctEW5svtD',a:'price_1TCG17BEJTGmEnmcZkiwz4SW'},pro:{m:'price_1TBDCvBEJTGmEnmcu3yS9KwY',s:'price_1TCG18BEJTGmEnmcnXYh1Nmc',a:'price_1TCG18BEJTGmEnmcSFNLv1ZT'},enterprise:{m:'price_1TBDCvBEJTGmEnmcURkitVLN',s:'price_1TCG18BEJTGmEnmcBzwQVelL',a:'price_1TCG19BEJTGmEnmcUWaORRHP'},single:'price_1TBDCwBEJTGmEnmcyzHJpann'}
 };
 var _stripe=null;
+/* Stripe-specific fetch with 30s timeout + error logging */
+function _stripeFetch(url,opts){
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},30000);
+  var fetchOpts=Object.assign({},opts||{},{signal:ctrl.signal});
+  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);return r;}).catch(function(e){
+    clearTimeout(timer);
+    var isTimeout=e.name==='AbortError';
+    var msg=isTimeout?'Stripe API timeout (30s)':e.message||String(e);
+    try{sb.from('client_errors').insert({user_id:S&&S.user?S.user.id:null,error_type:'stripe_timeout',message:msg.substring(0,500),url:location.href,page:S&&S.page||'',portal:'buyer'}).then(function(){});}catch(_e){}
+    throw new Error(isTimeout?_t('Payment processing timed out. Please try again.','결제 처리 중 시간이 초과되었습니다. 다시 시도해주세요.'):msg);
+  });
+}
 function _getStripe(){
   if(!_stripe&&STRIPE_CFG.pk){_stripe=Stripe(STRIPE_CFG.pk);}
   return _stripe;
@@ -1480,7 +1493,7 @@ function initiateStripeEscrowPayment(dealId,amount,currency){
   if(btn){btn.disabled=true;btn.textContent=_t('Connecting to Stripe...','Stripe 연결 중...');}
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){toast(_t('Please log in first','먼저 로그인해 주세요'),'warn');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; '+_t('Pay Now','결제하기');}return;}
-    fetch(STRIPE_CFG.fn+'/create-checkout-session',{
+    _stripeFetch(STRIPE_CFG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
       body:JSON.stringify({deal_id:dealId,amount:amount,currency:currency||'USD',type:'escrow',success_url:location.origin+location.pathname+'#deals',cancel_url:location.origin+location.pathname+'#deals'})
@@ -1488,7 +1501,7 @@ function initiateStripeEscrowPayment(dealId,amount,currency){
       if(data.error){toast(data.error,'err');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; '+_t('Pay Now','결제하기');}return;}
       if(data.url){window.location.href=data.url;}
       else{toast(_t('Payment session creation failed. Please try again.','결제 세션 생성에 실패했습니다. 다시 시도해 주세요.'),'err');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; '+_t('Pay Now','결제하기');}}
-    }).catch(function(err){toast(_t('Connection error','연결 오류')+': '+err.message,'err');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; '+_t('Pay Now','결제하기');}});
+    }).catch(function(err){toast(err.message||_t('Connection error','연결 오류'),'err');if(btn){btn.disabled=false;btn.innerHTML='&#x1F512; '+_t('Pay Now','결제하기');}});
   });
 }
 
@@ -1534,6 +1547,8 @@ var S={
   currency:'USD',
   // FTA simulator
   _ftaBuyerResultHTML:'',
+  // Order realtime
+  _orderNotifCount:0,_orderRealtimeCh:null,
   // Manufacturer profile
   _viewMakerId:null,_makerProfile:null,_makerProducts:[],_makerUser:null,_makerLoading:false,_makerSaved:false
 };
@@ -2221,6 +2236,7 @@ function doReset(f){
 function _cleanupBuyerSubs(){
   if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}
   if(S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}
+  if(S._orderRealtimeCh){try{S._orderRealtimeCh.unsubscribe();}catch(e){}sb.removeChannel(S._orderRealtimeCh);S._orderRealtimeCh=null;}
   try{sb.removeAllChannels();}catch(e){}
 }
 function doLogout(){
@@ -3033,6 +3049,7 @@ function _loadRelatedByCategory(category,excludeId){
 
 function pgProductDetail(){
   var pd=S._productDetailPage;
+  if(pd&&pd._loading){return '<div style="text-align:center;padding:60px"><div class="skel skel-card" style="height:300px;margin-bottom:16px"></div><div class="skel skel-line" style="width:60%"></div><div class="skel skel-line" style="width:40%"></div><div style="font-size:12px;color:var(--w40);margin-top:12px">'+_t('Loading product details...','제품 정보 로딩 중...')+'</div></div>';}
   if(!pd||!pd.data){return '<div style="text-align:center;padding:60px;color:var(--w40)">'+_t('Product not found.','제품을 찾을 수 없습니다.')+' <a href="#" onclick="event.preventDefault();B.nav(\'search\')">'+_t('Back to search','검색으로 돌아가기')+'</a></div>';}
   var p=pd.data;var src=pd.source;
   var _backPage=S._prevPage||'search';
@@ -4623,6 +4640,7 @@ function sendDealMessage(){
   S.dealMessages.push(Object.assign({id:'tmp_'+Date.now(),created_at:new Date().toISOString()},msg));
   render();
   setTimeout(function(){var el=document.getElementById('dealChatMsgs');if(el)el.scrollTop=el.scrollHeight;},50);
+  if(!navigator.onLine){_queueBuyerChatMsg(msg);toast(_t('Offline — will send when reconnected','오프라인 — 연결 복구 시 전송됩니다'),'warn');return;}
   sb.from('messages').insert(msg).select().single().then(function(r){
     if(r.error){toast(_t('Failed to send','전송 실패'),'err');return;}
     var tmpId=S.dealMessages.findIndex(function(m){return String(m.id).startsWith('tmp_')&&m.body===r.data.body;});
@@ -8151,13 +8169,48 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifO
 })();
 loadUser();
 /* === CONNECTION RECOVERY === */
-window.addEventListener('online',function(){
-  toast(_t('Connection restored','인터넷 연결 복구'),'ok');
-  if(S.user){loadNotifications();loadInquiries();}
-});
-window.addEventListener('offline',function(){
-  toast(_t('Connection lost — offline mode','인터넷 연결 끊김 — 오프라인 모드'),'warn');
-});
+(function(){
+  var _offlineBannerId='_buyer_offline_banner';
+  function _showOfflineBanner(){
+    if(document.getElementById(_offlineBannerId))return;
+    var b=document.createElement('div');b.id=_offlineBannerId;
+    b.style.cssText='position:fixed;top:0;left:0;width:100%;z-index:999999;background:#ef4444;color:#fff;text-align:center;padding:10px 16px;font-size:13px;font-weight:700;font-family:system-ui;box-shadow:0 2px 8px rgba(0,0,0,.3)';
+    b.textContent=_isKorean?'인터넷 연결이 끊겼습니다':'No internet connection';
+    document.body.appendChild(b);
+  }
+  function _hideOfflineBanner(){
+    var b=document.getElementById(_offlineBannerId);if(b)b.remove();
+  }
+  window.addEventListener('online',function(){
+    _hideOfflineBanner();
+    toast(_t('Connection restored','인터넷 연결 복구'),'ok');
+    if(S.user){loadNotifications();loadInquiries();}
+    /* Reconnect Supabase Realtime channels */
+    if(S._chatChannel&&S.currentChat){try{sb.removeChannel(S._chatChannel);S._chatChannel=null;initChatRealtime(S.currentChat.buyerLinkId);}catch(e){console.error('[reconnect] chat:',e);}}
+    /* Flush queued chat messages */
+    _flushBuyerChatQueue();
+  });
+  window.addEventListener('offline',function(){
+    _showOfflineBanner();
+  });
+  if(!navigator.onLine)_showOfflineBanner();
+})();
+/* Chat message queue for offline resilience */
+var _buyerChatQueue=[];
+function _queueBuyerChatMsg(insertData){
+  _buyerChatQueue.push(insertData);
+  try{localStorage.setItem('_buyer_chat_queue',JSON.stringify(_buyerChatQueue));}catch(e){}
+}
+function _flushBuyerChatQueue(){
+  try{var stored=localStorage.getItem('_buyer_chat_queue');if(stored){var parsed=JSON.parse(stored);if(Array.isArray(parsed)&&parsed.length)_buyerChatQueue=_buyerChatQueue.concat(parsed);localStorage.removeItem('_buyer_chat_queue');}}catch(e){}
+  if(!_buyerChatQueue.length)return;
+  var batch=_buyerChatQueue.splice(0);
+  batch.forEach(function(msg){
+    sb.from('messages').insert(msg).then(function(r){
+      if(r.error){_buyerChatQueue.push(msg);console.error('[chat-queue] flush fail:',r.error);}
+    }).catch(function(e){_buyerChatQueue.push(msg);console.error('[chat-queue] flush error:',e);});
+  });
+}
 
 /* === STRIPE CHECKOUT (Buyer) === */
 function openBuyerCheckout(planId){
@@ -8185,7 +8238,7 @@ function initBuyerStripe(planId){
   if(btn){btn.disabled=true;btn.textContent=_t('Connecting...','연결 중...');}
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){toast(_t('Please log in first','먼저 로그인해 주세요'),'warn');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}return;}
-    fetch(STRIPE_CFG.fn+'/create-checkout-session',{
+    _stripeFetch(STRIPE_CFG.fn+'/create-checkout-session',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
       body:JSON.stringify({price_id:priceId,type:'subscription',plan:'buyer_'+planId,billing_cycle:cycle,success_url:location.origin+location.pathname+'#profile',cancel_url:location.origin+location.pathname+'#profile'})
@@ -8193,7 +8246,7 @@ function initBuyerStripe(planId){
       if(data.error){toast(data.error,'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}return;}
       if(data.url){closeModal('bck');window.location.href=data.url;}
       else{toast(_t('Payment session creation failed. Please try again.','결제 세션 생성에 실패했습니다. 다시 시도해 주세요.'),'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}}
-    }).catch(function(err){toast(_t('Connection error','연결 오류')+': '+err.message,'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}});
+    }).catch(function(err){toast(err.message||_t('Connection error','연결 오류'),'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}});
   });
 }
 
@@ -8205,14 +8258,14 @@ function closeStripeModal(){
 function openBillingPortal(){
   sb.auth.getSession().then(function(r){
     if(!r.data||!r.data.session){toast(_t('Please log in first','먼저 로그인해 주세요'),'warn');return;}
-    fetch(STRIPE_CFG.fn+'/create-billing-portal',{
+    _stripeFetch(STRIPE_CFG.fn+'/create-billing-portal',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
       body:JSON.stringify({return_url:location.href})
     }).then(function(r){return r.json();}).then(function(data){
       if(data.url)window.open(data.url,'_blank');
       else toast(data.error||_t('Cannot open billing portal','결제 관리 페이지를 열 수 없습니다'),'warn');
-    });
+    }).catch(function(e){toast(e.message||_t('Cannot open billing portal','결제 관리 페이지를 열 수 없습니다'),'err');});
   });
 }
 
@@ -8327,9 +8380,10 @@ function pgFTA(){
   h += '</select></div>';
   h += '<div class="form-group"><label class="form-label">'+_t('Destination Country','수입 대상국')+' * <span style="font-size:9px;color:var(--w30)">🤝='+_t('FTA partner','FTA 체결국')+'</span></label>';
   h += '<select class="form-select" name="fta_destination" required>';
+  var _buyerCountry=S.user?S.user.country:'';
   h += '<option value="">'+_t('Select destination...','수입국 선택...')+'</option>';
   _FTA_COUNTRIES.forEach(function(c){
-    h += '<option value="'+c.code+'">'+c.flag+' '+c.name+'</option>';
+    h += '<option value="'+c.code+'"'+(c.code===_buyerCountry?' selected':'')+'>'+c.flag+' '+c.name+'</option>';
   });
   h += '</select></div>';
   h += '</div>';
@@ -8718,7 +8772,7 @@ document.addEventListener('keydown',function(e){
 window.B={
   set:set,render:render,nav:nav,openCmdPalette:openCmdPalette,closeCmdPalette:closeCmdPalette,
   doLogin:doLogin,doSignup:doSignup,doReset:doReset,doUpdatePassword:doUpdatePassword,doLogout:doLogout,showDeleteAccountModal:showDeleteAccountModal,confirmDeleteAccount:confirmDeleteAccount,socialLogin:socialLogin,submitPartnership:submitPartnership,
-  doSearch:doSearch,quickSearch:quickSearch,setSource:setSource,setFilter:setFilter,clearFilters:clearFilters,toggleFilters:toggleFilters,loadMoreResults:loadMoreResults,openProductDetail:openProductDetail,
+  doSearch:doSearch,quickSearch:quickSearch,setSource:setSource,setFilter:setFilter,clearFilters:clearFilters,toggleFilters:toggleFilters,loadMoreResults:loadMoreResults,openProductDetail:openProductDetail,openProductById:openProductById,
   openInquiry:openInquiry,openCustomSourcing:openCustomSourcing,submitInquiry:submitInquiry,closeModal:closeModal,_updateCostEstimate:_updateCostEstimate,_checkMoqBudget:_checkMoqBudget,
   saveProduct:saveProduct,unsaveProduct:unsaveProduct,inquireAllSaved:inquireAllSaved,
   showInquiryDetail:showInquiryDetail,
