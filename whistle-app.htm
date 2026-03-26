@@ -2822,7 +2822,7 @@ function pgDash(){
     _followUpNeeded.slice(0,5).forEach(function(fu){
       var d=fu.deal;
       var urgent=fu.daysSilent>=7;
-      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:'+(urgent?'rgba(255,87,34,.06)':'rgba(255,184,0,.04)')+';margin-bottom:4px;cursor:pointer" onclick="App.viewDeal(\''+d.id+'\')">';
+      h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:'+(urgent?'rgba(255,87,34,.06)':'rgba(255,184,0,.04)')+';margin-bottom:4px;cursor:pointer" onclick="App.openDeal(\''+d.id+'\')">';
       h+='<div style="font-size:16px">'+(urgent?'🚨':'⏳')+'</div>';
       h+='<div style="flex:1"><div style="font-size:12px;font-weight:600">'+U.esc(U.tr(d.title||d.buyerCompany||'Deal',25))+'</div><div style="font-size:10px;color:var(--w40)">'+(_isKorean?fu.daysSilent+'일 동안 응답 없음':fu.daysSilent+' days no response')+'</div></div>';
       var _fuMsg=_isKorean?'안녕하세요, 진행 상황을 확인하고 싶어 연락드립니다. 추가로 필요한 사항이 있으시면 알려주세요.':'Hi, I wanted to follow up on our discussion. Please let me know if you need any additional information.';
@@ -2835,11 +2835,11 @@ function pgDash(){
   /* ⑥ 딜 파이프라인 — 지표 바로 아래 */
   if((S._deals||[]).length>0){
     var _dp=S._deals||[];
-    var _dStages={inquiry:0,sample:0,negotiation:0,quotation:0,pi_sent:0,confirmed:0,production:0,shipping:0,completed:0};
+    var _dStages={inquiry:0,matched:0,quotation:0,sample:0,negotiation:0,order:0,production:0,shipping:0,completed:0};
     _dp.forEach(function(d){if(_dStages[d.stage]!==undefined)_dStages[d.stage]++;else _dStages[d.stage]=(_dStages[d.stage]||0)+1;});
     var _dMax=Math.max.apply(null,Object.values(_dStages).concat([1]));
-    var _dLabels=_isKorean?{inquiry:'문의',sample:'샘플',negotiation:'협상',quotation:'견적',pi_sent:'PI',confirmed:'확정',production:'생산',shipping:'선적',completed:'완료'}:{inquiry:'Inquiry',sample:'Sample',negotiation:'Nego',quotation:'Quote',pi_sent:'PI',confirmed:'Confirmed',production:'Prod',shipping:'Ship',completed:'Done'};
-    var _dColors={inquiry:'var(--w40)',sample:'var(--purple)',negotiation:'var(--acc)',quotation:'var(--pri)',pi_sent:'#3b82f6',confirmed:'var(--ok)',production:'#f59e0b',shipping:'#6366f1',completed:'var(--ok)'};
+    var _dLabels=_isKorean?{inquiry:'문의',matched:'매칭',quotation:'견적',sample:'샘플',negotiation:'협상',order:'주문',production:'생산',shipping:'선적',completed:'완료'}:{inquiry:'Inquiry',matched:'Match',quotation:'Quote',sample:'Sample',negotiation:'Nego',order:'Order',production:'Prod',shipping:'Ship',completed:'Done'};
+    var _dColors={inquiry:'var(--w40)',matched:'#8b5cf6',quotation:'var(--pri)',sample:'var(--purple)',negotiation:'var(--acc)',order:'#3b82f6',production:'#f59e0b',shipping:'#6366f1',completed:'var(--ok)'};
     h+='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>📊 '+(_isKorean?'딜 파이프라인':'Deal Pipeline')+'</span><button class="btn btn-ghost btn-sm" onclick="App.nav(\'deals\')" style="font-size:11px">'+(_isKorean?'전체보기':'View All')+'</button></div><div class="card-b">';
     h+='<div style="display:flex;align-items:flex-end;gap:6px;height:80px;margin-bottom:8px">';
     Object.keys(_dStages).forEach(function(st){
@@ -5426,7 +5426,7 @@ function openPjChat(buyerId){
     /* Inject system message into chat for status change */
     var _escLabels={requested:_isKorean?'에스크로 요청됨':'Escrow Requested',buyer_paid:_isKorean?'바이어 결제 완료':'Buyer Payment Received',secured:_isKorean?'결제 확인됨':'Payment Secured',shipping:_isKorean?'출하 확인':'Shipment Confirmed',delivered:_isKorean?'수취 확인':'Delivery Confirmed',release_requested:_isKorean?'정산 요청':'Settlement Requested',released:_isKorean?'정산 완료':'Payment Released',disputed:_isKorean?'분쟁 제기됨':'Dispute Raised',cancelled:_isKorean?'취소됨':'Cancelled'};
     var lbl=_escLabels[o.escrow_status]||o.escrow_status;
-    var sysMsg={id:'esc-'+o.id+'-'+Date.now(),body:'💰 '+lbl+(o.escrow_amount?' ('+(_cf?_cf(o.escrow_currency||'USD'):o.escrow_currency||'USD')+' '+(o.escrow_amount||'')+')'):''),sender_type:'system',message_type:'system',created_at:new Date().toISOString(),metadata:{type:'escrow_update',escrow_status:o.escrow_status}};
+    var sysMsg={id:'esc-'+o.id+'-'+Date.now(),body:'💰 '+lbl+(o.escrow_amount?' ('+(_cf?_cf(o.escrow_currency||'USD'):o.escrow_currency||'USD')+' '+(o.escrow_amount||'')+')':''),sender_type:'system',message_type:'system',created_at:new Date().toISOString(),metadata:{type:'escrow_update',escrow_status:o.escrow_status}};
     if(!S._pjChatMsgs.find(function(x){return x.metadata&&x.metadata.type==='escrow_update'&&x.metadata.escrow_status===o.escrow_status;})){S._pjChatMsgs.push(sysMsg);render();}
   }).subscribe();
 }
@@ -6262,8 +6262,8 @@ function _pjTabBuyers(p,uniqueBuyers){
   }
   /* Summary bar */
   var stCounts={};
-  var dealStages=['proposed','sample','negotiation','contract','order','production','shipping','completed'];
-  var dealStageL=_isKorean?{proposed:'매칭',sample:'샘플',negotiation:'협상',contract:'계약',order:'주문',production:'생산',shipping:'선적',completed:'완료'}:{proposed:'Matched',sample:'Sample',negotiation:'Negotiation',contract:'Contract',order:'Order',production:'Production',shipping:'Shipping',completed:'Completed'};
+  var dealStages=['proposed','active','negotiating','sample','order','production','shipping','completed'];
+  var dealStageL=_isKorean?{proposed:'매칭 제안',active:'활성',negotiating:'협상 중',sample:'샘플',order:'주문',production:'생산',shipping:'선적',completed:'완료'}:{proposed:'Proposed',active:'Active',negotiating:'Negotiating',sample:'Sample',order:'Order',production:'Production',shipping:'Shipping',completed:'Completed'};
   uniqueBuyers.forEach(function(bid){
     var m=(S.matchings||[]).find(function(mm){return mm.buyer_id===bid&&mm.user_id===S.user.id;});
     var st=m?m.status:'proposed';if(!stCounts[st])stCounts[st]=0;stCounts[st]++;
@@ -16073,7 +16073,7 @@ function createAndOpenDealRoom(title){
   var sellerCountry=S.company&&S.company.address_ko?'KR':'';
   _sanctionsGate(sellerName, sellerCountry).then(function(canProceed){
   if(!canProceed){UI.toast(_isKorean?'제재 대상으로 딜 생성이 차단되었습니다.':'Deal creation blocked due to sanctions match.','err');return;}
-  sb.from('deals').insert({seller_company_id:companyId,seller_id:S.user.id,project_id:projectId,title:title,stage:'prospect',status:'active',currency:S.currency||'USD'}).select().single().then(function(r){
+  sb.from('deals').insert({seller_company_id:companyId,seller_id:S.user.id,project_id:projectId,title:title,stage:'inquiry',status:'active',currency:S.currency||'USD'}).select().single().then(function(r){
     if(r.error){UI.toast('\uB51C\uB8F8 \uC0DD\uC131 \uC2E4\uD328: '+(r.error.message||r.error),'err');return;}
     var deal=r.data;
     if(deal&&S.user){
