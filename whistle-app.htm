@@ -12786,7 +12786,6 @@ function saveBuyer(){
     closeModal('bm');
     /* If inside a project, auto-create matching to link buyer to project */
     if(newBuyer&&S.currentProject){
-      /* Check if matching already exists for this buyer+project */
       var exists=(S.matchings||[]).some(function(m){return m.buyer_id===newBuyer.id&&m.project_id===S.currentProject.id;});
       if(!exists){
         var mData={user_id:S.user.id,buyer_id:newBuyer.id,project_id:S.currentProject.id,product_id:S.currentProject.product_id||null,status:'proposed',match_score:80,match_reason:'Manual add by seller',buyer_name:newBuyer.company_name||d.company_name||'',buyer_country:newBuyer.country||d.country||'',seller_name:S.user.company_name||S.user.name||'',product_name:S.currentProject.product_name||''};
@@ -12802,17 +12801,29 @@ function saveBuyer(){
     }else{
       loadB().then(function(){render();});
     }
+    /* 바이어 초대 결과 모달 — 링크 + 쿠폰 */
+    var refCode=S.user?(S.user.id||'').slice(0,8).toUpperCase():'';
+    var couponCode='FREE1-'+refCode+'-'+(Date.now()%10000);
+    var buyerLink=window.location.origin+'/buyer?ref='+refCode+'&type=buyer';
+    var invH='<div style="text-align:center;padding:8px 0"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">'+UI.esc(d.company_name)+' 등록 완료!</div><div style="font-size:12px;color:var(--w40)">바이어에게 아래 정보를 공유하세요</div></div>';
+    invH+='<div class="form-group" style="margin-top:16px"><label class="form-label">🔗 바이어 전용 페이지 링크</label><div style="display:flex;gap:6px"><input class="form-input" value="'+UI.esc(buyerLink)+'" readonly style="flex:1;font-size:11px" id="buyer-inv-link"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'buyer-inv-link\').value).then(function(){App.UI.toast(\'복사됨\',\'ok\')})">'+(_isKorean?'복사':'Copy')+'</button></div><div style="font-size:10px;color:var(--w40);margin-top:4px">바이어가 이 링크로 가입하면 자동으로 연결됩니다</div></div>';
+    invH+='<div class="form-group" style="margin-top:12px"><label class="form-label">🎟️ 첫 거래 수수료 면제 쿠폰</label><div style="display:flex;gap:6px"><input class="form-input" value="'+couponCode+'" readonly style="flex:1;font-family:JetBrains Mono;font-weight:700;text-align:center;letter-spacing:2px;font-size:14px;color:var(--acc)" id="buyer-coupon"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'buyer-coupon\').value).then(function(){App.UI.toast(\'복사됨\',\'ok\')})">'+(_isKorean?'복사':'Copy')+'</button></div><div style="font-size:10px;color:var(--ok);margin-top:4px">첫 거래 시 결제 수수료 1회 면제 (가입 후 30일 이내)</div></div>';
+    if(d.email){
+      invH+='<div style="margin-top:16px;padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12)"><div style="font-size:12px;font-weight:600;color:var(--pri);margin-bottom:8px">📧 바이어에게 이메일로 초대</div>';
+      invH+='<button class="btn btn-pri" style="width:100%" onclick="App.sendBuyerInviteEmail(\''+UI.esc(d.email)+'\',\''+UI.esc(buyerLink)+'\',\''+couponCode+'\')">'+UI.esc(d.email)+'로 초대 메일 보내기</button></div>';
+    }
+    document.body.insertAdjacentHTML('beforeend',UI.modal({id:'buyer-inv',title:'🎉 바이어 초대',body:invH,footer:'<button class="btn btn-pri" onclick="App.closeModal(\'buyer-inv\')">'+(_isKorean?'확인':'Confirm')+'</button>'}));
+    UI.showModal('buyer-inv');
+    if(!S._pendingInvites)S._pendingInvites=[];
+    S._pendingInvites.unshift({email:d.email||d.company_name,type:'buyer',coupon:couponCode,created_at:new Date().toISOString()});
   };
   /* Duplicate check: find existing buyer with same email */
   if(d.email){
     sb.from('buyers').select('*').ilike('email',d.email).limit(1).then(function(existR){
       if(existR.data&&existR.data.length>0){
-        var existingBuyer=existR.data[0];
-        UI.toast(_isKorean?'기존 바이어를 프로젝트에 연결합니다':'Linking existing buyer to project','info');
-        _afterBuyerReady(existingBuyer);
+        _afterBuyerReady(existR.data[0]);
         return;
       }
-      /* No duplicate — insert new */
       sb.from('buyers').insert(d).select().then(function(r){
         if(r.error){_toastE(r.error);return;}
         _afterBuyerReady(r.data&&r.data[0]);
@@ -12824,26 +12835,6 @@ function saveBuyer(){
       _afterBuyerReady(r.data&&r.data[0]);
     });
   }
-    /* 바이어 초대 결과 모달 — 링크 + 쿠폰 */
-    var refCode=S.user?(S.user.id||'').slice(0,8).toUpperCase():'';
-    var couponCode='FREE1-'+refCode+'-'+(Date.now()%10000);
-    var buyerLink=window.location.origin+'/buyer?ref='+refCode+'&type=buyer';
-    var invH='<div style="text-align:center;padding:8px 0"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:15px;font-weight:700;margin-bottom:4px">'+UI.esc(d.company_name)+' 등록 완료!</div><div style="font-size:12px;color:var(--w40)">바이어에게 아래 정보를 공유하세요</div></div>';
-    /* 바이어 페이지 링크 */
-    invH+='<div class="form-group" style="margin-top:16px"><label class="form-label">🔗 바이어 전용 페이지 링크</label><div style="display:flex;gap:6px"><input class="form-input" value="'+UI.esc(buyerLink)+'" readonly style="flex:1;font-size:11px" id="buyer-inv-link"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'buyer-inv-link\').value).then(function(){App.UI.toast(\'복사됨\',\'ok\')})">'+(_isKorean?'복사':'Copy')+'</button></div><div style="font-size:10px;color:var(--w40);margin-top:4px">바이어가 이 링크로 가입하면 자동으로 연결됩니다</div></div>';
-    /* 수수료 면제 쿠폰 */
-    invH+='<div class="form-group" style="margin-top:12px"><label class="form-label">🎟️ 첫 거래 수수료 면제 쿠폰</label><div style="display:flex;gap:6px"><input class="form-input" value="'+couponCode+'" readonly style="flex:1;font-family:JetBrains Mono;font-weight:700;text-align:center;letter-spacing:2px;font-size:14px;color:var(--acc)" id="buyer-coupon"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText(document.getElementById(\'buyer-coupon\').value).then(function(){App.UI.toast(\'복사됨\',\'ok\')})">'+(_isKorean?'복사':'Copy')+'</button></div><div style="font-size:10px;color:var(--ok);margin-top:4px">첫 거래 시 결제 수수료 1회 면제 (가입 후 30일 이내)</div></div>';
-    /* 이메일로 바로 보내기 */
-    if(d.email){
-      invH+='<div style="margin-top:16px;padding:12px;border-radius:10px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.12)"><div style="font-size:12px;font-weight:600;color:var(--pri);margin-bottom:8px">📧 바이어에게 이메일로 초대</div>';
-      invH+='<button class="btn btn-pri" style="width:100%" onclick="App.sendBuyerInviteEmail(\''+UI.esc(d.email)+'\',\''+UI.esc(buyerLink)+'\',\''+couponCode+'\')">'+UI.esc(d.email)+'로 초대 메일 보내기</button></div>';
-    }
-    document.body.insertAdjacentHTML('beforeend',UI.modal({id:'buyer-inv',title:'🎉 바이어 초대',body:invH,footer:'<button class="btn btn-pri" onclick="App.closeModal(\'buyer-inv\')">'+(_isKorean?'확인':'Confirm')+'</button>'}));
-    UI.showModal('buyer-inv');
-    /* 초대 기록 저장 */
-    if(!S._pendingInvites)S._pendingInvites=[];
-    S._pendingInvites.unshift({email:d.email||d.company_name,type:'buyer',coupon:couponCode,created_at:new Date().toISOString()});
-  });
 }
 
 function sendBuyerInviteEmail(email,link,coupon){
