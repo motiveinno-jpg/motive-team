@@ -15379,18 +15379,31 @@ function nextOb(step){
     var d=UI.fd('#obf0');var _nameField=_isKorean?'name_ko':'name_en';if(!d[_nameField]){UI.toast(_isKorean?'회사명을 입력하세요':'Please enter company name','warn');return;}
     if(_isKorean&&d.biz_number&&!/^\d{3}-\d{2}-\d{5}$/.test(d.biz_number)){UI.toast('사업자번호 형식: 123-45-67890','warn');return;}
     var companyData={user_id:S.user.id,phone:d.phone||null,address_ko:d.address_ko||null,biz_number:d.biz_number||null,personal_id_type:d.personal_id_type||null,category:d.category||null,manufacturing_type:d.manufacturing_type||null};if(_isKorean){companyData.name_ko=d.name_ko;companyData.ceo_name_ko=d.ceo_name_ko||null;}else{companyData.name_en=d.name_en;companyData.ceo_name=d.ceo_name||null;}
-    if(S.company&&S.company.id){
-      sb.from('companies').update(companyData).eq('id',S.company.id).eq('user_id',S.user.id).then(function(){
-        S.company=Object.assign(S.company||{},companyData);
-        sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
-        S.user.onboarding_step=1;render();
+    var _companyName=companyData.name_en||companyData.name_ko||'';
+    var _companyCountry=(companyData.address_ko?'KR':'');
+    /* Screen manufacturer against sanctions lists */
+    var _proceedOnboarding=function(){
+      if(S.company&&S.company.id){
+        sb.from('companies').update(companyData).eq('id',S.company.id).eq('user_id',S.user.id).then(function(){
+          S.company=Object.assign(S.company||{},companyData);
+          sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
+          S.user.onboarding_step=1;render();
+        });
+      }else{
+        sb.from('companies').insert(companyData).select().single().then(function(r){
+          if(r.data)S.company=r.data;
+          sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
+          S.user.onboarding_step=1;render();
+        });
+      }
+    };
+    if(_companyName){
+      _sanctionsGate(_companyName,_companyCountry).then(function(canProceed){
+        if(!canProceed){UI.toast(_isKorean?'제재 대상으로 회사 등록이 차단되었습니다.':'Company registration blocked due to sanctions match.','err');return;}
+        _proceedOnboarding();
       });
     }else{
-      sb.from('companies').insert(companyData).select().single().then(function(r){
-        if(r.data)S.company=r.data;
-        sb.from('users').update({onboarding_step:1}).eq('id',S.user.id).then(function(){});
-        S.user.onboarding_step=1;render();
-      });
+      _proceedOnboarding();
     }
   }else if(step===1){
     var d=UI.fd('#obf1');if(!d.product_name){UI.toast(T('toast_product_name'),'warn');return;}
@@ -15680,6 +15693,11 @@ function createAndOpenDealRoom(title){
   var companyId=S.company?S.company.id:null;
   var projectId=S.currentProject?S.currentProject.id:(S.projects.length?S.projects[0].id:null);
   if(!projectId){UI.toast(_isKorean?'프로젝트를 먼저 생성해주세요.':'Please create a project first.','warn');return;}
+  /* Screen seller (manufacturer) against sanctions before deal creation */
+  var sellerName=S.company?(S.company.name_en||S.company.name_ko):(S.user.company_name||'');
+  var sellerCountry=S.company&&S.company.address_ko?'KR':'';
+  _sanctionsGate(sellerName, sellerCountry).then(function(canProceed){
+  if(!canProceed){UI.toast(_isKorean?'제재 대상으로 딜 생성이 차단되었습니다.':'Deal creation blocked due to sanctions match.','err');return;}
   sb.from('deals').insert({seller_company_id:companyId,seller_id:S.user.id,project_id:projectId,title:title,stage:'prospect',status:'active',currency:S.currency||'USD'}).select().single().then(function(r){
     if(r.error){UI.toast('\uB51C\uB8F8 \uC0DD\uC131 \uC2E4\uD328: '+(r.error.message||r.error),'err');return;}
     var deal=r.data;
@@ -15689,6 +15707,7 @@ function createAndOpenDealRoom(title){
     S._dealRoomDealsLoaded=false;
     openDealRoom(deal.id);
   });
+  }); /* end seller _sanctionsGate */
 }
 
 /* === INVITE TOKEN ROUTING (guest/buyer entry) === */
@@ -18914,6 +18933,31 @@ function _sanctionsGate(name, country) {
     }
 
     if (result.result === 'error') {
+      /* If degraded (both real APIs failed, only fallback used), block — cannot confirm safety */
+      if (result.degraded) {
+        return new Promise(function(resolve) {
+          var modalId = 'sanctions-degraded-modal';
+          var h = '<div style="padding:8px 0">';
+          h += '<div style="display:flex;align-items:center;gap:12px;padding:16px;border-radius:10px;background:rgba(255,82,82,.06);border:1px solid rgba(255,82,82,.15);margin-bottom:16px">';
+          h += '<span style="font-size:32px">🚫</span>';
+          h += '<div><div style="font-size:15px;font-weight:800;color:var(--err)">' + (_isKorean ? '제재 확인 불가 — 거래 차단' : 'Sanctions Check Failed — Transaction Blocked') + '</div>';
+          h += '<div style="font-size:12px;color:var(--w60);margin-top:4px;line-height:1.6">' + (_isKorean ? '제재 스크리닝 서비스에 연결할 수 없어 <b>' + UI.esc(name) + '</b>의 제재 여부를 확인할 수 없습니다. 안전을 위해 거래가 차단됩니다. 잠시 후 다시 시도해주세요.' : 'Unable to connect to sanctions screening services to verify <b>' + UI.esc(name) + '</b>. Transaction is blocked for safety. Please try again later.') + '</div>';
+          h += '</div></div>';
+          h += '</div>';
+          document.body.insertAdjacentHTML('beforeend', UI.modal({
+            id: modalId,
+            title: (_isKorean ? '🚫 제재 확인 실패' : '🚫 Sanctions Verification Failed'),
+            body: h,
+            footer: '<button class="btn btn-ghost" onclick="App.closeModal(\'' + modalId + '\')">' + (_isKorean ? '확인' : 'OK') + '</button>',
+            width: '500px'
+          }));
+          UI.showModal(modalId);
+          var obs = new MutationObserver(function() {
+            if (!document.getElementById(modalId)) { obs.disconnect(); resolve(false); }
+          });
+          obs.observe(document.body, { childList: true, subtree: true });
+        });
+      }
       return new Promise(function(resolve) {
         var modalId = 'sanctions-warn-modal';
         var h = '<div style="padding:8px 0">';

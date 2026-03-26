@@ -1,7 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get("origin") || "";
+  const ALLOWED_ORIGINS = [
+    "https://whistle-ai.com",
+    "https://www.whistle-ai.com",
+    "https://motiveinno-jpg.github.io",
+    "http://localhost:3000",
+    "http://localhost:5173",
+  ];
+  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  return "https://whistle-ai.com";
+}
+
+const DEFAULT_CORS = {
   "Access-Control-Allow-Origin": "https://whistle-ai.com",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
@@ -40,7 +53,8 @@ const SANCTIONED_COUNTRIES: Record<string, string> = {
 /**
  * Last-resort fallback: check if the queried country is in the hardcoded
  * sanctioned list. Returns a synthetic "flagged" match if the country matches,
- * or "clear" otherwise. This ensures the EF never returns an error to the client.
+ * or empty results otherwise. The caller must treat empty results as "error"
+ * (not "clear") since no real API verification was performed.
  */
 function fallbackCountryCheck(
   queryName: string,
@@ -133,6 +147,31 @@ interface ScreeningResponse {
   sources_checked: string[];
   cached: boolean;
   provider?: string;
+  degraded?: boolean;
+}
+
+/**
+ * Retry a fetch-based function with exponential backoff.
+ * Retries on 5xx errors and network failures.
+ */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 2,
+  baseDelayMs = 500,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -388,6 +427,11 @@ async function logToSanctionsLog(
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = {
+    ...DEFAULT_CORS,
+    "Access-Control-Allow-Origin": getCorsOrigin(req),
+  };
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -530,16 +574,17 @@ serve(async (req: Request) => {
     // --- Call external APIs with fallback chain ---
     // Priority: 1) OpenSanctions (reliable, free)
     //           2) Trade.gov CSL (sometimes 503)
-    //           3) Hardcoded sanctioned country list (always works)
+    //           3) Hardcoded sanctioned country list (last resort)
     let screeningResults: CslMatch[] = [];
     let provider = "opensanctions";
+    let isDegraded = false;
     const sourcesChecked = CSL_SOURCES.split(",");
 
-    // Primary: OpenSanctions
-    const osResult = await fetchOpenSanctions(
-      queryName,
-      queryCountry,
-      queryType,
+    // Primary: OpenSanctions (with retry)
+    const osResult = await withRetry(
+      () => fetchOpenSanctions(queryName, queryCountry, queryType),
+      2,
+      500,
     );
 
     if (osResult.error === null) {
@@ -551,11 +596,11 @@ serve(async (req: Request) => {
         osResult.error,
       );
 
-      // Fallback 1: Trade.gov CSL API
-      const tradeGovResult = await fetchTradeGovCsl(
-        queryName,
-        queryCountry,
-        queryType,
+      // Fallback 1: Trade.gov CSL API (with retry)
+      const tradeGovResult = await withRetry(
+        () => fetchTradeGovCsl(queryName, queryCountry, queryType),
+        2,
+        500,
       );
 
       if (tradeGovResult.error === null) {
@@ -567,17 +612,25 @@ serve(async (req: Request) => {
           tradeGovResult.error,
         );
 
-        // Fallback 2: Hardcoded sanctioned country list (never fails)
+        // Fallback 2: Hardcoded sanctioned country list (last resort)
+        // IMPORTANT: If country IS sanctioned, still return "flagged".
+        // If country is NOT in the list, return "error" — NOT "clear".
+        // We cannot confirm safety without a real API check.
         const fallback = fallbackCountryCheck(queryName, queryCountry);
         screeningResults = fallback.results;
         provider = fallback.provider;
+        isDegraded = true;
       }
     }
 
-    // --- Determine result (never "error" — hardcoded fallback guarantees a response) ---
+    // --- Determine result ---
+    // When degraded (both APIs failed): country match → "flagged", no match → "error"
+    // When not degraded (real API succeeded): matches → "flagged", no matches → "clear"
     let result: "clear" | "flagged" | "error";
     if (screeningResults.length > 0) {
       result = "flagged";
+    } else if (isDegraded) {
+      result = "error";
     } else {
       result = "clear";
     }
@@ -602,7 +655,7 @@ serve(async (req: Request) => {
       logToSanctionsLog(sbAdmin, logData),
     ]);
 
-    // --- Success response (always reaches here due to hardcoded fallback) ---
+    // --- Build response ---
     const response: ScreeningResponse = {
       screened: true,
       result,
@@ -611,6 +664,7 @@ serve(async (req: Request) => {
       sources_checked: sourcesChecked,
       cached: false,
       provider,
+      ...(isDegraded ? { degraded: true } : {}),
     };
 
     return new Response(JSON.stringify(response), {
