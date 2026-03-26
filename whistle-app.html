@@ -13815,20 +13815,21 @@ function loadMyProposals(){
 function respondInquiry(iqId){
   var iq=(S._directInquiries||[]).find(function(x){return x.id===iqId;});
   if(!iq){UI.toast(_isKorean?'문의를 찾을 수 없습니다.':'Inquiry not found.','err');return;}
-  /* 1) contact_requests 상태 업데이트 */
-  sb.from('contact_requests').update({status:'responded',responded_at:new Date().toISOString()}).eq('id',iqId).eq('product_id',iq.product_id).then(function(r){
-    if(r.error){UI.toast(_isKorean?'상태 업데이트 실패':'Status update failed','err');return;}
-    /* 2) buyers 레코드 생성 (중복 방지: email 기준) */
-    var buyerEmail=iq.contact_email||iq.email||'';
-    var buyerCountry=iq.country||'';
+  /* 0) buyer_id로 바이어 유저 정보 먼저 조회 */
+  var _doRespond=function(buyerUser){
+    var buyerEmail=(buyerUser?buyerUser.email:'')||iq.contact_email||iq.email||'';
+    var buyerCountry=(buyerUser?buyerUser.country:'')||iq.destination_country||iq.country||'';
+    var buyerCompany=(buyerUser?buyerUser.company_name:'')||iq.company_name||iq.contact_name||'Unknown';
+    var buyerName=(buyerUser?buyerUser.display_name:'')||iq.contact_name||'';
+    var buyerUserId=iq.buyer_id||iq.buyer_user_id||null;
     if(checkSanctionAndWarn(buyerCountry))return;
     checkHighRiskAndNotify(buyerCountry);
-    var buyerData={registered_by:S.user.id,buyer_user_id:iq.buyer_user_id||null,company_name:iq.company_name||iq.contact_name||'Unknown',contact_email:buyerEmail,contact_name:iq.contact_name||'',country:buyerCountry,status:'active',source:'direct_inquiry',notes:'제품 문의에서 전환 - '+UI.esc((iq.product_query||iq.message||'').slice(0,100)),created_at:new Date().toISOString()};
+    var buyerData={registered_by:S.user.id,buyer_user_id:buyerUserId,company_name:buyerCompany,contact_email:buyerEmail,contact_name:buyerName,country:buyerCountry,status:'active',source:'direct_inquiry',notes:'제품 문의에서 전환 - '+UI.esc((iq.product_query||iq.message||'').slice(0,100)),created_at:new Date().toISOString()};
     sb.from('buyers').insert(buyerData).select().single().then(function(br){
       if(br.error){UI.toast((_isKorean?'바이어 생성 실패: ':'Buyer creation failed: ')+br.error.message,'err');return;}
       var buyerId=br.data.id;
       /* 2-b) Sanctions screening before deal creation */
-      var buyerCompanyName=iq.company_name||iq.contact_name||'Unknown';
+      var buyerCompanyName=buyerCompany;
       _sanctionsGate(buyerCompanyName, buyerCountry).then(function(canProceed){
       if(!canProceed){UI.toast(_isKorean?'제재 대상으로 딜 생성이 차단되었습니다.':'Deal creation blocked due to sanctions match.','err');return;}
       /* 3) matchings 레코드 생성 → 딜 자동 생성 */
@@ -13836,13 +13837,13 @@ function respondInquiry(iqId){
       sb.from('matchings').insert(matchData).select().single().then(function(mr){
         if(mr.error){UI.toast(_isKorean?'딜 생성 실패':'Deal creation failed','err');return;}
         /* 4) 바이어에게 알림 (buyer_user_id가 있으면) */
-        if(iq.buyer_user_id){
-          _sendNotification(iq.buyer_user_id,'deal','Your inquiry got a response!',(S.company?S.company.name_en||S.company.name_ko:'Manufacturer')+' responded to your product inquiry.',{link_page:'deals',link_id:mr.data.id});
+        if(buyerUserId){
+          _sendNotification(buyerUserId,'deal','Your inquiry got a response!',(S.company?S.company.name_en||S.company.name_ko:'Manufacturer')+' responded to your product inquiry.',{link_page:'deals',link_id:mr.data.id});
         }
         /* 5-b) 제조사에게 매칭 이메일 알림 */
         fetch(SB_URL+'/functions/v1/send-transactional-email',{
           method:'POST',headers:{'Content-Type':'application/json','apikey':SB_ANON_KEY},
-          body:JSON.stringify({to:S.user.email,type:'buyer_matching',data:{buyerName:iq.company_name||iq.contact_name||'Unknown Buyer',productName:(S.products||[]).find(function(p){return p.id===iq.product_id;})?((S.products||[]).find(function(p){return p.id===iq.product_id;}).name_en||(S.products||[]).find(function(p){return p.id===iq.product_id;}).name_ko):'',dealId:mr.data.id},lang:_isKorean?'ko':'en'})
+          body:JSON.stringify({to:S.user.email,type:'buyer_matching',data:{buyerName:buyerCompany||'Unknown Buyer',productName:(S.products||[]).find(function(p){return p.id===iq.product_id;})?((S.products||[]).find(function(p){return p.id===iq.product_id;}).name_en||(S.products||[]).find(function(p){return p.id===iq.product_id;}).name_ko):'',dealId:mr.data.id},lang:_isKorean?'ko':'en'})
         }).catch(function(e){console.error('[whistle]',e);});
         /* 5) 시스템 메시지 전송 */
         sb.from('messages').insert({buyer_id:buyerId,user_id:S.user.id,sender_type:'seller',body:'[문의 응답] 제품 문의에 대해 응답드립니다. 딜이 생성되었습니다!',message_type:'system',channel:'platform',direction:'outbound'}).then(function(){}).catch(function(e){console.error('[whistle]',e);UI.toast(_isKorean?'오류가 발생했습니다':'An error occurred','err');});
@@ -13853,6 +13854,19 @@ function respondInquiry(iqId){
       });
       }); /* end _sanctionsGate */
     });
+  });
+  }; /* end _doRespond */
+  /* 1) contact_requests 상태 업데이트 */
+  sb.from('contact_requests').update({status:'responded',responded_at:new Date().toISOString()}).eq('id',iqId).eq('product_id',iq.product_id).then(function(r){
+    if(r.error){UI.toast(_isKorean?'상태 업데이트 실패':'Status update failed','err');return;}
+    /* buyer_id로 유저 정보 조회 후 _doRespond 호출 */
+    if(iq.buyer_id){
+      sb.from('users').select('email,display_name,company_name,country').eq('id',iq.buyer_id).single().then(function(pr){
+        _doRespond(pr.data||null);
+      }).catch(function(){_doRespond(null);});
+    } else {
+      _doRespond(null);
+    }
   });
 }
 
