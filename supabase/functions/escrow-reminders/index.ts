@@ -34,7 +34,7 @@ serve(async (req) => {
 
       const { data: pendingOrders, error: fetchErr } = await supabase
         .from("orders")
-        .select("id, seller_id, created_at")
+        .select("id, user_id, created_at")
         .eq("escrow_status", "buyer_paid")
         .gte("created_at", cutoffStart.toISOString())
         .lt("created_at", cutoffEnd.toISOString());
@@ -48,7 +48,7 @@ serve(async (req) => {
       for (const order of pendingOrders || []) {
         try {
           await sendNotification(supabaseUrl, serviceRoleKey, {
-            target_user_id: order.seller_id,
+            target_user_id: order.user_id,
             type: "order",
             title: "Order Acceptance Reminder",
             message: `You have an unaccepted order. It will auto-cancel in ${daysLeft} business day${daysLeft > 1 ? "s" : ""} if not accepted.`,
@@ -75,11 +75,11 @@ serve(async (req) => {
 
       const { data: shippedOrders, error: fetchErr } = await supabase
         .from("orders")
-        .select("id, buyer_id, shipped_at")
+        .select("id, buyer_id, escrow_shipped_at")
         .in("escrow_status", ["shipping", "delivered"])
-        .not("shipped_at", "is", null)
-        .gte("shipped_at", cutoffStart.toISOString())
-        .lt("shipped_at", cutoffEnd.toISOString());
+        .not("escrow_shipped_at", "is", null)
+        .gte("escrow_shipped_at", cutoffStart.toISOString())
+        .lt("escrow_shipped_at", cutoffEnd.toISOString());
 
       if (fetchErr) {
         console.error(`Delivery reminder fetch error (D+${dayOffset}):`, fetchErr.message);
@@ -115,11 +115,11 @@ serve(async (req) => {
 
     const { data: confirmedOrders, error: confirmedErr } = await supabase
       .from("orders")
-      .select("id, seller_id, delivered_at, amount, currency")
+      .select("id, user_id, escrow_delivered_at, escrow_amount, escrow_currency")
       .eq("escrow_status", "released")
-      .not("delivered_at", "is", null)
-      .gte("delivered_at", settlementCutoffStart.toISOString())
-      .lt("delivered_at", settlementCutoffEnd.toISOString());
+      .not("escrow_delivered_at", "is", null)
+      .gte("escrow_delivered_at", settlementCutoffStart.toISOString())
+      .lt("escrow_delivered_at", settlementCutoffEnd.toISOString());
 
     if (confirmedErr) {
       console.error("Settlement notice fetch error:", confirmedErr.message);
@@ -129,15 +129,15 @@ serve(async (req) => {
     for (const order of confirmedOrders || []) {
       try {
         await sendNotification(supabaseUrl, serviceRoleKey, {
-          target_user_id: order.seller_id,
+          target_user_id: order.user_id,
           type: "payment",
           title: "Payment Settlement Notice",
-          message: `Delivery has been confirmed. Payment settlement of ${order.currency || "USD"} ${order.amount || ""} will be processed within ${SETTLEMENT_WINDOW_DAYS} days.`,
+          message: `Delivery has been confirmed. Payment settlement of ${order.escrow_currency || "USD"} ${order.escrow_amount || ""} will be processed within ${SETTLEMENT_WINDOW_DAYS} days.`,
           link_page: "deals",
           link_id: order.id,
           email_data: {
-            amount: String(order.amount || ""),
-            currency: order.currency || "USD",
+            amount: String(order.escrow_amount || ""),
+            currency: order.escrow_currency || "USD",
             payment_type: "Escrow Settlement",
             date: new Date().toISOString().split("T")[0],
           },

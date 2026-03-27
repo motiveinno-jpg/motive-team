@@ -351,12 +351,15 @@ serve(async (req) => {
 
     if (authHeader && !hasValidInternal) {
       const token = authHeader.replace("Bearer ", "");
-      const { error: authErr } = await sbAdmin.auth.getUser(token);
-      if (authErr) {
-        return new Response(
-          JSON.stringify({ error: "Invalid token" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+      // Allow service role key for server-to-server calls (send-notification → send-transactional-email)
+      if (token !== serviceKey) {
+        const { error: authErr } = await sbAdmin.auth.getUser(token);
+        if (authErr) {
+          return new Response(
+            JSON.stringify({ error: "Invalid token" }),
+            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
       }
     }
 
