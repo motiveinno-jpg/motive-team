@@ -3279,8 +3279,19 @@ function disputeTimeline(d){
 }
 function disputeEvidenceSection(d){
   var evList=(d.details&&d.details.evidence)||[];
-  return '<div class="card" style="margin-bottom:16px"><div class="card-h"><span>'+AT('evidence')+' ('+evList.length+')</span><button class="btn btn-ghost btn-sm" onclick="Adm.showEvidenceUpload(\''+d.id+'\')">+ '+AT('add')+'</button></div><div class="card-b">'+
-    (evList.length?evList.map(function(ev,i){return '<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:var(--w08);margin-bottom:6px"><div style="width:32px;height:32px;border-radius:6px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:14px">'+(ev.type==='image'?'🖼️':ev.type==='document'?'📄':'📎')+'</div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600">'+U.esc(ev.name||('Evidence #'+(i+1)))+'</div><div style="font-size:10px;color:var(--w40)">'+U.esc(ev.uploaded_by_role||'')+' · '+U.fd(ev.uploaded_at)+'</div></div>'+(ev.url?'<a href="'+U.esc(ev.url)+'" target="_blank" class="btn btn-ghost btn-sm">'+AT('view')+'</a>':'')+'</div>';}).join('')
+  /* Also pull escrow dispute evidence from the linked order */
+  var escrowEv=[];
+  if(d.details&&d.details.deal_id){
+    var linkedOrder=S.orders.find(function(o){return o.deal_id===d.details.deal_id;});
+    if(linkedOrder&&linkedOrder.escrow_dispute){
+      var ed=linkedOrder.escrow_dispute;
+      (ed.buyerEvidence||[]).forEach(function(e){escrowEv.push({name:e.file_name||e.description,type:e.file_url&&/\.(jpg|jpeg|png|gif|webp)/i.test(e.file_url)?'image':'document',url:e.file_url,uploaded_at:e.uploadedAt,uploaded_by_role:'Buyer',description:e.description});});
+      (ed.sellerEvidence||[]).forEach(function(e){escrowEv.push({name:e.file_name||e.description,type:e.file_url&&/\.(jpg|jpeg|png|gif|webp)/i.test(e.file_url)?'image':'document',url:e.file_url,uploaded_at:e.uploadedAt,uploaded_by_role:'Seller',description:e.description});});
+    }
+  }
+  var allEv=evList.concat(escrowEv);
+  return '<div class="card" style="margin-bottom:16px"><div class="card-h"><span>'+AT('evidence')+' ('+allEv.length+')</span><button class="btn btn-ghost btn-sm" onclick="Adm.showEvidenceUpload(\''+d.id+'\')">+ '+AT('add')+'</button></div><div class="card-b">'+
+    (allEv.length?allEv.map(function(ev,i){return '<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:var(--w08);margin-bottom:6px"><div style="width:32px;height:32px;border-radius:6px;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:14px">'+(ev.type==='image'?'🖼️':ev.type==='document'?'📄':'📎')+'</div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600">'+U.esc(ev.name||('Evidence #'+(i+1)))+'</div><div style="font-size:10px;color:var(--w40)">'+U.esc(ev.uploaded_by_role||'')+' · '+U.fd(ev.uploaded_at)+'</div>'+(ev.description?'<div style="font-size:10px;color:var(--w50);margin-top:2px">'+U.esc(U.tr(ev.description,80))+'</div>':'')+'</div>'+(ev.url?'<a href="'+U.esc(ev.url)+'" target="_blank" class="btn btn-ghost btn-sm">'+AT('view')+'</a>':'')+'</div>';}).join('')
     :UI.empty('📎',AT('no_evidence'),AT('no_evidence_desc')))+
   '</div></div>';
 }
@@ -3372,6 +3383,17 @@ function changeDisputeStatus(id,val){
     if(S.selectedDispute&&S.selectedDispute.id===id)S.selectedDispute=d;
     UI.toast(AT('status_changed')+': '+DST[val],'ok');render();
     notifyDisputeParties(d,'status_change',AT('dispute_status_changed_to')+' '+DST[val]);
+    /* Sync escrow_dispute on linked order when resolved/closed */
+    if((val==='resolved'||val==='closed')&&d.details&&d.details.deal_id){
+      var resText=d.resolution||DST[val]||val;
+      sb.from('orders').select('escrow_dispute').eq('deal_id',d.details.deal_id).single().then(function(oRes){
+        if(oRes.error||!oRes.data||!oRes.data.escrow_dispute)return;
+        var ed=oRes.data.escrow_dispute;
+        ed.status=val;ed.resolvedAt=new Date().toISOString();ed.resolution=resText;ed.resolutionNote='Admin: '+resText;
+        ed.timeline=ed.timeline||[];ed.timeline.push({date:new Date().toISOString(),action:'Admin resolved: '+resText,type:'resolved'});
+        sb.from('orders').update({escrow_dispute:ed,updated_at:new Date().toISOString()}).eq('deal_id',d.details.deal_id).catch(function(e){console.error('[dispute] order sync fail:',e);});
+      });
+    }
   });
 }
 function changeDisputePriority(id,val){

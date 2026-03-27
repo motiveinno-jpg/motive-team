@@ -2815,6 +2815,8 @@ function doSearch(){
         sb.from('search_logs').insert({user_id:S.user.id,query:query,category:cat,ip_country:S.user.country||'unknown',results_count:S.whistleResults.length+S.naverResults.length,session_id:S._sessionId||''}).then(function(){
           S.searchCreditsUsed=(S.searchCreditsUsed||0)+1;
         });
+        // Log to search_trend_daily for trend analytics
+        sb.rpc('log_search_event',{p_query:query,p_category:cat!=='all'?cat:null,p_country:S.user.country||null}).catch(function(){});
       }
       render();
     }
@@ -5546,6 +5548,7 @@ function viewBuyerDisputeDetail(dealId){
     h+='<div style="border-top:1px solid var(--bd);padding-top:14px">';
     h+='<div style="font-size:11px;font-weight:700;color:var(--w60);margin-bottom:6px">'+_t('Add Evidence','증거 자료 추가')+'</div>';
     h+='<textarea id="buyerDisputeEvidenceDesc" rows="2" style="width:100%;padding:8px;border-radius:6px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:11px;resize:vertical" placeholder="'+_t('Evidence description (photo URLs, tracking info, etc.)','증거 설명 (사진 URL, 배송 추적 정보 등)')+'"></textarea>';
+    h+='<div style="margin-top:6px"><label style="display:flex;align-items:center;gap:6px;padding:8px;border-radius:6px;background:var(--sf);border:1px dashed var(--bd);cursor:pointer;font-size:11px;color:var(--w60)"><input type="file" id="buyerDisputeEvidenceFile" accept="image/*,.pdf,.doc,.docx" style="display:none" onchange="this.parentElement.querySelector(\'span\').textContent=this.files[0]?this.files[0].name:\'\'"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 1v12M1 7h12"/></svg>'+_t('Attach file (image, PDF, doc)','파일 첨부 (이미지, PDF, 문서)')+'<span style="color:var(--pri);font-size:10px;margin-left:auto"></span></label></div>';
     h+='<button class="btn btn-pri btn-sm" style="width:100%;margin-top:6px;font-size:11px" onclick="B.submitBuyerDisputeEvidence(\''+dealId+'\')">'+_t('Submit Evidence','증거 제출')+'</button>';
     h+='<div style="margin-top:12px;padding:10px;border-radius:8px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.12)">';
     h+='<div style="font-size:10px;color:var(--w40);line-height:1.5">'+_t('Our team reviews disputes within 48 hours. Both parties can submit evidence.','분쟁은 48시간 이내에 검토됩니다. 양측 모두 증거를 제출할 수 있습니다.')+' <a href="mailto:creative@mo-tive.com" style="color:var(--pri)">creative@mo-tive.com</a></div>';
@@ -5573,16 +5576,32 @@ function addBuyerDisputeEvidence(dealId){
 }
 function submitBuyerDisputeEvidence(dealId){
   var el=document.getElementById('buyerDisputeEvidenceDesc');
-  if(!el||!el.value.trim()){toast(_t('Please describe the evidence','증거 설명을 입력하세요'),'warn');return;}
+  var fileInput=document.getElementById('buyerDisputeEvidenceFile');
+  var file=fileInput&&fileInput.files&&fileInput.files[0];
+  if((!el||!el.value.trim())&&!file){toast(_t('Please describe evidence or attach a file','증거 설명 또는 파일을 첨부하세요'),'warn');return;}
   var esc=_getEscrowStatus(dealId);if(!esc||!esc.dispute)return;
-  esc.dispute.buyerEvidence=esc.dispute.buyerEvidence||[];
-  esc.dispute.buyerEvidence.push({description:el.value.trim(),uploadedAt:new Date().toISOString()});
-  esc.dispute.timeline=esc.dispute.timeline||[];
-  esc.dispute.timeline.push({date:new Date().toISOString(),action:_t('Buyer submitted evidence','바이어가 증거를 제출했습니다'),type:'evidence'});
-  _setEscrow(dealId,esc);
-  toast(_t('Evidence added','증거가 추가되었습니다'),'ok');
-  closeModal('b-dispute-modal');
-  B.viewBuyerDisputeDetail(dealId);
+  var desc=el?el.value.trim():'';
+  function saveBuyerEvidence(fileUrl){
+    esc.dispute.buyerEvidence=esc.dispute.buyerEvidence||[];
+    esc.dispute.buyerEvidence.push({description:desc,uploadedAt:new Date().toISOString(),file_url:fileUrl||null,file_name:file?file.name:null});
+    esc.dispute.timeline=esc.dispute.timeline||[];
+    esc.dispute.timeline.push({date:new Date().toISOString(),action:_t('Buyer submitted evidence','바이어가 증거를 제출했습니다')+(fileUrl?' ['+_t('file','파일')+']':''),type:'evidence'});
+    _setEscrow(dealId,esc);
+    sb.from('orders').update({escrow_dispute:esc.dispute,updated_at:new Date().toISOString()}).eq('deal_id',dealId).catch(function(e){console.error('[dispute] buyer evidence DB fail:',e);});
+    toast(_t('Evidence added','증거가 추가되었습니다'),'ok');
+    closeModal('b-dispute-modal');
+    B.viewBuyerDisputeDetail(dealId);
+  }
+  if(file){
+    var path='disputes/'+dealId+'/buyer_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'');
+    sb.storage.from('dispute-evidence').upload(path,file,{upsert:true}).then(function(r){
+      if(r.error){console.error('[dispute] file upload fail:',r.error.message);saveBuyerEvidence(null);return;}
+      var url=sb.storage.from('dispute-evidence').getPublicUrl(path).data.publicUrl;
+      saveBuyerEvidence(url);
+    }).catch(function(){saveBuyerEvidence(null);});
+  } else {
+    saveBuyerEvidence(null);
+  }
 }
 function _disputeStatusLabel(st){var labels=_isKorean?{open:'진행중',investigating:'조사중',resolved:'해결됨',rejected:'기각됨',closed:'종료'}:{open:'Open',investigating:'Investigating',resolved:'Resolved',rejected:'Rejected',closed:'Closed'};return labels[st]||st;}
 function _fmtBuyerDisputeDate(iso){if(!iso)return '-';try{var d=new Date(iso);return d.toLocaleDateString()+' '+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return iso;}}
