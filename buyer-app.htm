@@ -7587,6 +7587,65 @@ function buyerTrackShipment(trackNo,carrier){
   window.open(url,'_blank');
 }
 
+/* === AUTO TRACKING REFRESH === */
+function refreshShipmentTracking(shipId){
+  if(!shipId){toast(_t('No shipment selected','배송 없음'),'warn');return;}
+  var btn=document.querySelector('[data-refresh-ship="'+shipId+'"]');
+  if(btn){btn.disabled=true;btn.innerHTML='&#x23F3; '+_t('Refreshing...','갱신중...');}
+  fetch(SB_URL+'/functions/v1/track-vessels',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+sb.realtime.accessToken},
+    body:JSON.stringify({shipment_id:shipId})
+  }).then(function(r){return r.json();}).then(function(data){
+    if(data.ok){
+      // Update local state
+      var idx=(S.shipments||[]).findIndex(function(s){return s.id===shipId;});
+      if(idx>-1){
+        S.shipments[idx].tracking_status=data.estimated_status;
+        S.shipments[idx].tracking_url=data.tracking_url;
+        S.shipments[idx].tracking_history=data.history;
+        S.shipments[idx].tracking_metadata={progress_pct:data.progress_pct,days_remaining:data.days_remaining,carrier_detected:data.carrier};
+      }
+      toast(_t('Tracking updated: ','추적 갱신: ')+data.status_message,'ok');
+      render();
+    } else {
+      toast(data.error||_t('Refresh failed','갱신 실패'),'err');
+    }
+  }).catch(function(e){
+    console.error('[refreshTracking]',e);
+    toast(_t('Tracking refresh error','추적 갱신 오류'),'err');
+  }).finally(function(){
+    if(btn){btn.disabled=false;btn.innerHTML='&#x1F504; '+_t('Refresh','갱신');}
+  });
+}
+
+function refreshAllShipments(){
+  var active=(S.shipments||[]).filter(function(s){return s.status!=='delivered'&&s.status!=='canceled';});
+  if(!active.length){toast(_t('No active shipments','활성 배송 없음'),'info');return;}
+  toast(_t('Refreshing ','갱신중 ')+active.length+_t(' shipments...','건...'),'info');
+  var done=0;
+  active.forEach(function(sh){
+    fetch(SB_URL+'/functions/v1/track-vessels',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+sb.realtime.accessToken},
+      body:JSON.stringify({shipment_id:sh.id})
+    }).then(function(r){return r.json();}).then(function(data){
+      if(data.ok){
+        var idx=(S.shipments||[]).findIndex(function(s){return s.id===sh.id;});
+        if(idx>-1){
+          S.shipments[idx].tracking_status=data.estimated_status;
+          S.shipments[idx].tracking_url=data.tracking_url;
+          S.shipments[idx].tracking_history=data.history;
+          S.shipments[idx].tracking_metadata={progress_pct:data.progress_pct,days_remaining:data.days_remaining};
+        }
+      }
+    }).catch(function(){}).finally(function(){
+      done++;
+      if(done>=active.length){toast(_t('All shipments refreshed','모든 배송 갱신 완료'),'ok');render();}
+    });
+  });
+}
+
 function _shipTimelineStages(){
   return [
     {id:'picked_up',label:_t('Picked Up','접수'),icon:'&#x1F4CB;'},
@@ -7711,10 +7770,14 @@ function pgShipments(){
 
   // Stats
   var inTransit=shipList.filter(function(s){return['in_transit','departed','shipped'].indexOf(s.status)>-1;}).length;
-  var customs=shipList.filter(function(s){return['customs','customs_clearance','customs_cleared'].indexOf(s.status)>-1;}).length;
+  var customs=shipList.filter(function(s){return['customs','customs_clearance','customs_cleared','customs_import','customs_export'].indexOf(s.status)>-1;}).length;
   var delivered=shipList.filter(function(s){return s.status==='delivered';}).length;
 
-  var h='<div class="grid-4" style="gap:12px;margin-bottom:20px">';
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+  h+='<div style="font-size:12px;color:var(--w40)">'+shipList.length+' '+_t('shipment(s)','건의 배송')+'</div>';
+  h+='<button class="btn btn-ghost btn-sm" onclick="B.refreshAllShipments()" style="font-size:11px">&#x1F504; '+_t('Refresh All','전체 갱신')+'</button>';
+  h+='</div>';
+  h+='<div class="grid-4" style="gap:12px;margin-bottom:20px">';
   h+='<div class="stat-card" style="border-left:3px solid var(--pri)"><div class="stat-val">'+shipList.length+'</div><div class="stat-lbl">'+_t('Total','전체')+'</div></div>';
   h+='<div class="stat-card" style="border-left:3px solid #00b4d8"><div class="stat-val">'+inTransit+'</div><div class="stat-lbl">'+_t('In Transit','운송중')+'</div></div>';
   h+='<div class="stat-card" style="border-left:3px solid var(--acc)"><div class="stat-val">'+customs+'</div><div class="stat-lbl">'+_t('Customs','통관중')+'</div></div>';
@@ -7776,7 +7839,19 @@ function pgShipments(){
     } else if(sh.trackUrl){
       h+='<a href="'+esc(sh.trackUrl)+'" target="_blank" class="btn btn-ghost btn-sm">&#x1F517; '+_t('Track Online','온라인 추적')+'</a>';
     }
+    if(sh.type==='order'&&sh.source&&sh.source.id){
+      h+='<button class="btn btn-ghost btn-sm" data-refresh-ship="'+esc(sh.source.id)+'" onclick="B.refreshShipmentTracking(\''+esc(sh.source.id)+'\')" style="font-size:10px;margin-top:4px">&#x1F504; '+_t('Refresh','갱신')+'</button>';
+    }
     h+='</div></div>';
+
+    // Progress bar (from tracking_metadata)
+    var pct=sh.meta.progress_pct||0;
+    var daysLeft=sh.meta.days_remaining;
+    if(pct>0&&sh.status!=='delivered'){
+      h+='<div style="padding:0 16px 8px"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--w40);margin-bottom:4px"><span>'+_t('Progress','진행률')+' '+pct+'%</span>';
+      if(daysLeft!==null&&daysLeft!==undefined)h+='<span>'+_t('ETA: ','도착: ')+daysLeft+_t(' days',' 일')+'</span>';
+      h+='</div><div style="height:4px;background:var(--w08);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:linear-gradient(90deg,var(--pri),var(--acc));border-radius:2px;transition:width 0.5s"></div></div></div>';
+    }
 
     // Timeline
     h+=_renderTrackingTimeline(sh.status,sh.history);
@@ -9171,6 +9246,8 @@ window.B={
   submitSampleFeedback:submitSampleFeedback,cancelSampleReq:cancelSampleReq,
   requestSampleStandalone:requestSampleStandalone,submitStandaloneSample:submitStandaloneSample,
   buyerTrackShipment:buyerTrackShipment,
+  refreshShipmentTracking:refreshShipmentTracking,
+  refreshAllShipments:refreshAllShipments,
   _inqFilter:null
 };
 
