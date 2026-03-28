@@ -47,6 +47,21 @@ URLS=(
   "${SITE_URL}/privacy/en"
   "${SITE_URL}/refund-policy"
   "${SITE_URL}/refund-policy-en"
+  # Blog pages — critical for SEO traffic
+  "${SITE_URL}/blog"
+  "${SITE_URL}/blog/export-voucher-guide"
+  "${SITE_URL}/blog/hs-code-guide"
+  "${SITE_URL}/blog/alibaba-listing-guide"
+  "${SITE_URL}/blog/fta-savings-guide"
+  "${SITE_URL}/blog/us-export-guide"
+  "${SITE_URL}/blog/japan-export-guide"
+  "${SITE_URL}/blog/cosmetics-export"
+  "${SITE_URL}/blog/food-export"
+  "${SITE_URL}/blog/export-documents"
+  "${SITE_URL}/blog/ai-export-analysis"
+  # Product pages
+  "${SITE_URL}/app"
+  "${SITE_URL}/app/buyer"
 )
 
 echo "=== IndexNow URL Submission ==="
