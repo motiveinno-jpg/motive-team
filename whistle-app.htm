@@ -54,6 +54,7 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" crossorigin="anonymous"></script>
 <script defer src="https://js.stripe.com/v3/"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=Noto+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 <style>
@@ -15623,25 +15624,80 @@ function addClaimNote(orderId,claimIdx){
 function downloadDocsZip(projectId){
   var docs=(S.savedDocs||[]).filter(function(d){return d.project_id===projectId;});
   if(!docs.length){UI.toast(T('no_documents_to_download'),'warn');return;}
-  UI.toast((T('docs_count_prefix'))+docs.length+T('n_download_start'),'info');
-  var i=0;
-  function _next(){
-    if(i>=docs.length){UI.toast((T('all_docs_downloaded')),'ok');return;}
-    var d=docs[i];i++;
-    /* viewPjDoc로 미리보기 렌더 후 PDF 다운로드 */
+  if(typeof JSZip==='undefined'){
+    UI.toast(_isKorean?'ZIP 라이브러리 로딩 중... 잠시 후 다시 시도해주세요':'ZIP library loading... please try again shortly','warn');
+    return;
+  }
+  var pj=(S.projects||[]).find(function(p){return p.id===projectId;});
+  var pjName=(pj&&pj.name?pj.name.replace(/[^a-zA-Z0-9가-힣_-]/g,'_'):'project').substring(0,30);
+  var zip=new JSZip();
+  var total=docs.length;var done=0;var failed=0;
+  UI.toast((_isKorean?'PDF 생성 중... 0/':'Generating PDFs... 0/')+total,'info');
+  var docContainer=document.createElement('div');
+  docContainer.id='_zipDocRender';
+  docContainer.style.cssText='position:fixed;left:-9999px;top:0;width:794px;background:#fff;z-index:-1';
+  document.body.appendChild(docContainer);
+  function _genOne(idx){
+    if(idx>=total){
+      document.body.removeChild(docContainer);
+      if(done===0){UI.toast(_isKorean?'PDF 생성 실패':'PDF generation failed','err');return;}
+      zip.generateAsync({type:'blob'}).then(function(blob){
+        var a=document.createElement('a');
+        a.href=URL.createObjectURL(blob);
+        a.download='Whistle_'+pjName+'_docs_'+new Date().toISOString().slice(0,10)+'.zip';
+        a.click();URL.revokeObjectURL(a.href);
+        UI.toast((_isKorean?'ZIP 다운로드 완료 (':'ZIP downloaded (')+done+'/'+total+(failed>0?', '+failed+(_isKorean?' 실패':' failed'):'')+')', 'ok');
+      });
+      return;
+    }
+    var d=docs[idx];
     try{
       viewPjDoc(d.id);
       setTimeout(function(){
-        _downloadPjDocPDF(d.id);
-        setTimeout(_next,1500);
-      },800);
+        var el=document.getElementById('pj-doc-preview');
+        if(!el){done++;_genOne(idx+1);return;}
+        var clone=el.cloneNode(true);
+        clone.style.cssText='padding:20px;background:#fff;color:#000;width:754px';
+        docContainer.innerHTML='';docContainer.appendChild(clone);
+        html2canvas(clone,{scale:2,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
+          var imgData=canvas.toDataURL('image/jpeg',0.92);
+          var pdf=new jspdf.jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+          var pdfW=pdf.internal.pageSize.getWidth()-16;
+          var pdfH=(canvas.height*pdfW)/canvas.width;
+          var pageH=pdf.internal.pageSize.getHeight()-16;
+          var y=8;
+          if(pdfH<=pageH){
+            pdf.addImage(imgData,'JPEG',8,y,pdfW,pdfH);
+          }else{
+            var remainH=pdfH;var srcY=0;
+            while(remainH>0){
+              var sliceH=Math.min(pageH,remainH);
+              var sliceRatio=sliceH/pdfH;
+              var srcSliceH=Math.round(canvas.height*sliceRatio);
+              var sliceCanvas=document.createElement('canvas');
+              sliceCanvas.width=canvas.width;sliceCanvas.height=srcSliceH;
+              sliceCanvas.getContext('2d').drawImage(canvas,0,srcY,canvas.width,srcSliceH,0,0,canvas.width,srcSliceH);
+              pdf.addImage(sliceCanvas.toDataURL('image/jpeg',0.92),'JPEG',8,8,pdfW,sliceH);
+              remainH-=sliceH;srcY+=srcSliceH;
+              if(remainH>0)pdf.addPage();
+            }
+          }
+          var fileName=(d.doc_number||d.doc_type||'doc_'+idx)+'.pdf';
+          zip.file(fileName,pdf.output('blob'));
+          done++;
+          UI.toast((_isKorean?'PDF 생성 중... ':'Generating PDFs... ')+done+'/'+total,'info');
+          _genOne(idx+1);
+        }).catch(function(e){
+          console.error('[downloadDocsZip] html2canvas fail:',e);
+          failed++;_genOne(idx+1);
+        });
+      },600);
     }catch(e){
       console.error('[downloadDocsZip]',e);
-      UI.toast((d.doc_type||'').toUpperCase()+(T('download_failed')),'err');
-      _next();
+      failed++;_genOne(idx+1);
     }
   }
-  _next();
+  _genOne(0);
 }
 
 /* ── 서류 만료일 관리 ── */
@@ -20592,9 +20648,10 @@ function createDealOrder(){
   if(!num){UI.toast(T('order_no_required'),'warn');var _numEl=document.getElementById('do-num');if(_numEl)_numEl.focus();return;}
   if(!amt||amt<=0){UI.toast(T('please_enter_an_amount_2'),'warn');var _amtEl=document.getElementById('do-amt');if(_amtEl)_amtEl.focus();return;}
   sb.from('orders').insert({
-    user_id:S.user.id,buyer_id:deal.buyerId,
+    user_id:S.user.id,buyer_id:deal.buyerId,deal_id:deal.id,
     order_number:num,total_amount:amt,
     payment_terms:terms,status:'confirmed',payment_status:'unpaid',
+    escrow_status:terms==='Escrow'?'none':null,
     delivery_date:deadline||null,notes:notes?[{text:notes,date:new Date().toISOString(),by:S.user.email}]:null
   }).select().single().then(function(r){
     if(r.error){UI.toast((T('order_create_failed_prefix'))+r.error.message,'err');return;}
