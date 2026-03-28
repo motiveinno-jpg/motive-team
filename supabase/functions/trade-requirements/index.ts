@@ -99,7 +99,7 @@ serve(async (req: Request) => {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "출발국(origin_country)과 도착국(dest_country)을 입력하세요",
+          error: "origin_country and dest_country are required",
         }),
         {
           status: 400,
@@ -135,7 +135,7 @@ serve(async (req: Request) => {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "API 키가 설정되지 않았습니다.",
+          error: "API key not configured",
         }),
         {
           status: 500,
@@ -260,7 +260,7 @@ All costs in USD. Use realistic estimates with (est.) if uncertain. Never say "c
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "AI 응답 파싱 실패",
+          error: "Failed to parse AI response",
           raw: text.substring(0, 500),
           rawLen: text.length,
           stopReason: aiResp.stop_reason || "unknown",
@@ -279,7 +279,7 @@ All costs in USD. Use realistic estimates with (est.) if uncertain. Never say "c
   } catch (err) {
     console.error("trade-requirements error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: "서버 오류가 발생했습니다" }),
+      JSON.stringify({ ok: false, error: "Internal server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -490,7 +490,7 @@ serve(async (req: Request) => {
 
     if (!analysis_id || !product_name) {
       return new Response(
-        JSON.stringify({ ok: false, error: "analysis_id, product_name 필수" }),
+        JSON.stringify({ ok: false, error: "analysis_id and product_name are required" }),
         { status: 400, headers },
       );
     }
@@ -1033,9 +1033,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
             ok: true,
             partial: true,
             result,
-            message: isKo
-              ? "분석 시간이 초과되어 일부 결과만 반환되었습니다. 잠시 후 다시 시도해주세요."
-              : "Analysis timed out. Partial results returned. Please try again later for full analysis.",
+            message: "Analysis timed out. Partial results returned. Please try again later for full analysis.",
           }),
           { status: 200, headers },
         );
@@ -1055,9 +1053,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       return new Response(
         JSON.stringify({
           ok: false,
-          error: isKo
-            ? "분석 시간이 초과됐습니다. 잠시 후 다시 시도해주세요."
-            : "Analysis timed out. Please try again shortly.",
+          error: "Analysis timed out. Please try again later.",
           code: "ANALYSIS_TIMEOUT",
         }),
         { status: 504, headers },
@@ -1272,8 +1268,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "분석 시간이 초과됐습니다. 잠시 후 다시 시도해주세요.",
-          error_en: "Analysis timed out. Please try again shortly.",
+          error: "Analysis timed out. Please try again later.",
           code: "ANALYSIS_TIMEOUT",
         }),
         { status: 504, headers },
@@ -1283,8 +1278,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
     return new Response(
       JSON.stringify({
         ok: false,
-        error: "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        error_en: "Server error occurred. Please try again shortly.",
+        error: "Internal server error. Please try again later.",
         code: "SERVER_ERROR",
       }),
       { status: 500, headers },

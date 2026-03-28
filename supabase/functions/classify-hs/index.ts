@@ -186,7 +186,7 @@ serve(async (req: Request) => {
 
     if (!product_name) {
       return new Response(
-        JSON.stringify({ ok: false, error: "제품명을 입력하세요" }),
+        JSON.stringify({ ok: false, error: "Product name is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -194,7 +194,7 @@ serve(async (req: Request) => {
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
       return new Response(
-        JSON.stringify({ ok: false, error: "API 키가 설정되지 않았습니다. Supabase 대시보드에서 ANTHROPIC_API_KEY를 설정하세요." }),
+        JSON.stringify({ ok: false, error: "API key not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -328,7 +328,7 @@ Output JSON only.`;
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "AI 응답 파싱 실패",
+          error: "Failed to parse AI response",
           raw: text.substring(0, 500),
         }),
         {
@@ -358,7 +358,7 @@ Output JSON only.`;
   } catch (err) {
     console.error("classify-hs error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: "서버 오류가 발생했습니다" }),
+      JSON.stringify({ ok: false, error: "Internal server error" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

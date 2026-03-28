@@ -175,7 +175,7 @@ serve(async (req: Request) => {
 
     if (!effectiveHsCode) {
       return new Response(
-        JSON.stringify({ ok: false, error: "HS코드를 입력하세요" }),
+        JSON.stringify({ ok: false, error: "HS code is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -183,7 +183,7 @@ serve(async (req: Request) => {
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
       return new Response(
-        JSON.stringify({ ok: false, error: "API 키가 설정되지 않았습니다." }),
+        JSON.stringify({ ok: false, error: "API key not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -216,7 +216,7 @@ serve(async (req: Request) => {
     /* 단일 시장 */
     if (!effectiveDestination) {
       return new Response(
-        JSON.stringify({ ok: false, error: "수출 대상국을 선택하세요" }),
+        JSON.stringify({ ok: false, error: "Destination country is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -243,7 +243,7 @@ serve(async (req: Request) => {
   } catch (err) {
     console.error("fta-simulator error:", err);
     return new Response(
-      JSON.stringify({ ok: false, error: "서버 오류가 발생했습니다" }),
+      JSON.stringify({ ok: false, error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
@@ -350,7 +350,7 @@ async function callAI(apiKey: string, prompt: string) {
   /* JSON 추출 */
   const jsonMatch = text.match(/[\[{][\s\S]*[\]}]/);
   if (!jsonMatch) {
-    throw new Error("AI 응답에서 JSON을 찾을 수 없습니다");
+    throw new Error("JSON not found in AI response");
   }
 
   return JSON.parse(jsonMatch[0]);

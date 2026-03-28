@@ -42,7 +42,7 @@ serve(async (req: Request) => {
   } catch (err) {
     console.error("[exchange-rates] Unhandled error:", err);
     return jsonResponse(
-      { error: { code: "INTERNAL_ERROR", message: "서버 오류가 발생했습니다" } },
+      { error: { code: "INTERNAL_ERROR", message: "Internal server error" } },
       500,
     );
   }
@@ -68,7 +68,7 @@ async function handleGetRates(
 
   if (!freshRates) {
     return jsonResponse(
-      { error: { code: "EXCHANGE_API_UNAVAILABLE", message: "환율 정보를 가져올 수 없습니다" } },
+      { error: { code: "EXCHANGE_API_UNAVAILABLE", message: "Unable to fetch exchange rates" } },
       503,
     );
   }
@@ -95,7 +95,7 @@ async function handleConvert(
     body = await req.json();
   } catch {
     return jsonResponse(
-      { error: { code: "INVALID_JSON", message: "요청 본문이 올바른 JSON이 아닙니다" } },
+      { error: { code: "INVALID_JSON", message: "Request body is not valid JSON" } },
       400,
     );
   }
@@ -106,7 +106,7 @@ async function handleConvert(
 
   if (!amount || amount <= 0) {
     return jsonResponse(
-      { error: { code: "INVALID_AMOUNT", message: "유효한 금액을 입력해주세요" } },
+      { error: { code: "INVALID_AMOUNT", message: "A valid amount is required" } },
       400,
     );
   }
@@ -115,7 +115,7 @@ async function handleConvert(
 
   if (!rates) {
     return jsonResponse(
-      { error: { code: "EXCHANGE_API_UNAVAILABLE", message: "환율 정보를 가져올 수 없습니다" } },
+      { error: { code: "EXCHANGE_API_UNAVAILABLE", message: "Unable to fetch exchange rates" } },
       503,
     );
   }
@@ -125,14 +125,14 @@ async function handleConvert(
 
   if (!fromRate) {
     return jsonResponse(
-      { error: { code: "UNSUPPORTED_CURRENCY", message: `지원하지 않는 통화: ${from}` } },
+      { error: { code: "UNSUPPORTED_CURRENCY", message: `Unsupported currency: ${from}` } },
       400,
     );
   }
 
   if (!toRate) {
     return jsonResponse(
-      { error: { code: "UNSUPPORTED_CURRENCY", message: `지원하지 않는 통화: ${to}` } },
+      { error: { code: "UNSUPPORTED_CURRENCY", message: `Unsupported currency: ${to}` } },
       400,
     );
   }
