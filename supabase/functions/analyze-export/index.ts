@@ -25,12 +25,39 @@ function resolveLang(body: any): string {
 }
 
 
+// Repair common JSON issues from AI output (trailing commas, unclosed braces, unescaped newlines)
+function repairJSON(str: string): string {
+  let s = str;
+  // Remove trailing commas before } or ]
+  s = s.replace(/,\s*([\]}])/g, "$1");
+  // Fix unescaped newlines inside string values
+  s = s.replace(/(?<=:\s*"[^"]*)\n([^"]*")/g, "\\n$1");
+  // Close unclosed braces/brackets
+  let opens = 0, closesObj = 0, openArr = 0, closeArr = 0;
+  for (const ch of s) {
+    if (ch === "{") opens++;
+    else if (ch === "}") closesObj++;
+    else if (ch === "[") openArr++;
+    else if (ch === "]") closeArr++;
+  }
+  while (closeArr < openArr) { s += "]"; closeArr++; }
+  while (closesObj < opens) { s += "}"; closesObj++; }
+  // Remove any text after the last matching }
+  let depth = 0, lastClose = -1;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "{") depth++;
+    else if (s[i] === "}") { depth--; if (depth === 0) lastClose = i; }
+  }
+  if (lastClose > 0 && lastClose < s.length - 1) s = s.substring(0, lastClose + 1);
+  return s;
+}
+
 const CRAWL_TIMEOUT_MS = 5000; // 5s — faster cutoff, most pages load in 2-3s
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
-const AI_CALL_TIMEOUT_MS = 50000; // 50s per AI call
+const AI_CALL_TIMEOUT_MS = 65000; // 65s per AI call — cosmetics/complex categories need more time
 const AI_CALL_RETRY_DELAY_MS = 2000; // 2s delay before retry
-const WALL_CLOCK_LIMIT_MS = 135000; // 135s — hard cutoff with 15s buffer before Supabase 150s
+const WALL_CLOCK_LIMIT_MS = 140000; // 140s — hard cutoff with 10s buffer before Supabase 150s
 
 function makeBrowserHeaders(url?: string): Record<string, string> {
   // Detect likely language from URL domain to get native-language content
@@ -698,7 +725,15 @@ MOQ: ${moq || na}
           const text = data.content?.[0]?.text || "";
           const jsonMatch = text.match(/\{[\s\S]*\}/);
           if (!jsonMatch) throw new Error("No JSON in response: " + text.substring(0, 100));
-          return { result: JSON.parse(jsonMatch[0]), model: MODEL };
+          let jsonStr = jsonMatch[0];
+          try {
+            return { result: JSON.parse(jsonStr), model: MODEL };
+          } catch (parseErr) {
+            // Attempt JSON repair for common AI output issues
+            console.warn(`[AI] JSON parse failed, attempting repair: ${(parseErr as Error).message.substring(0, 80)}`);
+            jsonStr = repairJSON(jsonStr);
+            return { result: JSON.parse(jsonStr), model: MODEL + "-repaired" };
+          }
         } catch (err) {
           clearTimeout(timer);
           throw err;
@@ -892,8 +927,24 @@ ${isEn ? "Analyze markets, competition, and certifications. Output JSON:" : "시
   "risks": ["${isEn ? "With mitigation" : "대응방안 포함"}", "", ""]
 }
 ${isEn
-  ? `Rules: Max 5 cert_details with ALL needed certs per target market. Use the certification reference above as starting point — add market-specific requirements. Include REAL agency names, websites, estimated costs (USD), and timeline. The product originates from ${originLabel} — recommend labs/agencies accessible from ${originLabel}. Real competitor names with actual price points. Max 3 global, 2 local competitors. Market size in USD with source year.`
-  : `규칙: cert_details 최대 5개, 타겟시장별 필요인증 전부 포함. 위 인증 참조 데이터를 기반으로 시장별 요구사항 추가. 실제 기관명, 웹사이트, 예상비용(USD), 소요기간 포함. 제품 원산지는 ${originLabel} — ${originLabel}에서 접근 가능한 시험기관/인증기관 추천. 경쟁사 실명+실제 가격대. global 최대 3, local 최대 2. 시장규모 USD+출처연도. 존댓말 필수.`}`;
+  ? `Rules:
+★★★ ALL fields above are REQUIRED — do not omit any field. Every field must have meaningful content.
+- Max 5 cert_details with ALL needed certs per target market. Use the certification reference above as starting point — add market-specific requirements. Include REAL agency names, websites, estimated costs (USD), and timeline. The product originates from ${originLabel} — recommend labs/agencies accessible from ${originLabel}.
+- competitor_analysis: MUST include overview (2-4 sentences), SWOT (all 4 fields filled), at least 2 global competitors with real names and prices, and our_positioning.
+- market_analysis: MUST include at least 1 target market with size, growth rate, entry barriers, key channels.
+- industry_trend: MUST be 3-4 sentences with specific figures and growth rates.
+- opportunities: MUST list 3 specific opportunities with figures.
+- risks: MUST list 3 specific risks with mitigation strategies.
+- Real competitor names with actual price points. Max 3 global, 2 local competitors. Market size in USD with source year.`
+  : `규칙:
+★★★ 위 모든 필드는 필수 — 어떤 필드도 생략하지 마세요. 모든 필드에 의미 있는 내용을 채우세요.
+- cert_details 최대 5개, 타겟시장별 필요인증 전부 포함. 위 인증 참조 데이터를 기반으로 시장별 요구사항 추가. 실제 기관명, 웹사이트, 예상비용(USD), 소요기간 포함. 제품 원산지는 ${originLabel} — ${originLabel}에서 접근 가능한 시험기관/인증기관 추천.
+- competitor_analysis: overview(2~4문장), SWOT(4개 필드 전부), 글로벌 경쟁사 최소 2개 실명+가격, our_positioning 필수.
+- market_analysis: 타겟 시장 최소 1개, 시장규모/성장률/진입장벽/핵심채널 필수.
+- industry_trend: 3~4문장, 구체적 수치와 성장률 필수.
+- opportunities: 수치 포함 기회 3개 필수.
+- risks: 대응방안 포함 리스크 3개 필수.
+- 경쟁사 실명+실제 가격대. global 최대 3, local 최대 2. 시장규모 USD+출처연도. 존댓말 필수.`}`;
 
     // ─── CALL 3: Pricing & Action Plan ───
     const prompt3 = `${isEn ? "# Export Analysis — Pricing Strategy & Action Plan" : "# 수출 분석 — 가격 전략 & 실행 계획"}
@@ -928,9 +979,41 @@ ${isEn ? "Analyze pricing strategy and create actionable export plan. Output JSO
     "verdict": "",
     "reasons": ["", ""],
     "tips": ["", ""]
+  },
+  "margin_analysis": {
+    "fob_cost": "$XX",
+    "landed_cost": "$XX (${isEn ? "FOB + freight + insurance + duties" : "FOB + 운임 + 보험 + 관세"})",
+    "wholesale_price": "$XX",
+    "retail_price": "$XX",
+    "gross_margin": "XX%"
+  },
+  "logistics": {
+    "method": "${isEn ? "Air/Sea/Express" : "항공/해운/특송"}",
+    "cost_per_unit": "$X.XX",
+    "lead_time": "${isEn ? "X-X weeks" : "X~X주"}",
+    "packaging": "${isEn ? "Specific packaging requirements" : "포장 요건 설명"}",
+    "incoterms": "FOB/CIF/DDP"
+  },
+  "risk_matrix": [
+    {"risk": "", "likelihood": "${isEn ? "High/Med/Low" : "높음/중간/낮음"}", "impact": "${isEn ? "High/Med/Low" : "높음/중간/낮음"}", "mitigation": ""}
+  ],
+  "export_readiness": {
+    "documentation": 0~100,
+    "certification": 0~100,
+    "logistics": 0~100,
+    "marketing": 0~100,
+    "verdict": "${isEn ? "1-2 sentence overall readiness assessment" : "1~2문장 종합 수출 준비도 평가"}"
+  },
+  "government_support": {
+    "export_voucher": "${isEn ? "Applicable export support programs" : "활용 가능한 수출 바우처/지원사업"}",
+    "kotra_support": "${isEn ? "KOTRA/trade agency support available" : "KOTRA/무역관 지원 내용"}",
+    "sme_support": "${isEn ? "SME-specific programs" : "중소기업 전용 지원사업"}",
+    "estimated_subsidy": "$X,XXX~$XX,XXX"
   }
 }
-${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic advice." : "규칙: 실무 수준 액션 (기관명/URL/비용/기간). 일반론 금지. 존댓말 필수."}`;
+${isEn
+  ? "Rules: ★★★ ALL fields above are REQUIRED. Practical actions with real agencies/URLs/costs. No generic advice. margin_analysis must show complete FOB→Landed→Wholesale→Retail chain. risk_matrix must have 3-4 risks. export_readiness scores must be evidence-based. government_support should reference real programs from the origin country."
+  : "규칙: ★★★ 위 모든 필드 필수. 실무 수준 액션 (기관명/URL/비용/기간). 일반론 금지. margin_analysis는 FOB→도착원가→도매→소매 전체 체인 필수. risk_matrix 3~4개 리스크 필수. export_readiness는 근거 기반 점수. government_support는 원산지국의 실제 지원사업 기재. 존댓말 필수."}`;
 
     // ─── Run all 3 calls in parallel with wall clock guard ───
     console.log("[parallel] Starting 3 AI calls simultaneously...");
@@ -952,7 +1035,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       }).eq("id", analysis_id).eq("user_id", user.id).then(() => {}).catch(() => {});
     };
 
-    // All 3 calls fire simultaneously — no stagger needed for Haiku
+    // All 3 calls run truly parallel — no stagger needed (timeout was the issue, not rate limits)
     const [r1, r2, r3] = await Promise.allSettled([
       callAI(prompt1 + langCtx, 5000, visionImage, startTime).then((res) => {
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
@@ -960,13 +1043,13 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
         saveProgress("core_done", 50);
         return res;
       }),
-      callAI(prompt2 + langCtx, 4000, undefined, startTime).then((res) => {
+      callAI(prompt2 + langCtx, 5000, undefined, startTime).then((res) => {
         console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         saveProgress("market_done", 75);
         return res;
       }),
-      callAI(prompt3 + langCtx, 3000, undefined, startTime).then((res) => {
+      callAI(prompt3 + langCtx, 4500, undefined, startTime).then((res) => {
         console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         return res;
@@ -994,7 +1077,9 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
       Object.assign(result, r2.value.result);
       usedModels.push(r2.value.model);
     } else {
-      console.error("[call2] FAILED:", r2.reason);
+      const errMsg = (r2.reason as Error)?.message || String(r2.reason);
+      console.error("[call2] FAILED:", errMsg);
+      result._call2_error = errMsg.substring(0, 500);
       failedCalls++;
     }
 
@@ -1132,8 +1217,8 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
 }`;
           rescuePromises.push(
             Promise.allSettled([
-              callAI(prompt2a + langCtx, 2500, undefined, startTime),
-              callAI(prompt2b + langCtx, 2000, undefined, startTime),
+              callAI(prompt2a + langCtx, 3500, undefined, startTime),
+              callAI(prompt2b + langCtx, 2500, undefined, startTime),
             ]).then(([ra, rb]) => {
               let recovered = false;
               if (ra.status === "fulfilled") {
@@ -1157,7 +1242,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
         } else {
           // Not enough time: try single rescue with reduced tokens
           rescuePromises.push(
-            callAI(prompt2 + langCtx, 3000, undefined, startTime).then((res) => {
+            callAI(prompt2 + langCtx, 5000, undefined, startTime).then((res) => {
               Object.assign(result, res.result);
               usedModels.push(res.model + "-rescue");
               failedCalls--;
@@ -1168,7 +1253,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
       }
       if (r3.status !== "fulfilled") {
         rescuePromises.push(
-          callAI(prompt3 + langCtx, 3000, undefined, startTime).then((res) => {
+          callAI(prompt3 + langCtx, 4500, undefined, startTime).then((res) => {
             Object.assign(result, res.result);
             usedModels.push(res.model + "-rescue");
             failedCalls--;
@@ -1203,6 +1288,40 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
     if (failedCalls > 0) {
       result._partial_failure = true;
       result._failed_calls = failedCalls;
+    }
+
+    // ─── Fallback: generate Call 2 data from available results if missing ───
+    if (!result.competitor_analysis && result.summary) {
+      const fb = isKo;
+      result.competitor_analysis = {
+        overview: fb ? "경쟁사 상세 분석이 일시적으로 불가합니다. 재분석 시 포함됩니다." : "Detailed competitor analysis temporarily unavailable. Will be included on re-analysis.",
+        swot: {
+          strength: result.scores?.brand_power > 50 ? (fb ? "브랜드 인지도 보유" : "Brand recognition") : (fb ? "가격 경쟁력" : "Price competitiveness"),
+          weakness: fb ? "해외 시장 인지도 부족" : "Limited overseas market awareness",
+          opportunity: fb ? "글로벌 시장 성장 트렌드" : "Global market growth trend",
+          threat: fb ? "현지 경쟁사 및 대체품" : "Local competitors and substitutes",
+        },
+        global_competitors: [],
+        local_competitors: [],
+      };
+      result._call2_fallback = true;
+    }
+    if (!result.industry_trend && result.summary) {
+      result.industry_trend = result.summary;
+    }
+    if ((!result.opportunities || result.opportunities.length === 0) && result.action_plan) {
+      result.opportunities = [
+        isKo ? "글로벌 시장 진출 기회 (상세 분석은 재분석 시 제공)" : "Global market entry opportunity (details on re-analysis)",
+        isKo ? "온라인 채널 확대 가능성" : "Online channel expansion potential",
+        isKo ? "FTA 활용 관세 절감" : "FTA tariff reduction opportunity",
+      ];
+    }
+    if ((!result.risks || result.risks.length === 0) && result.action_plan) {
+      result.risks = [
+        isKo ? "인증/규제 준수 리스크" : "Certification/regulatory compliance risk",
+        isKo ? "브랜드 인지도 부재로 인한 초기 진입 어려움" : "Initial market entry difficulty due to low brand awareness",
+        isKo ? "환율 변동 및 물류비 증가 리스크" : "Exchange rate fluctuation and logistics cost risk",
+      ];
     }
 
     // Save final merged result
@@ -1434,7 +1553,6 @@ In your analysis, you MUST include: (1) specific sanctions/export control warnin
     : "";
 
   // For non-ko/non-en: add language override instruction
-  const isKo = d.language === "ko";
   const bpLangOverride = (d.language !== "ko" && d.language !== "en") ? `\n\n**CRITICAL LANGUAGE REQUIREMENT: You MUST write your ENTIRE response in ${LANG_NAMES[d.language] || "English"}. All text fields, descriptions, reasons, notes, and advice must be in ${LANG_NAMES[d.language] || "English"}. Only keep technical terms (HS codes, FTA names, certification names) in their original form.**` : "";
 
   return `${intro}${bpLangOverride}
@@ -1574,11 +1692,43 @@ ${principles}
     "verdict": "${isEn ? "Recommended/Average/Not Recommended" : "추천/보통/비추천"}",
     "reasons": ["${isEn ? "Rationale 1" : "판단 근거 1"}", "${isEn ? "Rationale 2" : "근거 2"}"],
     "tips": ["${isEn ? "Practical tip for Alibaba listing 1" : "알리바바 입점 시 실무 팁 1"}", "${isEn ? "Tip 2" : "팁 2"}"]
+  },
+  "margin_analysis": {
+    "fob_cost": "$XX",
+    "landed_cost": "$XX (${isEn ? "FOB + freight + insurance + duties" : "FOB + 운임 + 보험 + 관세"})",
+    "wholesale_price": "$XX",
+    "retail_price": "$XX",
+    "gross_margin": "XX%"
+  },
+  "logistics": {
+    "method": "${isEn ? "Recommended shipping method" : "추천 운송방법"}",
+    "cost_per_unit": "$X.XX",
+    "lead_time": "${isEn ? "X-X weeks" : "X~X주"}",
+    "packaging": "${isEn ? "Specific packaging requirements" : "포장 요건"}",
+    "incoterms": "FOB/CIF/DDP"
+  },
+  "risk_matrix": [
+    {"risk": "${isEn ? "Risk factor" : "리스크 요인"}", "likelihood": "${isEn ? "High/Med/Low" : "높음/중간/낮음"}", "impact": "${isEn ? "High/Med/Low" : "높음/중간/낮음"}", "mitigation": "${isEn ? "Mitigation strategy" : "대응 전략"}"}
+  ],
+  "export_readiness": {
+    "documentation": 0~100,
+    "certification": 0~100,
+    "logistics": 0~100,
+    "marketing": 0~100,
+    "verdict": "${isEn ? "Overall readiness assessment (1-2 sentences)" : "종합 수출 준비도 평가 (1~2문장)"}"
+  },
+  "government_support": {
+    "export_voucher": "${isEn ? "Export voucher/support programs from origin country" : "원산지국 수출 바우처/지원사업"}",
+    "kotra_support": "${isEn ? "Trade promotion agency support" : "무역관/KOTRA 지원 내용"}",
+    "sme_support": "${isEn ? "SME-specific programs" : "중소기업 전용 지원사업"}",
+    "estimated_subsidy": "$X,XXX~$XX,XXX"
   }
 }
 
 ## ${isEn ? "Rules" : "규칙"}
+- ${isEn ? "★★★ ALL fields above are REQUIRED — do not omit any field. Every field must have meaningful content." : "★★★ 위 모든 필드 필수 — 어떤 필드도 생략 금지. 모든 필드에 의미 있는 내용 필수."}
 - ${isEn ? "ALL text fields must be in English. Output JSON only. Use real competitor names. No generalities. Write in friendly, clear consulting tone." : "한국어로 작성. JSON만 출력. 경쟁사 실명 사용. 일반론 금지. 친절하고 명확한 컨설팅 톤으로 작성."}
 - ${isEn ? "Conservative scoring when information is insufficient. Max 3 global_competitors. Max 2 local_competitors." : "정보 부족 시 보수적 채점. global_competitors 최대 3개. local_competitors 최대 2개."}
-- ${isEn ? "Max 5 cert_details — include ALL certifications needed for the recommended markets. market_analysis only for requested target markets." : "cert_details 최대 5개 — 추천 시장에서 필요한 모든 인증을 포함하세요. market_analysis는 요청된 타겟 시장만."}`;
+- ${isEn ? "Max 5 cert_details — include ALL certifications needed for the recommended markets. market_analysis only for requested target markets." : "cert_details 최대 5개 — 추천 시장에서 필요한 모든 인증을 포함하세요. market_analysis는 요청된 타겟 시장만."}
+- ${isEn ? "risk_matrix: 3-4 rows. margin_analysis: complete FOB→Landed→Wholesale→Retail chain. export_readiness: evidence-based scores." : "risk_matrix: 3~4행. margin_analysis: FOB→도착원가→도매→소매 전체 체인. export_readiness: 근거 기반 점수."}`;
 }
