@@ -269,16 +269,25 @@ serve(async (req) => {
               .eq("id", meta.deal_id)
               .single();
             if (matching) {
-              const payLabel = paymentType === "sample" ? "샘플비" :
-                               paymentType === "deposit" ? "선금(계약금)" : "전체 결제";
+              const payLabel = paymentType === "sample" ? "Sample Payment" :
+                               paymentType === "deposit" ? "Deposit Payment" : "Full Payment";
+              const buyerName = matching.buyer_company || "Buyer";
               await supabase.from("notifications").insert({
                 user_id: matching.user_id,
                 type: "payment",
-                title: `💰 ${payLabel} 결제 완료`,
-                body: `${matching.buyer_company || "바이어"}가 ${payLabel} ${paymentCur} ${paymentAmt.toFixed(2)}를 결제했습니다. 에스크로 보관 중입니다.`,
+                title: `Payment Received — ${payLabel}`,
+                body: `${buyerName} paid ${paymentCur} ${paymentAmt.toFixed(2)} (${payLabel}). Funds are held in escrow.`,
                 link_page: "deals",
                 link_id: meta.deal_id,
                 is_read: false,
+              });
+
+              // Also notify seller via email
+              await notifyUser(supabase, matching.user_id, "payment_confirmation", {
+                amount: paymentAmt.toFixed(2),
+                currency: paymentCur,
+                payment_type: `${payLabel} from ${buyerName} (Escrow)`,
+                date: new Date().toISOString().split("T")[0],
               });
             }
           }
