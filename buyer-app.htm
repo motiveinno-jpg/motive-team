@@ -2444,7 +2444,7 @@ function doSignup(f){
   if(!f.country||!f.country.value){return set({authError:_t('Please select your country.','국가를 선택해주세요.')});}
   if(isSanctionedCountry(f.country.value)){return set({authError:_t('Registration is not available for your region due to international trade regulations.','국제 무역 규정으로 인해 해당 지역에서는 등록이 불가합니다.')});}
   set({authError:''});
-  sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:{role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value,country:f.country.value,interests:f.interest&&f.interest.value?JSON.stringify([f.interest.value]):null,terms_accepted_at:new Date().toISOString()}}}).then(function(r){
+  sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:{role:'buyer',company_name:f.company_name.value,display_name:f.display_name.value,country:f.country.value,interests:f.interest&&f.interest.value?JSON.stringify([f.interest.value]):null,terms_accepted_at:new Date().toISOString()},emailRedirectTo:window.location.origin+'/app/buyer'}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:_t('This email is already registered. Please sign in.','이미 등록된 이메일입니다. 로그인해 주세요.')});
     // users table record is created on first login via loadUser(), after email verification
@@ -2458,7 +2458,7 @@ function socialLogin(provider){
   }).catch(function(){set({authError:'Network error. Please try again.'});});
 }
 function doReset(f){
-  sb.auth.resetPasswordForEmail(f.email.value).then(function(r){
+  sb.auth.resetPasswordForEmail(f.email.value,{redirectTo:window.location.origin+'/app/buyer'}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     toast(_t('Reset link sent to your email','재설정 링크가 이메일로 전송되었습니다'),'ok');
     set({authMode:'login'});
@@ -2648,42 +2648,35 @@ function pgDash(){
   var h='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.2);background:linear-gradient(135deg,rgba(255,184,0,.06),rgba(255,140,0,.04));cursor:pointer" onclick="window.open(\'whistle-prelaunch.html\',\'_blank\')"><div class="card-b" style="display:flex;align-items:center;gap:14px"><div style="font-size:28px">&#x1F389;</div><div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--acc)">'+_t('Beta Open is LIVE','베타 오픈 진행 중')+'</div><div style="font-size:12px;color:var(--w60);margin-top:2px">'+_t('Sign up now: 3 discount coupons + unlimited RFQs + free tariff calculator + referral rewards','지금 가입하세요: 할인 쿠폰 3장 + 무제한 견적요청 + 무료 관세 계산기 + 추천 보상')+'</div></div><div style="font-size:12px;color:var(--acc);font-weight:600;white-space:nowrap">'+_t('Learn More','자세히 보기')+' &#x2192;</div></div></div>';
   // ② Welcome
   h+='<div style="margin-bottom:24px"><h2 style="font-size:22px;font-weight:800;margin-bottom:4px">'+_t('Welcome','환영합니다')+', '+esc(u.display_name||u.company_name||_t('Buyer','바이어'))+'</h2><p style="font-size:13px;color:var(--w40)">'+_t('Source premium products with Whistle AI','Whistle AI로 프리미엄 제품을 소싱하세요')+'</p></div>';
-  // At the start of pgDash(), after the welcome message, check if user is new
-  var isNew = !S.inquiries.length && !S.deals.length && !S.savedProducts.length;
-  if(isNew) {
-    h += '<div class="card" style="border:1px solid rgba(0,212,255,.3);margin-bottom:20px;background:linear-gradient(135deg,rgba(0,212,255,.03),rgba(0,136,255,.02))">';
-    h += '<div class="card-b" style="padding:28px">';
-    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px"><div style="font-size:24px">&#x1F6D2;</div><h3 style="font-size:18px;font-weight:800">'+_t('How to Source Products','제품 소싱 가이드')+'</h3></div>';
-
-    // Step 1 - Search Products (active, clickable)
-    h += '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;padding:14px 16px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.2);border-radius:var(--r-s);cursor:pointer" onclick="B.set({page:\'search\'})">';
-    h += '<div style="width:28px;height:28px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg);flex-shrink:0">1</div>';
-    h += '<div style="flex:1"><div style="font-weight:700;font-size:14px;margin-bottom:2px;color:var(--pri)">'+_t('Search Products','제품 검색')+'</div>';
-    h += '<div style="font-size:12px;color:var(--w50)">'+_t('Browse trending products from verified manufacturers','검증된 제조사의 인기 제품을 둘러보세요')+'</div>';
-    h += '<div style="margin-top:8px;font-size:12px;font-weight:600;color:var(--pri)">'+_t('Start Searching','검색 시작')+' &#x2192;</div></div></div>';
-
-    // Step 2 - Send Inquiry (locked)
-    h += '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;padding:14px 16px;background:var(--w04);border:1px solid var(--bd);border-radius:var(--r-s);opacity:.7">';
-    h += '<div style="width:28px;height:28px;border-radius:50%;background:var(--w12);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--w40);flex-shrink:0">2</div>';
-    h += '<div style="flex:1"><div style="font-weight:700;font-size:14px;margin-bottom:2px;color:var(--w70)">'+_t('Send Inquiry','문의 보내기')+'</div>';
-    h += '<div style="font-size:12px;color:var(--w30)">'+_t('Contact manufacturers directly with your sourcing needs','소싱 요구사항을 제조사에 직접 문의하세요')+'</div>';
-    h += '<div style="margin-top:4px;font-size:10px;color:var(--w20);font-style:italic">'+_t('After finding a product','제품을 찾은 후')+'</div></div></div>';
-
-    // Step 3 - Get Quote & Negotiate (locked)
-    h += '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;padding:14px 16px;background:var(--w04);border:1px solid var(--bd);border-radius:var(--r-s);opacity:.7">';
-    h += '<div style="width:28px;height:28px;border-radius:50%;background:var(--w12);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--w40);flex-shrink:0">3</div>';
-    h += '<div style="flex:1"><div style="font-weight:700;font-size:14px;margin-bottom:2px;color:var(--w70)">'+_t('Get Quote & Negotiate','견적 받기 및 협상')+'</div>';
-    h += '<div style="font-size:12px;color:var(--w30)">'+_t('Review pricing, MOQ, and request samples before committing','가격, MOQ를 검토하고 계약 전 샘플을 요청하세요')+'</div>';
-    h += '<div style="margin-top:4px;font-size:10px;color:var(--w20);font-style:italic">'+_t('After manufacturer responds','제조사 응답 후')+'</div></div></div>';
-
-    // Step 4 - Pay Securely & Track (locked)
-    h += '<div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--w04);border:1px solid var(--bd);border-radius:var(--r-s);opacity:.7">';
-    h += '<div style="width:28px;height:28px;border-radius:50%;background:var(--w12);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--w40);flex-shrink:0">4</div>';
-    h += '<div style="flex:1"><div style="font-weight:700;font-size:14px;margin-bottom:2px;color:var(--w70)">'+_t('Pay Securely & Track','안전 결제 및 추적')+'</div>';
-    h += '<div style="font-size:12px;color:var(--w30)">'+_t('Stripe payment protection keeps your money safe until delivery is confirmed','Stripe 결제 보호로 배송 확인까지 대금이 안전하게 보호됩니다')+'</div>';
-    h += '<div style="margin-top:4px;font-size:10px;color:var(--w20);font-style:italic">'+_t('After agreeing on terms','조건 합의 후')+'</div></div></div>';
-
-    h += '</div></div>';
+  // Progressive Getting Started checklist
+  var _bsSearch=!!(S.searchCreditsUsed||S.savedProducts.length);
+  var _bsInquiry=!!S.inquiries.length;
+  var _bsDeal=!!S.deals.length;
+  var _bsOrder=!!S.orders.length;
+  var _bsDone=[_bsSearch,_bsInquiry,_bsDeal,_bsOrder].filter(Boolean).length;
+  var isNew=_bsDone<4;
+  if(isNew){
+    var _bsSteps=[
+      {done:_bsSearch,icon:'&#x1F50D;',label:_t('Search Products','제품 검색'),desc:_t('Browse products from verified manufacturers','검증된 제조사의 제품을 둘러보세요'),action:'B.nav(\'search\')',btn:_t('Search','검색')},
+      {done:_bsInquiry,icon:'&#x1F4E9;',label:_t('Send Inquiry','문의 보내기'),desc:_t('Contact manufacturers with your sourcing needs','소싱 요구사항을 제조사에 문의하세요'),action:'B.nav(\'search\')',btn:_t('Find Products','제품 찾기')},
+      {done:_bsDeal,icon:'&#x1F91D;',label:_t('Get Quote & Negotiate','견적 받기 및 협상'),desc:_t('Review pricing, MOQ, and request samples','가격, MOQ 검토 및 샘플 요청'),action:'B.nav(\'deals\')',btn:_t('View Deals','딜 보기')},
+      {done:_bsOrder,icon:'&#x1F4B3;',label:_t('Pay Securely & Track','안전 결제 및 추적'),desc:_t('Stripe escrow keeps your payment safe until delivery','에스크로로 배송 확인까지 결제금 보호'),action:'B.nav(\'orders\')',btn:_t('View Orders','주문 보기')}
+    ];
+    h+='<div class="card" style="border:1px solid rgba(0,212,255,.3);margin-bottom:20px;background:linear-gradient(135deg,rgba(0,212,255,.03),rgba(0,136,255,.02))">';
+    h+='<div class="card-b" style="padding:24px">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">&#x1F6D2;</span><span style="font-size:16px;font-weight:800">'+_t('Sourcing Guide','소싱 가이드')+'</span></div><span style="font-size:12px;color:var(--pri);font-weight:700">'+_bsDone+'/4</span></div>';
+    h+='<div style="height:4px;border-radius:2px;background:var(--w08);margin-bottom:16px;overflow:hidden"><div style="height:100%;width:'+(_bsDone*25)+'%;background:linear-gradient(90deg,var(--pri),#3b82f6);border-radius:2px"></div></div>';
+    _bsSteps.forEach(function(s,i){
+      var _isNext=!s.done&&(i===0||_bsSteps[i-1].done);
+      h+='<div style="display:flex;align-items:center;gap:12px;padding:10px 0;'+(i<_bsSteps.length-1?'border-bottom:1px solid var(--w08);':'')+'">';
+      h+='<div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;'+(s.done?'background:rgba(0,230,118,.12);color:var(--ok)':_isNext?'background:rgba(0,212,255,.12);color:var(--pri)':'background:var(--w04);color:var(--w30)')+'">'+(s.done?'&#x2713;':s.icon)+'</div>';
+      h+='<div style="flex:1"><div style="font-size:13px;'+(s.done?'color:var(--w40);text-decoration:line-through':_isNext?'color:var(--w90);font-weight:700':'color:var(--w40)')+'">'+s.label+'</div>';
+      if(!s.done)h+='<div style="font-size:11px;color:var(--w30);margin-top:1px">'+s.desc+'</div>';
+      h+='</div>';
+      if(_isNext)h+='<button class="btn btn-pri btn-sm" onclick="'+s.action+'" style="font-size:11px;padding:6px 14px;flex-shrink:0">'+s.btn+' &#x2192;</button>';
+      h+='</div>';
+    });
+    h+='</div></div>';
   }
 
   // Stats
@@ -8800,6 +8793,7 @@ sb.auth.onAuthStateChange(function(event,session){
   if(event==='TOKEN_REFRESHED'){loadUser();}
   else if(event==='SIGNED_OUT'){S.user=null;S.loading=false;render();}
   else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
+  else if(event==='SIGNED_IN'){if(!S.user&&session)loadUser();}
 });
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');var _guestPages={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
 window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');var _guestPages2={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages2[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
