@@ -14,6 +14,9 @@ const CACHE_TTL_HOURS = 6;
 const TARGET_CURRENCIES = [
   "KRW", "EUR", "JPY", "CNY", "GBP", "THB", "VND", "INR",
   "BRL", "MXN", "AED", "SGD", "AUD", "CAD", "TWD",
+  "CHF", "CZK", "DKK", "HKD", "HUF", "IDR", "ILS",
+  "MYR", "NOK", "NZD", "PHP", "PLN", "SEK", "TRY", "ZAR",
+  "SAR", "PKR", "BDT", "NGN", "EGP", "COP", "CLP", "ARS",
 ];
 
 serve(async (req: Request) => {

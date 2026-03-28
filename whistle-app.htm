@@ -4627,7 +4627,7 @@ function _loadExRateFallback(){
   /* 다통화 환율 로드 (KRW 기준 → 시장별 통화 표시용) */
   var cachedMulti=localStorage.getItem('whistle_fxrates');
   if(cachedMulti){try{var cm=JSON.parse(cachedMulti);if(cm.rates&&cm.time&&Date.now()-cm.time<3600000){window._fxRates=cm.rates;window._fxRatesUpdated=new Date(cm.time);_updateFxIndicator();}}catch(e){console.error('[exrate]',e);}}
-  _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB,INR,CAD',null,10000).then(function(r){return r.json();}).then(function(d){
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,SGD,THB,INR,CAD,CHF,CZK,DKK,HKD,HUF,IDR,ILS,ISK,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,TRY,ZAR',null,10000).then(function(r){return r.json();}).then(function(d){
     if(d&&d.rates){window._fxRates=d.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();localStorage.setItem('whistle_fxrates',JSON.stringify({rates:d.rates,time:Date.now()}));}
   }).catch(function(e){console.error('[exrate] Frankfurter multi-currency failed (using cache):',e.name||e.message);});
 }
@@ -4637,7 +4637,7 @@ function refreshExRate(){
     S._exRateLoading=false;
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;S._exRateTime=new Date().toLocaleTimeString(U.loc(),{hour:'2-digit',minute:'2-digit'});UI.toast(T('toast_fx_update')+d.rates.KRW.toLocaleString(),'ok');localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
     /* 다통화도 갱신 */
-    _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,AED,VND,SGD,THB,INR,CAD',null,10000).then(function(r2){return r2.json();}).then(function(d2){
+    _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,SGD,THB,INR,CAD,CHF,CZK,DKK,HKD,HUF,IDR,ILS,ISK,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,TRY,ZAR',null,10000).then(function(r2){return r2.json();}).then(function(d2){
       if(d2&&d2.rates){window._fxRates=d2.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();localStorage.setItem('whistle_fxrates',JSON.stringify({rates:d2.rates,time:Date.now()}));}
     }).catch(function(e2){console.error('[fx] multi-currency refresh failed:', e2.name||e2.message);});
     render();
@@ -5828,7 +5828,7 @@ function loadMoreA(){loadA(true).then(function(){render();});}
 
 
 /* ── Analysis: multi-step input form ── */
-function startAForm(){S.analysisStep=1;S.analysisData={urls:[''],files:[],selling_points:[],target_markets:['US'],existing_certs:[],price_krw:'',origin_country:''};document.body.classList.add('analysis-form-active');render();}
+function startAForm(){S.analysisStep=1;S.analysisData={urls:[''],files:[],selling_points:[],target_markets:['US'],existing_certs:[],price_krw:'',origin_country:(S.user&&S.user.country)||''};document.body.classList.add('analysis-form-active');render();}
 function _clearAFormClass(){document.body.classList.remove('analysis-form-active');}
 
 function pgAForm(){
@@ -6260,34 +6260,34 @@ function _calcAlibabaSuitability(cat,price,sc,existCerts,needCerts,cd,mkts,d){
   /* 1. 카테고리 적합도 (0~20) — 알리바바 인기 카테고리 */
   var catScores={'Beauty & Cosmetics':18,'Food & Beverage':14,'Health & Supplements':16,'Electronics & IoT':19,'Home & Living':15,'Fashion & Apparel':13,'Health & Wellness':16,'Industrial & Machinery':17,'Auto Parts':16,'Agriculture':12,'Pet Products':15,'Toys & Baby':14,'Sports & Outdoor':15,'Medical Devices':20,'Chemical & Materials':16};
   var catScore=catScores[cat]||12;score+=catScore;
-  factors.push({label:'카테고리 적합도',score:catScore,max:20,detail:cat+' → 알리바바 '+(catScore>=16?'인기':'보통')+' 카테고리'});
+  factors.push({label:_isKorean?'카테고리 적합도':'Category Fit',score:catScore,max:20,detail:cat+' → Alibaba '+(catScore>=16?(_isKorean?'인기':'Popular'):(_isKorean?'보통':'Average'))+(_isKorean?' 카테고리':' category')});
   /* 2. 가격대 적합도 (0~20) — 알리바바 B2B 적정 FOB */
   var priceScore=0;
   if(price>=1&&price<=50)priceScore=18;else if(price>50&&price<=200)priceScore=15;else if(price>200&&price<=500)priceScore=10;else if(price>500)priceScore=6;else priceScore=12;
-  score+=priceScore;factors.push({label:'가격 경쟁력',score:priceScore,max:20,detail:'FOB '+U.$(price||0,1)+' → '+(priceScore>=15?'B2B 적정 가격대':'고가 제품 (MOQ 조정 필요)')});
-  if(priceScore<12)tips.push('알리바바는 B2B 중심이므로 FOB $1~$50 범위가 가장 반응이 좋습니다');
+  score+=priceScore;factors.push({label:_isKorean?'가격 경쟁력':'Price Competitiveness',score:priceScore,max:20,detail:'FOB '+U.$(price||0,1)+' → '+(priceScore>=15?(_isKorean?'B2B 적정 가격대':'B2B optimal price range'):(_isKorean?'고가 제품 (MOQ 조정 필요)':'High-value product (adjust MOQ)'))});
+  if(priceScore<12)tips.push(_isKorean?'알리바바는 B2B 중심이므로 FOB $1~$50 범위가 가장 반응이 좋습니다':'Alibaba is B2B-focused — FOB $1~$50 range gets the best buyer response');
   /* 3. MOQ 적합도 (0~15) */
   var moq=d.moq||100;var moqScore=moq>=50&&moq<=5000?14:(moq<50?10:8);score+=moqScore;
-  factors.push({label:'MOQ 적합도',score:moqScore,max:15,detail:'MOQ '+moq+'개 → '+(moqScore>=12?'적정':'조정 권장')});
-  if(moq<50)tips.push('MOQ가 너무 낮으면 도소매 오더가 많아 관리 부담 증가');
-  if(moq>5000)tips.push('MOQ 5,000개 이상은 신규 바이어 진입장벽이 높음 — 샘플 MOQ 별도 설정 권장');
+  factors.push({label:_isKorean?'MOQ 적합도':'MOQ Suitability',score:moqScore,max:15,detail:'MOQ '+moq+(_isKorean?'개':' units')+' → '+(moqScore>=12?(_isKorean?'적정':'Optimal'):(_isKorean?'조정 권장':'Adjustment recommended'))});
+  if(moq<50)tips.push(_isKorean?'MOQ가 너무 낮으면 도소매 오더가 많아 관리 부담 증가':'Low MOQ may attract many small retail orders, increasing management burden');
+  if(moq>5000)tips.push(_isKorean?'MOQ 5,000개 이상은 신규 바이어 진입장벽이 높음 — 샘플 MOQ 별도 설정 권장':'MOQ above 5,000 creates a high entry barrier for new buyers — consider setting a separate sample MOQ');
   /* 4. 인증 보유 (0~15) */
   var certScore=existCerts.length>=3?15:(existCerts.length>=1?10:5);
   if(needCerts.length===0)certScore=15;
-  score+=certScore;factors.push({label:'인증 보유',score:certScore,max:15,detail:existCerts.length+'개 보유'+(needCerts.length?' / '+needCerts.length+'개 추가 필요':'')});
-  if(needCerts.length>0)tips.push('알리바바 Gold Supplier는 인증서 보유 시 RFQ 매칭 우선순위 상승');
+  score+=certScore;factors.push({label:_isKorean?'인증 보유':'Certifications',score:certScore,max:15,detail:existCerts.length+(_isKorean?'개 보유':' held')+(needCerts.length?' / '+needCerts.length+(_isKorean?'개 추가 필요':' more needed'):'')});
+  if(needCerts.length>0)tips.push(_isKorean?'알리바바 Gold Supplier는 인증서 보유 시 RFQ 매칭 우선순위 상승':'Alibaba Gold Suppliers with certifications get higher priority in RFQ matching');
   /* 5. 영문 콘텐츠 준비도 (0~15) */
   var engScore=0;if(d.product_name_en)engScore+=5;if(d.selling_points&&d.selling_points.filter(function(s){return s;}).length)engScore+=5;if(d.description)engScore+=5;
-  score+=engScore;factors.push({label:'영문 콘텐츠',score:engScore,max:15,detail:(d.product_name_en?'영문명 ✓':'영문명 ✗')+' / '+(engScore>=10?'준비 양호':'보완 필요')});
-  if(!d.product_name_en)tips.push('영문 제품명은 알리바바 검색 노출의 핵심 — 키워드 포함 권장');
+  score+=engScore;factors.push({label:_isKorean?'영문 콘텐츠':'English Content',score:engScore,max:15,detail:(d.product_name_en?(_isKorean?'영문명 ✓':'EN name ✓'):(_isKorean?'영문명 ✗':'EN name ✗'))+' / '+(engScore>=10?(_isKorean?'준비 양호':'Well prepared'):(_isKorean?'보완 필요':'Needs improvement'))});
+  if(!d.product_name_en)tips.push(_isKorean?'영문 제품명은 알리바바 검색 노출의 핵심 — 키워드 포함 권장':'English product name is key for Alibaba search visibility — include relevant keywords');
   /* 6. 브랜드/제조 역량 (0~15) */
   var brandScore=Math.round(sc.brand_power/100*15);score+=brandScore;
-  factors.push({label:'브랜드/제조 역량',score:brandScore,max:15,detail:'브랜드 파워 '+sc.brand_power+'점 기반'});
-  if(sc.brand_power<60)tips.push('OEM/ODM 제조 역량 강조 시 알리바바에서 바이어 반응 개선 가능');
+  factors.push({label:_isKorean?'브랜드/제조 역량':'Brand/Manufacturing',score:brandScore,max:15,detail:(_isKorean?'브랜드 파워 ':'Brand power ')+sc.brand_power+(_isKorean?'점 기반':' pts')});
+  if(sc.brand_power<60)tips.push(_isKorean?'OEM/ODM 제조 역량 강조 시 알리바바에서 바이어 반응 개선 가능':'Highlighting OEM/ODM manufacturing capabilities can improve buyer response on Alibaba');
   /* 등급 */
   var grade=score>=85?'A+':score>=75?'A':score>=65?'B+':score>=55?'B':score>=45?'C':'D';
-  var verdict=score>=75?'알리바바 입점 적합':score>=55?'보완 후 입점 가능':'추가 준비 필요';
-  if(!tips.length)tips.push('현재 상태로 알리바바 입점 및 Gold Supplier 활동에 적합합니다');
+  var verdict=score>=75?(_isKorean?'알리바바 입점 적합':'Suitable for Alibaba'):score>=55?(_isKorean?'보완 후 입점 가능':'Ready after improvements'):(_isKorean?'추가 준비 필요':'More preparation needed');
+  if(!tips.length)tips.push(_isKorean?'현재 상태로 알리바바 입점 및 Gold Supplier 활동에 적합합니다':'Your current status is well-suited for Alibaba listing and Gold Supplier activities');
   return {score:score,grade:grade,verdict:verdict,factors:factors,tips:tips};
 }
 
@@ -8518,7 +8518,7 @@ function showOrderHistory(buyerId){
   if(!buyerOrders.length){UI.toast(T('no_order_history_buyer'),'info');return;}
   var buyer=S.buyers.find(function(b){return b.id===buyerId;});
   var bName=buyer?(buyer.company_name||buyer.contact_name):(T('buyer'));
-  var body='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+bName+'와의 전체 거래 이력 ('+buyerOrders.length+'건)</div>';
+  var body='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+(_isKorean?bName+'와의 전체 거래 이력 ('+buyerOrders.length+'건)':'Full order history with '+bName+' ('+buyerOrders.length+')')+'</div>';
   body+='<div style="max-height:400px;overflow-y:auto">';
   buyerOrders.forEach(function(o,i){
     var prev=buyerOrders[i+1];
@@ -9994,8 +9994,8 @@ function translateDocFields(lang){
   var notesEl=document.getElementById('notes');
   if(notesEl&&notesEl.value.trim())fields.push({el:notesEl,text:notesEl.value.trim()});
   if(!fields.length){UI.toast(T('nothing_to_translate'),'warn');return;}
-  var targetLabel=lang==='en'?'영문':'한글';
-  UI.toast(targetLabel+'으로 번역 중...','info');
+  var targetLabel=lang==='en'?(_isKorean?'영문':'English'):(_isKorean?'한글':'Korean');
+  UI.toast(_isKorean?targetLabel+'으로 번역 중...':'Translating to '+targetLabel+'...','info');
   /* 간단한 번역 — Edge Function 없이 내장 사전 + 패턴 */
   var _simpleDict={
     /* 한→영 */
@@ -10224,8 +10224,8 @@ function _launchVideoMeeting(roomId){
   if(info.needInput){
     /* Zoom/GMeet/Teams는 직접 링크 입력 필요 — custom URL 필드 표시 */
     var cu=document.getElementById('vm-custom-url');
-    if(cu){cu.style.display='block';cu.placeholder=info.name+' 미팅 링크를 붙여넣으세요';cu.focus();}
-    if(!cu||!cu.value.trim()){UI.toast(info.name+' 미팅 링크를 입력하세요. '+info.name+'에서 미팅을 만든 후 링크를 붙여넣으세요.','warn');return;}
+    if(cu){cu.style.display='block';cu.placeholder=_isKorean?info.name+' 미팅 링크를 붙여넣으세요':'Paste your '+info.name+' meeting link';cu.focus();}
+    if(!cu||!cu.value.trim()){UI.toast(_isKorean?info.name+' 미팅 링크를 입력하세요. '+info.name+'에서 미팅을 만든 후 링크를 붙여넣으세요.':'Please enter a '+info.name+' meeting link. Create a meeting in '+info.name+' and paste the link.','warn');return;}
     info.url=cu.value.trim();
   }
   if(!info.url){UI.toast(T('no_meeting_link'),'warn');return;}
@@ -11344,7 +11344,7 @@ function pgTradeReqPanel(p){
 
   /* 액션 체크리스트 */
   if(r.action_checklist&&r.action_checklist.length){
-    h+='<details style="margin-bottom:8px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--fg)">✅ 액션 체크리스트 ('+r.action_checklist.length+'단계)</summary>';
+    h+='<details style="margin-bottom:8px"><summary style="font-size:13px;font-weight:700;cursor:pointer;padding:6px 0;color:var(--fg)">✅ '+(_isKorean?'액션 체크리스트 ('+r.action_checklist.length+'단계)':'Action Checklist ('+r.action_checklist.length+' steps)')+'</summary>';
     r.action_checklist.forEach(function(ac){
       h+='<div style="padding:8px;border-radius:8px;background:var(--w08);margin-bottom:3px;display:flex;gap:8px;align-items:flex-start;font-size:11px">'+
         '<span style="font-weight:800;color:var(--pri);min-width:22px">'+ac.step+'</span>'+
@@ -15906,7 +15906,7 @@ function sendBuyerInviteEmail(email,link,coupon){
       body:JSON.stringify({email:email,type:'buyer',inviter_name:S.user.name||S.user.company_name||'',inviter_company:S.user.company_name||''})
     }).then(function(res){return res.json();}).then(function(data){
       if(data.error){UI.toast((T('send_failed_prefix'))+data.error,'err');return;}
-      UI.toast(data.email_sent?email+'에게 초대 메일 발송 완료!':'초대 등록 완료 (메일 설정 확인 필요)','ok');
+      UI.toast(data.email_sent?(_isKorean?email+'에게 초대 메일 발송 완료!':'Invitation email sent to '+email+'!'):(_isKorean?'초대 등록 완료 (메일 설정 확인 필요)':'Invitation registered (check email settings)'),'ok');
     }).catch(function(err){UI.toast(T('send_failed_2'),'err');});
   });
 }
@@ -17049,39 +17049,39 @@ function _calcMatchScore(request){
   /* 카테고리 매칭 (40점) */
   var reqCat=(request.category||'').toLowerCase();
   var catMatch=myProds.some(function(p){return (p.category||'').toLowerCase().indexOf(reqCat)>=0||reqCat.indexOf((p.category||'').toLowerCase())>=0;});
-  if(catMatch){score+=40;reasons.push('카테고리 일치');}
-  else if(myProds.length){score+=10;reasons.push('유사 카테고리');}
+  if(catMatch){score+=40;reasons.push(_isKorean?'카테고리 일치':'Category match');}
+  else if(myProds.length){score+=10;reasons.push(_isKorean?'유사 카테고리':'Similar category');}
   /* 시장 매칭 (25점) */
   var reqMkt=(request.target_market||'').toUpperCase();
   var mktMatch=S.projects.some(function(p){return (p.target_countries||[]).indexOf(reqMkt)>=0;});
-  if(mktMatch){score+=25;reasons.push(reqMkt+' 수출 경험');}
+  if(mktMatch){score+=25;reasons.push(reqMkt+(_isKorean?' 수출 경험':' export experience'));}
   else{
     var hasAnalysis=myAnalyses.some(function(a){return (a.target_country||'').toUpperCase()===reqMkt;});
-    if(hasAnalysis){score+=15;reasons.push(reqMkt+' 분석 완료');}
+    if(hasAnalysis){score+=15;reasons.push(reqMkt+(_isKorean?' 분석 완료':' analysis done'));}
   }
   /* 인증 매칭 (20점) */
   var hasCerts=S.projects.some(function(p){var sp=p.stage_progress||{};var certs=(sp.certs||sp.certification||[]);return Array.isArray(certs)&&certs.some(function(c){return c.done||_normCertStatus(c.status)==='approved';});});
-  if(hasCerts){score+=20;reasons.push('인증 보유');}
+  if(hasCerts){score+=20;reasons.push(_isKorean?'인증 보유':'Certifications held');}
   /* 거래 이력 (15점) */
-  if(S.orders.length>=3){score+=15;reasons.push('풍부한 거래 이력');}
-  else if(S.orders.length>=1){score+=8;reasons.push('거래 경험 있음');}
+  if(S.orders.length>=3){score+=15;reasons.push(_isKorean?'풍부한 거래 이력':'Rich trade history');}
+  else if(S.orders.length>=1){score+=8;reasons.push(_isKorean?'거래 경험 있음':'Has trade experience');}
   return{score:Math.min(100,score),reasons:reasons};
 }
 
 function pgMarketplace(){
   if(S._viewMarketRequest)return pgMarketRequestDetail();
   var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px"><div>';
-  h+='<h2 style="font-size:18px;font-weight:800">🛍️ 바이어 요청 장터</h2>';
-  h+='<p style="font-size:12px;color:var(--w40);margin-top:2px">바이어들의 소싱 요청을 확인하고 제안을 보내세요</p>';
+  h+='<h2 style="font-size:18px;font-weight:800">🛍️ '+(_isKorean?'바이어 요청 장터':'Buyer Request Marketplace')+'</h2>';
+  h+='<p style="font-size:12px;color:var(--w40);margin-top:2px">'+(_isKorean?'바이어들의 소싱 요청을 확인하고 제안을 보내세요':'Browse buyer sourcing requests and send proposals')+'</p>';
   h+='</div><div style="display:flex;gap:8px">';
-  h+='<button class="btn btn-sm '+(S._marketFilter==='open'?'btn-pri':'btn-ghost')+'" onclick="S._marketFilter=\'open\';App.refreshPopup(\'marketplace\')">공개 중</button>';
-  h+='<button class="btn btn-sm '+(S._marketFilter==='my'?'btn-acc':'btn-ghost')+'" onclick="S._marketFilter=\'my\';App.refreshPopup(\'marketplace\')">내 제안</button>';
+  h+='<button class="btn btn-sm '+(S._marketFilter==='open'?'btn-pri':'btn-ghost')+'" onclick="S._marketFilter=\'open\';App.refreshPopup(\'marketplace\')">'+(_isKorean?'공개 중':'Open')+'</button>';
+  h+='<button class="btn btn-sm '+(S._marketFilter==='my'?'btn-acc':'btn-ghost')+'" onclick="S._marketFilter=\'my\';App.refreshPopup(\'marketplace\')">'+(_isKorean?'내 제안':'My Proposals')+'</button>';
   h+='</div></div>';
   /* Direct inquiries about my products */
   var _diq=S._directInquiries||[];
   if(_diq.length){
     h+='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.2);background:linear-gradient(135deg,rgba(255,184,0,.04),transparent)">';
-    h+='<div class="card-h"><span>📩 내 제품 바이어 문의 ('+_diq.length+'건)</span></div><div class="card-b" style="padding:0">';
+    h+='<div class="card-h"><span>📩 '+(_isKorean?'내 제품 바이어 문의 ('+_diq.length+'건)':'Buyer Inquiries for My Products ('+_diq.length+')')+'</span></div><div class="card-b" style="padding:0">';
     _diq.slice(0,5).forEach(function(iq){
       h+='<div style="padding:10px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">';
       h+='<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+UI.esc(iq.company_name||iq.contact_name||'Anonymous')+'</div>';
@@ -17089,25 +17089,25 @@ function pgMarketplace(){
       h+='<div style="font-size:10px;color:var(--w30)">'+new Date(iq.created_at).toLocaleDateString()+'</div>';
       var _badge=iq.status==='pending'?'badge-acc':'badge-ok';
       h+='<span class="badge '+_badge+'" style="font-size:9px">'+UI.esc(iq.status)+'</span>';
-      if(iq.status==='pending'){h+='<button class="btn btn-sm btn-pri" style="font-size:10px;padding:3px 10px;white-space:nowrap" onclick="event.stopPropagation();App.respondInquiry(\''+iq.id+'\')">응답 · 딜 생성</button>';}
+      if(iq.status==='pending'){h+='<button class="btn btn-sm btn-pri" style="font-size:10px;padding:3px 10px;white-space:nowrap" onclick="event.stopPropagation();App.respondInquiry(\''+iq.id+'\')">'+(_isKorean?'응답 · 딜 생성':'Respond · Create Deal')+'</button>';}
       h+='</div>';
     });
     h+='</div></div>';
   }
   // search bar
-  h+=SF.bar('marketplace',{placeholder:'바이어 요청 검색 (제품명, 카테고리, 시장...)',filters:[
-    {name:'category',label:'전체 카테고리',options:[{value:'Beauty',label:'Beauty / Cosmetics'},{value:'Food',label:'Food & Beverage'},{value:'Health',label:'Health / Medical'},{value:'Fashion',label:'Fashion / Textile'},{value:'Electronics',label:'Electronics / IT'},{value:'Auto Parts',label:'Auto Parts'},{value:'Machinery',label:'Machinery'},{value:'Chemical',label:'Chemical'},{value:'Agriculture',label:'Agriculture'},{value:'Home & Garden',label:'Home & Garden'},{value:'Beauty & Cosmetics',label:'Beauty & Cosmetics'},{value:'Food & Beverage',label:'Food & Beverage'}]},
-    {name:'target_market',label:'전체 시장',options:[{value:'US',label:'미국'},{value:'JP',label:'일본'},{value:'CN',label:'중국'},{value:'DE',label:'독일(EU)'},{value:'GB',label:'영국'},{value:'VN',label:'베트남'},{value:'SG',label:'싱가포르'},{value:'AU',label:'호주'},{value:'CA',label:'캐나다'},{value:'IN',label:'인도'},{value:'TH',label:'태국'},{value:'ID',label:'인도네시아'},{value:'AE',label:'UAE'},{value:'SA',label:'사우디'},{value:'BR',label:'브라질'},{value:'MX',label:'멕시코'}]}
+  h+=SF.bar('marketplace',{placeholder:_isKorean?'바이어 요청 검색 (제품명, 카테고리, 시장...)':'Search buyer requests (product, category, market...)',filters:[
+    {name:'category',label:_isKorean?'전체 카테고리':'All Categories',options:[{value:'Beauty',label:'Beauty / Cosmetics'},{value:'Food',label:'Food & Beverage'},{value:'Health',label:'Health / Medical'},{value:'Fashion',label:'Fashion / Textile'},{value:'Electronics',label:'Electronics / IT'},{value:'Auto Parts',label:'Auto Parts'},{value:'Machinery',label:'Machinery'},{value:'Chemical',label:'Chemical'},{value:'Agriculture',label:'Agriculture'},{value:'Home & Garden',label:'Home & Garden'},{value:'Beauty & Cosmetics',label:'Beauty & Cosmetics'},{value:'Food & Beverage',label:'Food & Beverage'}]},
+    {name:'target_market',label:_isKorean?'전체 시장':'All Markets',options:[{value:'US',label:_isKorean?'미국':'US'},{value:'JP',label:_isKorean?'일본':'Japan'},{value:'CN',label:_isKorean?'중국':'China'},{value:'DE',label:_isKorean?'독일(EU)':'Germany (EU)'},{value:'GB',label:_isKorean?'영국':'UK'},{value:'VN',label:_isKorean?'베트남':'Vietnam'},{value:'SG',label:_isKorean?'싱가포르':'Singapore'},{value:'AU',label:_isKorean?'호주':'Australia'},{value:'CA',label:_isKorean?'캐나다':'Canada'},{value:'IN',label:_isKorean?'인도':'India'},{value:'TH',label:_isKorean?'태국':'Thailand'},{value:'ID',label:_isKorean?'인도네시아':'Indonesia'},{value:'AE',label:'UAE'},{value:'SA',label:_isKorean?'사우디':'Saudi Arabia'},{value:'BR',label:_isKorean?'브라질':'Brazil'},{value:'MX',label:_isKorean?'멕시코':'Mexico'}]}
   ]});
   // stats
   var myCount=Object.keys(S._myProposals).length;
   var acceptedCount=Object.values(S._myProposals).filter(function(p){return p.status==='accepted';}).length;
   var pendingCount=Object.values(S._myProposals).filter(function(p){return p.status==='pending';}).length;
   h+='<div class="grid-4" style="margin-bottom:16px">';
-  h+=UI.stat('공개 요청',S.marketplaceRequests.length+'건','활성','var(--pri)');
-  h+=UI.stat('내 제안',myCount+'건','제출','var(--acc)');
-  h+=UI.stat('수락됨',acceptedCount+'건','성사','var(--ok)');
-  h+=UI.stat('대기중',pendingCount+'건','응답 대기','var(--purple)');
+  h+=UI.stat(_isKorean?'공개 요청':'Open Requests',S.marketplaceRequests.length+(_isKorean?'건':''),_isKorean?'활성':'Active','var(--pri)');
+  h+=UI.stat(_isKorean?'내 제안':'My Proposals',myCount+(_isKorean?'건':''),_isKorean?'제출':'Submitted','var(--acc)');
+  h+=UI.stat(_isKorean?'수락됨':'Accepted',acceptedCount+(_isKorean?'건':''),_isKorean?'성사':'Matched','var(--ok)');
+  h+=UI.stat(_isKorean?'대기중':'Pending',pendingCount+(_isKorean?'건':''),_isKorean?'응답 대기':'Awaiting Response','var(--purple)');
   h+='</div>';
   // filter items
   var items;
@@ -17123,7 +17123,7 @@ function pgMarketplace(){
   items.sort(function(a,b){if(a.is_urgent&&!b.is_urgent)return -1;if(!a.is_urgent&&b.is_urgent)return 1;return _calcMatchScore(b).score-_calcMatchScore(a).score;});
   if(!items.length){
     h+='<div style="padding:40px;text-align:center;color:var(--w40)"><div style="font-size:36px;margin-bottom:8px">🛍️</div>';
-    h+='<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+(S._marketFilter==='my'?'제출한 제안이 없습니다':'공개 요청이 없습니다')+'</div></div>';
+    h+='<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+(S._marketFilter==='my'?(_isKorean?'제출한 제안이 없습니다':'No proposals submitted'):(_isKorean?'공개 요청이 없습니다':'No open requests'))+'</div></div>';
     return h;
   }
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">';
@@ -17145,10 +17145,10 @@ function pgMarketplace(){
     /* 콘텐츠 영역 */
     h+='<div style="flex:1;min-width:0">';
     h+='<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">';
-    h+='<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0">'+U.esc(r.title)+(r.is_urgent?'<span class="badge badge-err" style="margin-left:6px;font-size:9px">🔥 긴급</span>':'')+'</div>';
+    h+='<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0">'+U.esc(r.title)+(r.is_urgent?'<span class="badge badge-err" style="margin-left:6px;font-size:9px">🔥 '+(_isKorean?'긴급':'Urgent')+'</span>':'')+'</div>';
     if(propStatus){
       var psc={pending:'var(--acc)',accepted:'var(--ok)',rejected:'var(--err)'};
-      var psl={pending:'제안완료',accepted:'수락됨',rejected:'거절됨'};
+      var psl={pending:_isKorean?'제안완료':'Proposed',accepted:_isKorean?'수락됨':'Accepted',rejected:_isKorean?'거절됨':'Rejected'};
       h+='<span class="badge" style="background:'+(psc[propStatus]||'var(--w40)')+'15;color:'+(psc[propStatus]||'var(--w40)')+';font-size:10px;flex-shrink:0;margin-left:6px">'+(psl[propStatus]||propStatus)+'</span>';
     }
     /* AI 매칭 점수 뱃지 */
@@ -17193,7 +17193,7 @@ function pgMarketRequestDetail(){
   h+='<div style="flex:1;min-width:0">';
   h+='<div style="font-size:18px;font-weight:800;margin-bottom:8px">'+U.esc(req.title)+'</div>';
   h+='<div style="font-size:13px;color:var(--w60);line-height:1.6">'+U.esc(req.description)+'</div>';
-  if(req.reference_url)h+='<div style="margin-top:6px"><a href="'+U.esc(req.reference_url)+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--pri)">🔗 참고 링크</a></div>';
+  if(req.reference_url)h+='<div style="margin-top:6px"><a href="'+U.esc(req.reference_url)+'" target="_blank" rel="noopener" style="font-size:12px;color:var(--pri)">🔗 '+(_isKorean?'참고 링크':'Reference Link')+'</a></div>';
   h+='</div></div>';
   h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--w40);margin-bottom:12px">';
   h+='<span>🏢 '+U.esc(req.buyer_company||'')+'</span>';
@@ -17210,7 +17210,7 @@ function pgMarketRequestDetail(){
   if(_ms.score>0){
     var _mc=_ms.score>=80?'var(--ok)':_ms.score>=50?'var(--acc)':'var(--w40)';
     h+='<div style="margin-top:12px;padding:10px 14px;border-radius:10px;background:'+_mc+'08;border:1px solid '+_mc+'20">';
-    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:20px">🎯</span><span style="font-size:14px;font-weight:700;color:'+_mc+'">AI 매칭 점수: '+_ms.score+'점</span>';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:20px">🎯</span><span style="font-size:14px;font-weight:700;color:'+_mc+'">'+(_isKorean?'AI 매칭 점수: '+_ms.score+'점':'AI Match Score: '+_ms.score+'pts')+'</span>';
     h+='<div style="flex:1;height:6px;background:var(--w08);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+_ms.score+'%;background:'+_mc+';border-radius:3px"></div></div></div>';
     if(_ms.reasons.length){h+='<div style="font-size:12px;color:var(--w60)">'+_ms.reasons.map(function(r){return '✅ '+r;}).join(' &nbsp;·&nbsp; ')+'</div>';}
     h+='</div>';
@@ -17219,9 +17219,9 @@ function pgMarketRequestDetail(){
   // proposal status or form
   if(myProp){
     var psc={pending:'var(--acc)',accepted:'var(--ok)',rejected:'var(--err)',withdrawn:'var(--w40)'};
-    var psl={pending:'검토 대기 중',accepted:'✅ 수락되었습니다! 바이어 탭에서 거래를 시작하세요.',rejected:'거절되었습니다',withdrawn:'철회됨'};
+    var psl={pending:_isKorean?'검토 대기 중':'Under Review',accepted:_isKorean?'✅ 수락되었습니다! 바이어 탭에서 거래를 시작하세요.':'✅ Accepted! Start the deal from the Buyer tab.',rejected:_isKorean?'거절되었습니다':'Rejected',withdrawn:_isKorean?'철회됨':'Withdrawn'};
     h+='<div class="card" style="border-color:'+(psc[myProp.status]||'var(--w40)')+'"><div class="card-b">';
-    h+='<div style="font-size:14px;font-weight:700;margin-bottom:8px">내 제안</div>';
+    h+='<div style="font-size:14px;font-weight:700;margin-bottom:8px">'+(_isKorean?'내 제안':'My Proposal')+'</div>';
     h+='<div style="padding:12px;border-radius:10px;background:'+(psc[myProp.status]||'var(--w40)')+'08;margin-bottom:10px">';
     h+='<div style="font-size:13px;font-weight:600;color:'+(psc[myProp.status]||'var(--w40)')+'">'+psl[myProp.status]+'</div></div>';
     h+='<div style="font-size:13px;color:var(--w60);line-height:1.6">'+U.esc(myProp.message)+'</div>';
@@ -17233,30 +17233,30 @@ function pgMarketRequestDetail(){
   } else {
     // proposal form
     h+='<div class="card"><div class="card-b">';
-    h+='<div style="font-size:14px;font-weight:700;margin-bottom:12px">💬 제안 보내기</div>';
+    h+='<div style="font-size:14px;font-weight:700;margin-bottom:12px">💬 '+(_isKorean?'제안 보내기':'Send Proposal')+'</div>';
     h+='<form id="proposal-form" onsubmit="event.preventDefault();App.submitProposal(\''+req.id+'\')">';
-    h+='<div class="form-group"><label>메시지 *</label><textarea name="message" class="form-input" rows="4" placeholder="바이어에게 전달할 메시지 (제품 소개, 강점, 경험 등)" required></textarea></div>';
+    h+='<div class="form-group"><label>'+(_isKorean?'메시지 *':'Message *')+'</label><textarea name="message" class="form-input" rows="4" placeholder="'+(_isKorean?'바이어에게 전달할 메시지 (제품 소개, 강점, 경험 등)':'Message to the buyer (product intro, strengths, experience, etc.)')+'" required></textarea></div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
-    h+='<div class="form-group"><label>제안 가격</label><input name="proposed_price" class="form-input" placeholder="예: $4.20 FOB"></div>';
-    h+='<div class="form-group"><label>MOQ</label><input name="proposed_moq" class="form-input" placeholder="예: 3000"></div>';
-    h+='<div class="form-group"><label>리드타임</label><input name="lead_time" class="form-input" placeholder="예: 30일"></div>';
+    h+='<div class="form-group"><label>'+(_isKorean?'제안 가격':'Proposed Price')+'</label><input name="proposed_price" class="form-input" placeholder="'+(_isKorean?'예: $4.20 FOB':'e.g. $4.20 FOB')+'"></div>';
+    h+='<div class="form-group"><label>MOQ</label><input name="proposed_moq" class="form-input" placeholder="'+(_isKorean?'예: 3000':'e.g. 3000')+'"></div>';
+    h+='<div class="form-group"><label>'+(_isKorean?'리드타임':'Lead Time')+'</label><input name="lead_time" class="form-input" placeholder="'+(_isKorean?'예: 30일':'e.g. 30 days')+'"></div>';
     h+='</div>';
     /* 제품 이미지 첨부 */
-    h+='<div class="form-group"><label>제품 이미지 첨부 (선택)</label>';
+    h+='<div class="form-group"><label>'+(_isKorean?'제품 이미지 첨부 (선택)':'Product Image (Optional)')+'</label>';
     h+='<div style="display:flex;gap:8px;align-items:center">';
     h+='<div id="proposal-img-preview" style="width:80px;height:80px;border-radius:10px;border:2px dashed var(--bd);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;flex-shrink:0" onclick="document.getElementById(\'proposal-img-input\').click()">';
     h+='<span style="font-size:24px;color:var(--w30)">📷</span></div>';
     h+='<input id="proposal-img-input" type="file" accept="image/*" style="display:none" onchange="App.previewProposalImg(this)">';
-    h+='<div style="font-size:11px;color:var(--w40);line-height:1.5">제품 사진을 첨부하면 바이어 신뢰도가 높아집니다.<br>AI 상품분석에서 등록된 이미지가 자동 연결됩니다.</div>';
+    h+='<div style="font-size:11px;color:var(--w40);line-height:1.5">'+(_isKorean?'제품 사진을 첨부하면 바이어 신뢰도가 높아집니다.<br>AI 상품분석에서 등록된 이미지가 자동 연결됩니다.':'Attaching product photos increases buyer trust.<br>Images from AI product analysis are auto-linked.')+'</div>';
     h+='</div></div>';
     if(S.products.length){
-      h+='<div class="form-group"><label>내 제품 연결 (선택)</label><select name="product_id" class="form-select" onchange="App.onProposalProductSelect(this)"><option value="">선택 안함</option>';
-      S.products.forEach(function(p){h+='<option value="'+p.id+'">'+U.esc(p.name_ko||p.name_en||'제품')+'</option>';});
+      h+='<div class="form-group"><label>'+(_isKorean?'내 제품 연결 (선택)':'Link My Product (Optional)')+'</label><select name="product_id" class="form-select" onchange="App.onProposalProductSelect(this)"><option value="">'+(_isKorean?'선택 안함':'None')+'</option>';
+      S.products.forEach(function(p){h+='<option value="'+p.id+'">'+U.esc(p.name_ko||p.name_en||(_isKorean?'제품':'Product'))+'</option>';});
       h+='</select>';
-      h+='<div style="font-size:10px;color:var(--w30);margin-top:4px">제품을 선택하면 등록된 이미지가 자동으로 첨부됩니다</div>';
+      h+='<div style="font-size:10px;color:var(--w30);margin-top:4px">'+(_isKorean?'제품을 선택하면 등록된 이미지가 자동으로 첨부됩니다':'Selecting a product will auto-attach its registered images')+'</div>';
       h+='</div>';
     }
-    h+='<button type="submit" class="btn btn-pri" style="width:100%;padding:14px;font-size:15px;margin-top:8px">제안 전송</button>';
+    h+='<button type="submit" class="btn btn-pri" style="width:100%;padding:14px;font-size:15px;margin-top:8px">'+(_isKorean?'제안 전송':'Submit Proposal')+'</button>';
     h+='</form></div></div>';
   }
   return h;
@@ -18131,7 +18131,7 @@ function convertPItoOrder(docId){
     var data={user_id:S.user.id,buyer_id:doc.buyer_id||null,project_id:doc.project_id||null,
       order_number:orderNum,items:items,total_amount:parseFloat(docTotal)||0,
       payment_terms:docPayment,incoterms:docTerms,
-      notes:[{text:'PI #'+docNum+'에서 전환',date:new Date().toISOString()}]};
+      notes:[{text:_isKorean?'PI #'+docNum+'에서 전환':'Converted from PI #'+docNum,date:new Date().toISOString()}]};
     sb.from('orders').insert(data).select().then(function(or){
       if(or.error){UI.toast((T('order_create_failed_prefix'))+or.error.message,'err');return;}
       var newOrder=or.data&&or.data[0];
@@ -18403,72 +18403,72 @@ function diagnoseVoucher(){
   else{evTier=_isKorean?'내수(수출준비)':'Domestic (Export Prep)';evAmt=3000;}
   results.push({name:_isKorean?'수출바우처':'Export Voucher',ok:evIssues.length===0,tier:evTier,amount:evAmt+(_isKorean?'만원':'0K KRW'),gov:'70%',issues:evIssues,
     desc:_isKorean?'KOTRA/중기부 · 수출기업 해외시장 진출 지원 (14개 분야)':'KOTRA/MSS · Overseas market entry support for exporters (14 areas)',color:'var(--pri)',
-    action:'휘슬을 수행기관으로 지정 → AI 수출분석/서류대행/알리바바 입점',
-    period:'매년 1~2월 공고, 수시접수 가능',
-    req:'사업자등록증, 수출실적증명, 재무제표'});
+    action:_isKorean?'휘슬을 수행기관으로 지정 → AI 수출분석/서류대행/알리바바 입점':'Designate Whistle as executing agency → AI export analysis/documentation/Alibaba listing',
+    period:_isKorean?'매년 1~2월 공고, 수시접수 가능':'Announced Jan-Feb annually, rolling applications accepted',
+    req:_isKorean?'사업자등록증, 수출실적증명, 재무제표':'Business registration, export record certificate, financial statements'});
 
   /* 2. 제조혁신바우처 — 중기부/KIAT */
   var ivIssues=[];
-  if(ind!=='manufacturing')ivIssues.push('제조업(KSIC C코드) 기업만 대상');
-  if(rev>140)ivIssues.push('3년 평균 매출 140억 초과 (중소 제조업 기준 미충족)');
+  if(ind!=='manufacturing')ivIssues.push(_isKorean?'제조업(KSIC C코드) 기업만 대상':'Manufacturing (KSIC C-code) companies only');
+  if(rev>140)ivIssues.push(_isKorean?'3년 평균 매출 140억 초과 (중소 제조업 기준 미충족)':'3-year avg. revenue exceeds 14B KRW (SME manufacturing criteria not met)');
   if(cap==='full')ivIssues.push((T('fully_impaired_excluded')));
-  if(emp<5)ivIssues.push('상시근로자 5인 이상 권장');
+  if(emp<5)ivIssues.push(_isKorean?'상시근로자 5인 이상 권장':'5+ full-time employees recommended');
   var ivGov;
   if(rev<=3)ivGov='85%';else if(rev<=10)ivGov='70%';else if(rev<=50)ivGov='55%';else ivGov='40%';
-  results.push({name:'제조혁신바우처',ok:ivIssues.length===0,amount:'최대 5,000만원',gov:ivGov+' (매출규모별 차등)',issues:ivIssues,
-    desc:'중기부/KIAT · 제조 중소기업 스마트공장/DX 전환',color:'var(--purple)',
-    action:'AX/DX 컨설팅 + AI 수출분석 시스템 구축',
-    period:'매년 2~3월 공고, 추가모집 있음',
-    req:'제조업 사업자등록증, 공장등록증명, 재무제표'});
+  results.push({name:_isKorean?'제조혁신바우처':'Manufacturing Innovation Voucher',ok:ivIssues.length===0,amount:_isKorean?'최대 5,000만원':'Up to 50M KRW',gov:ivGov+(_isKorean?' (매출규모별 차등)':' (varies by revenue)'),issues:ivIssues,
+    desc:_isKorean?'중기부/KIAT · 제조 중소기업 스마트공장/DX 전환':'MSS/KIAT · Smart factory/DX transformation for manufacturing SMEs',color:'var(--purple)',
+    action:_isKorean?'AX/DX 컨설팅 + AI 수출분석 시스템 구축':'AX/DX consulting + AI export analysis system setup',
+    period:_isKorean?'매년 2~3월 공고, 추가모집 있음':'Announced Feb-Mar annually, additional rounds available',
+    req:_isKorean?'제조업 사업자등록증, 공장등록증명, 재무제표':'Manufacturing business registration, factory certificate, financial statements'});
 
   /* 3. AI바우처 — 과기정통부/NIPA */
   var aiIssues=[];
   if(cap==='full')aiIssues.push((T('fully_impaired_excluded')));
-  if(!isSME)aiIssues.push('중소기업 기준 미충족');
-  if(emp<1)aiIssues.push('상시근로자 1인 이상 필요');
-  results.push({name:'AI바우처',ok:aiIssues.length===0,amount:'최대 3억원',gov:'최대 80%',issues:aiIssues,
-    desc:'과기정통부/NIPA · AI 솔루션 도입 지원',color:'var(--acc)',
-    action:'휘슬 AI를 공급기업 AI 솔루션으로 도입',
-    period:'매년 상반기 공고, 하반기 추가모집',
-    req:'사업자등록증, AI 도입계획서, 재무제표'});
+  if(!isSME)aiIssues.push(_isKorean?'중소기업 기준 미충족':'Does not meet SME criteria');
+  if(emp<1)aiIssues.push(_isKorean?'상시근로자 1인 이상 필요':'At least 1 full-time employee required');
+  results.push({name:_isKorean?'AI바우처':'AI Voucher',ok:aiIssues.length===0,amount:_isKorean?'최대 3억원':'Up to 300M KRW',gov:_isKorean?'최대 80%':'Up to 80%',issues:aiIssues,
+    desc:_isKorean?'과기정통부/NIPA · AI 솔루션 도입 지원':'MSIT/NIPA · AI solution adoption support',color:'var(--acc)',
+    action:_isKorean?'휘슬 AI를 공급기업 AI 솔루션으로 도입':'Adopt Whistle AI as a supplier AI solution',
+    period:_isKorean?'매년 상반기 공고, 하반기 추가모집':'Announced H1 annually, additional round in H2',
+    req:_isKorean?'사업자등록증, AI 도입계획서, 재무제표':'Business registration, AI adoption plan, financial statements'});
 
   /* 4. 데이터바우처 — 과기정통부/한국데이터산업진흥원 */
   var dvIssues=[];
   if(cap==='full')dvIssues.push((T('fully_impaired_excluded')));
-  if(!isSME)dvIssues.push('중소·중견기업 대상');
-  results.push({name:'데이터바우처',ok:dvIssues.length===0,amount:'최대 5,000만원',gov:'최대 70%',issues:dvIssues,
-    desc:'과기정통부/KData · 데이터 구매·가공·분석 지원',color:'var(--ok)',
-    action:'수출 시장 데이터 분석 서비스 활용',
-    period:'매년 상반기 공고',
-    req:'사업자등록증, 데이터 활용계획서'});
+  if(!isSME)dvIssues.push(_isKorean?'중소·중견기업 대상':'For SMEs and mid-sized enterprises only');
+  results.push({name:_isKorean?'데이터바우처':'Data Voucher',ok:dvIssues.length===0,amount:_isKorean?'최대 5,000만원':'Up to 50M KRW',gov:_isKorean?'최대 70%':'Up to 70%',issues:dvIssues,
+    desc:_isKorean?'과기정통부/KData · 데이터 구매·가공·분석 지원':'MSIT/KData · Data purchase, processing & analysis support',color:'var(--ok)',
+    action:_isKorean?'수출 시장 데이터 분석 서비스 활용':'Utilize export market data analysis services',
+    period:_isKorean?'매년 상반기 공고':'Announced H1 annually',
+    req:_isKorean?'사업자등록증, 데이터 활용계획서':'Business registration, data utilization plan'});
 
   /* 5. 클라우드바우처 — 과기정통부/NIPA */
   var cvIssues=[];
   if(cap==='full')cvIssues.push((T('fully_impaired_excluded')));
-  if(!isSME&&rev>300)cvIssues.push('중소·중견기업 대상');
-  results.push({name:'클라우드바우처',ok:cvIssues.length===0,amount:'최대 2,400만원',gov:'최대 70%',issues:cvIssues,
-    desc:'과기정통부/NIPA · 클라우드 SaaS 도입 지원',color:'#FF6B6B',
-    action:'휘슬 AI SaaS 클라우드 솔루션 활용',
-    period:'연중 상시 접수',
-    req:'사업자등록증, 클라우드 도입계획서'});
+  if(!isSME&&rev>300)cvIssues.push(_isKorean?'중소·중견기업 대상':'For SMEs and mid-sized enterprises only');
+  results.push({name:_isKorean?'클라우드바우처':'Cloud Voucher',ok:cvIssues.length===0,amount:_isKorean?'최대 2,400만원':'Up to 24M KRW',gov:_isKorean?'최대 70%':'Up to 70%',issues:cvIssues,
+    desc:_isKorean?'과기정통부/NIPA · 클라우드 SaaS 도입 지원':'MSIT/NIPA · Cloud SaaS adoption support',color:'#FF6B6B',
+    action:_isKorean?'휘슬 AI SaaS 클라우드 솔루션 활용':'Utilize Whistle AI SaaS cloud solution',
+    period:_isKorean?'연중 상시 접수':'Open year-round',
+    req:_isKorean?'사업자등록증, 클라우드 도입계획서':'Business registration, cloud adoption plan'});
 
-  var h='<div style="margin-top:16px"><div style="font-size:14px;font-weight:800;margin-bottom:4px">진단 결과</div>';
-  h+='<div style="font-size:11px;color:var(--w30);margin-bottom:12px">입력값 기준: 매출 '+rev+'억 · 수출 '+exp+'만$ · 직원 '+emp+'명 · '+ind+' · 사업연수 '+(yrs==='0'?'1년 미만':yrs==='1'?'1~3년':yrs==='3'?'3~5년':'5년 이상')+'</div>';
+  var h='<div style="margin-top:16px"><div style="font-size:14px;font-weight:800;margin-bottom:4px">'+(_isKorean?'진단 결과':'Diagnosis Result')+'</div>';
+  h+='<div style="font-size:11px;color:var(--w30);margin-bottom:12px">'+(_isKorean?'입력값 기준: 매출 '+rev+'억 · 수출 '+exp+'만$ · 직원 '+emp+'명 · '+ind+' · 사업연수 '+(yrs==='0'?'1년 미만':yrs==='1'?'1~3년':yrs==='3'?'3~5년':'5년 이상'):'Based on: Revenue '+rev+'B KRW · Export '+exp+'0K USD · '+emp+' employees · '+ind+' · Years '+(yrs==='0'?'<1 yr':yrs==='1'?'1-3 yrs':yrs==='3'?'3-5 yrs':'5+ yrs'))+'</div>';
   var totalMax=0;var okCount=0;
   results.forEach(function(v){
     var icon=v.ok?'✅':'❌';
-    var stat=v.ok?'<span style="color:var(--ok);font-weight:700;font-size:13px">신청 가능</span>':'<span style="color:var(--err);font-weight:700;font-size:13px">조건 미달</span>';
+    var stat=v.ok?'<span style="color:var(--ok);font-weight:700;font-size:13px">'+(_isKorean?'신청 가능':'Eligible')+'</span>':'<span style="color:var(--err);font-weight:700;font-size:13px">'+(_isKorean?'조건 미달':'Not Eligible')+'</span>';
     if(v.ok)okCount++;
     h+='<div style="padding:14px;border-radius:10px;border:1px solid '+(v.ok?'rgba(0,200,100,.3)':'rgba(255,50,50,.15)')+';background:'+(v.ok?'rgba(0,200,100,.04)':'rgba(255,50,50,.03)')+';margin-bottom:8px">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:700">'+icon+' '+v.name+'</span>'+stat+'</div>';
     h+='<div style="font-size:11px;color:var(--w40);margin:4px 0">'+v.desc+'</div>';
-    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span style="font-size:10px;background:'+v.color+';color:white;padding:2px 8px;border-radius:4px;font-weight:600">한도 '+v.amount+'</span><span style="font-size:10px;background:var(--w08);padding:2px 8px;border-radius:4px">정부부담 '+v.gov+'</span>'+(v.tier?'<span style="font-size:10px;background:var(--w08);padding:2px 8px;border-radius:4px">'+v.tier+'</span>':'')+'</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><span style="font-size:10px;background:'+v.color+';color:white;padding:2px 8px;border-radius:4px;font-weight:600">'+(_isKorean?'한도 ':'Limit ')+v.amount+'</span><span style="font-size:10px;background:var(--w08);padding:2px 8px;border-radius:4px">'+(_isKorean?'정부부담 ':'Gov. share ')+v.gov+'</span>'+(v.tier?'<span style="font-size:10px;background:var(--w08);padding:2px 8px;border-radius:4px">'+v.tier+'</span>':'')+'</div>';
     if(v.issues.length){h+='<div style="margin-top:6px;font-size:11px;color:var(--err)">❌ '+v.issues.join(' / ')+'</div>';}
     if(v.ok){
       h+='<div style="margin-top:8px;padding:8px;border-radius:6px;background:rgba(0,200,100,.06);font-size:11px;line-height:1.6">';
       h+='<div style="color:var(--ok);font-weight:600">→ '+v.action+'</div>';
-      if(v.period)h+='<div style="color:var(--w40);margin-top:2px">📅 접수: '+v.period+'</div>';
-      if(v.req)h+='<div style="color:var(--w40);margin-top:2px">📋 필요서류: '+v.req+'</div>';
+      if(v.period)h+='<div style="color:var(--w40);margin-top:2px">📅 '+(_isKorean?'접수: ':'Application: ')+v.period+'</div>';
+      if(v.req)h+='<div style="color:var(--w40);margin-top:2px">📋 '+(_isKorean?'필요서류: ':'Required docs: ')+v.req+'</div>';
       h+='</div>';
     }
     h+='</div>';
@@ -18476,17 +18476,17 @@ function diagnoseVoucher(){
   });
   if(okCount>0){
     h+='<div style="padding:14px;border-radius:10px;background:linear-gradient(135deg,rgba(0,180,255,.08),rgba(138,92,246,.08));border:1px solid rgba(0,180,255,.2);margin-top:12px;text-align:center">';
-    h+='<div style="font-size:12px;color:var(--w40)">신청 가능 바우처 '+okCount+'개 · 최대 지원 합계</div>';
-    h+='<div style="font-size:24px;font-weight:900;color:var(--pri);margin-top:4px">최대 ~'+totalMax.toLocaleString()+'만원</div>';
-    h+='<div style="font-size:11px;color:var(--w30);margin-top:4px">※ 동일 사업 내용으로 중복 수혜 불가 · 바우처별 별도 신청 필요</div>';
+    h+='<div style="font-size:12px;color:var(--w40)">'+(_isKorean?'신청 가능 바우처 '+okCount+'개 · 최대 지원 합계':'Eligible vouchers: '+okCount+' · Max total support')+'</div>';
+    h+='<div style="font-size:24px;font-weight:900;color:var(--pri);margin-top:4px">'+(_isKorean?'최대 ~'+totalMax.toLocaleString()+'만원':'Up to ~'+totalMax.toLocaleString()+'0K KRW')+'</div>';
+    h+='<div style="font-size:11px;color:var(--w30);margin-top:4px">'+(_isKorean?'※ 동일 사업 내용으로 중복 수혜 불가 · 바우처별 별도 신청 필요':'※ No duplicate benefits for the same project · Separate application required per voucher')+'</div>';
     h+='</div>';
   } else {
     h+='<div style="padding:14px;border-radius:10px;background:rgba(255,50,50,.04);border:1px solid rgba(255,50,50,.15);margin-top:12px;text-align:center">';
-    h+='<div style="font-size:14px;font-weight:700;color:var(--err);margin-bottom:4px">현재 조건으로 신청 가능한 바우처가 없습니다</div>';
-    h+='<div style="font-size:11px;color:var(--w40)">입력 정보를 다시 확인하시거나, 상담을 통해 추가 가능성을 확인해보세요.</div>';
+    h+='<div style="font-size:14px;font-weight:700;color:var(--err);margin-bottom:4px">'+(_isKorean?'현재 조건으로 신청 가능한 바우처가 없습니다':'No eligible vouchers based on current conditions')+'</div>';
+    h+='<div style="font-size:11px;color:var(--w40)">'+(_isKorean?'입력 정보를 다시 확인하시거나, 상담을 통해 추가 가능성을 확인해보세요.':'Please verify your input or consult with us for additional possibilities.')+'</div>';
     h+='</div>';
   }
-  h+='<div style="margin-top:12px;text-align:center"><button class="btn btn-pri btn-sm" onclick="App.requestVoucherConsulting()">💬 바우처 신청 상담 요청</button></div>';
+  h+='<div style="margin-top:12px;text-align:center"><button class="btn btn-pri btn-sm" onclick="App.requestVoucherConsulting()">💬 '+(_isKorean?'바우처 신청 상담 요청':'Request Voucher Consultation')+'</button></div>';
   h+='</div>';
   var _vr=document.getElementById('voucher-result');if(_vr)_vr.innerHTML=h;
 }
@@ -20977,8 +20977,8 @@ function genTrendReport(){
       period:S._trendPeriod,
       total_searches:totalSearches,
       top_keywords:top5,
-      summary:'최근 '+period+' 동안 총 '+totalSearches+'건의 바이어 검색이 있었습니다. 가장 많은 검색은 '+topCountry+'에서 발생했으며, "'+top5[0].keyword+'" 키워드가 '+top5[0].count+'회로 1위를 기록했습니다.',
-      market_insights:'주요 검색 국가: '+countrySorted.slice(0,3).join(', ')+'. 해당 키워드 관련 제품을 보유한 제조사는 적극적인 바이어 매칭을 추천합니다.',
+      summary:_isKorean?'최근 '+period+' 동안 총 '+totalSearches+'건의 바이어 검색이 있었습니다. 가장 많은 검색은 '+topCountry+'에서 발생했으며, "'+top5[0].keyword+'" 키워드가 '+top5[0].count+'회로 1위를 기록했습니다.':'In the last '+period+', there were '+totalSearches+' buyer searches. Most from '+topCountry+', with "'+top5[0].keyword+'" at #1 ('+top5[0].count+' times).',
+      market_insights:_isKorean?'주요 검색 국가: '+countrySorted.slice(0,3).join(', ')+'. 해당 키워드 관련 제품을 보유한 제조사는 적극적인 바이어 매칭을 추천합니다.':'Top search countries: '+countrySorted.slice(0,3).join(', ')+'. Manufacturers with matching products should actively pursue buyer matching.',
       recommendations:[
         {icon:'🎯',title:top5[0].keyword+' 관련 제품 등록',desc:'검색 1위 키워드에 맞는 제품을 등록하면 바이어 매칭 확률이 높아집니다.'},
         {icon:'🌏',title:topCountry+' 시장 집중 공략',desc:'검색량이 가장 높은 '+topCountry+' 시장에 맞춘 인증 및 마케팅을 준비하세요.'},
@@ -21480,13 +21480,20 @@ function pgGuide(){
 }
 
 function pgGuideExport(){
-  var guides=[
+  var guides=_isKorean?[
     {title:'수출 시작하기: 완전 초보 가이드',desc:'수출 경험이 전혀 없는 제조사를 위한 A-Z 가이드',icon:'🚀',steps:['사업자등록증 확인','수출입무역업 신고','제품 HS코드 확인','수출 가능성 분석','타겟 시장 선정','인증/규격 확인','바이어 발굴','견적서 작성','샘플 발송','계약 및 선적']},
     {title:'수출바우처 신청 완전정복',desc:'정부 지원금으로 수출 비용 최대 85% 절감하는 방법',icon:'💰',steps:['바우처 종류 확인 (수출/혁신)','자격요건 자가진단','신청서 작성 (vouchersystem.go.kr)','사업계획서 첨부','선정 심사 (약 2주)','수행기관 선택 (Whistle AI)','사업 수행 및 정산']},
     {title:'알리바바 입점 가이드',desc:'알리바바닷컴에 입점하여 글로벌 바이어를 만나는 방법',icon:'🏪',steps:['알리바바 셀러 가입','스토어 프로필 설정','제품 영문 상세페이지 작성','키워드 최적화','인콰이어리 응대 요령','P4P 광고 설정','바이어 신뢰도 관리']},
     {title:'무역 서류 작성 가이드',desc:'PI, CI, PL, B/L, 원산지증명서 등 필수 서류 작성법',icon:'📝',steps:['Proforma Invoice 작성','Commercial Invoice 작성','Packing List 작성','원산지증명서 발급','선적지시서(S/I) 작성 및 B/L 이해','보험증권 준비','통관서류 체크리스트']},
     {title:'결제 및 정산 가이드',desc:'T/T, L/C, 안전결제 등 무역 결제 방식 이해',icon:'💳',steps:['사전 송금 (T/T Advance)','후불 송금 (T/T After)','신용장 (L/C)','D/P, D/A 방식','안전결제','외화 수취 및 환전','부가세 영세율 적용']},
     {title:'물류 및 선적 가이드',desc:'해상/항공/특송 운송, 인코텀즈, 통관 절차',icon:'🚢',steps:['인코텀즈 이해 (FOB, CIF, EXW, DDP)','해상운송 (LCL vs FCL)','항공운송 절차','특송(Express) 활용','포워더 선정','통관 절차','배송 트래킹']}
+  ]:[
+    {title:'Getting Started with Exports: Beginner Guide',desc:'A-Z guide for manufacturers with no export experience',icon:'🚀',steps:['Verify business registration','Register as exporter','Check product HS code','Analyze export feasibility','Select target markets','Verify certifications/standards','Find buyers','Prepare quotation','Send samples','Contract and shipment']},
+    {title:'Export Voucher Application Guide',desc:'How to save up to 85% on export costs with government subsidies',icon:'💰',steps:['Check voucher types (Export/Innovation)','Self-assess eligibility','Submit application (vouchersystem.go.kr)','Attach business plan','Selection review (~2 weeks)','Choose service provider (Whistle AI)','Execute and settle']},
+    {title:'Alibaba Listing Guide',desc:'How to list on Alibaba.com and connect with global buyers',icon:'🏪',steps:['Register as Alibaba seller','Set up store profile','Create English product pages','Keyword optimization','Inquiry response tips','P4P advertising setup','Buyer trust management']},
+    {title:'Trade Document Guide',desc:'How to prepare PI, CI, PL, B/L, Certificate of Origin and more',icon:'📝',steps:['Prepare Proforma Invoice','Prepare Commercial Invoice','Prepare Packing List','Obtain Certificate of Origin','Prepare Shipping Instructions (S/I) and understand B/L','Arrange insurance certificate','Customs clearance document checklist']},
+    {title:'Payment & Settlement Guide',desc:'Understanding T/T, L/C, escrow and other trade payment methods',icon:'💳',steps:['Advance payment (T/T Advance)','Deferred payment (T/T After)','Letter of Credit (L/C)','D/P, D/A methods','Escrow payment','Foreign currency receipt & exchange','Zero-rate VAT application']},
+    {title:'Logistics & Shipping Guide',desc:'Ocean/air/express shipping, Incoterms, customs procedures',icon:'🚢',steps:['Understanding Incoterms (FOB, CIF, EXW, DDP)','Ocean freight (LCL vs FCL)','Air freight procedures','Express shipping','Selecting a forwarder','Customs procedures','Shipment tracking']}
   ];
   var h='<div class="grid-2" style="gap:16px">';
   guides.forEach(function(g){
@@ -21505,7 +21512,7 @@ function pgGuideExport(){
 }
 
 function pgGuideIndustry(){
-  var industries=[
+  var industries=_isKorean?[
     {name:'Beauty & Cosmetics / 화장품',icon:'💄',certs:['FDA (미국)','CPNP (EU)','NMPA (중국)','PMDA (일본)'],markets:['미국','중국','일본','동남아','EU'],tips:'한국 화장품은 글로벌 시장에서 높은 경쟁력. OEM/ODM 강점 활용. 성분 규제 국가별 상이.'},
     {name:'Food & Beverage / 식품',icon:'🍜',certs:['FDA (미국)','HACCP','Halal','유기농 인증'],markets:['미국','일본','중국','동남아','중동'],tips:'김치, 라면, 소스류 높은 수요. 유통기한 관리 핵심. Halal 인증으로 중동 시장 확대.'},
     {name:'Health & Wellness / 건강기능식품',icon:'💊',certs:['FDA DSHEA','Health Canada NPN','TGA (호주)'],markets:['미국','호주','동남아','일본'],tips:'홍삼, 프로바이오틱스 인기. 국가별 건기식 분류 기준 상이. 성분 함량 규제 확인 필수.'},
@@ -21514,6 +21521,15 @@ function pgGuideIndustry(){
     {name:'생활용품 / 홈',icon:'🏠',certs:['CPSC (미국)','CE (EU)','REACH (화학물질)'],markets:['미국','EU','일본','호주'],tips:'디자인 경쟁력 강점. CPSC 안전 테스트 필수 (미국). 환경규제 강화 추세.'},
     {name:'산업용품 / 기계',icon:'🏭',certs:['ISO 9001','ISO 14001','CE Machinery'],markets:['미국','EU','중동','동남아','인도'],tips:'B2B 장기계약 중심. 기술 스펙 문서화 중요. 애프터서비스(AS) 체계 구축.'},
     {name:'자동차 부품',icon:'🚗',certs:['IATF 16949','ECE R','DOT/FMVSS'],markets:['미국','EU','인도','터키'],tips:'OEM 납품 시 품질인증 필수. IATF 16949 글로벌 표준. EV 부품 수요 급증.'}
+  ]:[
+    {name:'Beauty & Cosmetics',icon:'💄',certs:['FDA (US)','CPNP (EU)','NMPA (China)','PMDA (Japan)'],markets:['US','China','Japan','SEA','EU'],tips:'Korean cosmetics have strong global competitiveness. Leverage OEM/ODM strengths. Ingredient regulations vary by country.'},
+    {name:'Food & Beverage',icon:'🍜',certs:['FDA (US)','HACCP','Halal','Organic Cert.'],markets:['US','Japan','China','SEA','Middle East'],tips:'High demand for kimchi, ramen, sauces. Shelf life management is key. Halal certification opens Middle East markets.'},
+    {name:'Health & Wellness',icon:'💊',certs:['FDA DSHEA','Health Canada NPN','TGA (Australia)'],markets:['US','Australia','SEA','Japan'],tips:'Red ginseng and probiotics are popular. Health supplement classifications differ by country. Check dosage regulations.'},
+    {name:'Electronics / IT',icon:'📱',certs:['CE (EU)','FCC (US)','KC (Korea)','CCC (China)'],markets:['US','EU','Japan','India','SEA'],tips:'Strong in semiconductors, displays, batteries. EMC testing required. Establish IP protection strategy.'},
+    {name:'Fashion & Apparel',icon:'👗',certs:['Textile Labeling','OEKO-TEX','GOTS (Organic)'],markets:['US','EU','Japan','SEA'],tips:'K-wave fashion effect. Competitive in small-lot, high-mix production. Size/label regulations vary by country.'},
+    {name:'Home & Living',icon:'🏠',certs:['CPSC (US)','CE (EU)','REACH (Chemicals)'],markets:['US','EU','Japan','Australia'],tips:'Strong design competitiveness. CPSC safety testing required (US). Environmental regulations tightening.'},
+    {name:'Industrial Equipment',icon:'🏭',certs:['ISO 9001','ISO 14001','CE Machinery'],markets:['US','EU','Middle East','SEA','India'],tips:'B2B long-term contracts. Technical spec documentation is critical. Build after-sales service infrastructure.'},
+    {name:'Auto Parts',icon:'🚗',certs:['IATF 16949','ECE R','DOT/FMVSS'],markets:['US','EU','India','Turkey'],tips:'Quality certification essential for OEM supply. IATF 16949 global standard. EV parts demand surging.'}
   ];
   var h='<div class="grid-2" style="gap:16px">';
   industries.forEach(function(ind){
@@ -21532,7 +21548,7 @@ function pgGuideIndustry(){
 }
 
 function pgGuideCountry(){
-  var countries=[
+  var countries=_isKorean?[
     {flag:'🇺🇸',name:'미국',gdp:'$25.5T',pop:'3.3억',fta:'한미 FTA',key:'세계 최대 소비시장. FDA 인증 필수 (식품/화장품). FCC 인증 (전자). 아마존/월마트 유통 가능.',duty:'HS코드별 상이 (0~25%)',port:'LA/LB, NY/NJ, Chicago'},
     {flag:'🇯🇵',name:'일본',gdp:'$4.2T',pop:'1.2억',fta:'한일 RCEP',key:'품질 중시 시장. PMDA 인증 (의약외품). 한류 영향 Beauty & Cosmetics 인기. 소량 다빈도 주문.',duty:'RCEP 적용 시 단계적 철폐',port:'도쿄, 오사카, 고베'},
     {flag:'🇨🇳',name:'중국',gdp:'$18T',pop:'14억',fta:'한중 FTA',key:'세계 최대 인구. NMPA 인증 (화장품 6~12개월). 위생허가 필수 (식품). 위챗/알리바바 플랫폼.',duty:'한중 FTA 활용 (0~5%)',port:'상하이, 칭다오, 선전'},
@@ -21541,6 +21557,15 @@ function pgGuideCountry(){
     {flag:'🇸🇬',name:'싱가포르',gdp:'$0.4T',pop:'580만',fta:'한아세안 FTA',key:'동남아 비즈니스 허브. 자유무역항. 영어 사용. 리인보이스 무역 거점.',duty:'대부분 무관세',port:'싱가포르항 (세계 2위)'},
     {flag:'🇦🇪',name:'UAE/중동',gdp:'$0.5T',pop:'1,000만',fta:'한GCC FTA 협상중',key:'중동 유통 허브. Halal 인증 필수 (식품). 부유한 소비층. 두바이 리인보이스.',duty:'대부분 5% VAT',port:'두바이 제벨알리'},
     {flag:'🇦🇺',name:'호주',gdp:'$1.7T',pop:'2,600만',fta:'한호 FTA',key:'높은 구매력. TGA 인증 (건기식). 깐깐한 검역 (농식품). Beauty & Cosmetics / Food & Beverage 성장.',duty:'한호 FTA (대부분 0%)',port:'시드니, 멜버른'}
+  ]:[
+    {flag:'🇺🇸',name:'United States',gdp:'$25.5T',pop:'330M',fta:'KORUS FTA',key:'World\'s largest consumer market. FDA certification required (food/cosmetics). FCC certification (electronics). Amazon/Walmart distribution available.',duty:'Varies by HS code (0~25%)',port:'LA/LB, NY/NJ, Chicago'},
+    {flag:'🇯🇵',name:'Japan',gdp:'$4.2T',pop:'120M',fta:'Korea-Japan RCEP',key:'Quality-focused market. PMDA certification (quasi-drugs). K-beauty popular due to Hallyu. Small-lot, frequent orders.',duty:'Phased elimination under RCEP',port:'Tokyo, Osaka, Kobe'},
+    {flag:'🇨🇳',name:'China',gdp:'$18T',pop:'1.4B',fta:'Korea-China FTA',key:'World\'s largest population. NMPA certification (cosmetics 6~12 months). Hygiene permit required (food). WeChat/Alibaba platforms.',duty:'Korea-China FTA (0~5%)',port:'Shanghai, Qingdao, Shenzhen'},
+    {flag:'🇩🇪',name:'Germany / EU',gdp:'$4.1T (Germany)',pop:'450M (EU)',fta:'Korea-EU FTA',key:'Gateway to EU single market. CE marking required. REACH chemical regulations. GDPR data protection.',duty:'Korea-EU FTA (mostly 0%)',port:'Hamburg, Rotterdam, Antwerp'},
+    {flag:'🇻🇳',name:'Vietnam',gdp:'$0.4T',pop:'100M',fta:'Korea-ASEAN FTA, RCEP',key:'Emerging manufacturing hub. Young population, growing consumer market. Strong Hallyu influence. Cosmetics/food popular.',duty:'RCEP/FTA applicable',port:'Ho Chi Minh, Hai Phong'},
+    {flag:'🇸🇬',name:'Singapore',gdp:'$0.4T',pop:'5.8M',fta:'Korea-ASEAN FTA',key:'Southeast Asia business hub. Free trade port. English-speaking. Re-invoicing trade hub.',duty:'Mostly duty-free',port:'Port of Singapore (world #2)'},
+    {flag:'🇦🇪',name:'UAE / Middle East',gdp:'$0.5T',pop:'10M',fta:'Korea-GCC FTA (negotiating)',key:'Middle East distribution hub. Halal certification required (food). Affluent consumers. Dubai re-invoicing.',duty:'Mostly 5% VAT',port:'Dubai Jebel Ali'},
+    {flag:'🇦🇺',name:'Australia',gdp:'$1.7T',pop:'26M',fta:'Korea-Australia FTA',key:'High purchasing power. TGA certification (health supplements). Strict quarantine (agri-food). Cosmetics/F&B growing.',duty:'Korea-AU FTA (mostly 0%)',port:'Sydney, Melbourne'}
   ];
   var h='<div class="grid-2" style="gap:16px">';
   countries.forEach(function(c){
@@ -21557,7 +21582,7 @@ function pgGuideCountry(){
 }
 
 function pgGuideGlossary(){
-  var terms=[
+  var terms=_isKorean?[
     {term:'FOB (Free On Board)',def:'본선인도조건. 수출항 선적까지 수출자 부담, 이후 운임/보험은 수입자 부담.'},
     {term:'CIF (Cost, Insurance, Freight)',def:'운임보험료포함조건. 수입항까지 운임+보험 수출자 부담.'},
     {term:'EXW (Ex Works)',def:'공장인도조건. 수출자 공장에서 인도. 이후 모든 비용 수입자 부담.'},
@@ -21578,9 +21603,30 @@ function pgGuideGlossary(){
     {term:'REACH',def:'EU 화학물질 등록평가허가제한 규정. 화학물질 포함 제품 수출 시 준수 필수.'},
     {term:'CE Marking',def:'EU 적합성 인증 마크. EU 시장 판매를 위한 필수 인증.'},
     {term:'FDA',def:'미국 식품의약국. 식품, 의약품, 화장품, 의료기기 등의 안전성 규제 기관.'}
+  ]:[
+    {term:'FOB (Free On Board)',def:'Free On Board. Seller bears costs until goods are loaded on vessel at export port. Freight/insurance is buyer\'s responsibility.'},
+    {term:'CIF (Cost, Insurance, Freight)',def:'Cost, Insurance and Freight included. Seller bears freight + insurance to the import port.'},
+    {term:'EXW (Ex Works)',def:'Ex Works. Goods delivered at seller\'s premises. All subsequent costs borne by buyer.'},
+    {term:'DDP (Delivered Duty Paid)',def:'Delivered Duty Paid. Seller bears all costs including duty to the named destination.'},
+    {term:'HS Code',def:'Harmonized System code. 6-digit international standard + 4-digit national extension. Determines tariff rates.'},
+    {term:'L/C (Letter of Credit)',def:'Letter of Credit. A bank-guaranteed payment instrument for international trade.'},
+    {term:'T/T (Telegraphic Transfer)',def:'Telegraphic Transfer (wire transfer). The most common trade payment method. Available as advance or deferred payment.'},
+    {term:'B/L (Bill of Lading)',def:'Bill of Lading. Receipt of cargo for ocean shipment and a document of title. Issued in 3 originals. Issued by carrier/forwarder; exporter requests via Shipping Instructions (S/I).'},
+    {term:'PI (Proforma Invoice)',def:'Proforma Invoice. A preliminary invoice specifying trade terms. Used as a proposal to buyers.'},
+    {term:'CI (Commercial Invoice)',def:'Commercial Invoice. Official invoice stating the actual transaction amount. Required for customs clearance.'},
+    {term:'PL (Packing List)',def:'Packing List. Document specifying packing units, weight, and quantity of cargo.'},
+    {term:'CO (Certificate of Origin)',def:'Certificate of Origin. Required document for applying FTA preferential tariff rates.'},
+    {term:'MOQ (Minimum Order Quantity)',def:'Minimum Order Quantity. The smallest order unit for manufacturing/sales.'},
+    {term:'CBM (Cubic Meter)',def:'Cubic Meter. Volume unit for ocean freight cargo. Basis for LCL freight calculation.'},
+    {term:'LCL (Less than Container Load)',def:'Less than Container Load. Small shipments that don\'t fill a container. Charged per CBM.'},
+    {term:'FCL (Full Container Load)',def:'Full Container Load. Cargo using an entire container. Based on 20ft/40ft units.'},
+    {term:'FTA (Free Trade Agreement)',def:'Free Trade Agreement. Tariff reduction/elimination between member countries. Korea has FTAs with 60+ countries.'},
+    {term:'REACH',def:'EU Registration, Evaluation, Authorization and Restriction of Chemicals regulation. Mandatory compliance for exporting products containing chemicals.'},
+    {term:'CE Marking',def:'EU conformity marking. Required certification for selling products in the EU market.'},
+    {term:'FDA',def:'U.S. Food and Drug Administration. Regulatory agency for safety of food, drugs, cosmetics, and medical devices.'}
   ];
   var filter=S._glossaryFilter||'';
-  var h='<div style="margin-bottom:20px"><input oninput="if(!window._glossaryDebounce)window._glossaryDebounce=_debounce(function(v){App.set({_glossaryFilter:v});},200);window._glossaryDebounce(this.value)" value="'+filter+'" placeholder="🔍 용어 검색..." style="width:100%;max-width:400px;padding:10px 16px;border-radius:10px;background:var(--card);border:1px solid var(--bd);color:var(--w);font-size:14px;outline:none"></div>';
+  var h='<div style="margin-bottom:20px"><input oninput="if(!window._glossaryDebounce)window._glossaryDebounce=_debounce(function(v){App.set({_glossaryFilter:v});},200);window._glossaryDebounce(this.value)" value="'+filter+'" placeholder="'+(_isKorean?'🔍 용어 검색...':'🔍 Search terms...')+'" style="width:100%;max-width:400px;padding:10px 16px;border-radius:10px;background:var(--card);border:1px solid var(--bd);color:var(--w);font-size:14px;outline:none"></div>';
   h+='<div style="display:flex;flex-direction:column;gap:8px">';
   terms.filter(function(t){return !filter||t.term.toLowerCase().indexOf(filter.toLowerCase())>=0||t.def.indexOf(filter)>=0;}).forEach(function(t){
     h+='<div class="card" style="padding:16px;display:flex;gap:16px;align-items:flex-start">';
@@ -21593,7 +21639,7 @@ function pgGuideGlossary(){
 }
 
 function pgGuideTradeShow(){
-  var shows=[
+  var shows=_isKorean?[
     {name:'Cosmoprof Asia',city:'홍콩',month:'11월',industry:'뷰티/화장품',size:'3,000+ 전시업체',tip:'아시아 최대 뷰티 전시회. 뷰티 바이어 집중.'},
     {name:'Beautyworld Middle East',city:'두바이',month:'10월',industry:'뷰티/퍼스널케어',size:'1,800+ 전시업체',tip:'중동 뷰티 시장 진출 필수. Halal 뷰티 트렌드.'},
     {name:'SIAL Paris',city:'파리',month:'10월 (격년)',industry:'식품/음료',size:'7,500+ 전시업체',tip:'세계 최대 식품 박람회. 식품 브랜드 노출 기회.'},
@@ -21602,11 +21648,20 @@ function pgGuideTradeShow(){
     {name:'Canton Fair',city:'광저우',month:'4월/10월',industry:'종합무역',size:'26,000+ 전시업체',tip:'중국 최대 종합 무역박람회. 연 2회 개최. 중국 바이어 발굴.'},
     {name:'Ambiente',city:'프랑크푸르트',month:'2월',industry:'생활용품/홈데코',size:'4,800+ 전시업체',tip:'유럽 최대 라이프스타일 전시회. 디자인 경쟁력 어필.'},
     {name:'Seoul Food',city:'서울',month:'5월',industry:'식품/외식',size:'1,500+ 전시업체',tip:'한국 식품산업 최대 전시회. 해외 바이어 초청 프로그램.'}
+  ]:[
+    {name:'Cosmoprof Asia',city:'Hong Kong',month:'November',industry:'Beauty/Cosmetics',size:'3,000+ exhibitors',tip:'Asia\'s largest beauty expo. Focused on beauty buyers.'},
+    {name:'Beautyworld Middle East',city:'Dubai',month:'October',industry:'Beauty/Personal Care',size:'1,800+ exhibitors',tip:'Essential for Middle East beauty market entry. Halal beauty trend.'},
+    {name:'SIAL Paris',city:'Paris',month:'October (biennial)',industry:'Food/Beverage',size:'7,500+ exhibitors',tip:'World\'s largest food exhibition. Great brand exposure opportunity.'},
+    {name:'Anuga',city:'Cologne',month:'October (biennial)',industry:'Food/Beverage',size:'7,900+ exhibitors',tip:'Europe\'s largest food fair. Alternates biennially with SIAL.'},
+    {name:'CES',city:'Las Vegas',month:'January',industry:'Electronics/IT/Tech',size:'4,300+ exhibitors',tip:'World\'s largest consumer electronics show. Korea Pavilion. Innovation launches.'},
+    {name:'Canton Fair',city:'Guangzhou',month:'April/October',industry:'General Trade',size:'26,000+ exhibitors',tip:'China\'s largest general trade fair. Held twice a year. Great for finding Chinese buyers.'},
+    {name:'Ambiente',city:'Frankfurt',month:'February',industry:'Home/Living/Decor',size:'4,800+ exhibitors',tip:'Europe\'s largest lifestyle exhibition. Showcase design competitiveness.'},
+    {name:'Seoul Food',city:'Seoul',month:'May',industry:'Food/Foodservice',size:'1,500+ exhibitors',tip:'Korea\'s largest food industry exhibition. International buyer invitation program.'}
   ];
   var indFilter=S._showIndustry||'';
   var h='<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">';
-  ['','뷰티','식품','전자','생활용품','종합무역'].forEach(function(f){
-    h+='<span onclick="App.set({_showIndustry:\''+(f||'')+'\'}); App.render()" style="padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;'+(indFilter===f?'background:var(--pri);color:#fff':'background:var(--card);color:var(--w40);border:1px solid var(--bd)')+'">'+(f||'전체')+'</span>';
+  (_isKorean?['','뷰티','식품','전자','생활용품','종합무역']:['','Beauty','Food','Electronics','Home','General Trade']).forEach(function(f){
+    h+='<span onclick="App.set({_showIndustry:\''+(f||'')+'\'}); App.render()" style="padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;'+(indFilter===f?'background:var(--pri);color:#fff':'background:var(--card);color:var(--w40);border:1px solid var(--bd)')+'">'+(f||(_isKorean?'전체':'All'))+'</span>';
   });
   h+='</div>';
   h+='<div class="grid-2" style="gap:16px">';
@@ -22129,7 +22184,7 @@ function sendInvite(type){
       if(!S._pendingInvites)S._pendingInvites=[];
       S._pendingInvites.unshift({email:email,type:type,created_at:new Date().toISOString(),email_sent:data.email_sent,invite_link:data.invite_link});
       emailEl.value='';
-      UI.toast(data.email_sent?email+'에게 초대 메일이 발송되었습니다!':email+' 초대가 등록되었습니다 (메일 설정 확인 필요)','ok');
+      UI.toast(data.email_sent?(_isKorean?email+'에게 초대 메일이 발송되었습니다!':'Invitation email sent to '+email+'!'):(_isKorean?email+' 초대가 등록되었습니다 (메일 설정 확인 필요)':email+' invitation registered (check email settings)'),'ok');
       _loadInvitations();render();
     }).catch(function(err){UI.toast((T('invitation_failed_prefix'))+err.message,'err');});
   });
