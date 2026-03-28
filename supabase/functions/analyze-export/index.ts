@@ -8,6 +8,23 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// Multi-language support: map language codes to full names for Claude prompts
+const LANG_NAMES: Record<string, string> = {
+  ko: "Korean", en: "English", ja: "Japanese", zh: "Chinese (Simplified)",
+  vi: "Vietnamese", th: "Thai", de: "German", fr: "French",
+  es: "Spanish", pt: "Portuguese", id: "Indonesian", tr: "Turkish", ar: "Arabic",
+  it: "Italian", nl: "Dutch", pl: "Polish", cs: "Czech", ru: "Russian",
+  bn: "Bengali", ur: "Urdu", fa: "Persian",
+};
+
+function resolveLang(body: any): string {
+  // Accept both 'language' and 'lang' from client
+  const raw = body.language || body.lang || "en";
+  // Validate it's a known language code
+  return LANG_NAMES[raw] ? raw : "en";
+}
+
+
 const CRAWL_TIMEOUT_MS = 5000; // 5s — faster cutoff, most pages load in 2-3s
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
@@ -390,10 +407,18 @@ serve(async (req: Request) => {
       package_dimensions = "",
       units_per_carton = "",
       origin_country = "",
-      language = "ko",
+      language: _rawLang = "ko",
       image_base64 = "",
       image_type = "image/jpeg",
     } = body;
+
+    // Resolve language: accept both 'language' and 'lang', support all 13+ languages
+    const language = resolveLang(body);
+    const isKo = language === "ko";
+    // For prompt structure: Korean prompts for ko, English prompts for all others
+    const isEn = language !== "ko";
+    // For non-ko/non-en languages, use English prompt structure + language override
+    const langOverride = (language !== "ko" && language !== "en") ? `\n\n**CRITICAL LANGUAGE REQUIREMENT: You MUST write your ENTIRE response in ${LANG_NAMES[language] || "English"}. All text fields, descriptions, reasons, notes, and advice must be in ${LANG_NAMES[language] || "English"}. Only keep technical terms (HS codes, FTA names, certification names) in their original form. This is a paid service for a ${LANG_NAMES[language] || "English"}-speaking manufacturer.**` : "";
 
     // Resolve origin country: explicit > auto-detect from URL > default KR
     let resolvedOrigin = origin_country || "";
@@ -443,7 +468,7 @@ serve(async (req: Request) => {
       SG: { ko: "싱가포르", en: "Singapore" },
       PH: { ko: "필리핀", en: "Philippines" },
     };
-    const originLabel = ORIGIN_NAMES[resolvedOrigin]?.[language === "en" ? "en" : "ko"] || resolvedOrigin;
+    const originLabel = ORIGIN_NAMES[resolvedOrigin]?.[isKo ? "ko" : "en"] || resolvedOrigin;
     const isKoreaOrigin = resolvedOrigin === "KR";
 
     // Validate image if provided
@@ -480,7 +505,7 @@ serve(async (req: Request) => {
       SEA: "Southeast Asia (Vietnam)", ME: "Middle East (UAE)", AU: "Australia",
       LATAM: "Latin America (Brazil)", IN: "India", GB: "United Kingdom", CA: "Canada",
     };
-    const marketNames = language === "en" ? marketNamesEn : marketNamesKo;
+    const marketNames = isKo ? marketNamesKo : marketNamesEn;
 
     // Sanctions screening for target markets
     const SANCTIONED_MARKETS = ["KP", "IR", "SY", "CU", "SS", "AF", "CF", "CD", "LY", "SO", "YE", "ZW", "NI"];
@@ -543,7 +568,7 @@ serve(async (req: Request) => {
     // Call 3: Pricing + Action Plan + Summary (~20s)
     // All run in parallel → total ~30s instead of 120s+
 
-    const isEn = language === "en";
+    // isEn already defined at top level
     const na = isEn ? "N/A" : "미입력";
     const none = isEn ? "None" : "없음";
 
@@ -584,6 +609,8 @@ MOQ: ${moq || na}
     const crawlCtx = crawledText ? (isEn
       ? `\n## Crawled Product Data\n${crawledText}`
       : `\n## 크롤링 제품 데이터\n${crawledText}`) : "";
+    // Multi-language context injected into all prompts
+    const langCtx = langOverride;
 
     // Vision context: inform AI that a product image is attached
     const visionCtx = validatedImageBase64 ? (isEn
@@ -716,7 +743,7 @@ ${isEn ? "Output ONLY this JSON — no explanation:" : "이 JSON만 출력 — �
   "hs_description": "${isEn ? "1 sentence" : "1문장"}",
   "summary": "${isEn ? "2 sentences with key export insight" : "2문장, 핵심 수출 인사이트"}"
 }
-${isEn ? "Rules: Be specific. Real HS code with 6-digit precision. Conservative scoring." : "규칙: 구체적. 6자리 HS코드. 보수적 채점."}`;
+${isEn ? "Rules: Be specific. Real HS code with 6-digit precision. Conservative scoring." : "규칙: 구체적. 6자리 HS코드. 보수적 채점."}${langOverride}`;
 
     try {
       const phase1Res = await callAI(phase1Prompt, 800, visionImage, phase1Start);
@@ -927,19 +954,19 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
 
     // All 3 calls fire simultaneously — no stagger needed for Haiku
     const [r1, r2, r3] = await Promise.allSettled([
-      callAI(prompt1, 5000, visionImage, startTime).then((res) => {
+      callAI(prompt1 + langCtx, 5000, visionImage, startTime).then((res) => {
         console.log("[call1] Core done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         saveProgress("core_done", 50);
         return res;
       }),
-      callAI(prompt2, 4000, undefined, startTime).then((res) => {
+      callAI(prompt2 + langCtx, 4000, undefined, startTime).then((res) => {
         console.log("[call2] Market done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         saveProgress("market_done", 75);
         return res;
       }),
-      callAI(prompt3, 3000, undefined, startTime).then((res) => {
+      callAI(prompt3 + langCtx, 3000, undefined, startTime).then((res) => {
         console.log("[call3] Action done in", Date.now() - startTime, "ms, model:", res.model);
         Object.assign(completedResults, res.result);
         return res;
@@ -983,7 +1010,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
     if (failedCalls > 0 && (Date.now() - startTime) > WALL_CLOCK_LIMIT_MS) {
       console.warn(`[wall-clock] Exceeded ${WALL_CLOCK_LIMIT_MS}ms, returning partial results (${3 - failedCalls}/3 calls succeeded)`);
 
-      const isKo = language !== "en";
+      // isKo already defined at top level
       // If we have at least 1 successful call, save as partial completion
       if (failedCalls < 3) {
         result._partial_failure = true;
@@ -1039,7 +1066,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
 
     // If ALL 3 failed (within wall clock), report failure
     if (failedCalls === 3) {
-      const isKo = language !== "en";
+      // isKo already defined at top level
       await sbAdmin.rpc("refund_analysis_credit", { p_user_id: user.id }).catch(() => {});
       await sbAdmin.from("analyses").update({
         status: "failed",
@@ -1064,7 +1091,7 @@ ${isEn ? "Rules: Practical actions with real agencies/URLs/costs. No generic adv
 
       if (r1.status !== "fulfilled") {
         rescuePromises.push(
-          callAI(prompt1, 5000, undefined, startTime).then((res) => {
+          callAI(prompt1 + langCtx, 5000, undefined, startTime).then((res) => {
             Object.assign(result, res.result);
             usedModels.push(res.model + "-rescue");
             failedCalls--;
@@ -1109,8 +1136,8 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
 }`;
           rescuePromises.push(
             Promise.allSettled([
-              callAI(prompt2a, 2500, undefined, startTime),
-              callAI(prompt2b, 2000, undefined, startTime),
+              callAI(prompt2a + langCtx, 2500, undefined, startTime),
+              callAI(prompt2b + langCtx, 2000, undefined, startTime),
             ]).then(([ra, rb]) => {
               let recovered = false;
               if (ra.status === "fulfilled") {
@@ -1134,7 +1161,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
         } else {
           // Not enough time: try single rescue with reduced tokens
           rescuePromises.push(
-            callAI(prompt2, 3000, undefined, startTime).then((res) => {
+            callAI(prompt2 + langCtx, 3000, undefined, startTime).then((res) => {
               Object.assign(result, res.result);
               usedModels.push(res.model + "-rescue");
               failedCalls--;
@@ -1145,7 +1172,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
       }
       if (r3.status !== "fulfilled") {
         rescuePromises.push(
-          callAI(prompt3, 3000, undefined, startTime).then((res) => {
+          callAI(prompt3 + langCtx, 3000, undefined, startTime).then((res) => {
             Object.assign(result, res.result);
             usedModels.push(res.model + "-rescue");
             failedCalls--;
@@ -1293,7 +1320,8 @@ interface PromptInput {
 }
 
 function buildPrompt(d: PromptInput): string {
-  const isEn = d.language === "en";
+  const isKo = d.language === "ko";
+  const isEn = d.language !== "ko";
   const na = isEn ? "N/A" : "미입력";
   const none = isEn ? "None" : "없음";
 
@@ -1411,7 +1439,11 @@ In your analysis, you MUST include: (1) specific sanctions/export control warnin
 분석 시 반드시 포함: (1) 제재/수출통제 경고, (2) ECCN/EAR 분류 요건, (3) 최종용도/최종사용자 스크리닝, (4) 강화된 실사 절차, (5) 잠재 수출허가 요건. risks 배열과 regulatory_score에 반영하세요.`}\n`
     : "";
 
-  return `${intro}
+  // For non-ko/non-en: add language override instruction
+  const isKo = d.language === "ko";
+  const bpLangOverride = (d.language !== "ko" && d.language !== "en") ? `\n\n**CRITICAL LANGUAGE REQUIREMENT: You MUST write your ENTIRE response in ${LANG_NAMES[d.language] || "English"}. All text fields, descriptions, reasons, notes, and advice must be in ${LANG_NAMES[d.language] || "English"}. Only keep technical terms (HS codes, FTA names, certification names) in their original form.**` : "";
+
+  return `${intro}${bpLangOverride}
 
 ${productInfo}
 ${crawlSection}

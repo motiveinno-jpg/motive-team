@@ -266,14 +266,60 @@ serve(async (req: Request) => {
 
     let knowledgeEntries: KnowledgeEntry[] = [];
     let ragContext = "";
+    let searchMethod = "none";
 
     try {
-      knowledgeEntries = await searchKnowledge(
-        sbAdmin,
-        userMsg,
-        detectedCategory || undefined,
-        detectedCountry || undefined,
-      );
+      // Try vector search first (if OpenAI key is available for query embedding)
+      const openaiKey = Deno.env.get("OPENAI_API_KEY");
+      if (openaiKey) {
+        try {
+          const embResp = await fetch("https://api.openai.com/v1/embeddings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${openaiKey}`,
+            },
+            body: JSON.stringify({
+              model: "text-embedding-3-small",
+              input: userMsg,
+              dimensions: 1536,
+            }),
+          });
+          if (embResp.ok) {
+            const embData = await embResp.json();
+            const queryEmbedding = embData.data?.[0]?.embedding;
+            if (queryEmbedding) {
+              const { data: vecResults, error: vecErr } = await sbAdmin.rpc(
+                "match_customs_knowledge",
+                {
+                  query_embedding: JSON.stringify(queryEmbedding),
+                  match_count: MAX_CONTEXT_ENTRIES,
+                  filter_category: detectedCategory || null,
+                  filter_country: detectedCountry || null,
+                },
+              );
+              if (!vecErr && vecResults && vecResults.length > 0) {
+                knowledgeEntries = vecResults as KnowledgeEntry[];
+                searchMethod = "vector";
+              }
+            }
+          }
+        } catch (vecSearchErr) {
+          console.error("Vector search failed, falling back to text:", vecSearchErr);
+        }
+      }
+
+      // Fallback to text search if vector search didn't return results
+      if (knowledgeEntries.length === 0) {
+        knowledgeEntries = await searchKnowledge(
+          sbAdmin,
+          userMsg,
+          detectedCategory || undefined,
+          detectedCountry || undefined,
+        );
+        if (knowledgeEntries.length > 0) searchMethod = "text";
+      }
+
       ragContext = buildContext(knowledgeEntries);
     } catch (ragErr) {
       // RAG failure should not block the response — fall back to pure prompt
@@ -332,6 +378,7 @@ ${ragContext}`;
       JSON.stringify({
         ok: true,
         answer,
+        searchMethod,
         sources: knowledgeEntries.map((e) => ({
           id: e.id,
           title: e.title,

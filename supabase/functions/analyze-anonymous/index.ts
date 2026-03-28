@@ -7,6 +7,14 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+// Multi-language support
+const LANG_NAMES: Record<string, string> = {
+  ko: "Korean", en: "English", ja: "Japanese", zh: "Chinese (Simplified)",
+  vi: "Vietnamese", th: "Thai", de: "German", fr: "French",
+  es: "Spanish", pt: "Portuguese", id: "Indonesian", tr: "Turkish", ar: "Arabic",
+  it: "Italian", nl: "Dutch", pl: "Polish", cs: "Czech", ru: "Russian",
+};
+
 // ---------------------------------------------------------------------------
 // In-memory rate limiting (resets on cold start)
 // ---------------------------------------------------------------------------
@@ -192,9 +200,15 @@ function buildPreviewPrompt(
   crawledText: string,
   language: string,
 ): string {
+  const isKo = language === "ko";
   const isEn = language === "en";
+  const langName = LANG_NAMES[language] || "English";
+  // For non-ko/non-en: use English prompt structure + language override
+  const langOverride = (!isKo && !isEn)
+    ? `\n\n**CRITICAL: Write your ENTIRE response in ${langName}. All text fields must be in ${langName}. Only keep technical terms (HS codes) in original form.**`
+    : "";
 
-  const systemContext = isEn
+  const systemContext = isEn || (!isKo)
     ? `You are Whistle AI's export preview analyzer. Based on the product information below, provide a quick export suitability preview.`
     : `당신은 Whistle AI의 수출 프리뷰 분석기입니다. 아래 제품 정보를 바탕으로 간단한 수출 적합성 프리뷰를 제공하세요.`;
 
@@ -202,22 +216,8 @@ function buildPreviewPrompt(
     ? `\n## ${isEn ? "Crawled Product Data" : "크롤링 제품 데이터"}\n${crawledText}\n`
     : "";
 
-  const outputSpec = isEn
-    ? `Respond with ONLY a JSON object (no markdown fences, no extra text). Structure:
-{
-  "product_name": "Detected or inferred product name",
-  "hs_code": "XXXX.XX (6-digit HS code suggestion)",
-  "category": "Product category (e.g., Electronics, Food & Beverage, Cosmetics)",
-  "target_markets": ["US", "JP", "DE"],
-  "brief_summary": "2-3 sentence export suitability summary with key insights"
-}
-
-Rules:
-- target_markets: exactly 3 ISO country codes, ranked by suitability
-- hs_code: provide your best 6-digit HS code estimate
-- brief_summary: be specific to this product, no generalities
-- All text in English`
-    : `JSON 객체만 응답하세요 (마크다운 펜스, 추가 텍스트 없이). 구조:
+  const outputSpec = isKo
+    ? `JSON 객체만 응답하세요 (마크다운 펜스, 추가 텍스트 없이). 구조:
 {
   "product_name": "감지/추론된 제품명",
   "hs_code": "XXXX.XX (6자리 HS코드 제안)",
@@ -230,11 +230,25 @@ Rules:
 - target_markets: 적합도순 ISO 국가코드 정확히 3개
 - hs_code: 최선의 6자리 HS코드 추정치
 - brief_summary: 이 제품에 특화된 구체적 분석, 일반론 금지
-- 한국어로 작성`;
+- 한국어로 작성`
+    : `Respond with ONLY a JSON object (no markdown fences, no extra text). Structure:
+{
+  "product_name": "Detected or inferred product name",
+  "hs_code": "XXXX.XX (6-digit HS code suggestion)",
+  "category": "Product category (e.g., Electronics, Food & Beverage, Cosmetics)",
+  "target_markets": ["US", "JP", "DE"],
+  "brief_summary": "2-3 sentence export suitability summary with key insights"
+}
+
+Rules:
+- target_markets: exactly 3 ISO country codes, ranked by suitability
+- hs_code: provide your best 6-digit HS code estimate
+- brief_summary: be specific to this product, no generalities
+- All text in English${langOverride}`;
 
   return `${systemContext}
 
-## ${isEn ? "Product Information" : "제품 정보"}
+## ${isKo ? "제품 정보" : "Product Information"}
 ${productDescription}
 ${crawlBlock}
 ${outputSpec}`;
@@ -286,7 +300,10 @@ serve(async (req: Request) => {
     }
 
     const body = await req.json();
-    const { url, fileBase64, language = "ko" } = body;
+    const { url, fileBase64 } = body;
+    // Accept both 'language' and 'lang', validate against known codes
+    const rawLang = body.language || body.lang || "en";
+    const language = LANG_NAMES[rawLang] ? rawLang : "en";
 
     if (!url && !fileBase64) {
       return new Response(
@@ -330,7 +347,15 @@ serve(async (req: Request) => {
     const aiController = new AbortController();
     const aiTimer = setTimeout(() => aiController.abort(), 60_000);
 
+    const isKo = language === "ko";
     const isEn = language === "en";
+    const langName = LANG_NAMES[language] || "English";
+    // System prompt: Korean for ko, English+lang override for others
+    const sysPrompt = isKo
+      ? "당신은 수출 분석 프리뷰 엔진입니다. 유효한 JSON만 출력하세요. 마크다운 코드 펜스 없이. {로 시작하고 }로 끝내세요."
+      : (!isEn
+        ? `You are an export analysis preview engine. Output ONLY valid JSON. No markdown code fences. Start with { and end with }. IMPORTANT: All text values in the JSON must be written in ${langName}.`
+        : "You are an export analysis preview engine. Output ONLY valid JSON. No markdown code fences. Start with { and end with }.");
 
     const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -342,9 +367,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 2000,
-        system: isEn
-          ? "You are an export analysis preview engine. Output ONLY valid JSON. No markdown code fences. Start with { and end with }."
-          : "당신은 수출 분석 프리뷰 엔진입니다. 유효한 JSON만 출력하세요. 마크다운 코드 펜스 없이. {로 시작하고 }로 끝내세요.",
+        system: sysPrompt,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: aiController.signal,
