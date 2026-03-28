@@ -4939,7 +4939,9 @@ function loadA(loadMore){if(!S.user)return Promise.resolve();if(!loadMore){S._an
 function loadP(){if(!S.user)return Promise.resolve();return sb.from('products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){S.products=r.data||[];}).catch(function(e){console.error('[loadP]',e);S.products=[];});}
 function loadPr(){if(!S.user)return Promise.resolve();return sb.from('projects').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(100).then(function(r){S.projects=r.data||[];S.projects.forEach(_ensureStageProgress);}).catch(function(e){console.error('[loadPr]',e);S.projects=[];});}
 function loadSR(){if(!S.user)return Promise.resolve();return sb.from('service_requests').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(100).then(function(r){S.serviceRequests=r.data||[];}).catch(function(e){console.error('[loadSR]',e);S.serviceRequests=[];});}
-function loadB(){if(!S.user)return Promise.resolve();return sb.from('buyers').select('*').eq('registered_by',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){S.buyers=r.data||[];/* Also load buyers linked via matchings but not registered_by this user */var matchBuyerIds=(S.matchings||[]).map(function(m){return m.buyer_id;}).filter(function(bid){return bid&&!S.buyers.find(function(b){return b.id===bid;});});if(matchBuyerIds.length){return sb.from('buyers').select('*').in('id',matchBuyerIds).then(function(r2){if(r2.data)S.buyers=S.buyers.concat(r2.data);});}}).catch(function(e){console.error('[loadB]',e);S.buyers=[];});}
+function _rebuildBuyerMap(){S._buyerMap={};(S.buyers||[]).forEach(function(b){if(b.id)S._buyerMap[b.id]=b;});}
+function _getBuyer(id){return id&&S._buyerMap?S._buyerMap[id]||null:null;}
+function loadB(){if(!S.user)return Promise.resolve();return sb.from('buyers').select('*').eq('registered_by',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){S.buyers=r.data||[];var matchBuyerIds=(S.matchings||[]).map(function(m){return m.buyer_id;}).filter(function(bid){return bid&&!_getBuyer(bid);});if(matchBuyerIds.length){return sb.from('buyers').select('*').in('id',matchBuyerIds).then(function(r2){if(r2.data)S.buyers=S.buyers.concat(r2.data);_rebuildBuyerMap();});}else{_rebuildBuyerMap();}}).catch(function(e){console.error('[loadB]',e);S.buyers=[];_rebuildBuyerMap();});}
 
 /* === AUTH === */
 var _authErrMap=_isKorean?{
@@ -5736,7 +5738,7 @@ function pgDash(){
   var now=new Date();var upMeetings=(S.meetings||[]).filter(function(m){return new Date(m.scheduled_at)>=now&&m.status!=='cancelled';}).sort(function(a,b){return new Date(a.scheduled_at)-new Date(b.scheduled_at);}).slice(0,5);
   if(upMeetings.length===0){h+=UI.empty('📅',(T('no_upcoming_meetings')),(T('schedule_buyer_meeting')));}
   else{upMeetings.forEach(function(m){
-    var mt=new Date(m.scheduled_at);var buyer=(S.buyers||[]).find(function(b){return b.id===m.buyer_id;});
+    var mt=new Date(m.scheduled_at);var buyer=_getBuyer(m.buyer_id);
     var isToday=mt.toDateString()===now.toDateString();
     var dtStr=isToday?(T('today_prefix'))+mt.toLocaleTimeString(U.loc(),{hour:'2-digit',minute:'2-digit'}):U.fd(m.scheduled_at,'short');
     var typeIcon={video_call:'🖥️',phone:'📞',in_person:'🤝',trade_show:'🏢',online_demo:'💻'}[m.type]||'📅';
@@ -6067,7 +6069,7 @@ function submitA(){
         _showAnalysisGuidance(_guideType,d,r.data.id);
       });
     });
-    }).catch(function(upErr){console.error('[analyze-export] Image upload error:',upErr);UI.toast(T('image_upload_failed_text'),'warn');sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:[],selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton,origin_country:d.origin_country||''}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'EF error');var data=resp.data;if(!data||!data.ok)throw new Error((data&&data.error)||(_isKorean?'분석 실패':'Analysis failed'));S._submitting=false;GP.done();if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;}autoCreateProduct(r.data.id,data.result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:data.result})});UI.toast(T('analysis_complete'),'ok');});}).catch(function(efErr){console.error('[analyze-export] Fallback EF error:',efErr);sb.from('analyses').select('status').eq('id',r.data.id).single().then(function(chk2){if(chk2.data&&chk2.data.status!=='analyzing')return;_showAnalysisGuidance('server',d,r.data.id);});});});
+    }).catch(function(upErr){console.error('[analyze-export] Image upload error:',upErr);UI.toast(T('image_upload_failed_text'),'warn');sb.functions.invoke('analyze-export',{body:{analysis_id:r.data.id,product_name:d.product_name,product_name_en:d.product_name_en,category:d.category,fob_price:d.fob_price,moq:d.moq,description:d.description,urls:(d.urls||[]).filter(function(u){return u;}),file_urls:[],selling_points:(d.selling_points||[]).filter(function(s){return s;}),target_markets:d.target_markets,existing_certs:d.existing_certs,brand_name:d.brand_name,manufacturer:d.manufacturer,export_experience:d.export_experience,annual_capacity:d.annual_capacity,special_requirements:d.special_requirements,known_hs_code:d.known_hs_code,weight_kg:d.weight_kg,package_dimensions:d.package_dimensions,units_per_carton:d.units_per_carton,origin_country:d.origin_country||'',language:_userLang||'en'}}).then(function(resp){if(resp.error)throw new Error(resp.error.message||'EF error');var data=resp.data;if(!data||!data.ok)throw new Error((data&&data.error)||(_isKorean?'분석 실패':'Analysis failed'));S._submitting=false;GP.done();if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;}autoCreateProduct(r.data.id,data.result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,{status:'completed',ai_result:data.result})});UI.toast(T('analysis_complete'),'ok');});}).catch(function(efErr){console.error('[analyze-export] Fallback EF error:',efErr);sb.from('analyses').select('status').eq('id',r.data.id).single().then(function(chk2){if(chk2.data&&chk2.data.status!=='analyzing')return;_showAnalysisGuidance('server',d,r.data.id);});});});
   });
 }
 
@@ -8110,7 +8112,7 @@ function reqSvc(type,anlId,prefill){
       +'<input type="hidden" name="project_id" id="sf-pj-val" value="">'
       +'<div id="sf-pj-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px">'
       +'<div class="pj-opt" data-label="'+(T('unlinked'))+'" onclick="document.getElementById(\'sf-pj-val\').value=\'\';document.querySelectorAll(\'#sf-pj-list .pj-opt\').forEach(function(e){e.style.background=\'transparent\'});this.style.background=\'rgba(0,212,255,.1)\'" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--bd);background:rgba(0,212,255,.1)"><span style="color:var(--w40)">—</span> <span>'+(T('unlinked'))+'</span></div>'
-      +S.projects.map(function(p,i){var num=U.pjNum(p,i);var buyer=(S.buyers.find(function(b){return b.id===p.buyer_id;})||{});var bName=buyer.company_name||buyer.contact_name||'';var lbl=num+' '+p.name+(bName?' · '+bName:'');return '<div class="pj-opt" data-label="'+U.esc(lbl)+'" onclick="document.getElementById(\'sf-pj-val\').value=\''+p.id+'\';document.querySelectorAll(\'#sf-pj-list .pj-opt\').forEach(function(e){e.style.background=\'transparent\'});this.style.background=\'rgba(0,212,255,.1)\'" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--bd)"><span style="font-family:JetBrains Mono;font-size:10px;color:var(--pri);font-weight:700;flex-shrink:0">'+num+'</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+U.esc(p.name)+'</span>'+(bName?'<span style="font-size:10px;color:var(--w30);flex-shrink:0">'+U.esc(bName)+'</span>':'')+'</div>';}).join('')
+      +S.projects.map(function(p,i){var num=U.pjNum(p,i);var buyer=(_getBuyer(p.buyer_id)||{});var bName=buyer.company_name||buyer.contact_name||'';var lbl=num+' '+p.name+(bName?' · '+bName:'');return '<div class="pj-opt" data-label="'+U.esc(lbl)+'" onclick="document.getElementById(\'sf-pj-val\').value=\''+p.id+'\';document.querySelectorAll(\'#sf-pj-list .pj-opt\').forEach(function(e){e.style.background=\'transparent\'});this.style.background=\'rgba(0,212,255,.1)\'" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--bd)"><span style="font-family:JetBrains Mono;font-size:10px;color:var(--pri);font-weight:700;flex-shrink:0">'+num+'</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+U.esc(p.name)+'</span>'+(bName?'<span style="font-size:10px;color:var(--w30);flex-shrink:0">'+U.esc(bName)+'</span>':'')+'</div>';}).join('')
       +'</div></div>';
   }
   var body='<form id="sf"><input type="hidden" name="service_type" value="'+type+'"><input type="hidden" name="analysis_id" value="'+aid+'">'+pjSearchable+UI.ta('details_text',(T('request_details')),{placeholder:(T('enter_details')),rows:5,value:ctx})+UI.sel('priority',(T('priority_label')),[{value:'normal',label:(T('normal'))},{value:'high',label:(T('urgent'))},{value:'urgent',label:(T('critical'))}])+'</form>';
@@ -8144,7 +8146,7 @@ function pgProjects(){
       var isNew=seenPjs.indexOf(p.id)<0;
       /* Linked buyer (1:1) */
       var linkedBuyer=null;
-      if(p.buyer_id){linkedBuyer=S.buyers.find(function(b){return b.id===p.buyer_id;});}
+      if(p.buyer_id){linkedBuyer=_getBuyer(p.buyer_id);}
       /* Product thumbnail */
       var prod=S.products.find(function(pr){return pr.id===p.product_id;});
       var thumbUrl=prod&&prod.images&&prod.images[0]?prod.images[0]:'';
@@ -8201,7 +8203,7 @@ function pgPjDetail(){
   h+='<button class="btn btn-ghost btn-sm pj-back-btn" onclick="S.currentProject=null;render()" style="display:none;margin-bottom:8px;font-size:13px;padding:6px 12px">'+(T('project_list'))+'</button>';
   h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><div style="flex:1;min-width:0"><div style="font-size:18px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+U.esc(p.name)+'</div>';
   var _detailMarket=rmInfo.market||((p.target_countries||[])[0])||'';
-  if(!_detailMarket&&p.buyer_id){var _dlb=S.buyers.find(function(b){return b.id===p.buyer_id;});if(_dlb&&_dlb.country)_detailMarket=_dlb.country;}
+  if(!_detailMarket&&p.buyer_id){var _dlb=_getBuyer(p.buyer_id);if(_dlb&&_dlb.country)_detailMarket=_dlb.country;}
   h+='<div style="font-size:13px;color:var(--w40);margin-top:3px">'+(rmInfo.category||'')+(_detailMarket?' → '+U.cl(_detailMarket):'')+'</div></div>';
   h+='<div style="display:flex;gap:8px">';
   h+='<button class="btn btn-ghost btn-sm" style="font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px" onclick="App.copyProject(\''+p.id+'\')">📋 <span>'+(T('copy'))+'</span></button>';
@@ -8217,7 +8219,7 @@ function pgPjDetail(){
   h+='</div>';
   /* 연결된 바이어 표시 */
   if(p.buyer_id){
-    var _lb=S.buyers.find(function(b){return b.id===p.buyer_id;});
+    var _lb=_getBuyer(p.buyer_id);
     if(_lb){var _lbn=_lb.company_name||_lb.contact_name||'';
       h+='<div style="margin-top:8px;padding:8px 12px;background:var(--w04);border-radius:var(--r-s);display:flex;align-items:center;gap:10px">';
       h+='<div style="width:32px;height:32px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:var(--bg);flex-shrink:0">'+U.esc(_lbn.charAt(0))+'</div>';
@@ -8439,7 +8441,7 @@ function execCopyProject(){
   var src=S.projects.find(function(x){return x.id===d.source_id;});if(!src)return;
   var isReorder=d.copy_type==='reorder';
   var buyerId=d.buyer_id||null;
-  var buyer=buyerId?S.buyers.find(function(b){return b.id===buyerId;}):null;
+  var buyer=buyerId?_getBuyer(buyerId):null;
   var buyerName=buyer?(buyer.company_name||buyer.contact_name||''):'';
   /* 프로젝트명 생성 */
   var newName=src.name;
@@ -8536,7 +8538,7 @@ function reorderFromOrder(orderId){
 function showOrderHistory(buyerId){
   var buyerOrders=S.orders.filter(function(o){return o.buyer_id===buyerId;}).sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
   if(!buyerOrders.length){UI.toast(T('no_order_history_buyer'),'info');return;}
-  var buyer=S.buyers.find(function(b){return b.id===buyerId;});
+  var buyer=_getBuyer(buyerId);
   var bName=buyer?(buyer.company_name||buyer.contact_name):(T('buyer'));
   var body='<div style="font-size:12px;color:var(--w40);margin-bottom:12px">'+(_isKorean?bName+'와의 전체 거래 이력 ('+buyerOrders.length+'건)':'Full order history with '+bName+' ('+buyerOrders.length+')')+'</div>';
   body+='<div style="max-height:400px;overflow-y:auto">';
@@ -8676,7 +8678,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
     var buyerId=S._pjChatBuyer||uniqueBuyers[0]||null;
     /* 폴백으로 바이어가 선택된 경우 상태에도 반영 + 채팅 로드 */
     if(buyerId&&!S._pjChatBuyer){S._pjChatBuyer=buyerId;}
-    var buyer=buyerId?S.buyers.find(function(b){return b.id===buyerId;}):null;
+    var buyer=buyerId?_getBuyer(buyerId):null;
     var buyerName=buyer?(buyer.company_name||buyer.contact_name||'Buyer'):'Buyer';
     var msgs=S._pjChatMsgs||[];
     /* Buyer selector tabs */
@@ -8847,24 +8849,24 @@ function _renderStageTools(p,stage,a,rm){
   if(stage==='planning'){
     h+='<div class="card" style="border-color:rgba(0,212,255,.12)"><div class="card-h"><span>🧮 '+(T('export_prep_tools'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'📋 HS코드 조회\',\'hs\')" data-tip="HS코드 : 제품의 국제 분류 코드를 조회합니다">📋 '+(T('hs_code_lookup'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'🌐 FTA 관세 확인\',\'fta\')" data-tip="FTA 관세 : 수출국별 FTA 관세 혜택을 확인합니다">🌐 '+(T('tariff_check'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'💰 수출가 계산\',\'product\')" data-tip="FOB 수출가 : 제품 원가 기반 수출 가격을 계산합니다">💰 '+(T('export_price_calc'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'📋 HS코드 조회\',\'hs\')" data-tip="'+(_isKorean?'HS코드 : 제품의 국제 분류 코드를 조회합니다':'HS Code: Look up international classification codes')+'>📋 '+(T('hs_code_lookup'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'🌐 FTA 관세 확인\',\'fta\')" data-tip="'+(_isKorean?'FTA 관세 : 수출국별 FTA 관세 혜택을 확인합니다':'FTA Tariff: Check FTA preferential tariff benefits by destination')+'>🌐 '+(T('tariff_check'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'💰 수출가 계산\',\'product\')" data-tip="'+(_isKorean?'FOB 수출가 : 제품 원가 기반 수출 가격을 계산합니다':'FOB Export Price: Calculate export pricing based on product cost')+'>💰 '+(T('export_price_calc'))+'</button>';
     h+='</div>';
     if(a&&a.ai_result&&a.ai_result.hs_code)h+='<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:var(--w04);font-size:10px"><span style="color:var(--w40)">'+(T('ai_rec_hs'))+'</span> <b style="color:var(--pri)">'+a.ai_result.hs_code+'</b></div>';
     h+='</div></div>';
   }else if(stage==='certification'){
     h+='<div class="card" style="border-color:rgba(255,184,0,.15)"><div class="card-h"><span>🏅 '+(T('cert_prep'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'💰 인증 비용 확인\',\'product\')" data-tip="인증 비용 : 해당 국가 인증 취득에 필요한 예상 비용">💰 '+(T('cert_cost_check'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.setPjTab(\'ai\')" data-tip="인증 절차 : AI 분석 탭에서 필요 인증을 확인하세요">📖 '+(T('cert_process_guide'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'💰 인증 비용 확인\',\'product\')" data-tip="'+(_isKorean?'인증 비용 : 해당 국가 인증 취득에 필요한 예상 비용':'Cert Cost: Estimated cost for obtaining required certifications')+'>💰 '+(T('cert_cost_check'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.setPjTab(\'ai\')" data-tip="'+(_isKorean?'인증 절차 : AI 분석 탭에서 필요 인증을 확인하세요':'Cert Process: Check required certifications in AI Analysis tab')+'>📖 '+(T('cert_process_guide'))+'</button>';
     h+='</div></div></div>';
   }else if(stage==='buyer_search'){
     h+='<div class="card" style="border-color:rgba(0,212,255,.12)"><div class="card-h"><span>🔍 '+(T('find_buyers'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.aiMatchBuyers(\''+p.id+'\')" data-tip="AI 바이어 추천 : 제품 분석 기반으로 최적의 바이어를 AI가 추천합니다">🤖 '+(T('ai_buyer_match'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'marketplace\',\'🔍 마켓플레이스\')" data-tip="마켓플레이스 : 바이어 요청을 탐색합니다">🔍 '+(T('marketplace'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.showBF()" data-tip="바이어 등록 : 이미 알고 있는 바이어 정보를 직접 입력합니다">+ '+(T('add_buyer'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.aiMatchBuyers(\''+p.id+'\')" data-tip="'+(_isKorean?'AI 바이어 추천 : 제품 분석 기반으로 최적의 바이어를 AI가 추천합니다':'AI Buyer Match: AI recommends optimal buyers based on product analysis')+'>🤖 '+(T('ai_buyer_match'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'marketplace\',\'🔍 마켓플레이스\')" data-tip="'+(_isKorean?'마켓플레이스 : 바이어 요청을 탐색합니다':'Marketplace: Browse buyer requests')+'>🔍 '+(T('marketplace'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.showBF()" data-tip="'+(_isKorean?'바이어 등록 : 이미 알고 있는 바이어 정보를 직접 입력합니다':'Add Buyer: Enter details of a buyer you already know')+'>+ '+(T('add_buyer'))+'</button>';
     h+='</div>';
     h+='<div id="ai-match-result-'+p.id+'"></div>';
     var aiCnt=S.buyers.filter(function(b){return b.source==='ai_generated';}).length;
@@ -8873,9 +8875,9 @@ function _renderStageTools(p,stage,a,rm){
   }else if(stage==='sample'){
     h+='<div class="card" style="border-color:rgba(255,152,0,.15)"><div class="card-h"><span>📦 '+(T('sample_shipping'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'pi\')" data-tip="PI 견적서 : 샘플 수량/금액을 기재한 견적서 작성">📄 '+(T('sample_invoice'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openSampleTrackingForm()" data-tip="송장 입력 : 샘플 발송 운송장 번호를 입력합니다">🏷️ '+(T('enter_tracking'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'tracking\',\'📍 샘플 배송 추적\',null,{width:640,height:480})" data-tip="배송 추적 : 샘플 발송 후 배송 현황을 추적합니다">📍 '+(T('track_shipment'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'pi\')" data-tip="'+(_isKorean?'PI 견적서 : 샘플 수량/금액을 기재한 견적서 작성':'Proforma Invoice: Create a quote with sample quantities and amounts')+'>📄 '+(T('sample_invoice'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openSampleTrackingForm()" data-tip="'+(_isKorean?'송장 입력 : 샘플 발송 운송장 번호를 입력합니다':'Enter Tracking: Input sample shipment tracking number')+'>🏷️ '+(T('enter_tracking'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'tracking\',\'📍 샘플 배송 추적\',null,{width:640,height:480})" data-tip="'+(_isKorean?'배송 추적 : 샘플 발송 후 배송 현황을 추적합니다':'Track Shipment: Track delivery status after sample shipping')+'>📍 '+(T('track_shipment'))+'</button>';
     h+='</div>';
     /* 등록된 샘플 송장 표시 */
     var _sampleTrack=p.stage_progress&&p.stage_progress._sample_tracking;
@@ -8905,34 +8907,34 @@ function _renderStageTools(p,stage,a,rm){
   }else if(stage==='negotiation'){
     h+='<div class="card" style="border-color:rgba(0,212,255,.15)"><div class="card-h"><span>📄 '+(T('negotiation_2'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'pi\')" data-tip="PI 견적서 : 바이어에게 가격과 거래 조건을 제시하는 사전 견적서">📄 '+(T('create_quote'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'sc\')" data-tip="SC 계약서 : 품질, 결제, 납기 등 거래 조건을 법적으로 규정">📝 '+(T('create_contract'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openCostModal()" data-tip="원가 계산 : 제품 원가를 분석하여 적정 판매가를 확인합니다">🧮 '+(T('cost_calc'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'pi\')" data-tip="'+(_isKorean?'PI 견적서 : 바이어에게 가격과 거래 조건을 제시하는 사전 견적서':'Proforma Invoice: Present price and trade terms to buyer')+'>📄 '+(T('create_quote'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'sc\')" data-tip="'+(_isKorean?'SC 계약서 : 품질, 결제, 납기 등 거래 조건을 법적으로 규정':'Sales Contract: Legally define quality, payment, and delivery terms')+'>📝 '+(T('create_contract'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openCostModal()" data-tip="'+(_isKorean?'원가 계산 : 제품 원가를 분석하여 적정 판매가를 확인합니다':'Cost Calc: Analyze product cost to determine optimal pricing')+'>🧮 '+(T('cost_calc'))+'</button>';
     h+='</div>';
     h+='<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.5"><b>'+(T('payment_colon'))+'</b> T/T'+(T('tt_remittance'))+' | L/C'+(T('lc_letter_of_credit'))+' | D/P'+(T('dp_collection'))+' | D/A'+(T('da_acceptance'))+'</div>';
     h+='</div></div>';
   }else if(stage==='production'){
     h+='<div class="card" style="border-color:rgba(0,230,118,.15)"><div class="card-h"><span>🏭 '+(T('production_tools'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'orders\',\'📋 주문 관리\')" data-tip="주문 관리 : 생산 및 출하 주문을 등록하고 관리합니다">📋 '+(T('order_mgmt'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.showOrderForm()" data-tip="주문 등록 : 생산 및 출하 주문을 등록합니다">+ '+(T('add_order'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'orders\',\'📋 주문 관리\')" data-tip="'+(_isKorean?'주문 관리 : 생산 및 출하 주문을 등록하고 관리합니다':'Order Mgmt: Register and manage production and shipping orders')+'>📋 '+(T('order_mgmt'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.showOrderForm()" data-tip="'+(_isKorean?'주문 등록 : 생산 및 출하 주문을 등록합니다':'Add Order: Register production and shipping orders')+'>+ '+(T('add_order'))+'</button>';
     h+='</div></div></div>';
   }else if(stage==='documents'){
     h+='<div class="card" style="border-color:rgba(156,39,176,.15)"><div class="card-h"><span>📄 '+(T('doc_prep'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'ci\')" data-tip="CI 상업송장 : 세관 통관과 관세 산정에 사용하는 공식 송장">📋 '+(T('commercial_invoice_ci'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'pl\')" data-tip="PL 포장명세서 : 박스별 수량, 중량, 용적을 기재하는 포장 명세">📦 '+(T('packing_list_pl'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'co\')" data-tip="CO 원산지증명 : FTA 관세 혜택을 받기 위한 한국산 증명 서류">📜 '+(T('certificate_of_origin_co'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'ci\')" data-tip="'+(_isKorean?'CI 상업송장 : 세관 통관과 관세 산정에 사용하는 공식 송장':'Commercial Invoice: Official invoice for customs clearance and duty')+'>📋 '+(T('commercial_invoice_ci'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'pl\')" data-tip="'+(_isKorean?'PL 포장명세서 : 박스별 수량, 중량, 용적을 기재하는 포장 명세':'Packing List: Itemize quantity, weight, and volume per carton')+'>📦 '+(T('packing_list_pl'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPjDocModal(\'co\')" data-tip="'+(_isKorean?'CO 원산지증명 : FTA 관세 혜택을 받기 위한 한국산 증명 서류':'Certificate of Origin: Prove Korean origin for FTA tariff benefits')+'>📜 '+(T('certificate_of_origin_co'))+'</button>';
     h+='</div>';
     h+='<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.5"><b>'+(T('required_colon'))+'</b> CI + PL + CO + B/L + '+(T('insurance_document_mismatch_causes_customs_delay'))+'</div>';
     h+='</div></div>';
   }else if(stage==='shipping'){
     h+='<div class="card" style="border-color:rgba(59,130,246,.15)"><div class="card-h"><span>🚢 '+(T('shipping_label'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.showShipmentForm()" data-tip="선적 등록 : B/L, 선박명, 출발/도착항, ETD/ETA 등을 입력합니다">🚢 '+(T('register_shipment'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openLogisticsTrackingModal()" data-tip="물류 추적 : 캐리어 선택 후 운송장번호로 실시간 추적합니다">📍 '+(T('logistics_tracking'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'🚢 물류비 계산\',\'logistics\')" data-tip="물류비 계산 : 국가별 해운/항공 운송 비용을 계산합니다">💰 '+(T('logistics_cost'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'tracking\',\'📍 배송 추적\',null,{width:640,height:480})" data-tip="배송 추적 : 선적 이후 실시간 배송 현황을 확인합니다">📍 '+(T('track_shipment'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:11px" onclick="App.showShipmentForm()" data-tip="'+(_isKorean?'선적 등록 : B/L, 선박명, 출발/도착항, ETD/ETA 등을 입력합니다':'Register Shipment: Enter B/L, vessel, ports, ETD/ETA details')+'>🚢 '+(T('register_shipment'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openLogisticsTrackingModal()" data-tip="'+(_isKorean?'물류 추적 : 캐리어 선택 후 운송장번호로 실시간 추적합니다':'Logistics Tracking: Track in real-time by carrier and tracking number')+'>📍 '+(T('logistics_tracking'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'🚢 물류비 계산\',\'logistics\')" data-tip="'+(_isKorean?'물류비 계산 : 국가별 해운/항공 운송 비용을 계산합니다':'Logistics Cost: Calculate ocean/air freight costs by country')+'>💰 '+(T('logistics_cost'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'tracking\',\'📍 배송 추적\',null,{width:640,height:480})" data-tip="'+(_isKorean?'배송 추적 : 선적 이후 실시간 배송 현황을 확인합니다':'Track Shipment: Monitor real-time delivery status after shipping')+'>📍 '+(T('track_shipment'))+'</button>';
     h+='</div>';
     if(p&&p.id)h+=_renderInlineTrackingSummary(p.id);
     h+='<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.5"><b>'+(T('forwarder_booking'))+'</b> '+(T('required_2_weeks_prior_forward_bl_to_buyer_after_r'))+'</div>';
@@ -8940,8 +8942,8 @@ function _renderStageTools(p,stage,a,rm){
   }else if(stage==='customs'){
     h+='<div class="card" style="border-color:rgba(255,87,34,.15)"><div class="card-h"><span>🛃 '+(T('customs'))+'</span></div><div class="card-b" style="padding:10px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'tracking\',\'📍 통관 현황\',null,{width:640,height:480})" data-tip="통관 현황 : 수입국 세관 진행 상황을 확인합니다">📍 '+(T('customs_status'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'🌐 관세 확인\',\'fta\')" data-tip="관세 확인 : 수입국 관세율 및 부가세를 확인합니다">🌐 '+(T('tariff_check'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'tracking\',\'📍 통관 현황\',null,{width:640,height:480})" data-tip="'+(_isKorean?'통관 현황 : 수입국 세관 진행 상황을 확인합니다':'Customs Status: Check import country customs clearance progress')+'>📍 '+(T('customs_status'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="App.openPageAsPopup(\'costsim\',\'🌐 관세 확인\',\'fta\')" data-tip="'+(_isKorean?'관세 확인 : 수입국 관세율 및 부가세를 확인합니다':'Tariff Check: Verify import duty rates and VAT')+'>🌐 '+(T('tariff_check'))+'</button>';
     h+='</div>';
     h+='<div style="margin-top:8px;padding:6px 8px;border-radius:5px;background:rgba(255,87,34,.06);font-size:10px;color:var(--w40);line-height:1.5"><b>⚠️ '+(T('caution'))+'</b> '+(T('check_preregistration_requirements_for_foodpharmac'))+'</div>';
     h+='</div></div>';
@@ -8970,31 +8972,31 @@ function _renderStageTools(p,stage,a,rm){
 function _renderStageToolsInline(stage,a){
   var h='';
   if(stage==='planning'){
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'📋 HS코드 조회\',\'hs\')" data-tip="HS코드 : 제품의 국제 분류 코드를 조회합니다">📋 '+(T('hs_code_lookup'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'🌐 FTA 관세 확인\',\'fta\')" data-tip="FTA 관세 : 수출국별 FTA 관세 혜택을 확인합니다">🌐 '+(T('tariff_check'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'💰 수출가 계산\',\'product\')" data-tip="FOB 수출가 : 제품 원가 기반 수출 가격을 계산합니다">💰 '+(T('export_price_calc'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'📋 HS코드 조회\',\'hs\')" data-tip="'+(_isKorean?'HS코드 : 제품의 국제 분류 코드를 조회합니다':'HS Code: Look up international classification codes')+'>📋 '+(T('hs_code_lookup'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'🌐 FTA 관세 확인\',\'fta\')" data-tip="'+(_isKorean?'FTA 관세 : 수출국별 FTA 관세 혜택을 확인합니다':'FTA Tariff: Check FTA preferential tariff benefits by destination')+'>🌐 '+(T('tariff_check'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'💰 수출가 계산\',\'product\')" data-tip="'+(_isKorean?'FOB 수출가 : 제품 원가 기반 수출 가격을 계산합니다':'FOB Export Price: Calculate export pricing based on product cost')+'>💰 '+(T('export_price_calc'))+'</button>';
   }else if(stage==='certification'){
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'💰 인증 비용 확인\',\'product\')" data-tip="인증 비용 : 해당 국가 인증 취득에 필요한 예상 비용">💰 '+(T('cert_cost_check'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.setPjTab(\'ai\')" data-tip="인증 절차 : AI 분석 탭에서 필요 인증을 확인하세요">📖 '+(T('cert_process_guide'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'costsim\',\'💰 인증 비용 확인\',\'product\')" data-tip="'+(_isKorean?'인증 비용 : 해당 국가 인증 취득에 필요한 예상 비용':'Cert Cost: Estimated cost for obtaining required certifications')+'>💰 '+(T('cert_cost_check'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.setPjTab(\'ai\')" data-tip="'+(_isKorean?'인증 절차 : AI 분석 탭에서 필요 인증을 확인하세요':'Cert Process: Check required certifications in AI Analysis tab')+'>📖 '+(T('cert_process_guide'))+'</button>';
   }else if(stage==='buyer_search'){
-    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.aiMatchBuyers(\''+((S.currentProject||{}).id||'')+'\')" data-tip="AI 바이어 추천 : 제품 분석 기반으로 최적의 바이어를 AI가 추천합니다">🤖 '+(T('ai_buyer_match'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'marketplace\',\'🔍 마켓플레이스\')" data-tip="마켓플레이스 : 바이어 요청을 탐색합니다">🔍 '+(T('marketplace'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.showBF()" data-tip="바이어 등록 : 이미 알고 있는 바이어 정보를 직접 입력합니다">+ '+(T('add_buyer'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.aiMatchBuyers(\''+((S.currentProject||{}).id||'')+'\')" data-tip="'+(_isKorean?'AI 바이어 추천 : 제품 분석 기반으로 최적의 바이어를 AI가 추천합니다':'AI Buyer Match: AI recommends optimal buyers based on product analysis')+'>🤖 '+(T('ai_buyer_match'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'marketplace\',\'🔍 마켓플레이스\')" data-tip="'+(_isKorean?'마켓플레이스 : 바이어 요청을 탐색합니다':'Marketplace: Browse buyer requests')+'>🔍 '+(T('marketplace'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.showBF()" data-tip="'+(_isKorean?'바이어 등록 : 이미 알고 있는 바이어 정보를 직접 입력합니다':'Add Buyer: Enter details of a buyer you already know')+'>+ '+(T('add_buyer'))+'</button>';
   }else if(stage==='sample'){
     h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'pi\')" data-tip="PI 견적서 : 샘플 수량/금액을 기재한 견적서">📄 '+(T('sample_invoice'))+'</button>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openSampleTrackingForm()" data-tip="송장 입력 : 샘플 운송장 번호 입력">🏷️ '+(T('tracking_2'))+'</button>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'tracking\',\'📍 샘플 배송 추적\',null,{width:640,height:480})" data-tip="배송 추적 : 샘플 배송 현황을 추적합니다">📍 '+(T('track_shipment'))+'</button>';
   }else if(stage==='negotiation'){
-    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'pi\')" data-tip="PI 견적서 : 바이어에게 가격과 거래 조건을 제시하는 사전 견적서">📄 '+(T('create_quote'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'sc\')" data-tip="SC 계약서 : 품질, 결제, 납기 등 거래 조건을 법적으로 규정">📝 '+(T('create_contract'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openCostModal()" data-tip="원가 계산 : 제품 원가를 분석하여 적정 판매가를 확인합니다">🧮 '+(T('cost_calc'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'pi\')" data-tip="'+(_isKorean?'PI 견적서 : 바이어에게 가격과 거래 조건을 제시하는 사전 견적서':'Proforma Invoice: Present price and trade terms to buyer')+'>📄 '+(T('create_quote'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'sc\')" data-tip="'+(_isKorean?'SC 계약서 : 품질, 결제, 납기 등 거래 조건을 법적으로 규정':'Sales Contract: Legally define quality, payment, and delivery terms')+'>📝 '+(T('create_contract'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openCostModal()" data-tip="'+(_isKorean?'원가 계산 : 제품 원가를 분석하여 적정 판매가를 확인합니다':'Cost Calc: Analyze product cost to determine optimal pricing')+'>🧮 '+(T('cost_calc'))+'</button>';
   }else if(stage==='production'){
-    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.showOrderForm()" data-tip="주문 등록 : 생산 및 출하 주문을 등록합니다">📋 '+(T('add_order'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.showOrderForm()" data-tip="'+(_isKorean?'주문 등록 : 생산 및 출하 주문을 등록합니다':'Add Order: Register production and shipping orders')+'>📋 '+(T('add_order'))+'</button>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPageAsPopup(\'orders\',\'📋 주문 관리\')" data-tip="주문 관리 : 주문 현황을 확인합니다">📋 '+(T('order_mgmt'))+'</button>';
   }else if(stage==='documents'){
-    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'ci\')" data-tip="CI 상업송장 : 세관 통관과 관세 산정에 사용하는 공식 송장">📋 '+(T('create_ci'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'pl\')" data-tip="PL 포장명세서 : 박스별 수량, 중량, 용적을 기재하는 포장 명세">📦 '+(T('create_pl'))+'</button>';
-    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'co\')" data-tip="CO 원산지증명 : FTA 관세 혜택을 받기 위한 한국산 증명 서류">📜 '+(T('create_co'))+'</button>';
+    h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'ci\')" data-tip="'+(_isKorean?'CI 상업송장 : 세관 통관과 관세 산정에 사용하는 공식 송장':'Commercial Invoice: Official invoice for customs clearance and duty')+'>📋 '+(T('create_ci'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'pl\')" data-tip="'+(_isKorean?'PL 포장명세서 : 박스별 수량, 중량, 용적을 기재하는 포장 명세':'Packing List: Itemize quantity, weight, and volume per carton')+'>📦 '+(T('create_pl'))+'</button>';
+    h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openPjDocModal(\'co\')" data-tip="'+(_isKorean?'CO 원산지증명 : FTA 관세 혜택을 받기 위한 한국산 증명 서류':'Certificate of Origin: Prove Korean origin for FTA tariff benefits')+'>📜 '+(T('create_co'))+'</button>';
   }else if(stage==='shipping'){
     h+='<button class="btn btn-pri btn-sm" style="font-size:10px" onclick="App.showShipmentForm()" data-tip="선적 등록 : B/L, 선박, 출발/도착항 등을 입력합니다">🚢 '+(T('register_shipment'))+'</button>';
     h+='<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="App.openLogisticsTrackingModal()" data-tip="물류 추적 : 캐리어 선택 후 운송장번호로 실시간 추적">📍 '+(T('track_2'))+'</button>';
@@ -9138,7 +9140,7 @@ function _pjTabBuyers(p,uniqueBuyers){
   /* Buyer cards with deal detail */
   h+='<div style="display:grid;gap:12px">';
   uniqueBuyers.forEach(function(bid){
-    var buyer=S.buyers.find(function(b){return b.id===bid;});if(!buyer)return;
+    var buyer=_getBuyer(bid);if(!buyer)return;
     var bName=buyer.company_name||buyer.contact_name||buyer.email||'Unknown';
     var country=buyer.country||'';
     var matching=(S.matchings||[]).find(function(m){return m.buyer_id===bid&&m.user_id===S.user.id;});
@@ -9181,7 +9183,7 @@ function _pjTabBuyers(p,uniqueBuyers){
   /* Auto-screen sanctions for all buyers after render */
   setTimeout(function(){
     uniqueBuyers.forEach(function(bid){
-      var buyer=S.buyers.find(function(b){return b.id===bid;});if(!buyer)return;
+      var buyer=_getBuyer(bid);if(!buyer)return;
       var bName=buyer.company_name||buyer.contact_name||'';
       if(bName)_autoScreenBuyerSanctions(bName,buyer.country||'','sanctions-buyer-'+bid);
     });
@@ -9193,7 +9195,7 @@ function _pjTabBuyers(p,uniqueBuyers){
 /* === 💰 비용 총괄 탭 === */
 function _pjTabCost(p){
   var prod=p.product_id?S.products.find(function(x){return x.id===p.product_id;}):null;
-  var buyers=_getPjBuyerIds(p).map(function(bid){return S.buyers.find(function(b){return b.id===bid;});}).filter(Boolean);
+  var buyers=_getPjBuyerIds(p).map(function(bid){return _getBuyer(bid);}).filter(Boolean);
   var destCountry=(buyers[0]&&buyers[0].country)?buyers[0].country:(p.target_countries&&p.target_countries[0])||'US';
   var hsCode=(prod&&prod.hs_code)||(p.hs_code)||'';
   var fobUnit=parseFloat(prod&&prod.fob_price?prod.fob_price:(p.fob_price||0));
@@ -9434,7 +9436,7 @@ function _pjTabDocs(p){
     var icon=typeIcons[d.doc_type]||'📄';var label=typeLabels[d.doc_type]||d.doc_type||'Document';
     var stColor=d.status==='approved'?'var(--ok)':d.status==='sent'?'var(--pri)':'var(--acc)';
     var stLabel=d.status==='approved'?(T('approved')):d.status==='sent'?(T('sent')):(T('draft'));
-    var buyerName='';if(d.buyer_id){var bb=S.buyers.find(function(b){return b.id===d.buyer_id;});if(bb)buyerName=bb.company_name||bb.contact_name||'';}
+    var buyerName='';if(d.buyer_id){var bb=_getBuyer(d.buyer_id);if(bb)buyerName=bb.company_name||bb.contact_name||'';}
     h+='<div class="card" style="margin-bottom:8px;cursor:pointer" onclick="App.viewPjDoc(\''+d.id+'\')"><div style="display:flex;align-items:center;gap:12px;padding:14px"><span style="font-size:22px">'+icon+'</span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700">'+U.esc(d.doc_number||label)+'</div><div style="font-size:12px;color:var(--w40)">'+label+(buyerName?' · '+U.esc(buyerName):'')+' · '+new Date(d.created_at).toLocaleString('ko',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})+'</div></div><span style="font-size:11px;padding:3px 10px;border-radius:6px;background:rgba(0,212,255,.1);color:'+stColor+';font-weight:600">'+stLabel+'</span></div></div>';
   });
   return h;
@@ -10181,7 +10183,7 @@ function startVideoMeeting(){
   var _ubs=_getPjBuyerIds(p);
   var buyerId=S._pjChatBuyer||(p.buyer_id)||(_ubs.length?_ubs[0]:'')||'';
   if(!buyerId){UI.toast(T('please_connect_a_buyer_first'),'warn');return;}
-  var buyer=S.buyers.find(function(b){return b.id===buyerId;});
+  var buyer=_getBuyer(buyerId);
   var buyerName=buyer?(buyer.company_name||buyer.contact_name||'Buyer'):'Buyer';
   var roomId='whistle-'+p.id.substring(0,8)+'-'+Date.now().toString(36);
   var id='vmeet';var exist=document.getElementById('modal-'+id);if(exist)exist.remove();
@@ -10311,7 +10313,7 @@ function viewPjDoc(docId){
   var typeN={pi:'PROFORMA INVOICE',ci:'COMMERCIAL INVOICE',pl:'PACKING LIST',co:'CERTIFICATE OF ORIGIN',sc:'SALES CONTRACT',bl:'B/L INSTRUCTIONS',ic:'INSURANCE CERTIFICATE',cd:'CUSTOMS DECLARATION',lc:'L/C CHECKLIST',isc:'ISF (10+2)',hsc:'HS CODE CERTIFICATE',cfs:'CERTIFICATE OF FREE SALE',fc:'FUMIGATION CERTIFICATE',msds:'MATERIAL SAFETY DATA SHEET',ed:'EXPORT DECLARATION',sli:'SHIPPER LETTER OF INSTRUCTION',isf:'ISF FILING',ams:'AMS FILING'};
   var typeK={pi:'견적송장',ci:'상업송장',pl:'패킹리스트',co:'원산지증명서',sc:'수출계약서',bl:'선적지시서',ic:'적하보험증권',cd:'수출신고참고',lc:'LC체크리스트',isc:'ISF (10+2)',hsc:'HS코드 인증서',cfs:'자유판매증명서',fc:'훈증소독증명서',msds:'물질안전보건자료',ed:'수출신고서',sli:'선적지시서(SLI)',isf:'ISF 서류',ams:'AMS 서류'};
   var c=S.company||{};
-  var buyer=null;if(doc.buyer_id){buyer=S.buyers.find(function(b){return b.id===doc.buyer_id;});}
+  var buyer=null;if(doc.buyer_id){buyer=_getBuyer(doc.buyer_id);}
   var buyerName=buyer?(buyer.company_name||buyer.contact_name||''):'';
   var buyerAddr=buyer?(buyer.address||''):'';
   var buyerCountry=buyer?(buyer.country||''):'';
@@ -10561,7 +10563,7 @@ function _pjTabLogistics(p){
       var order=orders.find(function(o){return o.id===ship.order_id;});
       var curStatus=ship.tracking_status||'production_complete';
       var curIdx=TRACKING_STAGES.findIndex(function(s){return s.id===curStatus;});
-      var buyer=order?S.buyers.find(function(b){return b.id===order.buyer_id;}):null;
+      var buyer=order?_getBuyer(order.buyer_id):null;
       var shipIcon=ship.type==='air'?'✈️':ship.type==='express'?'📦':'🚢';
       if(si>0)h+='<div style="border-top:1px solid var(--bd);margin:12px 0"></div>';
       /* Header */
@@ -10622,7 +10624,7 @@ function _pjTabLogistics(p){
   if(orders.length){
     h+='<div class="card" style="margin-bottom:10px"><div class="card-h"><span>📋 '+(_isKorean?'주문 내역':'Orders')+'</span><span style="font-size:11px;color:var(--w40)">'+orders.length+(_isKorean?'건':'')+'</span></div><div class="card-b" style="padding:8px">';
     orders.forEach(function(o){
-      var buyer=S.buyers.find(function(b){return b.id===o.buyer_id;});var bName=buyer?(buyer.company_name||buyer.contact_name):'—';
+      var buyer=_getBuyer(o.buyer_id);var bName=buyer?(buyer.company_name||buyer.contact_name):'—';
       h+='<div style="padding:10px;border-radius:8px;background:var(--w04);margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px" onclick="App.viewOrder(\''+o.id+'\')">';
       h+='<span style="font-size:18px">📋</span><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">'+U.esc(o.order_number||'Order')+'</div><div style="font-size:11px;color:var(--w40)">'+U.esc(bName)+' · $'+Number(o.total_amount||0).toLocaleString()+'</div></div>';
       h+='<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(0,212,255,.1);color:'+(stColors[o.status]||'var(--w40)')+';font-weight:600">'+(stLabels[o.status]||o.status||'pending')+'</span></div>';
@@ -10638,7 +10640,7 @@ function _pjTabLogistics(p){
 
 /* Buyer drawer (chat-centered) */
 function _renderBuyerDrawer(p){
-  var buyerId=S._pjBuyerDrawer;var buyer=S.buyers.find(function(b){return b.id===buyerId;});
+  var buyerId=S._pjBuyerDrawer;var buyer=_getBuyer(buyerId);
   if(!buyer)return'';
   var bName=buyer.company_name||buyer.contact_name||buyer.email||'Buyer';
   var msgs=S._pjChatMsgs||[];
@@ -11719,7 +11721,7 @@ function _startChatFromMatch(buyerId,projectId){
   closeModal('ai-match-modal');
   var existingDeal=(S.matchings||[]).find(function(m){return m.buyer_id===buyerId&&m.user_id===S.user.id;});
   if(existingDeal){openDeal(existingDeal.id);return;}
-  var buyer=S.buyers.find(function(b){return b.id===buyerId||b.buyer_user_id===buyerId;});
+  var buyer=_getBuyer(buyerId||b.buyer_user_id===buyerId);
   if(buyer){createAndOpenDealRoom(buyer.id,projectId);return;}
   sb.from('buyers').insert({registered_by:S.user.id,buyer_user_id:buyerId,source:'ai_matched',company_name:'Matched Buyer'}).select().single().then(function(r){
     if(r.error){UI.toast((T('buyer_save_failed')),'err');return;}
@@ -11729,7 +11731,7 @@ function _startChatFromMatch(buyerId,projectId){
 
 function _saveMatchedBuyer(idx){
   var m=window._aiMatchResults&&window._aiMatchResults[idx];if(!m)return;
-  var existing=S.buyers.find(function(b){return b.id===m.buyer_id||b.buyer_user_id===m.buyer_id;});
+  var existing=_getBuyer(m.buyer_id||b.buyer_user_id===m.buyer_id);
   if(existing){UI.toast(T('buyer_already_saved'),'info');return;}
   var data={registered_by:S.user.id,buyer_user_id:m.buyer_id,source:'ai_matched',company_name:m.company||m.buyer_name||'',country:m.country||'',trust_score:m.score||0,notes:'[AI Match] '+m.match_reason};
   sb.from('buyers').insert(data).then(function(r){
@@ -12173,12 +12175,12 @@ function _showDocIssues(result){
 var _lastDoc=null;window._lastDoc=null;
 function genDoc(){
   _syncDocItemsFromDOM();
-  var _noItemTypes=['ic','cd','lc','hsc','cfs','fc','msds'];
+  var _noItemTypes=['ic','cd','lc','hsc','cfs','fc','msds','isc','ed','sli','isf','ams'];
   var _isNoItem=_noItemTypes.indexOf(S.docType)>=0;
   var bd=_isNoItem?{buyer_company:'',buyer_contact:'',buyer_address:''}:UI.fd('#docB');var rd=UI.fd('#docR');
   if(!_isNoItem&&!bd.buyer_company){UI.toast(T('enter_buyer_company'),'warn');var _bc=document.querySelector('[name=buyer_company]');if(_bc){_bc.style.borderColor='var(--err)';_bc.scrollIntoView({behavior:'smooth',block:'center'});_bc.focus();_bc.addEventListener('input',function(){this.style.borderColor='';},{once:true});}return;}
   var items=[];var isPL=S.docType==='pl';var isCO=S.docType==='co';var isSC=S.docType==='sc';var isBL=S.docType==='bl';
-  var isIC=S.docType==='ic';var isCD=S.docType==='cd';var isLC=S.docType==='lc';var isISC=S.docType==='isc';var isHSC=S.docType==='hsc';var isCFS=S.docType==='cfs';var isFC=S.docType==='fc';var isMSDS=S.docType==='msds';var isNewDoc=isIC||isCD||isLC||isISC||isHSC||isCFS||isFC||isMSDS;
+  var isIC=S.docType==='ic';var isCD=S.docType==='cd';var isLC=S.docType==='lc';var isISC=S.docType==='isc';var isHSC=S.docType==='hsc';var isCFS=S.docType==='cfs';var isFC=S.docType==='fc';var isMSDS=S.docType==='msds';var isED=S.docType==='ed';var isSLI=S.docType==='sli';var isISF=S.docType==='isf';var isAMS=S.docType==='ams';var isNewDoc=isIC||isCD||isLC||isISC||isHSC||isCFS||isFC||isMSDS||isED||isSLI||isISF||isAMS;
   for(var i=0;i<S.docItems.length;i++){
     var _q=function(n){var el=document.querySelector('[name='+n+']');return el?el.value:'';};
     var it={name:_q('itn_'+i)||'',desc:_q('itd_'+i)||'',qty:Number(_q('itq_'+i))||1,unit:_q('itu_'+i)||'PCS',price:Number(_q('itp_'+i))||0};
@@ -12200,8 +12202,8 @@ function genDoc(){
 }
 function _genDocInner(items,bd,rd,c){
   var isPL=S.docType==='pl';var isCO=S.docType==='co';var isSC=S.docType==='sc';var isBL=S.docType==='bl';
-  var isIC=S.docType==='ic';var isCD=S.docType==='cd';var isLC=S.docType==='lc';var isISC=S.docType==='isc';var isHSC=S.docType==='hsc';var isCFS=S.docType==='cfs';var isFC=S.docType==='fc';var isMSDS=S.docType==='msds';var isNewDoc=isIC||isCD||isLC||isISC||isHSC||isCFS||isFC||isMSDS;
-  var tN={pi:'PROFORMA INVOICE',ci:'COMMERCIAL INVOICE',pl:'PACKING LIST',co:'CERTIFICATE OF ORIGIN',bl:'SHIPPING INSTRUCTIONS (B/L Instructions to Forwarder)',sc:'SALES CONTRACT',ic:'INSURANCE CERTIFICATE',cd:'CUSTOMS DECLARATION',lc:'L/C CHECKLIST (Letter of Credit Conditions)',isc:'INSPECTION CERTIFICATE',hsc:'HEALTH / SANITARY CERTIFICATE',cfs:'CERTIFICATE OF FREE SALE',fc:'FUMIGATION CERTIFICATE',msds:'MATERIAL SAFETY DATA SHEET'};
+  var isIC=S.docType==='ic';var isCD=S.docType==='cd';var isLC=S.docType==='lc';var isISC=S.docType==='isc';var isHSC=S.docType==='hsc';var isCFS=S.docType==='cfs';var isFC=S.docType==='fc';var isMSDS=S.docType==='msds';var isED=S.docType==='ed';var isSLI=S.docType==='sli';var isISF=S.docType==='isf';var isAMS=S.docType==='ams';var isNewDoc=isIC||isCD||isLC||isISC||isHSC||isCFS||isFC||isMSDS||isED||isSLI||isISF||isAMS;
+  var tN={pi:'PROFORMA INVOICE',ci:'COMMERCIAL INVOICE',pl:'PACKING LIST',co:'CERTIFICATE OF ORIGIN',bl:'SHIPPING INSTRUCTIONS (B/L Instructions to Forwarder)',sc:'SALES CONTRACT',ic:'INSURANCE CERTIFICATE',cd:'CUSTOMS DECLARATION',lc:'L/C CHECKLIST (Letter of Credit Conditions)',isc:'INSPECTION CERTIFICATE',hsc:'HEALTH / SANITARY CERTIFICATE',cfs:'CERTIFICATE OF FREE SALE',fc:'FUMIGATION CERTIFICATE',msds:'MATERIAL SAFETY DATA SHEET',ed:'EXPORT DECLARATION',sli:"SHIPPER'S LETTER OF INSTRUCTION",isf:'IMPORTER SECURITY FILING (10+2)',ams:'AUTOMATED MANIFEST SYSTEM (AMS)'};
   var _cur=rd.currency||'USD';var _cs=_currencySymbol(_cur);var _cn=_currencyName(_cur);
   var tA=0,tQ=0,tNW=0,tGW=0,tCBM=0,tC=0;
   items.forEach(function(x){tA+=x.qty*x.price;tQ+=x.qty;if(isPL){tNW+=x.nw;tGW+=x.gw;tCBM+=x.cbm;tC+=x.ctn;}});
@@ -12560,7 +12562,7 @@ function emailTpl(type,bn,prod){
 }
 
 function composeE(type,buyerId){
-  var buyer=buyerId?S.buyers.find(function(b){return b.id===buyerId;}):null;
+  var buyer=buyerId?_getBuyer(buyerId):null;
   var bName=buyer?buyer.contact_name||buyer.company_name:'';
   var bEmail=buyer?buyer.email||'':'';
   var prod=S.products.length?S.products[0].name_en||S.products[0].name_ko:'our products';
@@ -12658,10 +12660,10 @@ function buildSellerDeals(){
   var deals=[];
   (S.matchings||[]).forEach(function(m){
     var d={id:m.id,matching:m,buyerId:m.buyer_id,
-      buyer:(S.buyers||[]).find(function(b){return b.id===m.buyer_id;}),
+      buyer:_getBuyer(m.buyer_id),
       order:null,shipment:null,documents:[],dealSamples:[],
       title:m.match_reason||'Deal',created_at:m.created_at};
-    d.order=(S.orders||[]).find(function(o){return o.buyer_id===m.buyer_id&&o.user_id===S.user.id;});
+    d.order=(S.orders||[]).find(function(o){return o.deal_id===m.id;})||(S.orders||[]).find(function(o){return o.buyer_id===m.buyer_id&&o.user_id===S.user.id&&!o.deal_id;});
     if(d.order)d.shipment=(S.shipments||[]).find(function(s){return s.order_id===d.order.id;});
     d.documents=(S._sharedDocs||[]).filter(function(doc){return doc.buyer_id===m.buyer_id;});
     d.dealSamples=(S.samples||[]).filter(function(s){return s.buyer_id===m.buyer_id;});
@@ -15126,11 +15128,11 @@ function pgOrders(){
   /* 주문 목록 — 필터 적용 */
   var filteredO=S.orders;
   if(_osFilt.status)filteredO=filteredO.filter(function(o){return o.status===_osFilt.status;});
-  if(_os.q){var _oq=_os.q.toLowerCase();filteredO=filteredO.filter(function(o){var bn=(S.buyers.find(function(b){return b.id===o.buyer_id;})||{}).company_name||'';return (o.order_number||'').toLowerCase().indexOf(_oq)>=0||bn.toLowerCase().indexOf(_oq)>=0;});}
+  if(_os.q){var _oq=_os.q.toLowerCase();filteredO=filteredO.filter(function(o){var bn=(_getBuyer(o.buyer_id)||{}).company_name||'';return (o.order_number||'').toLowerCase().indexOf(_oq)>=0||bn.toLowerCase().indexOf(_oq)>=0;});}
   var list='';
   if(filteredO.length){
     list=filteredO.map(function(o){
-      var buyer=S.buyers.find(function(b){return b.id===o.buyer_id;});
+      var buyer=_getBuyer(o.buyer_id);
       var bName=buyer?buyer.company_name:'—';
       var itemCnt=0;try{itemCnt=(JSON.parse(JSON.stringify(o.items))||[]).length;}catch(e){console.error('[whistle]',e);}
       var daysAgo=Math.floor((new Date()-new Date(o.created_at))/(1000*60*60*24));
@@ -15260,7 +15262,7 @@ function saveOrder(){
 
 function viewOrder(orderId){
   var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
-  var buyer=S.buyers.find(function(b){return b.id===o.buyer_id;});
+  var buyer=_getBuyer(o.buyer_id);
   var stLabel=U.TM({confirmed:{ko:'확정',en:'Confirmed'},production:{ko:'생산중',en:'Production'},inspection:{ko:'검수',en:'Inspection'},shipping:{ko:'선적',en:'Shipping'},delivered:{ko:'배송중',en:'Delivered'},completed:{ko:'완료',en:'Completed'},cancelled:{ko:'취소',en:'Cancelled'}});
   var stColor={confirmed:'var(--pri)',production:'var(--acc)',inspection:'var(--purple,#a855f7)',shipping:'#3b82f6',delivered:'var(--ok)',completed:'var(--ok)',cancelled:'var(--err)'};
   var payLabel=U.TM({unpaid:{ko:'미결제',en:'Unpaid'},deposit_received:{ko:'계약금',en:'Deposit'},partial:{ko:'부분결제',en:'Partial'},paid:{ko:'완납',en:'Paid'},overdue:{ko:'연체',en:'Overdue'}});
@@ -15401,7 +15403,7 @@ var CLAIM_TYPES={quality:'품질 불량',quantity:'수량 부족',damage:'운송
 function openClaimManager(orderId){
   var o=S.orders.find(function(x){return x.id===orderId;});if(!o)return;
   var claims=(o.claims||[]).slice().sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
-  var buyer=S.buyers.find(function(b){return b.id===o.buyer_id;});
+  var buyer=_getBuyer(o.buyer_id);
   var h='<div style="margin-bottom:16px">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
   h+='<div style="font-size:13px;color:var(--w60)">'+U.esc(o.order_number)+' · '+(buyer?U.esc(buyer.company_name):'')+'</div>';
@@ -16005,12 +16007,12 @@ function pgMeetings(){
   h+='<div class="grid-4" style="margin-bottom:16px">'+UI.stat('오늘',todayMeetings.length+'건','미팅','var(--acc)')+UI.stat('이번 주',weekMs.length+'건','예정','var(--pri)')+UI.stat('총 미팅',S.meetings.length+'건','누적','#3b82f6')+UI.stat('완료',S.meetings.filter(function(m){return m.status==='completed';}).length+'건','','var(--ok)')+'</div>';
   h+=SF.bar('meetings',{placeholder:'미팅 검색 (제목, 바이어명...)',filters:[{name:'status',label:'전체 상태',options:[{value:'scheduled',label:'예정'},{value:'confirmed',label:'확정'},{value:'completed',label:'완료'},{value:'cancelled',label:'취소'}]},{name:'type',label:'전체 유형',options:[{value:'video_call',label:'화상미팅'},{value:'phone',label:'전화'},{value:'in_person',label:'대면'}]}]});
   var _ms=S._searchCache['meetings']||{};
-  if(_ms.q||(_ms.filters&&Object.keys(_ms.filters).some(function(k){return _ms.filters[k];}))){var _mq=(_ms.q||'').toLowerCase();upcoming=upcoming.filter(function(m){var bn=(S.buyers.find(function(b){return b.id===m.buyer_id;})||{}).company_name||'';var match=!_mq||(m.title||'').toLowerCase().indexOf(_mq)>=0||bn.toLowerCase().indexOf(_mq)>=0;if(!match)return false;if(_ms.filters){if(_ms.filters.status&&m.status!==_ms.filters.status)return false;if(_ms.filters.type&&m.type!==_ms.filters.type)return false;}return true;});past=past.filter(function(m){var bn=(S.buyers.find(function(b){return b.id===m.buyer_id;})||{}).company_name||'';var match=!_mq||(m.title||'').toLowerCase().indexOf(_mq)>=0||bn.toLowerCase().indexOf(_mq)>=0;if(!match)return false;if(_ms.filters){if(_ms.filters.status&&m.status!==_ms.filters.status)return false;if(_ms.filters.type&&m.type!==_ms.filters.type)return false;}return true;});}
+  if(_ms.q||(_ms.filters&&Object.keys(_ms.filters).some(function(k){return _ms.filters[k];}))){var _mq=(_ms.q||'').toLowerCase();upcoming=upcoming.filter(function(m){var bn=(_getBuyer(m.buyer_id)||{}).company_name||'';var match=!_mq||(m.title||'').toLowerCase().indexOf(_mq)>=0||bn.toLowerCase().indexOf(_mq)>=0;if(!match)return false;if(_ms.filters){if(_ms.filters.status&&m.status!==_ms.filters.status)return false;if(_ms.filters.type&&m.type!==_ms.filters.type)return false;}return true;});past=past.filter(function(m){var bn=(_getBuyer(m.buyer_id)||{}).company_name||'';var match=!_mq||(m.title||'').toLowerCase().indexOf(_mq)>=0||bn.toLowerCase().indexOf(_mq)>=0;if(!match)return false;if(_ms.filters){if(_ms.filters.status&&m.status!==_ms.filters.status)return false;if(_ms.filters.type&&m.type!==_ms.filters.type)return false;}return true;});}
   /* 오늘 미팅 하이라이트 */
   if(todayMeetings.length>0){
     h+='<div class="card" style="margin-bottom:16px;border-color:rgba(255,184,0,.25)"><div class="card-h"><span>🔥 오늘 미팅</span><span class="badge badge-acc">'+todayMeetings.length+'건</span></div><div class="card-b">';
     todayMeetings.forEach(function(m){
-      var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+      var buyer=_getBuyer(m.buyer_id);
       var mt=new Date(m.scheduled_at);
       h+='<div style="display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;background:var(--w08);margin-bottom:6px;cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')">';
       h+='<div style="text-align:center;min-width:50px"><div style="font-size:20px;font-weight:800;color:var(--acc)">'+mt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'</div><div style="font-size:10px;color:var(--w40)">'+m.duration_min+'분</div></div>';
@@ -16024,7 +16026,7 @@ function pgMeetings(){
   h+='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>📅 예정 미팅</span></div><div class="card-b" style="padding:'+(upcoming.length?'8px':'0')+'">';
   if(upcoming.length===0){h+=UI.empty('📅','예정된 미팅이 없습니다','바이어와 미팅을 잡아보세요');}
   else{upcoming.slice(0,15).forEach(function(m){
-    var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+    var buyer=_getBuyer(m.buyer_id);
     var mt=new Date(m.scheduled_at);var isToday=mt.toDateString()===now.toDateString();
     var diffDays=Math.ceil((mt-now)/(1000*60*60*24));
     var dtStr=isToday?(T('today_prefix'))+mt.toLocaleTimeString(U.loc(),{hour:'2-digit',minute:'2-digit'}):diffDays<=7?diffDays+'일 후 '+mt.toLocaleDateString('ko-KR',{month:'short',day:'numeric'}):U.fd(m.scheduled_at,'short');
@@ -16039,7 +16041,7 @@ function pgMeetings(){
   if(past.length>0){
     h+='<div class="card"><div class="card-h"><span>✅ 지난 미팅</span><span style="font-size:12px;color:var(--w40)">'+past.length+'건</span></div><div class="card-b" style="padding:8px">';
     past.slice(0,10).forEach(function(m){
-      var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+      var buyer=_getBuyer(m.buyer_id);
       h+='<div style="padding:8px;border-radius:8px;margin-bottom:4px;opacity:.7;cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')">';
       h+='<div style="display:flex;justify-content:space-between;align-items:center">';
       h+='<div><div style="font-size:13px;font-weight:600">'+typeIcon[m.type]+' '+U.esc(m.title)+'</div><div style="font-size:11px;color:var(--w40)">'+U.esc(buyer?buyer.company_name:'—')+' · '+U.fd(m.scheduled_at,'short')+'</div></div>';
@@ -16091,7 +16093,7 @@ function _pgMeetingCalendar(){
     dayMeetings.forEach(function(m){
       var mt=new Date(m.scheduled_at);
       if(mt.getHours()===hr){
-        var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+        var buyer=_getBuyer(m.buyer_id);
         var dur=m.duration_min||30;
         var heightPx=Math.max(dur,30);
         var topPx=(mt.getMinutes()/60)*60;
@@ -16108,7 +16110,7 @@ function _pgMeetingCalendar(){
   var summary='<div class="grid-2" style="margin-top:16px">';
   summary+='<div class="card"><div class="card-h">📊 이 날 요약</div><div class="card-b"><div style="font-size:24px;font-weight:800;color:var(--pri);margin-bottom:4px">'+dayMeetings.length+(T('unit_counter'))+'</div><div style="font-size:12px;color:var(--w40)">미팅 예정</div>'+(dayMeetings.length?'<div style="margin-top:8px">'+dayMeetings.map(function(m){return '<div style="font-size:12px;padding:4px 0;display:flex;gap:6px"><span style="color:var(--pri);font-weight:700">'+new Date(m.scheduled_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'</span><span>'+U.esc(m.title)+'</span></div>';}).join('')+'</div>':'<div style="margin-top:8px;font-size:12px;color:var(--w20)">미팅이 없는 날입니다</div>')+'</div></div>';
   var upcoming3=S.meetings.filter(function(m){return new Date(m.scheduled_at)>selDate&&m.status!=='cancelled';}).sort(function(a,b){return new Date(a.scheduled_at)-new Date(b.scheduled_at);}).slice(0,5);
-  summary+='<div class="card"><div class="card-h">📅 다가오는 일정</div><div class="card-b">'+(upcoming3.length?upcoming3.map(function(m){var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});return '<div style="padding:6px 0;border-bottom:1px solid var(--w08);font-size:12px;cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')"><div style="font-weight:600">'+typeIcon[m.type]+' '+U.esc(m.title)+'</div><div style="color:var(--w40);font-size:11px">'+new Date(m.scheduled_at).toLocaleDateString('ko-KR',{month:'short',day:'numeric',weekday:'short'})+' '+new Date(m.scheduled_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+(buyer?' · '+U.esc(buyer.company_name):'')+'</div></div>';}).join(''):'<div style="font-size:12px;color:var(--w20)">예정된 일정이 없습니다</div>')+'</div></div>';
+  summary+='<div class="card"><div class="card-h">📅 다가오는 일정</div><div class="card-b">'+(upcoming3.length?upcoming3.map(function(m){var buyer=_getBuyer(m.buyer_id);return '<div style="padding:6px 0;border-bottom:1px solid var(--w08);font-size:12px;cursor:pointer" onclick="App.viewMeeting(\''+m.id+'\')"><div style="font-weight:600">'+typeIcon[m.type]+' '+U.esc(m.title)+'</div><div style="color:var(--w40);font-size:11px">'+new Date(m.scheduled_at).toLocaleDateString('ko-KR',{month:'short',day:'numeric',weekday:'short'})+' '+new Date(m.scheduled_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+(buyer?' · '+U.esc(buyer.company_name):'')+'</div></div>';}).join(''):'<div style="font-size:12px;color:var(--w20)">예정된 일정이 없습니다</div>')+'</div></div>';
   summary+='</div>';
   return miniCal+dateNav+grid+summary;
 }
@@ -16150,7 +16152,7 @@ function saveMeeting(editId){
 
 function viewMeeting(mid){
   var m=S.meetings.find(function(x){return x.id===mid;});if(!m)return;
-  var buyer=S.buyers.find(function(b){return b.id===m.buyer_id;});
+  var buyer=_getBuyer(m.buyer_id);
   var pj=S.projects.find(function(p){return p.id===m.project_id;});
   var typeIcon={video_call:'🖥️',phone:'📞',in_person:'🤝',trade_show:'🏢',online_demo:'💻'};
   var typeLabel={video_call:'화상미팅',phone:'전화',in_person:'대면',trade_show:'전시회',online_demo:'온라인 데모'};
@@ -16244,7 +16246,7 @@ function completeMeeting(mid){
 
 function getMeetingPrep(mid){
   var m=S.meetings.find(function(x){return x.id===mid;});if(!m){UI.toast(T('meeting_not_found'),'warn');return;}
-  var buyer=m.buyer_id?S.buyers.find(function(b){return b.id===m.buyer_id;}):null;
+  var buyer=m.buyer_id?_getBuyer(m.buyer_id):null;
   var product=S.products.length?S.products[0]:null;
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_briefing')),'info');
@@ -16323,7 +16325,7 @@ function pgTracking(){
       var order=S.orders.find(function(o){return o.id===ship.order_id;});
       var curStatus=ship.tracking_status||'production_complete';
       var curIdx=TRACKING_STAGES.findIndex(function(s){return s.id===curStatus;});
-      var buyer=order?S.buyers.find(function(b){return b.id===order.buyer_id;}):null;
+      var buyer=order?_getBuyer(order.buyer_id):null;
 
       h+='<div class="card" style="margin-bottom:12px"><div class="card-b" style="padding:16px">';
       /* 헤더 */
@@ -16407,7 +16409,7 @@ function viewTrackingDetail(shipId){
   var ship=S.shipments.find(function(x){return x.id===shipId;});if(!ship)return;
   var order=S.orders.find(function(o){return o.id===ship.order_id;});
   var history=ship.tracking_history||[];
-  var buyer=order?S.buyers.find(function(b){return b.id===order.buyer_id;}):null;
+  var buyer=order?_getBuyer(order.buyer_id):null;
   var curIdx=TRACKING_STAGES.findIndex(function(s){return s.id===(ship.tracking_status||'production_complete');});
 
   var h='<div style="margin-bottom:16px">';
@@ -18011,7 +18013,7 @@ function convertInquiryToBuyer(iqId){
 
 /* === SAMPLES (in buyers page) === */
 function showSampleForm(buyerId){
-  var buyer=S.buyers.find(function(b){return b.id===buyerId;});if(!buyer)return;
+  var buyer=_getBuyer(buyerId);if(!buyer)return;
   var prodOpts=S.products.map(function(p){return {value:p.id,label:p.name_ko||p.name_en};});
   prodOpts.unshift({value:'',label:'-- 제품 선택 --'});
   var pjOpts=S.projects.map(function(p,i){return {value:p.id,label:U.pjNum(p,i)+' '+p.name};});
@@ -18034,7 +18036,7 @@ function saveSample(buyerId){
   sb.from('samples').insert(data).then(function(r){
     if(r.error){_toastE(r.error);return;}
     closeModal('spm');loadSamples().then(function(){render();UI.toast(T('sample_registered'),'ok');});
-    pushNotif('sample','샘플 발송 등록',(S.buyers.find(function(b){return b.id===buyerId;})||{}).company_name||'','buyers',null,true);
+    pushNotif('sample','샘플 발송 등록',(_getBuyer(buyerId)||{}).company_name||'','buyers',null,true);
   });
 }
 
@@ -20040,7 +20042,7 @@ function submitPaymentRequest(){
     if(r.error){UI.toast('Failed: '+r.error.message,'err');return;}
     S._pjChatMsgs.push(r.data);render();
     /* Notify buyer */
-    var _bLink=(S.buyers||[]).find(function(b){return b.id===buyerId;});
+    var _bLink=_getBuyer(buyerId);
     var _buyerUid=_bLink&&_bLink.buyer_user_id;
     if(_buyerUid){_sendNotification(_buyerUid,'payment','Payment Request',label+': '+currency+' '+amount.toFixed(2),{link_page:'deals'});}
   });
