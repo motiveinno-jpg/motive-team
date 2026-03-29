@@ -4778,11 +4778,13 @@ function T(key){
   var v=_T[key];
   if(v){
     if(_isKorean) return v[0];
-    if(_ML[key] && _ML[key][_userLang]) return _ML[key][_userLang];
+    var ml2=_ML[key];
+    if(ml2){if(ml2[_userLang]) return ml2[_userLang]; if(ml2['en']) return ml2['en'];}
     return v[1];
   }
   var ml=_ML[key];
   if(ml) return ml[_userLang]||ml['en']||key;
+  var fb=_T[key]; if(fb) return fb[1];
   return key;
 }
 /* TF(key, {var:val}) — T() with variable substitution. Use {var} placeholders in translations. */
@@ -5054,13 +5056,17 @@ function loadUser(){
         if(!r.data.country){r.data.country=_authCountry;sb.from('users').update({country:_authCountry}).eq('id',r.data.id).then(function(){}).catch(function(e){console.error('country update failed',e);});}
         var _wasKorean=_isKorean;
         _isKorean=(_authCountry==='KR');
-        if(!_isKorean&&_userLang==='ko'){_userLang='en';}
-        else if(_isKorean&&_userLang!=='ko'){_userLang='ko';}
+        /* Map country to default language for proper localization */
+        var _cLangMap={KR:'ko',JP:'ja',CN:'zh',VN:'vi',TH:'th',DE:'de',FR:'fr',ES:'es',BR:'pt',PT:'pt',ID:'id',TR:'tr',SA:'ar',AE:'ar',EG:'ar'};
+        var _expectedLang=_cLangMap[_authCountry]||'en';
+        /* Only override if user hasn't manually chosen a specific language */
+        var _storedLang=localStorage.getItem('whistle_lang');
+        if(!_storedLang||_storedLang==='en'||(_isKorean&&_storedLang!=='ko')||(!_isKorean&&_storedLang==='ko')){_userLang=_expectedLang;}
         localStorage.setItem('_lang',_userLang);
         localStorage.setItem('whistle_lang',_userLang);
         document.documentElement.setAttribute('lang',_userLang);if(typeof _setDir==='function')_setDir(_userLang);
         window.__isKorean=_isKorean;window.__whistleLang=_userLang;
-        if(_wasKorean!==_isKorean){PL=_buildPL();}
+        if(_wasKorean!==_isKorean||true){PL=_buildPL();}
       }
       _acceptInvite(r.data.id);
       if(r.data.preferred_currency)S.currency=r.data.preferred_currency;
@@ -23977,7 +23983,7 @@ sb.auth.onAuthStateChange(function(event, session){
 </div>
 <script>
 (function(){
-  var _lang=typeof _userLang!=='undefined'?_userLang:'en';
+  var _lang=(typeof _userLang!=='undefined'&&_userLang)?_userLang:(localStorage.getItem('whistle_lang')||localStorage.getItem('_lang')||(navigator.language||'en').split('-')[0]);
   var _ko=_lang==='ko';
   var _cookieTexts={
     ko:'이 웹사이트는 서비스 개선 및 분석을 위해 쿠키를 사용합니다. 자세한 내용은 <a href="/privacy" style="color:#4f8cff;text-decoration:underline">개인정보처리방침</a>을 참고하세요.',
