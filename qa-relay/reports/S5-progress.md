@@ -158,11 +158,87 @@ else if(_isKorean && _userLang!=='ko') { _userLang='ko'; }
 
 ---
 
+---
+
+## 2차 테스트 결과 (S6-fix 재검증 + 태국/인도네시아)
+
+### S6-fix 재검증 결과
+| Fix | 대상 | 결과 |
+|-----|------|------|
+| S6-fix-007 | navigator.language 감지 | ✅ 코드 배포 완료 — ?lang=vi 파라미터도 정상 |
+| S6-fix-004 | 언어 선택기 | ❌ 바이어 앱 미적용 (제조사 앱만) |
+| S6-fix-008 | 바이어 role 리다이렉트 | ⚠️ 부분 — 세션 불안정 신규 P1(S5-bug-016) |
+| S6-fix-001 | Country select_ellipsis | ✅ 수정됨 |
+| S6-fix-005 | i18n 에러+쿠키배너 | ⚠️ 에러 ✅, 쿠키배너 ❌ |
+
+상세: `/qa-relay/bugs/S5-fix-revalidation.md`
+
+### 태국어(th) 테스트
+- ?lang=th → 태국어 로그인 완벽 ✅
+- "เข้าสู่ระบบ", "อีเมล", "รหัสผ่าน" 등 자연스러운 번역
+
+### 인도네시아어(id) 테스트
+- ?lang=id → 인도네시아어 로그인/대시보드 완벽 ✅
+- "Masuk", "Daftar", "Kata sandi", "Selamat datang" 등
+- 사이드바: "Dasbor", "Cari Produk", "Pasar", "Pipeline", "Dokumen" ✅
+- "Sourcing Guide" 영어 잔류 (전 언어 공통)
+- 세션 불안정 동일 재현
+
+### 2차에서 추가된 버그
+| # | 파일 | 심각도 | 제목 |
+|---|------|-------|------|
+| 016 | S5-bug-016.md | **P1** | 로그인 후 세션 불안정 — 반복 리다이렉트/로그아웃 |
+| 017 | S5-bug-017.md | P2 | KR 사용자 언어 강제 오버라이드 |
+
+### 언어 오버라이드 코드 분석 (buyer-app.html:2570-2572)
+```javascript
+_isKorean = (_authCountry==='KR');
+if(!_isKorean && _userLang==='ko') { _userLang='en'; }
+else if(_isKorean && _userLang!=='ko') { _userLang='ko'; }
+```
+→ KR 사용자는 언어 선택 무시됨. 재한 외국인 바이어 영향.
+
+### Supabase bcrypt 호환성 발견
+- GoTrue 기본: `$2a$06$` (cost 6)
+- PostgreSQL `gen_salt('bf', 10)`: `$2a$10$` → **GoTrue 로그인 실패**
+- `gen_salt('bf', 6)` 사용 시 호환 ✅
+- 테스트 계정 생성 시 반드시 cost 6 사용
+
+---
+
+## 전체 버그 최종 현황: **P1: 4건 | P2: 9건 | P3: 4건 | 시각적: 3건 = 총 20건**
+
+| # | 파일 | 심각도 | 제목 | 수정 상태 |
+|---|------|-------|------|-----------|
+| 001 | S5-bug-001.md | **P1** | 언어 자동 감지 없음 | ⚠️ 부분수정(fix-007) |
+| 002 | S5-bug-002.md | P2 | 터치 타겟 44px 미달 | 미수정 |
+| 003 | S5-bug-003.md | **P1** | 가입 429 에러 + 폼 리셋 | 미수정 |
+| 004 | S5-bug-004.md | P2 | 대시보드 통화 USD 고정 | 미수정 |
+| 005 | S5-bug-005.md | P2 | 로그인 언어 선택 없음 | ❌ fix-004 미적용 |
+| 006 | S5-bug-006.md | P3 | 쿠키 배너 언어 불일치 | ❌ fix-005 미완 |
+| 007 | S5-bug-007.md | P2 | 무역 용어 툴팁 없음 | 미수정 |
+| 008 | S5-bug-008.md | P3 | Home ≠ Dashboard 명칭 | 미수정 |
+| 009 | S5-bug-009.md | P3 | 검색 필터 8줄 | 미수정 |
+| 010 | S5-bug-010.md | P2 | 샘플 주문 불명확 | 미수정 |
+| 011 | S5-bug-011.md | **P1** | html lang="ko" | 미수정 |
+| 012 | S5-bug-012.md | P2 | 온보딩 카테고리 영어 | 미수정 |
+| 013 | S5-bug-013.md | P3 | "You're all set!" 영어 | 미수정 |
+| 014 | S5-bug-014.md | P2 | Deals 탭 영어 + 버튼 잘림 | 미수정 |
+| 015 | S5-bug-015.md | P3 | "Sourcing Guide" 영어 | 미수정 |
+| 016 | S5-bug-016.md | **P1** | 세션 불안정 리다이렉트 | 신규 |
+| 017 | S5-bug-017.md | P2 | KR 언어 강제 오버라이드 | 신규 |
+| V001 | S5-visual-001.md | P3 | 대시보드 카드 빽빽 | — |
+| V002 | S5-visual-002.md | P2 | 필터 화면 절반 차지 | — |
+| V003 | S5-visual-003.md | P2 | 쿠키배너 네비 가림 | — |
+
+---
+
 ## 미완료 / 다음 세션
 
-- [ ] Phase 8: 태국(th), 인도네시아(id) 페르소나 반복
 - [ ] 3G 네트워크 throttling 테스트
 - [ ] VND 천 단위 구분자 관행 (콤마→마침표)
 - [ ] Stripe 결제 모바일 최적화
-- [ ] KR 사용자 언어 강제 오버라이드 문제 상세 분석
 - [ ] 가로 모드(landscape) 레이아웃 테스트
+- [ ] 406 에러 원인 상세 분석 (Supabase RLS?)
+- [ ] 제품 상세 → Inquire → 채팅 전체 플로우
+- [ ] 아랍어(ar) RTL 레이아웃 테스트
