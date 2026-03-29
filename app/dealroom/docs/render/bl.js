@@ -1,0 +1,144 @@
+// /app/dealroom/docs/render/bl.js
+// Renders a Bill of Lading PDF from document.content using jsPDF + autoTable
+
+export function renderBLToPdf(document) {
+  const jsPDF = window.jspdf?.jsPDF;
+  if (!jsPDF) { alert('PDF 라이브러리가 로드되지 않았습니다.'); return; }
+
+  const c = document.content || {};
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 15;
+  let y = margin;
+
+  // Header
+  doc.setFontSize(20);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(30, 64, 175);
+  doc.text('BILL OF LADING', pageWidth / 2, y, { align: 'center' });
+  y += 10;
+
+  doc.setTextColor(0);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  const docNo = document.doc_number || c.bl_no || 'N/A';
+  const dateStr = c.generated_at ? new Date(c.generated_at).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US');
+  doc.text(`B/L No: ${docNo}`, margin, y);
+  doc.text(`Date: ${dateStr}`, pageWidth - margin, y, { align: 'right' });
+  y += 5;
+  doc.setDrawColor(30, 64, 175);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  // Shipper / Consignee / Notify Party (three-row layout)
+  doc.setFontSize(9);
+  const halfWidth = (pageWidth - margin * 2) / 2;
+
+  // Shipper
+  doc.setFont(undefined, 'bold');
+  doc.text('SHIPPER', margin, y);
+  y += 5;
+  doc.setFont(undefined, 'normal');
+  const shipper = c.shipper || c.seller || {};
+  [shipper.company || shipper.name || 'N/A', shipper.address || ''].filter(Boolean).forEach(line => {
+    doc.text(line, margin, y); y += 4.5;
+  });
+  y += 2;
+
+  // Consignee & Notify Party side by side
+  doc.setFont(undefined, 'bold');
+  doc.text('CONSIGNEE', margin, y);
+  doc.text('NOTIFY PARTY', margin + halfWidth + 5, y);
+  y += 5;
+  doc.setFont(undefined, 'normal');
+  const consignee = c.consignee || c.buyer || {};
+  const notifyParty = c.notify_party || {};
+  const consigneeLines = [
+    consignee.company || consignee.name || 'N/A',
+    consignee.address || '',
+  ].filter(Boolean);
+  const notifyLines = [
+    notifyParty.company || notifyParty.name || 'SAME AS CONSIGNEE',
+    notifyParty.address || '',
+  ].filter(Boolean);
+  const maxPartyLines = Math.max(consigneeLines.length, notifyLines.length);
+  for (let i = 0; i < maxPartyLines; i++) {
+    if (consigneeLines[i]) doc.text(consigneeLines[i], margin, y);
+    if (notifyLines[i]) doc.text(notifyLines[i], margin + halfWidth + 5, y);
+    y += 4.5;
+  }
+  y += 4;
+
+  // Vessel & Port info
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(9);
+  const vesselInfo = [];
+  if (c.vessel || c.voyage) vesselInfo.push(`Vessel/Voyage: ${[c.vessel, c.voyage].filter(Boolean).join(' / ')}`);
+  if (c.port_of_loading) vesselInfo.push(`Port of Loading: ${c.port_of_loading}`);
+  if (c.port_of_discharge) vesselInfo.push(`Port of Discharge: ${c.port_of_discharge}`);
+  vesselInfo.forEach(line => { doc.text(line, margin, y); y += 5; });
+  if (vesselInfo.length) y += 3;
+
+  // Goods table
+  const items = Array.isArray(c.items) ? c.items : [];
+  if (items.length > 0) {
+    const tableData = items.map((item, idx) => [
+      item.marks || `${idx + 1}`,
+      item.product_name || item.description || 'N/A',
+      fmt(item.packages || item.qty),
+      item.gross_weight ? fmt(item.gross_weight) + ' kg' : '-',
+      item.measurement || item.cbm ? fmt(item.measurement || item.cbm) + ' CBM' : '-',
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [['Marks & Nos.', 'Description of Goods', 'No. of Packages', 'Gross Weight', 'Measurement']],
+      body: tableData,
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // Freight terms
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(9);
+  const freightTerms = c.freight_terms || c.freight || 'PREPAID';
+  doc.text(`Freight: ${freightTerms}`, margin, y);
+  y += 8;
+
+  // SHIPPED ON BOARD stamp area
+  doc.setDrawColor(30, 64, 175);
+  doc.setLineWidth(1);
+  doc.rect(pageWidth - margin - 65, y, 65, 25);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(30, 64, 175);
+  doc.text('SHIPPED ON BOARD', pageWidth - margin - 32.5, y + 10, { align: 'center' });
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'normal');
+  doc.text(dateStr, pageWidth - margin - 32.5, y + 16, { align: 'center' });
+  doc.setTextColor(0);
+  y += 30;
+
+  // Signature area
+  doc.setDrawColor(200);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, margin + 60, y);
+  y += 5;
+  doc.setFontSize(8);
+  doc.text('Carrier / Agent Signature', margin, y);
+
+  // Footer
+  y = doc.internal.pageSize.getHeight() - 15;
+  doc.setTextColor(150);
+  doc.setFontSize(8);
+  doc.text('Generated by Whistle AI - Export Management Platform', pageWidth / 2, y, { align: 'center' });
+
+  doc.save(`${document.doc_number || 'BL'}_${dateStr.replace(/\//g, '-')}.pdf`);
+}
+
+function fmt(n) { const v = Number(n); return Number.isFinite(v) ? v.toLocaleString() : '0'; }

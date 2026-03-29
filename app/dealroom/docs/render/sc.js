@@ -1,0 +1,151 @@
+// /app/dealroom/docs/render/sc.js
+// Renders a Sales Contract PDF from document.content using jsPDF + autoTable
+
+export function renderSCToPdf(document) {
+  const jsPDF = window.jspdf?.jsPDF;
+  if (!jsPDF) { alert('PDF 라이브러리가 로드되지 않았습니다.'); return; }
+
+  const c = document.content || {};
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 15;
+  let y = margin;
+
+  // Header
+  doc.setFontSize(20);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(79, 70, 229);
+  doc.text('SALES CONTRACT', pageWidth / 2, y, { align: 'center' });
+  y += 10;
+
+  doc.setTextColor(0);
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'normal');
+  const docNo = document.doc_number || c.contract_no || 'N/A';
+  const dateStr = c.generated_at ? new Date(c.generated_at).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US');
+  doc.text(`Contract No: ${docNo}`, margin, y);
+  doc.text(`Date: ${dateStr}`, pageWidth - margin, y, { align: 'right' });
+  y += 5;
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(0.5);
+  doc.line(margin, y, pageWidth - margin, y);
+  y += 8;
+
+  // Seller / Buyer
+  doc.setFontSize(9);
+  const halfWidth = (pageWidth - margin * 2) / 2;
+  doc.setFont(undefined, 'bold');
+  doc.text('SELLER', margin, y);
+  doc.text('BUYER', margin + halfWidth + 5, y);
+  y += 5;
+  doc.setFont(undefined, 'normal');
+  const seller = c.seller || {};
+  const buyer = c.buyer || {};
+  const sellerLines = [
+    seller.company || seller.name || 'N/A',
+    seller.address || '',
+    seller.email || '',
+  ].filter(Boolean);
+  const buyerLines = [
+    buyer.company || buyer.name || 'N/A',
+    buyer.address || '',
+    buyer.email || '',
+  ].filter(Boolean);
+  const maxLines = Math.max(sellerLines.length, buyerLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    if (sellerLines[i]) doc.text(sellerLines[i], margin, y);
+    if (buyerLines[i]) doc.text(buyerLines[i], margin + halfWidth + 5, y);
+    y += 4.5;
+  }
+  y += 4;
+
+  // Items table
+  const items = Array.isArray(c.items) ? c.items : [];
+  if (items.length > 0) {
+    const tableData = items.map((item, idx) => [
+      idx + 1,
+      item.product_name || 'N/A',
+      fmt(item.qty),
+      cur(item.unit_price, c.currency),
+      cur(item.amount || (item.qty * item.unit_price), c.currency),
+    ]);
+    const total = items.reduce((s, it) => s + (it.amount || it.qty * it.unit_price || 0), 0);
+
+    doc.autoTable({
+      startY: y,
+      head: [['#', 'Product', 'Qty', 'Unit Price', 'Amount']],
+      body: tableData,
+      foot: [['', '', '', 'TOTAL', cur(total, c.currency)]],
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
+      footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // Contract sections
+  const sections = [
+    { title: 'PAYMENT TERMS', content: c.payment_terms },
+    { title: 'DELIVERY TERMS', content: c.delivery_terms || c.incoterms },
+    { title: 'QUALITY & INSPECTION', content: c.quality_inspection },
+    { title: 'WARRANTY', content: c.warranty },
+    { title: 'FORCE MAJEURE', content: c.force_majeure },
+    { title: 'GOVERNING LAW', content: c.governing_law },
+  ];
+
+  sections.forEach(section => {
+    if (!section.content) return;
+    if (y > doc.internal.pageSize.getHeight() - 40) { doc.addPage(); y = margin; }
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(9);
+    doc.text(section.title, margin, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+    const lines = doc.splitTextToSize(section.content, pageWidth - margin * 2);
+    doc.text(lines, margin, y);
+    y += lines.length * 4.5 + 4;
+  });
+
+  // Notes
+  if (c.notes || document.notes) {
+    if (y > doc.internal.pageSize.getHeight() - 40) { doc.addPage(); y = margin; }
+    doc.setFont(undefined, 'bold');
+    doc.text('ADDITIONAL TERMS:', margin, y);
+    y += 5;
+    doc.setFont(undefined, 'normal');
+    const lines = doc.splitTextToSize(c.notes || document.notes, pageWidth - margin * 2);
+    doc.text(lines, margin, y);
+    y += lines.length * 4.5 + 4;
+  }
+
+  // Two signature areas
+  if (y > doc.internal.pageSize.getHeight() - 50) { doc.addPage(); y = margin; }
+  y += 10;
+  doc.setDrawColor(200);
+  doc.line(margin, y, margin + 60, y);
+  doc.line(pageWidth - margin - 60, y, pageWidth - margin, y);
+  y += 5;
+  doc.setFontSize(8);
+  doc.text('SELLER', margin, y);
+  doc.text('BUYER', pageWidth - margin - 60, y);
+  y += 4;
+  doc.text(seller.company || seller.name || '', margin, y);
+  doc.text(buyer.company || buyer.name || '', pageWidth - margin - 60, y);
+
+  // Footer
+  y = doc.internal.pageSize.getHeight() - 15;
+  doc.setTextColor(150);
+  doc.setFontSize(8);
+  doc.text('Generated by Whistle AI - Export Management Platform', pageWidth / 2, y, { align: 'center' });
+
+  doc.save(`${document.doc_number || 'SC'}_${dateStr.replace(/\//g, '-')}.pdf`);
+}
+
+function fmt(n) { const v = Number(n); return Number.isFinite(v) ? v.toLocaleString() : '0'; }
+function cur(n, c = 'USD') {
+  const v = Number(n); if (!Number.isFinite(v)) return '-';
+  const s = { USD: '$', KRW: '₩', JPY: '¥', EUR: '€' }[c] || c + ' ';
+  return s + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}

@@ -9,7 +9,16 @@ const DOC_TYPES = [
   { id: 'ci', label: 'Commercial Invoice', ko: '상업송장', icon: '🧾', price: 3000 },
   { id: 'pl', label: 'Packing List', ko: '포장명세서', icon: '📦', price: 3000 },
   { id: 'co', label: 'Certificate of Origin', ko: '원산지증명서', icon: '🏛️', price: 3000 },
-  { id: 'sc', label: 'Sales Contract', ko: '매매계약서', icon: '📝', price: 3000 }
+  { id: 'sc', label: 'Sales Contract', ko: '매매계약서', icon: '📝', price: 3000 },
+  { id: 'bl', label: 'Bill of Lading', ko: '선하증권', icon: '🚢', price: 3000 },
+  { id: 'ed', label: 'Export Declaration', ko: '수출신고서', icon: '🏛️', price: 3000 },
+  { id: 'sli', label: "Shipper's Letter of Instruction", ko: '선적지시서', icon: '✉️', price: 3000 },
+  { id: 'isf', label: 'Importer Security Filing', ko: '수입보안신고', icon: '🔒', price: 3000 },
+  { id: 'ams', label: 'Automated Manifest System', ko: '자동적하목록', icon: '📡', price: 3000 },
+  { id: 'ins', label: 'Insurance Certificate', ko: '보험증권', icon: '🛡️', price: 3000 },
+  { id: 'ic', label: 'Inspection Certificate', ko: '검사증명서', icon: '🔍', price: 3000 },
+  { id: 'hc', label: 'Health/Phytosanitary Certificate', ko: '위생검역증명서', icon: '🏥', price: 3000 },
+  { id: 'lc', label: 'Letter of Credit Application', ko: '신용장 신청서', icon: '🏦', price: 3000 }
 ];
 
 Router.register('documents', function(state) {

@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <title>자동정산 오류 시 대응 매뉴얼 — Whistle AI</title>
+  <style>
+    body { font-family: 'Pretendard', -apple-system, sans-serif; background: #0a0a0f; color: #e0e0e6; margin: 0; padding: 40px; line-height: 1.8; }
+    .doc { max-width: 800px; margin: 0 auto; background: #13131a; border-radius: 16px; padding: 48px; border: 1px solid #1e1e2e; }
+    .doc-header { border-bottom: 2px solid #6c5ce7; padding-bottom: 24px; margin-bottom: 32px; }
+    .doc-title { font-size: 28px; font-weight: 700; color: #fff; margin: 0 0 8px; }
+    .doc-subtitle { font-size: 14px; color: #888; }
+    .doc-version { display: inline-block; background: #6c5ce7; color: #fff; padding: 2px 10px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+    h2 { color: #a29bfe; font-size: 20px; margin-top: 32px; border-left: 3px solid #6c5ce7; padding-left: 12px; }
+    h3 { color: #ddd; font-size: 16px; margin-top: 24px; }
+    p, li { color: #bbb; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th { background: #1e1e2e; color: #a29bfe; padding: 10px 12px; text-align: left; font-size: 13px; border-bottom: 2px solid #6c5ce7; }
+    td { padding: 10px 12px; border-bottom: 1px solid #1e1e2e; font-size: 13px; color: #bbb; }
+    .highlight-box { background: #1a1a2e; border: 1px solid #6c5ce7; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    .flow-step { display: flex; align-items: center; gap: 12px; padding: 12px; margin: 8px 0; background: #1a1a2e; border-radius: 8px; }
+    .flow-num { width: 32px; height: 32px; background: #6c5ce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+    .flow-arrow { text-align: center; color: #6c5ce7; font-size: 20px; }
+    .print-btn { position: fixed; top: 20px; right: 20px; background: #6c5ce7; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    @media print { .print-btn { display: none; } body { background: #fff; color: #333; } .doc { background: #fff; border: none; } h2 { color: #6c5ce7; } th { background: #f5f5f5; color: #333; } td, p, li { color: #333; } }
+    .error-card { background: #1a1a2e; border-left: 4px solid #e74c3c; border-radius: 0 8px 8px 0; padding: 16px 20px; margin: 16px 0; }
+    .error-card.warning { border-left-color: #f39c12; }
+    .error-card.critical { border-left-color: #e74c3c; }
+    .error-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .error-label.critical { color: #e74c3c; }
+    .error-label.warning { color: #f39c12; }
+    code { background: #0d0d14; color: #6c5ce7; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  @media(max-width:768px){body{padding:16px}.doc{padding:24px 16px}table{font-size:11px;display:block;overflow-x:auto}h1{font-size:22px}h2{font-size:16px}h3{font-size:14px}}
+@media print{.step-item,.highlight-box,.warning-box,.critical-box{background:#f8f8f8!important;color:#333!important;border-color:#ddd!important}.step-num,.flow-num{background:#ddd!important;color:#333!important}h3{color:#333!important}}
+</style>
+</head>
+<body>
+  <button class="print-btn" onclick="window.print()">인쇄하기</button>
+  <div class="doc">
+    <div class="doc-header">
+      <div class="doc-title">자동정산 오류 시 대응 매뉴얼</div>
+      <div class="doc-subtitle">Whistle AI 플랫폼 — 정산 오류 유형별 감지, 대응, 에스컬레이션 절차</div>
+      <span class="doc-version">v1.0</span>
+      <div class="doc-subtitle" style="margin-top: 8px;">최종 수정일: 2026-03-29</div>
+    </div>
+
+    <h2>1. 오류 유형 분류</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>오류 유형</th>
+          <th>심각도</th>
+          <th>발생 빈도</th>
+          <th>자동 복구</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Stripe API 오류</td>
+          <td style="color:#f39c12;">중간</td>
+          <td>낮음</td>
+          <td>재시도 가능</td>
+        </tr>
+        <tr>
+          <td>캡처 실패</td>
+          <td style="color:#e74c3c;">높음</td>
+          <td>낮음</td>
+          <td>재시도 + 수동</td>
+        </tr>
+        <tr>
+          <td>이중 정산</td>
+          <td style="color:#e74c3c;">높음</td>
+          <td>매우 낮음</td>
+          <td>수동 처리 필수</td>
+        </tr>
+        <tr>
+          <td>금액 불일치</td>
+          <td style="color:#e74c3c;">높음</td>
+          <td>낮음</td>
+          <td>수동 확인 필수</td>
+        </tr>
+        <tr>
+          <td>환불 실패</td>
+          <td style="color:#f39c12;">중간</td>
+          <td>낮음</td>
+          <td>재시도 가능</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>2. 오류별 상세 대응</h2>
+
+    <div class="error-card warning">
+      <div class="error-label warning">오류 유형 1</div>
+      <h3 style="margin-top: 0; color: #fff;">Stripe API 오류</h3>
+      <p><strong style="color:#fff;">원인:</strong> Stripe 서버 장애, 네트워크 타임아웃, API 키 만료, 요청 한도 초과 (429)</p>
+      <p><strong style="color:#fff;">감지 방법:</strong></p>
+      <ul>
+        <li>Stripe 웹훅 응답 코드 모니터링 (4xx, 5xx)</li>
+        <li>정산 큐에서 <code>failed</code> 상태 건수 알림</li>
+        <li>Supabase 로그에서 Edge Function 오류 추적</li>
+      </ul>
+      <p><strong style="color:#fff;">대응 절차:</strong></p>
+      <ol>
+        <li>Stripe Status Page (<code>status.stripe.com</code>) 확인</li>
+        <li>API 키 유효성 확인 (Stripe Dashboard > Developers)</li>
+        <li>자동 재시도 로직 작동 확인 (최대 3회, 지수 백오프)</li>
+        <li>3회 실패 시 정산 큐에서 수동 재실행</li>
+      </ol>
+      <p><strong style="color:#fff;">에스컬레이션:</strong> 1시간 이상 지속 시 Stripe Support 연락</p>
+    </div>
+
+    <div class="error-card critical">
+      <div class="error-label critical">오류 유형 2</div>
+      <h3 style="margin-top: 0; color: #fff;">캡처 실패</h3>
+      <p><strong style="color:#fff;">원인:</strong> Authorization Hold 만료 (7일 초과), 카드 잔액 부족, 카드 해지/분실, 통화 불일치</p>
+      <p><strong style="color:#fff;">감지 방법:</strong></p>
+      <ul>
+        <li>웹훅 이벤트 <code>payment_intent.capture_failed</code> 수신</li>
+        <li>정산 스케줄러에서 캡처 실패 건 자동 플래그</li>
+        <li>어드민 대시보드 "캡처 실패" 알림</li>
+      </ul>
+      <p><strong style="color:#fff;">대응 절차:</strong></p>
+      <ol>
+        <li>실패 원인 확인 (Stripe Dashboard > Payments > 해당 건)</li>
+        <li>Authorization Hold 만료인 경우: 바이어에게 재결제 요청 알림 발송</li>
+        <li>카드 문제인 경우: 바이어에게 결제 수단 변경 요청</li>
+        <li>72시간 내 미해결 시 거래 보류 및 양측 통보</li>
+      </ol>
+      <p><strong style="color:#fff;">에스컬레이션:</strong> 72시간 미해결 시 CEO 보고 + 수동 처리</p>
+    </div>
+
+    <div class="error-card critical">
+      <div class="error-label critical">오류 유형 3</div>
+      <h3 style="margin-top: 0; color: #fff;">이중 정산</h3>
+      <p><strong style="color:#fff;">원인:</strong> 웹훅 중복 수신, 재시도 로직 버그, 동시성 문제 (Race Condition)</p>
+      <p><strong style="color:#fff;">감지 방법:</strong></p>
+      <ul>
+        <li>정산 테이블에서 동일 <code>payment_intent_id</code>에 대한 중복 레코드 검출</li>
+        <li>일일 정산 검증 배치에서 금액 합산 불일치 감지</li>
+        <li>SP/판매자로부터 이중 입금 신고 접수</li>
+      </ul>
+      <p><strong style="color:#fff;">대응 절차:</strong></p>
+      <ol>
+        <li>즉시 해당 건 정산 보류 처리</li>
+        <li>중복 정산 금액 확인 및 기록</li>
+        <li>Stripe에서 중복 Transfer 확인 → Reversal 처리</li>
+        <li>DB 정산 레코드 정리 (중복 건 <code>status: reversed</code>로 변경)</li>
+        <li>원인 분석 후 멱등성(Idempotency) 키 검증 강화</li>
+      </ol>
+      <p><strong style="color:#fff;">에스컬레이션:</strong> 발견 즉시 기술팀 + CEO 보고</p>
+    </div>
+
+    <div class="error-card critical">
+      <div class="error-label critical">오류 유형 4</div>
+      <h3 style="margin-top: 0; color: #fff;">금액 불일치</h3>
+      <p><strong style="color:#fff;">원인:</strong> 수수료 계산 오류, 환율 변동, 부분 캡처 금액 오류, DB 업데이트 실패</p>
+      <p><strong style="color:#fff;">감지 방법:</strong></p>
+      <ul>
+        <li>일일 정산 검증: DB 정산 금액 vs Stripe Transfer 금액 비교</li>
+        <li>수수료 계산 재검증 (거래 금액 x 수수료율 vs 실제 차감액)</li>
+        <li>SP/판매자 정산 명세서 이의 제기</li>
+      </ul>
+      <p><strong style="color:#fff;">대응 절차:</strong></p>
+      <ol>
+        <li>불일치 건 정산 보류</li>
+        <li>Stripe 원본 데이터와 DB 데이터 대조</li>
+        <li>수수료 재계산 및 차액 확인</li>
+        <li>차액 발생 시: 추가 송금 또는 다음 정산에서 조정</li>
+        <li>수수료 계산 로직 검증 및 수정</li>
+      </ol>
+      <p><strong style="color:#fff;">에스컬레이션:</strong> 차액 $100 초과 시 CEO 보고</p>
+    </div>
+
+    <div class="error-card warning">
+      <div class="error-label warning">오류 유형 5</div>
+      <h3 style="margin-top: 0; color: #fff;">환불 실패</h3>
+      <p><strong style="color:#fff;">원인:</strong> 잔액 부족 (플랫폼 Stripe 잔액), 원본 결제 분쟁 중, 환불 기한 초과 (180일)</p>
+      <p><strong style="color:#fff;">감지 방법:</strong></p>
+      <ul>
+        <li>웹훅 이벤트 <code>refund.failed</code> 수신</li>
+        <li>환불 큐에서 <code>failed</code> 상태 모니터링</li>
+        <li>바이어 환불 미수령 신고</li>
+      </ul>
+      <p><strong style="color:#fff;">대응 절차:</strong></p>
+      <ol>
+        <li>실패 원인 확인 (Stripe Dashboard > Refunds)</li>
+        <li>잔액 부족 시: 플랫폼 Stripe 잔액 충전 후 재시도</li>
+        <li>분쟁 중인 경우: 분쟁 해결 후 환불 처리</li>
+        <li>기한 초과 시: 계좌 이체를 통한 수동 환불 처리</li>
+      </ol>
+      <p><strong style="color:#fff;">에스컬레이션:</strong> 48시간 내 미해결 시 CEO 보고</p>
+    </div>
+
+    <h2>3. Stripe 웹훅 재시도 로직</h2>
+    <div class="highlight-box">
+      <p><strong style="color:#fff;">재시도 정책:</strong> 최대 3회, 지수 백오프(Exponential Backoff)</p>
+      <table>
+        <thead>
+          <tr>
+            <th>시도</th>
+            <th>대기 시간</th>
+            <th>실패 시 동작</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1차 재시도</td>
+            <td>1분 후</td>
+            <td>자동 재시도</td>
+          </tr>
+          <tr>
+            <td>2차 재시도</td>
+            <td>5분 후</td>
+            <td>자동 재시도 + 로그 기록</td>
+          </tr>
+          <tr>
+            <td>3차 재시도</td>
+            <td>30분 후</td>
+            <td>자동 재시도 + 알림 발송</td>
+          </tr>
+          <tr>
+            <td>최종 실패</td>
+            <td>-</td>
+            <td style="color:#e74c3c;">수동 처리 큐 등록 + 관리자 알림</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top: 12px;"><strong style="color:#fff;">멱등성 보장:</strong> 모든 웹훅 처리는 <code>idempotency_key</code>를 사용하여 중복 처리를 방지합니다.</p>
+    </div>
+
+    <h2>4. 수동 캡처 절차</h2>
+    <p>자동 캡처 실패 시 어드민 대시보드에서 수동으로 캡처를 진행합니다.</p>
+
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div><strong style="color:#fff;">어드민 로그인</strong><br>어드민 대시보드 > 정산 관리 > 캡처 실패 목록</div>
+    </div>
+    <div class="flow-arrow">&#8595;</div>
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div><strong style="color:#fff;">건별 확인</strong><br>실패 사유 확인, 거래 상태 및 에스크로 단계 검증</div>
+    </div>
+    <div class="flow-arrow">&#8595;</div>
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div><strong style="color:#fff;">수동 캡처 실행</strong><br>"수동 캡처" 버튼 클릭 → 캡처 금액 확인 → 실행</div>
+    </div>
+    <div class="flow-arrow">&#8595;</div>
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div><strong style="color:#fff;">결과 확인</strong><br>Stripe 캡처 성공 확인 → DB 상태 업데이트 확인 → 정산 큐 등록 확인</div>
+    </div>
+
+    <h2>5. 긴급 연락처</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>담당</th>
+          <th>연락처</th>
+          <th>대응 범위</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong style="color:#fff;">Stripe Support</strong></td>
+          <td><code>support.stripe.com</code> (대시보드 내 채팅)</td>
+          <td>API 오류, 결제 실패, 정산 문제</td>
+        </tr>
+        <tr>
+          <td><strong style="color:#fff;">내부 기술팀</strong></td>
+          <td><code>dev@whistle-ai.com</code></td>
+          <td>웹훅 오류, DB 불일치, 로직 버그</td>
+        </tr>
+        <tr>
+          <td><strong style="color:#fff;">CEO</strong></td>
+          <td>텔레그램 @motive_hajun_bot</td>
+          <td>$100 초과 금액 불일치, 이중 정산, 긴급 사안</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>6. 월별 정산 검증 체크리스트</h2>
+    <div class="highlight-box">
+      <p style="color: #a29bfe; font-weight: 700; margin: 0 0 12px;">매월 5일까지 수행 (전월 거래분)</p>
+      <table>
+        <thead>
+          <tr>
+            <th>순서</th>
+            <th>검증 항목</th>
+            <th>확인 방법</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>총 거래 건수 대조</td>
+            <td>DB 거래 테이블 vs Stripe Payments 건수</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>총 캡처 금액 대조</td>
+            <td>DB 캡처 합계 vs Stripe Captured 합계</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>총 정산 금액 대조</td>
+            <td>DB 정산 합계 vs Stripe Transfers 합계</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>수수료 총액 검증</td>
+            <td>거래별 수수료 재계산 vs 실제 차감액</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>환불 건수 및 금액 대조</td>
+            <td>DB 환불 내역 vs Stripe Refunds</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>미처리 건 확인</td>
+            <td>캡처 실패, 정산 보류, 분쟁 진행 중 건 목록</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>SP 정산 명세서 발행 확인</td>
+            <td>전체 SP 대상 명세서 생성 여부</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>이상 거래 패턴 점검</td>
+            <td>비정상 금액, 반복 실패, 이중 처리 여부</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="highlight-box" style="border-color: #e74c3c;">
+      <p style="color: #e74c3c; font-weight: 700; margin: 0 0 8px;">절대 금지 사항</p>
+      <ul>
+        <li>검증 없이 수동 정산 처리 금지</li>
+        <li>오류 건 무시 또는 삭제 금지 — 반드시 원인 분석 후 처리</li>
+        <li>Stripe 대시보드에서 직접 Transfer 생성 금지 (DB 불일치 유발)</li>
+        <li>프로덕션 DB 직접 수정 금지 — 어드민 대시보드 또는 마이그레이션 사용</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

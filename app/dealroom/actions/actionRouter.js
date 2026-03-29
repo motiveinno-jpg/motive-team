@@ -2,6 +2,15 @@
 import { renderPIToPdf } from '../docs/render/pi.js';
 import { renderCIToPdf } from '../docs/render/ci.js';
 import { renderPLToPdf } from '../docs/render/pl.js';
+import { renderCOToPdf } from '../docs/render/co.js';
+import { renderSCToPdf } from '../docs/render/sc.js';
+import { renderBLToPdf } from '../docs/render/bl.js';
+import { renderEDToPdf } from '../docs/render/ed.js';
+import { renderICToPdf } from '../docs/render/ic.js';
+import { renderHCToPdf } from '../docs/render/hc.js';
+import { renderSLIToPdf } from '../docs/render/sli.js';
+import { renderINSToPdf } from '../docs/render/ins.js';
+import { renderLCToPdf } from '../docs/render/lc.js';
 import { openProofUploadModal } from '../ui/modals/proofUploadModal.js';
 
 function showToast(msg, type = 'error') {
@@ -159,7 +168,12 @@ export function attachDealroomActionRouter({ supabase, store, dealId }) {
           if (!docData) throw new Error('문서를 찾을 수 없습니다');
 
           const docType = (docData.doc_type || '').toUpperCase();
-          const renderers = { PI: renderPIToPdf, CI: renderCIToPdf, PL: renderPLToPdf };
+          const renderers = {
+            PI: renderPIToPdf, CI: renderCIToPdf, PL: renderPLToPdf,
+            CO: renderCOToPdf, SC: renderSCToPdf, BL: renderBLToPdf,
+            ED: renderEDToPdf, IC: renderICToPdf, HC: renderHCToPdf,
+            SLI: renderSLIToPdf, INS: renderINSToPdf, LC: renderLCToPdf,
+          };
           const renderer = renderers[docType];
           if (renderer) {
             renderer(docData);

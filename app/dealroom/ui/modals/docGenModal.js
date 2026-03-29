@@ -5,11 +5,20 @@ function escapeHtml(s) {
 }
 
 const DOC_TYPES = [
-  { value: 'PI', label: 'Proforma Invoice (PI)' },
-  { value: 'CI', label: 'Commercial Invoice (CI)' },
-  { value: 'PL', label: 'Packing List (PL)' },
-  { value: 'CO', label: 'Certificate of Origin (CO)' },
-  { value: 'SC', label: 'Sales Contract (SC)' },
+  { value: 'PI', label: 'Proforma Invoice (PI)', cat: 'core' },
+  { value: 'CI', label: 'Commercial Invoice (CI)', cat: 'core' },
+  { value: 'PL', label: 'Packing List (PL)', cat: 'core' },
+  { value: 'CO', label: 'Certificate of Origin (CO)', cat: 'core' },
+  { value: 'SC', label: 'Sales Contract (SC)', cat: 'core' },
+  { value: 'BL', label: 'Bill of Lading (B/L)', cat: 'shipping' },
+  { value: 'ED', label: 'Export Declaration', cat: 'customs' },
+  { value: 'SLI', label: "Shipper's Letter of Instruction (SLI)", cat: 'shipping' },
+  { value: 'ISF', label: 'Importer Security Filing (ISF)', cat: 'customs' },
+  { value: 'AMS', label: 'Automated Manifest System (AMS)', cat: 'customs' },
+  { value: 'INS', label: 'Insurance Certificate', cat: 'logistics' },
+  { value: 'IC', label: 'Inspection Certificate', cat: 'quality' },
+  { value: 'HC', label: 'Health/Phytosanitary Certificate', cat: 'quality' },
+  { value: 'LC', label: 'Letter of Credit Application (L/C)', cat: 'finance' },
 ];
 
 /**
@@ -24,8 +33,11 @@ export function openDocGenModal({ supabase, store, dealId }) {
   overlay.id = 'dr-docgen-modal';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;';
 
-  const optionsHtml = DOC_TYPES.map(t =>
-    `<option value="${t.value}">${escapeHtml(t.label)}</option>`
+  const catLabels = { core: 'Core Documents', shipping: 'Shipping', customs: 'Customs', logistics: 'Logistics', quality: 'Quality', finance: 'Finance' };
+  const groups = {};
+  DOC_TYPES.forEach(t => { if (!groups[t.cat]) groups[t.cat] = []; groups[t.cat].push(t); });
+  const optionsHtml = Object.entries(groups).map(([cat, types]) =>
+    `<optgroup label="${catLabels[cat] || cat}">${types.map(t => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}</optgroup>`
   ).join('');
 
   overlay.innerHTML = `
