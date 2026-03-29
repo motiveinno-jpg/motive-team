@@ -83,8 +83,32 @@
 - 데스크톱: ✅ | 모바일: ✅
 - 다국어: 정상 동작 (localStorage 기반)
 
-## 8. 다음 작업
-- [ ] S6-fix-002 실동작 검증 (잘못된 이메일로 가입 시도 → 에러 메시지 확인)
-- [ ] 바이어 대시보드 기능 랜덤 테스트
+## 8. 2차 QA 결과 (Round 2-3)
+
+### Interest 카테고리 확장 (TASK-005)
+- 바이어 Sign Up Interest 드롭다운: 12개 카테고리 확인 ✅
+  - Beauty/Skincare, Color Cosmetics, Hair Care, Health Supplements, Food & Beverage
+  - Electronics, Industrial Materials, Machinery, Automotive Parts
+  - Textile/Fashion, Packaging, General Products
+- S3-bug-003, S3-bug-007 해결 확인
+
+### 법적 페이지 (6개)
+- /terms, /terms/en, /privacy, /privacy/en, /refund, /refund/en — 전부 200 OK ✅
+
+### 네비게이션 링크 검증
+- 메인 랜딩 CTA: Start Exporting → /app, Find Products → /buyer ✅
+- 한국어 랜딩 footer: 회사정보, 서비스, 플랫폼, 법적고지 모두 정상 ✅
+- 크로스 포탈 링크 규칙 준수 ✅
+
+### 반응형 레이아웃
+- 메인 랜딩 데스크톱/태블릿/모바일: ✅ (태블릿에서 중간 섹션 여백 큼 — P3)
+
+### 신규 버그 (2차)
+- S7-bug-005 (P1): 바이어 Sign Up 제출 → Sign In 탭으로 리다이렉트
+- S7-bug-006 (P2): 잘못된 URL 접속 시 404 없음 (무한 로딩)
+
+## 9. 다음 작업
+- [ ] 바이어 대시보드 내부 기능 테스트 (검색, 상품 목록 등)
+- [ ] 제조사 대시보드 기능 테스트 (로그인 필요 — 테스트 계정 필요)
 - [ ] fixes/ 폴더 추가 수정사항 모니터링
-- [ ] S3 잔여 버그 중 번역 커버리지 관련 재검증
+- [ ] 쿠키 배너 다국어 실동작 재검증
