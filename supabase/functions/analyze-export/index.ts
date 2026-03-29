@@ -272,7 +272,7 @@ function assembleExportJourney(r: any, isKo: boolean, origin: string, originLabe
   };
 }
 
-const CRAWL_TIMEOUT_MS = 5000; // 5s — faster cutoff, most pages load in 2-3s
+const CRAWL_TIMEOUT_MS = 10000; // 10s — Korean/Asian sites need more time
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
 const AI_CALL_TIMEOUT_MS = 65000; // 65s per AI call — cosmetics/complex categories need more time
@@ -481,10 +481,116 @@ async function crawlUrl(url: string): Promise<CrawlResult> {
   } catch (err) {
     const msg = (err as Error).message || "Unknown error";
     if (msg.includes("abort")) {
-      return { url, success: false, error: "Timeout (15s)" };
+      return { url, success: false, error: `Timeout (${CRAWL_TIMEOUT_MS / 1000}s)` };
     }
     return { url, success: false, error: msg };
   }
+}
+
+// Retry crawl with alternate headers (Googlebot UA) for bot-blocked sites
+async function crawlWithRetry(url: string): Promise<CrawlResult> {
+  const first = await crawlUrl(url);
+  if (first.success && first.text && first.text.length > 200) return first;
+
+  // SPA detection: if got HTML but almost no text, try Google cache
+  const isSpaOrBlocked = first.success && (!first.text || first.text.length < 200);
+  const isHttpError = !first.success && first.error?.startsWith("HTTP ");
+
+  if (isSpaOrBlocked || isHttpError) {
+    console.log(`[crawl-retry] ${url}: ${first.error || "SPA/empty"}, trying Google cache...`);
+    try {
+      const cacheUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(url)}&strip=1`;
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch(cacheUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" },
+        signal: ctrl.signal,
+        redirect: "follow",
+      });
+      clearTimeout(tm);
+      if (resp.ok) {
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        if (doc) {
+          const text = doc.body?.textContent?.replace(/\s+/g, " ").trim() || "";
+          if (text.length > 200) {
+            console.log(`[crawl-retry] Google cache success for ${url}: ${text.length} chars`);
+            return { url, success: true, title: doc.querySelector("title")?.textContent?.trim() || first.title || "", text: text.slice(0, MAX_CRAWL_TEXT_LENGTH) };
+          }
+        }
+      }
+    } catch (e) { console.warn(`[crawl-retry] Google cache failed: ${(e as Error).message}`); }
+  }
+
+  // Retry with Googlebot UA for 403/bot-blocked sites
+  if (!first.success && (first.error?.includes("403") || first.error?.includes("429"))) {
+    console.log(`[crawl-retry] ${url}: ${first.error}, retrying with Googlebot UA...`);
+    try {
+      const ctrl = new AbortController();
+      const tm = setTimeout(() => ctrl.abort(), CRAWL_TIMEOUT_MS);
+      const resp = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        signal: ctrl.signal,
+        redirect: "follow",
+      });
+      clearTimeout(tm);
+      if (resp.ok) {
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        if (doc) {
+          const text = doc.body?.textContent?.replace(/\s+/g, " ").trim() || "";
+          if (text.length > 100) {
+            console.log(`[crawl-retry] Googlebot UA success for ${url}: ${text.length} chars`);
+            return { url, success: true, title: doc.querySelector("title")?.textContent?.trim() || "", text: text.slice(0, MAX_CRAWL_TEXT_LENGTH) };
+          }
+        }
+      }
+    } catch (e) { console.warn(`[crawl-retry] Googlebot UA failed: ${(e as Error).message}`); }
+  }
+
+  return first;
+}
+
+// Auto-search for product URLs when user provides no URLs
+async function autoSearchProductUrl(productName: string, brand?: string, origin?: string): Promise<string[]> {
+  const query = `${brand || ""} ${productName} ${origin === "KR" ? "공식" : "official"} site`.trim();
+  const urls: string[] = [];
+  const skipHosts = ["google.", "bing.", "yahoo.", "duckduckgo.", "naver.com/search", "wikipedia.", "youtube.", "facebook.", "instagram.", "twitter."];
+  try {
+    // DuckDuckGo Lite — URLs are in redirect format: //duckduckgo.com/l/?uddg=ENCODED_URL
+    const ctrl = new AbortController();
+    const tm = setTimeout(() => ctrl.abort(), 8000);
+    const resp = await fetch(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": "text/html" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(tm);
+    if (resp.ok) {
+      const html = await resp.text();
+      // Extract real URLs from uddg= parameter in DuckDuckGo redirect links
+      const uddgMatches = html.matchAll(/uddg=([^&"']+)/g);
+      for (const m of uddgMatches) {
+        if (urls.length >= 3) break;
+        try {
+          const decoded = decodeURIComponent(m[1]);
+          if (decoded.startsWith("http") && isSafeUrl(decoded)) {
+            const host = new URL(decoded).hostname.toLowerCase();
+            if (!skipHosts.some(s => host.includes(s)) && !urls.includes(decoded)) {
+              urls.push(decoded);
+            }
+          }
+        } catch {}
+      }
+    }
+    console.log(`[auto-search] query="${query}" → found ${urls.length} URLs: ${urls.join(", ")}`);
+  } catch (e) {
+    console.warn(`[auto-search] failed: ${(e as Error).message}`);
+  }
+  return urls;
 }
 
 async function crawlUrls(urls: string[]): Promise<{
@@ -497,9 +603,9 @@ async function crawlUrls(urls: string[]): Promise<{
     try { new URL(u); return true; } catch { return false; }
   }).slice(0, 3); // Max 3 URLs
 
-  // Phase 1: Crawl main URLs
+  // Phase 1: Crawl main URLs (with retry for SPA/bot-blocked sites)
   const results = await Promise.allSettled(
-    validUrls.map((u) => crawlUrl(u)),
+    validUrls.map((u) => crawlWithRetry(u)),
   );
 
   const crawlResults: CrawlResult[] = results.map((r, i) =>
@@ -774,19 +880,40 @@ serve(async (req: Request) => {
       .map((m: string) => marketNames[m] || m)
       .join(", ");
 
-    // Crawl URLs for product data extraction (skip if only image provided)
-    const hasUrls = urls.filter((u: string) => u && u.trim()).length > 0;
+    // Crawl URLs for product data extraction
+    let inputUrls = urls.filter((u: string) => u && u.trim());
+    let autoSearched = false;
+
+    // Auto-search: if no URLs provided, try finding product pages automatically
+    if (!inputUrls.length && !validatedImageBase64 && product_name) {
+      console.log("[auto-search] No URLs provided, searching for product pages...");
+      const foundUrls = await autoSearchProductUrl(
+        product_name_en || product_name,
+        brand_name,
+        resolvedOrigin,
+      );
+      if (foundUrls.length) {
+        inputUrls = foundUrls;
+        autoSearched = true;
+        console.log(`[auto-search] Found ${foundUrls.length} URLs to crawl`);
+      }
+    }
+
+    const hasUrls = inputUrls.length > 0;
     const { crawledText, crawlResults } = hasUrls
-      ? await crawlUrls(urls)
+      ? await crawlUrls(inputUrls)
       : { crawledText: "", crawlResults: [] as CrawlResult[] };
 
     if (hasUrls) {
       console.log(
         "[crawl] results:",
         crawlResults.map((r) => `${r.url}: ${r.success ? "OK" : r.error}`),
+        autoSearched ? "(auto-searched)" : "",
       );
     } else if (validatedImageBase64) {
       console.log("[vision] No URLs provided, using image-only analysis");
+    } else {
+      console.log("[crawl] No URLs and no image — analysis based on product name/form data only");
     }
 
     // Progressive update: crawl phase complete
