@@ -1,166 +1,144 @@
-# [S5-동남아바이어] QA 진행 보고서
+# [S5-동남아바이어] QA 최종 보고서
 
 ## 페르소나
 - **이름**: Nguyen Thi Mai (여, 28세)
-- **사업**: 1인 온라인 뷰티 셀러, 호치민
-- **IT수준**: 상 (모바일 퍼스트)
+- **사업**: 1인 온라인 뷰티 셀러, 호치민, Shopee+Lazada
+- **IT수준**: 상 (모바일 퍼스트, iPhone 13 Mini)
 - **언어**: 베트남어 모국어, 영어 초급
-- **접속 환경**: iPhone 13 Mini (375x812), Accept-Language: vi-VN
+- **접속**: Accept-Language: vi-VN, 뷰포트 375x812
 
-## 테스트 환경
-- Puppeteer 375x812 뷰포트
-- Accept-Language: vi-VN,vi;q=0.9,en;q=0.5
-- UserAgent: iPhone Safari
-- 계정: test-buyer-us@whistle-qa.com (US buyer, country=US 대용)
+## 테스트 계정
+- `test-buyer-jp@whistle-qa.com` (country=VN으로 변경, pw: VnTest2026!@)
+- bcrypt cost factor 6 필수 (GoTrue 호환)
 
 ---
 
-## Phase 1: 모바일 첫 경험 ✅
-
-### 1-1. 뷰포트 375x812 설정 ✅
-- 모바일 레이아웃 정상 작동
-- 사이드바 숨김 → 하단 네비게이션 표시
-- 햄버거 메뉴 존재
-
-### 1-2. 로그인/가입 로딩 ✅
-- 로딩 시간: 827ms (양호)
-- JS 에러 없음 (초기 로드 시)
-
-### 1-3. 가입 폼 ❌
-- **429 rate limit** 에러 발생 → 가입 차단
-- 에러 메시지 "email rate limit exceeded" — 초급자 이해 불가
-- 에러 시 폼 데이터 전체 리셋 → 재입력 필요
-
-### 1-4. 키보드 UI 테스트 ⏳
-- Puppeteer 한계로 키보드 올라올 때 테스트 불가
-
-### 1-5. 터치 타겟 ❌ (S5-bug-002)
-- **체크박스 13x13px** (44px 기준 30px 미달)
-- 대부분의 버튼 42px (2px 미달)
-- Forgot password 링크 15px (29px 미달)
-
-### 1-6. 베트남어(vi) UI 전환 ❌ (S5-bug-001)
-- **자동 감지 없음** — Accept-Language 무시
-- navigator.language 미사용
-- 수동 변경은 Profile > Language에서 가능
-
-### 1-7. 베트남어 번역 품질 ✅
-- 번역 사전 480+ 항목 확인
-- 13개 언어 지원 (vi 포함)
-- 번역 품질: 전문적, 자연스러움
+## 전체 버그 현황: **P1: 3건 | P2: 8건 | P3: 4건 | 시각적: 3건 = 총 18건**
 
 ---
 
-## Phase 2: 모바일 제품 탐색 ✅
+## Phase 1: 모바일 첫 경험
 
-### 2-1. 카드 레이아웃 ✅
-- 모바일에서 단일 컬럼, 정상 작동
+### ✅ 작동하는 것
+- 모바일 레이아웃 (사이드바 숨김, 하단 네비 표시)
+- 페이지 로딩: 827ms (양호)
+- 베트남어 번역: 480+ 항목, 품질 우수
+- 온보딩 4단계 플로우 베트남어로 작동
+- 하단 네비 베트남어: Trang chủ, Tìm kiếm, Giao dịch, Trò chuyện, Hồ sơ
 
-### 2-2. 스크롤 ✅
-- page-content 내 스크롤 정상
-
-### 2-3. 이미지 로딩 ✅
-- 제품 이미지 표시 정상
-
-### 2-4. 검색 UX ⚠️ (S5-bug-009)
-- 검색 바 잘 보임
-- 필터가 8줄 차지 → 제품 카드가 스크롤 없이 안 보임
-
-### 2-5. 필터 ⚠️
-- 필터 기능 작동 (카테고리, MOQ, 가격, 통화)
-- VND 통화 선택 가능 ✅
-- MOQ < 100 필터 가능 ✅
-- **기본 필터 열림 → 모바일에서 빽빽함**
+### ❌ 안 되는 것
+- **S5-bug-001 [P1]**: Accept-Language 무시 — navigator.language 미사용, `return 'en'` 하드코딩
+- **S5-bug-002 [P2]**: 터치 타겟 44px 미달 — 체크박스 13px, 링크 15px, 버튼 42px
+- **S5-bug-003 [P1]**: 가입 429 에러 메시지 "email rate limit exceeded" + 폼 리셋
+- **S5-bug-005 [P2]**: 로그인 페이지에 언어 선택 UI 없음
+- **S5-bug-011 [P1]**: `<html lang="ko">` 하드코딩
 
 ---
 
-## Phase 3: 소량 주문자 관점
+## Phase 2: 베트남어 UI 품질
 
-### 3-1. MOQ 100개 이하 필터 ✅
-- "MOQ < 100" 옵션 존재
-- 단, Beauty & Cosmetics + MOQ<100 조합 시 "No products found"
+### ✅ 잘 번역된 영역
+- 로그인/가입: Đăng nhập, Mật khẩu, Đăng ký ✅
+- 검색 필터: Tất cả danh mục, Giá tối thiểu/đa, MOQ, Liên quan nhất ✅
+- 프로필: Hồ sơ, Xác minh, Thông tin hồ sơ ✅
+- 채팅: Cuộc trò chuyện, Gửi yêu cầu ✅
+- 비용 시뮬레이터: Ước tính tổng chi phí, Phí vận chuyển, Thuế quan ✅
+- 에러 메시지: "Email hoặc mật khẩu không hợp lệ." ✅
+- 온보딩 Step 1,3: 완전 베트남어 ✅
 
-### 3-2. 샘플 주문 ❌ (S5-bug-010)
-- 전용 "Request Sample" 버튼 없음
-- Samples 메뉴는 사이드바에만 존재
+### ❌ 번역 누락
+- **S5-bug-012 [P2]**: 온보딩 Step 2 카테고리명 전부 영어 (Beauty, Food, Electronics...)
+- **S5-bug-013 [P3]**: 온보딩 Step 4 "You're all set!" 영어
+- **S5-bug-014 [P2]**: 거래 탭 "Active Deals"/"Inquiries" 영어 + 버튼 텍스트 잘림
+- **S5-bug-015 [P3]**: 대시보드 "Sourcing Guide" 영어
+- **S5-bug-006 [P3]**: 쿠키 배너 언어 불일치 (영어 고정)
+- 온보딩 공통: "Let's set up your buyer profile in a few quick steps" 영어
 
-### 3-3. 소액 거래 에스크로 수수료 ⏳
-- 결제 플로우 미테스트 (Stripe 라이브 모드)
+---
 
-### 3-4. VND 통화 표시 ✅
-- ₫223,102, ₫393,709 정상 표시
-- 현재 가격대에서 레이아웃 깨짐 없음
-- 큰 금액 (₫851,900,000 등) 미테스트
+## Phase 3: VND 통화 표시
 
-### 3-5. VND 소수점 ⏳
-- 별도 검증 필요 (가격 변환 시 소수점 제거 확인)
+### ✅ 작동하는 것
+- 검색 필터에서 VND 선택 가능 (20개 통화 중)
+- 제품 카드: ₫223,102, ₫393,709 정상 표시
+- 제품 상세: FOB 가격 VND + 원래 USD 함께 표시 (좋은 UX)
+- 비용 시뮬레이터: ₫111,550,767, ₫136,813,735 등 큰 숫자 레이아웃 OK
+
+### ❌ 안 되는 것
+- **S5-bug-004 [P2]**: 대시보드 통화 VND 미표시 — USD 고정 ($33,500.00)
+- VND 천 단위 구분자가 콤마(₫223,102) — 베트남 관행은 마침표(223.102)
+- preferred_currency=VND 설정해도 검색에서 매번 수동 선택 필요
 
 ---
 
 ## Phase 4: 영어 초급자 관점
 
-### 4-1. 무역 용어 설명 ❌ (S5-bug-007)
-- FOB, CIF, MOQ, HS Code 등 설명 툴팁 0개
-- 번역은 있지만 "이게 뭔지" 설명이 없음
-
-### 4-2. 에러 메시지 이해도 ❌
-- "email rate limit exceeded" — 기술 영어
-- "Database error querying schema" — 내부 에러 노출
-
-### 4-3. 핵심 플로우 영어 초급 ⚠️
-- 기본 네비게이션은 이해 가능
-- 무역 전문 용어에서 장벽
+- **S5-bug-007 [P2]**: 무역 용어(FOB, CIF, MOQ, HS Code) 설명 툴팁 0개
+- **S5-bug-010 [P2]**: 샘플 주문 프로세스 불명확 (Request Sample 버튼 없음)
 
 ---
 
-## Phase 5: 모바일 채팅
+## Phase 5: 시각적 UX (TASK-003)
 
-### 5-1. 채팅 UI ✅
-- 빈 상태: "No messages yet" 메시지 정상
-- "View My Inquiries" CTA 제공
-
-### 5-2~5-4 ⏳
-- 대화 없어서 미테스트
+- **S5-visual-001 [P3]**: 대시보드 통계 카드 빽빽함
+- **S5-visual-002 [P2]**: 검색 필터 모바일 화면 절반 이상 차지 → 제품 0개 보임
+- **S5-visual-003 [P2]**: 쿠키 배너가 하단 네비 + 온보딩 Next 버튼 가림
 
 ---
 
-## Phase 6: 모바일 결제 ⏳
-- Stripe 라이브 모드 → 실결제 테스트 스킵
+## Phase 7: 성능 (간략)
+
+| 지표 | 값 | 판정 |
+|------|-----|------|
+| TTFB | 362ms | ✅ |
+| DOM Ready | 827ms | ✅ |
+| 리소스 수 | 24개 | ✅ |
+| 406 에러 | 4건 | ⚠️ (Supabase RLS 관련 추정) |
 
 ---
 
-## Phase 7: 네트워크 성능 ✅
-- TTFB: 362ms
-- DOM Ready: 827ms
-- 리소스: 24개
-- 모바일 환경에서 양호
+## TASK-001: 지역/언어 자동 감지 결과
+
+| 체크항목 | 결과 |
+|---------|------|
+| Accept-Language: vi-VN → 베트남어 자동? | ❌ 무시됨 |
+| navigator.language 감지? | ❌ 코드에 없음 |
+| IP geolocation 감지? | ❌ 없음 |
+| 베트남어 미지원 시 영어 fallback? | N/A (vi 지원함) |
+| 통화 VND 자동 전환? | ❌ 수동 선택 필요 |
+| 언어 설정 저장? | ✅ localStorage |
+| 새로고침 유지? | ✅ |
+| URL 구조 (/vi, ?lang=vi)? | ?lang=vi 지원 (코드에 있음) |
+
+**결론: 자동 감지 메커니즘 0% — P0 수준**
 
 ---
 
-## 추가 발견
+## 코드 분석 발견사항
 
-### 언어/지역 자동 감지 (TASK-001)
-- **Accept-Language 헤더 완전 무시** (P1)
-- navigator.language 미사용
-- html lang="ko" 하드코딩 (P1, S5-bug-011)
-- 로그인 전 언어 변경 UI 없음 (S5-bug-005)
-- 쿠키 배너 언어 불일치 (S5-bug-006)
+### 언어 강제 오버라이드 (buyer-app.html:2570-2572)
+```javascript
+_isKorean = (_authCountry==='KR');
+if(!_isKorean && _userLang==='ko') { _userLang='en'; }
+else if(_isKorean && _userLang!=='ko') { _userLang='ko'; }
+```
+→ KR 사용자는 언어 변경 불가 (무조건 ko 강제). P2 버그.
 
-### 시각적 UX (TASK-003)
-- 대시보드 통계 카드 빽빽함 (S5-visual-001)
-- 검색 필터 8줄 차지 (S5-bug-009)
-- 하단 네비 Home ≠ Dashboard 명칭 혼란 (S5-bug-008)
+### Supabase bcrypt 호환성
+- GoTrue는 `$2a$06$` 사용
+- PostgreSQL `gen_salt('bf', 10)`은 `$2a$10$` 생성 → **로그인 실패**
+- `gen_salt('bf', 6)`으로 해야 GoTrue와 호환
 
 ---
 
-## 버그 요약
+## 전체 버그 목록
 
 | # | 파일 | 심각도 | 제목 |
 |---|------|-------|------|
 | 001 | S5-bug-001.md | **P1** | 언어 자동 감지 없음 — Accept-Language 무시 |
 | 002 | S5-bug-002.md | P2 | 터치 타겟 44px 미달 (체크박스 13px) |
 | 003 | S5-bug-003.md | **P1** | 가입 429 에러 메시지 불친절 + 폼 리셋 |
-| 004 | S5-bug-004.md | P2 | 통화 VND 미표시 — 대시보드 USD 고정 |
+| 004 | S5-bug-004.md | P2 | 대시보드 통화 VND 미표시 — USD 고정 |
 | 005 | S5-bug-005.md | P2 | 로그인 페이지에 언어 선택 UI 없음 |
 | 006 | S5-bug-006.md | P3 | 쿠키 배너 언어 불일치 |
 | 007 | S5-bug-007.md | P2 | 무역 용어 설명 툴팁 없음 |
@@ -168,22 +146,23 @@
 | 009 | S5-bug-009.md | P3 | 검색 필터 모바일 8줄 — 제품 밀림 |
 | 010 | S5-bug-010.md | P2 | 샘플 주문 기능 불명확 |
 | 011 | S5-bug-011.md | **P1** | html lang="ko" 하드코딩 |
+| 012 | S5-bug-012.md | P2 | 온보딩 Step 2 카테고리명 영어 잔류 |
+| 013 | S5-bug-013.md | P3 | 온보딩 Step 4 "You're all set!" 영어 |
+| 014 | S5-bug-014.md | P2 | 거래 탭명 영어 + 버튼 텍스트 잘림 |
+| 015 | S5-bug-015.md | P3 | 대시보드 "Sourcing Guide" 영어 |
 | V001 | S5-visual-001.md | P3 | 대시보드 통계 카드 빽빽함 |
+| V002 | S5-visual-002.md | P2 | 검색 필터 모바일 화면 절반 차지 |
+| V003 | S5-visual-003.md | P2 | 쿠키 배너 하단 네비+버튼 가림 |
 
-**P1: 3건 | P2: 5건 | P3: 4건 | 총: 12건**
+**P1: 3건 | P2: 8건 | P3: 4건 | 시각적: 3건 = 총 18건**
 
 ---
 
-## 미완료 항목
-- [ ] VND 큰 숫자 레이아웃 (₫851M 등)
-- [ ] 키보드 올라올 때 UI 가려짐
-- [ ] Stripe 결제 모바일 최적화
-- [ ] 3G 네트워크 throttling 테스트
-- [ ] 오프라인→온라인 전환
-- [ ] Phase 8: 태국/인도네시아 페르소나 반복
-- [ ] 데스크톱 각 페이지 시각적 UX 상세 검토
+## 미완료 / 다음 세션
 
-## 다음 세션에 필요한 것
-1. Rate limit 해제 후 실제 VN 바이어 계정 가입 테스트
-2. 베트남어 UI 전체 스크린샷 (언어 변경 후)
-3. 태국(th)/인도네시아(id) 페르소나 반복
+- [ ] Phase 8: 태국(th), 인도네시아(id) 페르소나 반복
+- [ ] 3G 네트워크 throttling 테스트
+- [ ] VND 천 단위 구분자 관행 (콤마→마침표)
+- [ ] Stripe 결제 모바일 최적화
+- [ ] KR 사용자 언어 강제 오버라이드 문제 상세 분석
+- [ ] 가로 모드(landscape) 레이아웃 테스트
