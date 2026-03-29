@@ -1,23 +1,38 @@
 # S6-개발 진행 보고서
 
-## 2026-03-29 세션 시작
+## 2026-03-29 세션
 
-### 완료된 수정 (6/6 버그)
+### 커밋 1: 6건 버그 수정 (912d194)
+| 버그ID | 심각도 | 설명 | Fix |
+|--------|--------|------|-----|
+| S2-bug-001 | P2 | "select_ellipsis" 코드명 노출 | S6-fix-001 |
+| S2-bug-002 | P3 | "country" 소문자 라벨 | S6-fix-001 |
+| S1-bug-001 | P1 | 회원가입 에러 미표시 | S6-fix-002 |
+| S1-bug-002 | P2 | button type="submit" | S6-fix-003 |
+| S1-bug-003 | P3 | input name 없음 | S6-fix-003 |
+| S2-bug-003 | P1 | 다국어 선택기 없음 | S6-fix-004 |
 
-| 버그ID | 심각도 | 설명 | 수정 | 파일 |
-|--------|--------|------|------|------|
-| S2-bug-001 | P2 | "select_ellipsis" 코드명 노출 | S6-fix-001 | whistle-app.html |
-| S2-bug-002 | P3 | "country" 소문자 라벨 | S6-fix-001 | whistle-app.html |
-| S1-bug-001 | P1 | 회원가입 에러 메시지 미표시 | S6-fix-002 | whistle-landing.html |
-| S1-bug-002 | P2 | 모든 button type="submit" | S6-fix-003 | whistle-landing.html |
-| S1-bug-003 | P3 | input name 속성 없음 | S6-fix-003 | whistle-landing.html |
-| S2-bug-003 | P1 | 다국어 선택기 없음 | S6-fix-004 | whistle-app.html |
+### 커밋 2: i18n + 폼캐시 + 어드민링크 (ad31f91)
+| 버그ID | 심각도 | 설명 | Fix |
+|--------|--------|------|-----|
+| S1-bug-004 | P2 | 에러 메시지 영어 | S6-fix-005 |
+| S1-bug-005 | P2 | 에러 후 폼 초기화 | S6-fix-005 |
+| S1-bug-006 | P2 | 어드민 링크 잘못됨 | S6-fix-005 |
+| S2-bug-005 | P2 | 쿠키 배너 미번역 | S6-fix-005 |
+| S2-bug-007 | P1 | Contact Name 미번역 | S6-fix-005 |
 
-### 수정 요약
-- **P1 2건**: 회원가입 에러 → 인라인 표시, 다국어 선택기 → 13개 언어
-- **P2 2건**: i18n 키 누락 수정, button type 수정
-- **P3 2건**: input name 추가, 라벨 대소문자 수정
+### 커밋 3: 바이어 버그 (6cdd127)
+| 버그ID | 심각도 | 설명 | Fix |
+|--------|--------|------|-----|
+| S4-bug-003 | P2 | "theTerms" 공백 | S6-fix-006 |
+| S3-bug-007 | P1 | Interest 카테고리 없음 | S6-fix-006 |
 
-### 대기 중
-- 새 버그 모니터링 중
-- intel/ 폴더 확인 예정
+### 총계: 13건 수정, 3회 커밋
+
+### 미처리 (다음 우선순위)
+- S2-bug-004/010: 로그인 후 /app/buyer 리다이렉트 (재현 필요)
+- S2-bug-008/S3-bug-008: 언어 자동 감지 (navigator.language는 동작, Accept-Language는 서버사이드)
+- S8-bug-010: ARIA 전면 추가 (대공사)
+- S3-bug-009: 독일어 법률 페이지 (콘텐츠 작성 필요)
+- CEO TASK-001: 지역 언어 감지 테스트
+- CEO TASK-003: 비주얼 UX 스크린샷
