@@ -753,8 +753,10 @@ serve(async (req: Request) => {
   }
 
   const headers = { ...corsHeaders, "Content-Type": "application/json" };
+  let body: any = {};
 
   try {
+    body = await req.json().catch(() => ({}));
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -782,6 +784,74 @@ serve(async (req: Request) => {
     const sb = createClient(sbUrl, sbAnon, {
       global: { headers: { Authorization: authHeader } },
     });
+
+    // ─── REPROCESS MODE: Add journey + trade data to existing analyses (no AI calls) ───
+    if (body.reprocess === true) {
+      const lang = body.language || body.lang || "en";
+      const isKo = lang === "ko";
+      const isEn = !isKo;
+
+      // Batch mode: reprocess multiple analyses at once
+      const { data: toReprocess } = await sbAdmin
+        .from("analyses")
+        .select("id, user_id, product_name, ai_result")
+        .eq("status", "completed")
+        .is("ai_result->export_journey", null)
+        .limit(body.limit || 50);
+
+      if (!toReprocess?.length) {
+        return new Response(JSON.stringify({ ok: true, reprocessed: 0, message: "No analyses need reprocessing" }), { headers });
+      }
+
+      let reprocessed = 0;
+      const errors: string[] = [];
+
+      for (const analysis of toReprocess) {
+        try {
+          const r = analysis.ai_result;
+          if (!r || !r.overall_score) continue;
+
+          // Detect origin from existing data
+          const origin = r._origin || "KR";
+          const ORIGIN_NAMES_REPROCESS: Record<string, { ko: string; en: string }> = {
+            KR: { ko: "한국", en: "South Korea" }, US: { ko: "미국", en: "United States" },
+            JP: { ko: "일본", en: "Japan" }, CN: { ko: "중국", en: "China" },
+            DE: { ko: "독일", en: "Germany" }, VN: { ko: "베트남", en: "Vietnam" },
+            TH: { ko: "태국", en: "Thailand" },
+          };
+          const originLabel = ORIGIN_NAMES_REPROCESS[origin]?.[isKo ? "ko" : "en"] || origin;
+
+          // Assemble journey from existing data
+          r.export_journey = assembleExportJourney(r, isKo, origin, originLabel);
+
+          // Try to fetch trade data if HS code exists
+          const hsCode = (r.hs_code || "").replace(/\./g, "").substring(0, 4);
+          if (hsCode && hsCode.length >= 4) {
+            const targets = r.recommended_markets || r.target_markets || ["US"];
+            try {
+              const trade = await fetchTradeData(hsCode, origin, targets);
+              if (trade.dataPoints.length > 0) {
+                r._trade_data = { source: "UN Comtrade", hs_code: hsCode, data_points: trade.dataPoints };
+              }
+            } catch {}
+          }
+
+          await sbAdmin
+            .from("analyses")
+            .update({ ai_result: r })
+            .eq("id", analysis.id);
+
+          reprocessed++;
+        } catch (err) {
+          errors.push(`${analysis.id}: ${(err as Error).message}`);
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true, reprocessed, total: toReprocess.length, errors: errors.length ? errors : undefined }),
+        { headers },
+      );
+    }
 
     // ─── Plan enforcement: check user's plan and usage limits ───
     const PLAN_LIMITS: Record<string, number> = {
@@ -855,7 +925,7 @@ serve(async (req: Request) => {
       );
     }
 
-    const body = await req.json();
+    // body already parsed above (reprocess mode check)
     const {
       analysis_id,
       product_name,
@@ -1861,7 +1931,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
     console.error("analyze-export error:", errMsg, err);
 
     // Refund credit + mark analysis as failed on unhandled errors
-    const body = await req.clone().json().catch(() => ({}));
+    // body was parsed at the top of the handler
     const failAnalysisId = body?.analysis_id;
     if (failAnalysisId) {
       const sbUrl = Deno.env.get("SUPABASE_URL")!;
