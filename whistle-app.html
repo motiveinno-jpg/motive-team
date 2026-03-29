@@ -6812,6 +6812,20 @@ function pgAReport(){
       h+='</div>';
       if(ma.notes)h+='<p style="font-size:12px;color:var(--w60);line-height:1.6">'+UI.esc(ma.notes)+'</p>';
     }else{h+='<p style="font-size:13px;color:var(--w70);line-height:1.8">'+UI.esc(ma)+'</p>';}
+    // UN Comtrade trade data badge
+    var _td=r._trade_data;
+    if(_td&&_td.data_points&&_td.data_points.length){
+      h+='<div style="margin-top:10px;padding:8px 12px;background:rgba(59,130,246,.04);border-radius:8px;border-left:3px solid #3b82f6">';
+      h+='<div style="font-size:10px;font-weight:600;color:#3b82f6;margin-bottom:3px">📊 '+(_isKorean?'실무역 데이터 (UN Comtrade '+(_td.hs_code?'HS '+_td.hs_code:'')+')':'Real Trade Data (UN Comtrade '+(_td.hs_code?'HS '+_td.hs_code:'')+')')+'</div>';
+      _td.data_points.forEach(function(dp){
+        if(dp.flow==='import'){
+          h+='<div style="font-size:11px;color:var(--w50)">'+dp.reporter+' '+(_isKorean?'총 수입':'total imports')+': <strong style="color:var(--w70)">$'+(dp.valueUsd||0).toLocaleString()+'</strong> <span style="color:var(--w30)">('+dp.year+')</span></div>';
+        }else if(dp.valueUsd>0){
+          h+='<div style="font-size:11px;color:var(--w50)">'+dp.reporter+' → '+dp.partner+': <strong style="color:var(--w70)">$'+(dp.valueUsd||0).toLocaleString()+'</strong> <span style="color:var(--w30)">('+dp.year+')</span></div>';
+        }
+      });
+      h+='</div>';
+    }
     h+='</div></div>';
   }
 
@@ -6850,12 +6864,42 @@ function pgAReport(){
   // === COMTRADE LIVE DATA ===
   if(r.hs_code){
     var _ctHs=String(r.hs_code).replace(/[^0-9]/g,'').slice(0,6);
+    var _tdPre=r._trade_data;
     if(_ctHs.length>=4){
-      h+='<div class="card" style="margin-bottom:10px"><div class="card-h">📊 '+(T('un_comtrade_live_trade_data'))+'</div><div class="card-b">';
+      h+='<div class="card" style="margin-bottom:10px"><div class="card-h">📊 '+(T('un_comtrade_live_trade_data'));
+      if(_tdPre&&_tdPre.data_points&&_tdPre.data_points.length)h+=' <span style="font-size:10px;color:var(--ok);font-weight:400">✓ '+(_isKorean?'분석 시 자동 조회됨':'Auto-fetched during analysis')+'</span>';
+      h+='</div><div class="card-b">';
+      // Pre-fetched data from EF
+      if(_tdPre&&_tdPre.data_points&&_tdPre.data_points.length){
+        var _expPts=_tdPre.data_points.filter(function(d){return d.flow==='export';});
+        var _impPts=_tdPre.data_points.filter(function(d){return d.flow==='import';});
+        // Country comparison table
+        if(_impPts.length||_expPts.length){
+          h+='<table style="width:100%;font-size:12px;margin-bottom:8px"><thead><tr style="background:var(--w04)"><th style="padding:8px;text-align:left">'+(_isKorean?'시장':'Market')+'</th><th style="padding:8px;text-align:right">'+(_isKorean?'총 수입 규모':'Total Import Volume')+'</th>';
+          if(_expPts.length)h+='<th style="padding:8px;text-align:right">'+(_isKorean?'우리나라 수출':'Our Exports')+'</th><th style="padding:8px;text-align:right">'+(_isKorean?'시장 점유율':'Market Share')+'</th>';
+          h+='</tr></thead><tbody>';
+          _impPts.forEach(function(imp){
+            var matchExp=_expPts.find(function(e){return e.partner===imp.reporter&&e.year===imp.year;});
+            var share=matchExp&&imp.valueUsd>0?(matchExp.valueUsd/imp.valueUsd*100).toFixed(2)+'%':'—';
+            h+='<tr><td style="padding:6px 8px;font-weight:600">'+imp.reporter+'</td>';
+            h+='<td style="padding:6px 8px;text-align:right;font-family:JetBrains Mono;color:var(--pri)">$'+(imp.valueUsd||0).toLocaleString()+'</td>';
+            if(_expPts.length){
+              h+='<td style="padding:6px 8px;text-align:right;font-family:JetBrains Mono;color:var(--ok)">'+(matchExp?'$'+matchExp.valueUsd.toLocaleString():'—')+'</td>';
+              h+='<td style="padding:6px 8px;text-align:right;font-family:JetBrains Mono;color:var(--acc)">'+share+'</td>';
+            }
+            h+='</tr>';
+          });
+          h+='</tbody></table>';
+          h+='<div style="font-size:10px;color:var(--w30)">'+(_isKorean?'출처: UN Comtrade (HS '+_tdPre.hs_code+', 2022-2023)':'Source: UN Comtrade (HS '+_tdPre.hs_code+', 2022-2023)')+'</div>';
+        }
+      }
       h+='<div id="comtrade-result-'+a.id+'" style="display:none"></div>';
-      h+='<div id="comtrade-trigger-'+a.id+'">';
-      h+='<p style="font-size:12px;color:var(--w50);margin-bottom:12px;line-height:1.6">'+TF('comtrade_desc',{hs:_ctHs})+'</p>';
-      h+='<button class="btn btn-pri btn-sm" onclick="App.fetchComtradeData(\''+a.id+'\',\''+_ctHs+'\')" style="font-size:12px;padding:8px 20px">'+(T('fetch_live_data'))+'</button>';
+      // Manual fetch button as supplement
+      h+='<div id="comtrade-trigger-'+a.id+'" style="margin-top:8px">';
+      if(!_tdPre||!_tdPre.data_points||!_tdPre.data_points.length){
+        h+='<p style="font-size:12px;color:var(--w50);margin-bottom:12px;line-height:1.6">'+TF('comtrade_desc',{hs:_ctHs})+'</p>';
+      }
+      h+='<button class="btn btn-sm" onclick="App.fetchComtradeData(\''+a.id+'\',\''+_ctHs+'\')" style="font-size:11px;padding:5px 14px;background:var(--w04);color:var(--w50)">'+(_isKorean?'상세 무역 데이터 조회':'Fetch detailed trade data')+'</button>';
       h+='</div>';
       h+='</div></div>';
     }
@@ -7267,9 +7311,54 @@ function downloadReportPDF(){
   var fta=r.fta_tariff_table;
   if(fta&&fta.length){h+='<div class="section"><div class="section-title">'+(T('tariff_fta_analysis'))+'</div><table><thead><tr><th>'+(T('market'))+'</th><th>FTA</th><th>'+(T('mfn_tariff'))+'</th><th>'+(T('pref_tariff'))+'</th><th>'+(T('savings'))+'</th><th>'+(T('est_logistics_cost'))+'</th></tr></thead><tbody>';fta.forEach(function(row){h+='<tr><td style="font-weight:700">'+_safe(_cf(row.mkt))+'</td><td>'+_safe(row.fta||'-')+'</td><td style="color:#ef4444">'+_safe(row.mfn||'-')+'</td><td style="color:#22c55e;font-weight:700">'+_safe(row.pref||'-')+'</td><td style="color:#a855f7">'+_safe(row.save||'-')+'</td><td>'+_safe(row.est_logistics||'-')+'</td></tr>';});h+='</tbody></table></div>';}
 
-  // Margin analysis
+  // Margin analysis — Enhanced Cost Chain View
   var margin=r.margin_analysis;
-  if(margin&&typeof margin==='object'){h+='<div class="section"><div class="section-title">'+T('margin_analysis')+'</div><div class="grid3">';[{l:T('fob_cost_label'),v:margin.fob_cost},{l:'Landed Cost',v:margin.landed_cost},{l:T('retail_price'),v:margin.retail_price},{l:T('gross_margin_label'),v:margin.gross_margin}].forEach(function(item){if(item.v)h+='<div class="card"><div class="card-title">'+item.l+'</div><div class="card-value">'+_safe(item.v)+'</div></div>';});h+='</div></div>';}
+  if(margin&&typeof margin==='object'){
+    h+='<div class="section"><div class="section-title">'+T('margin_analysis')+'</div>';
+    // Cost chain flow: FOB → Landed → Wholesale → Retail
+    var chain=[
+      {l:'FOB',v:margin.fob_cost,icon:'🏭',color:'#3b82f6'},
+      {l:(_isKorean?'도착원가':'Landed'),v:margin.landed_cost,icon:'🚢',color:'#f59e0b'},
+      {l:(_isKorean?'도매가':'Wholesale'),v:margin.wholesale_price,icon:'🏪',color:'#8b5cf6'},
+      {l:(_isKorean?'소매가':'Retail'),v:margin.retail_price,icon:'🛒',color:'#22c55e'}
+    ].filter(function(c){return c.v;});
+    if(chain.length>=2){
+      h+='<div style="display:flex;align-items:center;gap:0;overflow-x:auto;padding:16px 0">';
+      chain.forEach(function(c,i){
+        var numVal=parseFloat((c.v||'').replace(/[^0-9.]/g,''));
+        var barH=Math.max(30,Math.min(120,numVal?numVal/chain[chain.length-1].v*120:60));
+        h+='<div style="flex:1;text-align:center;min-width:80px">';
+        h+='<div style="font-size:24px;margin-bottom:4px">'+c.icon+'</div>';
+        h+='<div style="background:'+c.color+';color:#fff;border-radius:8px;padding:12px 8px;margin:0 4px">';
+        h+='<div style="font-size:11px;opacity:0.9">'+c.l+'</div>';
+        h+='<div style="font-size:16px;font-weight:700;margin-top:2px">'+_safe(c.v)+'</div>';
+        h+='</div></div>';
+        if(i<chain.length-1)h+='<div style="color:var(--w30);font-size:20px;flex-shrink:0">→</div>';
+      });
+      h+='</div>';
+    }else{
+      h+='<div class="grid3">';chain.forEach(function(c){h+='<div class="card"><div class="card-title">'+c.l+'</div><div class="card-value">'+_safe(c.v)+'</div></div>';});h+='</div>';
+    }
+    // Gross margin badge
+    if(margin.gross_margin){
+      h+='<div style="text-align:center;margin-top:8px"><span style="display:inline-block;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600">'+(_isKorean?'매출총이익률':'Gross Margin')+': '+_safe(margin.gross_margin)+'</span></div>';
+    }
+    // Trade data badge (if UN Comtrade data available)
+    var td=r._trade_data;
+    if(td&&td.data_points&&td.data_points.length){
+      h+='<div style="margin-top:12px;padding:10px 14px;background:var(--w04);border-radius:8px;border-left:3px solid #3b82f6">';
+      h+='<div style="font-size:11px;font-weight:600;color:#3b82f6;margin-bottom:4px">📊 '+(_isKorean?'실무역 데이터 (UN Comtrade)':'Real Trade Data (UN Comtrade)')+'</div>';
+      td.data_points.forEach(function(dp){
+        if(dp.flow==='import'){
+          h+='<div style="font-size:12px;color:var(--w60)">'+dp.reporter+' '+(_isKorean?'총 수입':'total imports')+': <strong>$'+(dp.valueUsd||0).toLocaleString()+'</strong> ('+dp.year+')</div>';
+        }else{
+          h+='<div style="font-size:12px;color:var(--w60)">'+dp.reporter+' → '+dp.partner+': <strong>$'+(dp.valueUsd||0).toLocaleString()+'</strong> ('+dp.year+')</div>';
+        }
+      });
+      h+='</div>';
+    }
+    h+='</div>';
+  }
 
   // Competitor + SWOT
   var comp=r.competitor_analysis;

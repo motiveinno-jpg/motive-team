@@ -628,6 +628,125 @@ async function crawlUrls(urls: string[]): Promise<{
   return { crawledText: crawledText.slice(0, 18000), crawlResults };
 }
 
+// ─── UN Comtrade Real Trade Data Integration ───
+// ISO2 → UN M49 numeric country codes for Comtrade API
+const ISO2_TO_M49: Record<string, number> = {
+  KR: 410, US: 842, JP: 392, CN: 156, DE: 276, FR: 250, GB: 826,
+  VN: 704, TH: 764, IN: 356, TW: 158, IT: 380, AU: 36, CA: 124,
+  BR: 76, MX: 484, ID: 360, MY: 458, SG: 702, PH: 608,
+  AE: 784, SA: 682, NL: 528, ES: 724, SE: 752, PL: 616,
+  TR: 792, RU: 643, EG: 818, ZA: 710, NG: 566, CL: 152,
+  CO: 170, PE: 604, AR: 32, NZ: 554, HK: 344, BD: 50,
+};
+// Resolve region codes to representative M49
+const REGION_TO_M49: Record<string, number> = {
+  EU: 276, SEA: 704, ME: 784, LATAM: 76,
+};
+
+interface TradeDataPoint {
+  reporter: string;
+  partner: string;
+  hsCode: string;
+  year: number;
+  valueUsd: number;
+  weightKg: number;
+  flow: string;
+}
+
+async function fetchTradeData(
+  hsCode: string,
+  originCountry: string,
+  targetMarkets: string[],
+): Promise<{ tradeCtx: string; dataPoints: TradeDataPoint[] }> {
+  const dataPoints: TradeDataPoint[] = [];
+  const hs4 = hsCode.replace(/\./g, "").substring(0, 4);
+  if (!hs4 || hs4.length < 4) return { tradeCtx: "", dataPoints };
+
+  const originM49 = ISO2_TO_M49[originCountry];
+  if (!originM49) return { tradeCtx: "", dataPoints };
+
+  // Resolve target M49 codes
+  const targetM49s = targetMarkets
+    .map((m) => REGION_TO_M49[m] || ISO2_TO_M49[m])
+    .filter(Boolean);
+  if (!targetM49s.length) return { tradeCtx: "", dataPoints };
+
+  const partnerCodes = targetM49s.join(",");
+
+  try {
+    // Query 1: Origin country exports to target markets
+    const exportUrl = `https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=${originM49}&partnerCode=${partnerCodes}&cmdCode=${hs4}&flowCode=X&period=2023,2022&includeDesc=true`;
+    // Query 2: World exports to target markets (total import volume = market size)
+    const importUrl = `https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=${partnerCodes}&partnerCode=0&cmdCode=${hs4}&flowCode=M&period=2023&includeDesc=true`;
+
+    const [exportResp, importResp] = await Promise.allSettled([
+      fetch(exportUrl, { signal: AbortSignal.timeout(8000) }),
+      fetch(importUrl, { signal: AbortSignal.timeout(8000) }),
+    ]);
+
+    const lines: string[] = [];
+
+    // Parse export data
+    if (exportResp.status === "fulfilled" && exportResp.value.ok) {
+      const json = await exportResp.value.json();
+      if (json.data?.length) {
+        lines.push(`## Real Trade Statistics (UN Comtrade 2022-2023)`);
+        lines.push(`### ${originCountry} Exports of HS ${hs4}:`);
+        for (const d of json.data) {
+          const val = d.primaryValue || d.fobvalue || 0;
+          const wt = d.netWgt || 0;
+          if (val > 0) {
+            lines.push(`- → ${d.partnerISO || d.partnerDesc} (${d.period}): $${val.toLocaleString()} USD, ${Math.round(wt).toLocaleString()} kg`);
+            dataPoints.push({
+              reporter: d.reporterISO || originCountry,
+              partner: d.partnerISO || "",
+              hsCode: hs4,
+              year: d.refYear,
+              valueUsd: val,
+              weightKg: wt,
+              flow: "export",
+            });
+          }
+        }
+      }
+    }
+
+    // Parse import data (market size)
+    if (importResp.status === "fulfilled" && importResp.value.ok) {
+      const json = await importResp.value.json();
+      if (json.data?.length) {
+        lines.push(`### Target Market Total Imports of HS ${hs4} (2023):`);
+        for (const d of json.data) {
+          const val = d.primaryValue || d.cifvalue || 0;
+          if (val > 0) {
+            lines.push(`- ${d.reporterISO || d.reporterDesc} total imports: $${val.toLocaleString()} USD`);
+            dataPoints.push({
+              reporter: d.reporterISO || "",
+              partner: "World",
+              hsCode: hs4,
+              year: d.refYear,
+              valueUsd: val,
+              weightKg: d.netWgt || 0,
+              flow: "import",
+            });
+          }
+        }
+      }
+    }
+
+    if (lines.length > 1) {
+      lines.push(`\nSource: UN Comtrade Database (comtradeplus.un.org). Use these REAL figures in your analysis — do not fabricate trade statistics.`);
+    }
+
+    const tradeCtx = lines.length > 1 ? "\n" + lines.join("\n") : "";
+    console.log(`[trade-data] Fetched ${dataPoints.length} data points for HS ${hs4}`);
+    return { tradeCtx, dataPoints };
+  } catch (err) {
+    console.warn("[trade-data] Comtrade fetch failed:", (err as Error).message);
+    return { tradeCtx: "", dataPoints };
+  }
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1109,6 +1228,7 @@ MOQ: ${moq || na}
     // ─── PHASE 1: Quick HS + Scores (show result in 5-10s) ───
     console.log("[phase1] Starting quick analysis...");
     const phase1Start = Date.now();
+    let phase1HsCode = "";
 
     const phase1Prompt = `${isEn ? "# Quick Export Assessment" : "# 빠른 수출 평가"}
 ${productContext}
@@ -1130,6 +1250,7 @@ ${isEn ? "Rules: Be specific. Real HS code with 6-digit precision. Conservative 
     try {
       const phase1Res = await callAI(phase1Prompt, 800, visionImage, phase1Start);
       console.log("[phase1] Done in", Date.now() - phase1Start, "ms");
+      phase1HsCode = phase1Res.result?.hs_code || "";
       // Save Phase 1 result immediately — frontend can display this
       sbAdmin.from("analyses").update({
         ai_result: {
@@ -1150,6 +1271,23 @@ ${isEn ? "Rules: Be specific. Real HS code with 6-digit precision. Conservative 
           crawl_results: crawlMeta,
         },
       }).eq("id", analysis_id).eq("user_id", user.id).then(() => {}).catch(() => {});
+    }
+
+    // ─── Fetch real trade data from UN Comtrade (non-blocking) ───
+    // Use Phase 1 HS code if available, otherwise user-provided known_hs_code
+    const tradeHsCode = (phase1HsCode || known_hs_code || "").replace(/\./g, "").substring(0, 4);
+    let tradeCtx = "";
+    let tradeDataPoints: TradeDataPoint[] = [];
+    if (tradeHsCode && tradeHsCode.length >= 4) {
+      try {
+        const tradeResult = await fetchTradeData(tradeHsCode, resolvedOrigin, target_markets);
+        tradeCtx = tradeResult.tradeCtx;
+        tradeDataPoints = tradeResult.dataPoints;
+      } catch (err) {
+        console.warn("[trade-data] Failed (non-blocking):", (err as Error).message);
+      }
+    } else {
+      console.log("[trade-data] No HS code available yet, skipping Comtrade lookup");
     }
 
     // ─── Category-specific certification reference data ───
@@ -1193,7 +1331,7 @@ Score CONSERVATIVELY when information is lacking. Do not inflate.`
 
 ${productContext}
 ${visionCtx}
-${crawlCtx}
+${crawlCtx}${tradeCtx}
 ${hrWarning}
 ${scoringRubric}
 ${toneRule}
@@ -1240,7 +1378,7 @@ ${isEn
     const prompt2 = `${isEn ? "# Export Analysis — Market Intelligence & Certification" : "# 수출 분석 — 시장 인텔리���스 & 인증"}
 
 ${productContext}
-${crawlCtx}
+${crawlCtx}${tradeCtx}
 ${toneRule}
 
 ${isEn ? "## Certification Reference (use as basis, verify and expand):" : "## 인증 참��� 데이터 (기반으로 활용, 검증 및 확장):"}
@@ -1297,7 +1435,7 @@ ${isEn
     const prompt3 = `${isEn ? "# Export Analysis — Pricing Strategy & Action Plan" : "# 수출 분석 — 가격 전략 & 실행 계획"}
 
 ${productContext}
-${crawlCtx}
+${crawlCtx}${tradeCtx}
 ${toneRule}
 
 ${isEn ? "Analyze pricing strategy and create actionable export plan. Output JSON:" : "가격 전략 분석 및 실행 가능한 수출 계획을 작성하세요. JSON 출력:"}
@@ -1669,6 +1807,15 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
         isKo ? "브랜드 인지도 부재로 인한 초기 진입 어려움" : "Initial market entry difficulty due to low brand awareness",
         isKo ? "환율 변동 및 물류비 증가 리스크" : "Exchange rate fluctuation and logistics cost risk",
       ];
+    }
+
+    // ─── Attach real trade statistics if available ───
+    if (tradeDataPoints.length > 0) {
+      result._trade_data = {
+        source: "UN Comtrade",
+        hs_code: tradeHsCode,
+        data_points: tradeDataPoints,
+      };
     }
 
     // ─── Assemble 8-Stage Export Journey from merged results ───
