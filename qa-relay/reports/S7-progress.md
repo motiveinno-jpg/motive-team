@@ -1,6 +1,6 @@
 # S7-검증QA 진행 상황
 
-## 최종 업데이트: 2026-03-29 23:20 KST
+## 최종 업데이트: 2026-03-29 23:35 KST
 
 ---
 
@@ -33,6 +33,8 @@
 | S7-bug-002 | - | .htm 미동기화 배포 실패 | FIXED by S6 |
 | S7-bug-003 | P2 | 메인 랜딩(/) 자동 언어감지 한국어만 적용 | OPEN |
 | S7-bug-004 | P3 | Contact Name placeholder "john_doe" 변수명 노출 | OPEN |
+| S7-bug-005 | P1 | 바이어 Sign Up 제출 → Sign In 탭으로 리다이렉트 | OPEN |
+| S7-bug-006 | P2 | 잘못된 URL 접속 시 404 페이지 없음 (무한 로딩) | OPEN |
 
 ---
 
