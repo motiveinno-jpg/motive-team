@@ -52,6 +52,226 @@ function repairJSON(str: string): string {
   return s;
 }
 
+// Assemble 8-stage export journey from flat AI analysis results
+function assembleExportJourney(r: any, isKo: boolean, origin: string, originLabel: string) {
+  const t = (ko: string, en: string) => isKo ? ko : en;
+  const score = (v: any) => typeof v === "number" ? v : parseInt(v) || 0;
+  const status = (s: number) => s >= 70 ? "ready" : s >= 40 ? "needs_work" : "blocked";
+
+  const markets = r.market_analysis || [];
+  const certs = r.cert_details || [];
+  const comp = r.competitor_analysis || {};
+  const pricing = r.pricing_strategy || {};
+  const logistics = r.logistics || {};
+  const fta = r.fta_tariff_table || [];
+  const actions = r.action_plan || [];
+  const risks = r.risk_matrix || r.risks || [];
+  const readiness = r.export_readiness || {};
+  const gov = r.government_support || {};
+  const margin = r.margin_analysis || {};
+
+  const stageScores = {
+    market: score(r.market_fit),
+    regulatory: score(r.regulatory),
+    price: score(r.price_competitiveness),
+    logistics: score(r.logistics_score) || score(readiness.logistics),
+    buyer: Math.round((score(r.market_fit) + score(r.brand_power || 50)) / 2),
+    contract: score(readiness.documentation) || 50,
+    customs: Math.round((score(r.regulatory) + score(readiness.logistics || 50)) / 2),
+    postExport: 40,
+  };
+
+  const stages = [
+    {
+      stage: 1, id: "market_validation",
+      title: t("시장 검증", "Market Validation"), icon: "🎯",
+      status: status(stageScores.market),
+      readiness_score: stageScores.market,
+      summary: r.summary || "",
+      key_findings: markets.slice(0, 3).map((m: any) => ({
+        type: parseFloat(String(m.grow)) > 5 ? "positive" : "neutral",
+        text: `${m.name}: ${t("시장규모", "Market size")} ${m.size}, ${t("성장률", "Growth")} ${m.grow}`,
+      })),
+      data_points: {
+        target_markets: (r.recommended_markets || []).slice(0, 5),
+        market_details: markets.slice(0, 3).map((m: any) => ({
+          name: m.name, size: m.size, growth: m.grow, channel: m.key_channel || "",
+        })),
+        industry_trend: r.industry_trend || "",
+      },
+      action_items: (actions[0]?.items || []).slice(0, 3).map((item: string) => ({
+        priority: "important", action: item,
+      })),
+      next_stage_gate: t("타겟 시장 최소 1개 확정", "At least 1 target market confirmed"),
+    },
+    {
+      stage: 2, id: "regulatory_certification",
+      title: t("규제/인증", "Regulatory & Certification"), icon: "📜",
+      status: status(stageScores.regulatory),
+      readiness_score: stageScores.regulatory,
+      summary: r.score_details?.regulatory_reason || "",
+      key_findings: certs.slice(0, 3).map((c: any) => ({
+        type: c.priority === "Required" || c.priority === "필수" ? "negative" : "neutral",
+        text: `${c.name} (${c.market}): ${c.duration}, ${c.cost}`,
+      })),
+      data_points: {
+        required_certs: r.required_certs || [],
+        existing_certs: r.existing_certs || [],
+        cert_details: certs,
+        cert_gap_count: Math.max(0, (r.required_certs?.length || 0) - (r.existing_certs?.length || 0)),
+      },
+      action_items: certs.slice(0, 3).map((c: any) => ({
+        priority: c.priority === "Required" || c.priority === "필수" ? "critical" : "important",
+        action: `${c.name}: ${c.note || ""}`,
+        estimated_cost: c.cost, estimated_time: c.duration,
+      })),
+      next_stage_gate: t("필수 인증 신청 완료", "Required certifications applied for"),
+    },
+    {
+      stage: 3, id: "price_competitiveness",
+      title: t("가격 경쟁력", "Price Competitiveness"), icon: "💰",
+      status: status(stageScores.price),
+      readiness_score: stageScores.price,
+      summary: r.score_details?.price_reason || pricing.strategy || "",
+      key_findings: [
+        { type: "neutral", text: `FOB: ${margin.fob_cost || pricing.recommended_fob || "N/A"}` },
+        { type: "neutral", text: `${t("소매가", "Retail")}: ${margin.retail_price || pricing.recommended_retail || "N/A"}` },
+        { type: stageScores.price >= 60 ? "positive" : "negative",
+          text: `${t("마진", "Margin")}: ${margin.gross_margin || "N/A"}` },
+      ].filter(f => !f.text.includes("N/A")),
+      data_points: {
+        margin_chain: margin,
+        fta_savings: r.duty_savings_estimate || {},
+        competitor_price_range: comp.price_range || "",
+        our_positioning: comp.our_positioning || "",
+      },
+      action_items: [],
+      next_stage_gate: t("FOB 가격 확정, 마진 목표 달성 가능 확인", "FOB pricing confirmed, margin target achievable"),
+    },
+    {
+      stage: 4, id: "logistics_shipping",
+      title: t("물류/운송", "Logistics & Shipping"), icon: "🚢",
+      status: status(stageScores.logistics),
+      readiness_score: stageScores.logistics,
+      summary: r.score_details?.logistics_reason || "",
+      key_findings: [
+        logistics.method ? { type: "neutral", text: `${t("운송방법", "Method")}: ${logistics.method}` } : null,
+        logistics.cost_per_unit ? { type: "neutral", text: `${t("단가 운임", "Cost/unit")}: ${logistics.cost_per_unit}` } : null,
+        logistics.lead_time ? { type: "neutral", text: `${t("리드타임", "Lead time")}: ${logistics.lead_time}` } : null,
+      ].filter(Boolean),
+      data_points: {
+        logistics,
+        hs_code: r.hs_code, hs_description: r.hs_description,
+        tariff_table: fta.slice(0, 5),
+      },
+      action_items: [],
+      next_stage_gate: t("물류 파트너 선정, 비용 확정", "Logistics partner identified, costs confirmed"),
+    },
+    {
+      stage: 5, id: "buyer_discovery",
+      title: t("바이어 발굴", "Buyer Discovery"), icon: "🔍",
+      status: status(stageScores.buyer),
+      readiness_score: stageScores.buyer,
+      summary: comp.overview || "",
+      key_findings: [
+        ...(comp.global_competitors || []).slice(0, 2).map((c: any) => ({
+          type: "neutral", text: `${t("글로벌 경쟁사", "Global")}: ${c.name} (${c.price})`,
+        })),
+        r.alibaba_suitability?.score ? {
+          type: r.alibaba_suitability.score >= 60 ? "positive" : "neutral",
+          text: `${t("알리바바 적합도", "Alibaba fit")}: ${r.alibaba_suitability.score}/100 (${r.alibaba_suitability.grade})`,
+        } : null,
+      ].filter(Boolean),
+      data_points: {
+        recommended_channels: r.recommended_channels || [],
+        alibaba_suitability: r.alibaba_suitability || {},
+        swot: comp.swot || {},
+      },
+      action_items: (actions[1]?.items || []).slice(0, 3).map((item: string) => ({
+        priority: "important", action: item,
+      })),
+      next_stage_gate: t("바이어 리드 최소 3건 확보", "At least 3 qualified buyer leads"),
+    },
+    {
+      stage: 6, id: "contract_payment",
+      title: t("계약/결제", "Contracts & Payment"), icon: "📝",
+      status: status(stageScores.contract),
+      readiness_score: stageScores.contract,
+      summary: t(
+        "수출 계약서, 결제조건, 무역서류를 준비해야 합니다.",
+        "Export contracts, payment terms, and trade documents need to be prepared."
+      ),
+      key_findings: [
+        { type: "neutral", text: `Incoterms: ${logistics.incoterms || "FOB"}` },
+      ],
+      data_points: {
+        recommended_incoterms: logistics.incoterms || "FOB",
+        required_documents: ["Proforma Invoice", "Commercial Invoice", "Packing List", "Bill of Lading", "Certificate of Origin"],
+      },
+      action_items: [],
+      next_stage_gate: t("계약서 템플릿 준비, 결제조건 합의", "Contract template ready, payment terms agreed"),
+    },
+    {
+      stage: 7, id: "customs_clearance",
+      title: t("통관/선적", "Customs & Clearance"), icon: "🏛️",
+      status: status(stageScores.customs),
+      readiness_score: stageScores.customs,
+      summary: t(
+        `HS코드 ${r.hs_code || "미정"}으로 수출신고 진행. 원산지증명서 발급 필요.`,
+        `Export declaration with HS code ${r.hs_code || "TBD"}. Certificate of Origin required.`
+      ),
+      key_findings: [
+        r.hs_code ? { type: "neutral", text: `HS: ${r.hs_code} — ${r.hs_description?.substring(0, 80) || ""}` } : null,
+      ].filter(Boolean),
+      data_points: {
+        hs_code: r.hs_code, hs_code_detail: r.hs_code_detail || {},
+        fta_tariff_table: fta,
+      },
+      action_items: [],
+      next_stage_gate: t("통관 서류 전체 준비 완료", "All clearance documents prepared"),
+    },
+    {
+      stage: 8, id: "post_export",
+      title: t("사후관리", "Post-Export Management"), icon: "🔄",
+      status: status(stageScores.postExport),
+      readiness_score: stageScores.postExport,
+      summary: t(
+        "수출 후 클레임 대응, 재주문 관리, 현지 CS 체계를 구축해야 합니다.",
+        "Post-export claim handling, reorder management, and local CS systems need to be established."
+      ),
+      key_findings: [],
+      data_points: {},
+      action_items: (actions[2]?.items || actions[1]?.items || []).slice(0, 2).map((item: string) => ({
+        priority: "nice_to_have", action: item,
+      })),
+      next_stage_gate: t("CS 프로세스 및 재주문 파이프라인 구축", "CS process and reorder pipeline established"),
+    },
+  ];
+
+  const overallScore = Math.round(
+    Object.values(stageScores).reduce((a, b) => a + b, 0) / Object.keys(stageScores).length
+  );
+  const blockers = stages.filter(s => s.status === "blocked").map(s => `${s.icon} ${s.title}`);
+  const quickWins = stages.filter(s => s.status === "ready").map(s => `${s.icon} ${s.title}`);
+
+  // Estimate total cost from cert costs + logistics setup
+  const certCosts = certs.reduce((sum: number, c: any) => {
+    const m = String(c.cost || "").match(/[\d,]+/);
+    return sum + (m ? parseInt(m[0].replace(/,/g, "")) : 0);
+  }, 0);
+
+  return {
+    version: "1.0",
+    current_stage_recommendation: stages.findIndex(s => s.status !== "ready") + 1 || 1,
+    stages,
+    overall_journey_score: overallScore,
+    critical_blockers: blockers.slice(0, 3),
+    quick_wins: quickWins.slice(0, 3),
+    estimated_total_cost: certCosts > 0 ? `$${(certCosts).toLocaleString()}~$${(certCosts * 1.5).toLocaleString()}` : t("분석 데이터 기반 추정 필요", "Estimation needed based on analysis data"),
+    estimated_timeline: t("6~12개월 (인증 포함)", "6-12 months (including certifications)"),
+  };
+}
+
 const CRAWL_TIMEOUT_MS = 5000; // 5s — faster cutoff, most pages load in 2-3s
 const MAX_CRAWL_TEXT_LENGTH = 12000;
 const MAX_IMAGE_BASE64_BYTES = 4 * 1024 * 1024; // 4MB limit for vision input
@@ -1323,6 +1543,9 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
         isKo ? "환율 변동 및 물류비 증가 리스크" : "Exchange rate fluctuation and logistics cost risk",
       ];
     }
+
+    // ─── Assemble 8-Stage Export Journey from merged results ───
+    result.export_journey = assembleExportJourney(result, isKo, resolvedOrigin, originLabel);
 
     // Save final merged result
     await sbAdmin
