@@ -862,8 +862,10 @@ var U={
 };
 
 /* === SEARCH/FILTER === */
+var _sfDebounceTimers={};
+function _debouncedSearch(id){clearTimeout(_sfDebounceTimers[id]);_sfDebounceTimers[id]=setTimeout(function(){if(window.App&&App.doSearch)App.doSearch(id);},200);}
 var SF={
-  bar:function(id,opts){opts=opts||{};var h='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><div style="flex:1;min-width:200px;position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--w40);font-size:14px">&#x1F50D;</span><input class="form-input" id="sf-'+id+'" type="search" placeholder="'+(opts.placeholder||T('ph_search'))+'" style="padding-left:36px" oninput="App.doSearch(\''+id+'\')" value="'+((S._searchCache[id]||{}).q||'')+'"></div>';
+  bar:function(id,opts){opts=opts||{};var h='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"><div style="flex:1;min-width:200px;position:relative"><span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--w40);font-size:14px">&#x1F50D;</span><input class="form-input" id="sf-'+id+'" type="search" placeholder="'+(opts.placeholder||T('ph_search'))+'" style="padding-left:36px" oninput="_debouncedSearch(\''+id+'\')" value="'+((S._searchCache[id]||{}).q||'')+'"></div>';
   (opts.filters||[]).forEach(function(f){var cv=((S._searchCache[id]||{}).filters||{})[f.name]||'';h+='<select class="form-select" id="sff-'+id+'-'+f.name+'" style="width:auto;min-width:120px" onchange="App.doSearch(\''+id+'\')"><option value="">'+f.label+'</option>';f.options.forEach(function(o){h+='<option value="'+o.value+'"'+(cv===o.value?' selected':'')+'>'+o.label+'</option>';});h+='</select>';});
   h+='</div>';return h;},
   filter:function(items,q,keys,filters){var query=(q||'').toLowerCase().trim();var result=items;if(query){result=result.filter(function(item){return keys.some(function(k){var v=item[k];if(!v)return false;return String(v).toLowerCase().indexOf(query)>=0;});});}if(filters){Object.keys(filters).forEach(function(fk){var fv=filters[fk];if(fv)result=result.filter(function(item){return item[fk]===fv;});});}return result;},
@@ -1349,7 +1351,13 @@ var _userLocale = _userLang;
 var _isKorean = _userLang === 'ko' || location.pathname.startsWith('/ko_made');
 
 /* === i18n Translation System === */
-var _T={
+/* Performance: dictionaries are lazy-initialized on first T() call to avoid blocking initial parse.
+   TODO: These dictionaries could be externalized to a JSON file (e.g., /i18n/translations.json)
+   and loaded async to reduce the HTML payload size (~3000 lines of dictionary data). */
+var _T=null;
+var _ML=null;
+function _initDicts(){if(_T)return;
+_T={
   /* Navigation */
   nav_dashboard:['대시보드','Dashboard'],
   nav_analysis_sec:['분석','Analysis'],
@@ -1666,7 +1674,7 @@ var _T={
   ph_agency_msg:['메시지를 입력하세요...','Enter your message...']
 };
 /* Multi-language translation dictionary for UI chrome — gradual migration target */
-var _ML = {
+_ML = {
   'dashboard': { ko:'대시보드', ja:'ダッシュボード', zh:'仪表板', vi:'Bảng điều khiển', th:'แดชบอร์ด', de:'Dashboard', fr:'Tableau de bord', es:'Panel', pt:'Painel', id:'Dasbor', tr:'Gösterge paneli', ar:'لوحة القيادة' },
   'projects': { ko:'프로젝트', ja:'プロジェクト', zh:'项目', vi:'Dự án', th:'โครงการ', de:'Projekte', fr:'Projets', es:'Proyectos', pt:'Projetos', id:'Proyek', tr:'Projeler', ar:'المشاريع' },
   'analysis': { ko:'AI 분석', ja:'AI分析', zh:'AI分析', vi:'Phân tích AI', th:'วิเคราะห์ AI', de:'KI-Analyse', fr:'Analyse IA', es:'Análisis IA', pt:'Análise IA', id:'Analisis AI', tr:'AI Analiz', ar:'تحليل الذكاء الاصطناعي' },
@@ -4596,8 +4604,10 @@ var _ML = {
 'confirm_status_update': { ko:'물류사 페이지에서 확인한 결과, "{status}" 상태로 업데이트할까요?', en:'Update status to "{status}" based on carrier page?' },
 'click_to_create_docs': { ko:'위 버튼을 클릭하여 수출 서류를 생성하세요', en:'Click the button above to create export documents' }
 };
+} /* end _initDicts */
 /* T(key) — looks up _T dictionary first (ko/en pairs), then _ML for multi-language */
 function T(key){
+  if(!_T)_initDicts();
   var v=_T[key];
   if(v){
     if(_isKorean) return v[0];
@@ -9047,7 +9057,7 @@ function _pjTabOverview(p,stages,ci,stL,stIcon,sp,pct,uniqueBuyers){
         }
         else if(isFile&&_fUrl){
           var _isImg=m.metadata&&m.metadata.is_image;
-          if(_isImg){h+='<img src="'+U.esc(_fUrl)+'" style="max-width:180px;border-radius:8px;margin-bottom:4px;display:block" onerror="this.style.display=\'none\'">';}
+          if(_isImg){h+='<img src="'+U.esc(_fUrl)+'" loading="lazy" style="max-width:180px;border-radius:8px;margin-bottom:4px;display:block" onerror="this.style.display=\'none\'">';}
           h+='<a href="'+U.esc(_fUrl)+'" target="_blank" style="color:'+(isSeller?'#fff':'var(--pri)')+';text-decoration:underline">\ud83d\udcce '+UI.esc(m.metadata&&m.metadata.file_name||body)+'</a>';
         }
         else{h+=UI.esc(body);}
@@ -17449,7 +17459,7 @@ function pgMarketplace(){
     h+='<div style="display:flex;gap:14px;padding:14px">';
     /* 썸네일 영역 */
     if(thumb){
-      h+='<div style="width:90px;height:90px;border-radius:10px;overflow:hidden;flex-shrink:0;background:var(--w08)"><img src="'+U.esc(thumb)+'" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML=\'<div style=padding:20px;text-align:center;font-size:28px>'+catIcon+'</div>\'"></div>';
+      h+='<div style="width:90px;height:90px;border-radius:10px;overflow:hidden;flex-shrink:0;background:var(--w08)"><img src="'+U.esc(thumb)+'" alt="" loading="lazy" width="90" height="90" style="width:100%;height:100%;object-fit:cover" onerror="this.parentElement.innerHTML=\'<div style=padding:20px;text-align:center;font-size:28px>'+catIcon+'</div>\'"></div>';
     }else{
       h+='<div style="width:90px;height:90px;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,var(--w08),var(--w04));display:flex;align-items:center;justify-content:center;font-size:32px">'+catIcon+'</div>';
     }
@@ -17499,7 +17509,7 @@ function pgMarketRequestDetail(){
   var reqThumb=req.image_url||req.thumbnail_url||'';
   h+='<div style="display:flex;gap:16px;margin-bottom:16px">';
   if(reqThumb){
-    h+='<div style="width:120px;height:120px;border-radius:12px;overflow:hidden;flex-shrink:0;background:var(--w08)"><img src="'+U.esc(reqThumb)+'" alt="" style="width:100%;height:100%;object-fit:cover"></div>';
+    h+='<div style="width:120px;height:120px;border-radius:12px;overflow:hidden;flex-shrink:0;background:var(--w08)"><img src="'+U.esc(reqThumb)+'" alt="" loading="lazy" width="120" height="120" style="width:100%;height:100%;object-fit:cover"></div>';
   }
   h+='<div style="flex:1;min-width:0">';
   h+='<div style="font-size:18px;font-weight:800;margin-bottom:8px">'+U.esc(req.title)+'</div>';
@@ -19453,7 +19463,7 @@ function pgDealDetail(){
       if(!isSeller)h+='<div style="width:28px;height:28px;border-radius:50%;background:var(--pri-g);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--bg);flex-shrink:0">'+UI.esc(buyerName.charAt(0))+'</div>';
       h+='<div style="max-width:70%;padding:10px 14px;border-radius:'+(isSeller?'14px 14px 4px 14px':'14px 14px 14px 4px')+';background:'+(isSeller?'var(--pri)':'var(--w08)')+';color:'+(isSeller?'#fff':'var(--w90)')+';font-size:13px;line-height:1.6">';
       if(m.message_type==='file'&&m.metadata&&m.metadata.file_url){
-        if(m.metadata.is_image)h+='<img src="'+UI.esc(m.metadata.file_url)+'" style="max-width:200px;max-height:200px;border-radius:8px;margin-bottom:4px;cursor:pointer" onclick="window.open(\''+UI.esc(m.metadata.file_url)+'\',\'_blank\')">';
+        if(m.metadata.is_image)h+='<img src="'+UI.esc(m.metadata.file_url)+'" loading="lazy" style="max-width:200px;max-height:200px;border-radius:8px;margin-bottom:4px;cursor:pointer" onclick="window.open(\''+UI.esc(m.metadata.file_url)+'\',\'_blank\')">';
         else h+='<a href="'+UI.esc(m.metadata.file_url)+'" target="_blank" style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;background:'+(isSeller?'rgba(255,255,255,.15)':'var(--w04)')+';text-decoration:none;color:inherit;margin-bottom:4px"><span style="font-size:18px">📄</span><span style="font-size:12px;font-weight:600">'+UI.esc(m.metadata.file_name||'File')+'</span></a>';
       }else{h+=UI.esc(body);}
       if(dTr&&dTr!=='loading')h+='<div style="margin-top:6px;padding-top:6px;border-top:1px solid '+(isSeller?'rgba(255,255,255,.2)':'rgba(255,255,255,.08)')+';font-size:11px;color:'+(isSeller?'rgba(255,255,255,.7)':'var(--pri)')+'">'+UI.esc(dTr)+'</div>';
