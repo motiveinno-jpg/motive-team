@@ -16,22 +16,42 @@ function getCorsHeaders(req?: Request) {
   };
 }
 
-/* ISO2 → UN Comtrade numeric codes */
+/* ISO2 → UN Comtrade M49 numeric codes (60+ countries) */
 const COUNTRY_CODES: Record<string, number> = {
   KR: 410, US: 842, CN: 156, JP: 392, DE: 276, FR: 250,
   GB: 826, VN: 704, TH: 764, ID: 360, SG: 702, MY: 458,
   AU: 36, IN: 356, AE: 784, SA: 682, BR: 76, MX: 484,
   IT: 380, ES: 724, NL: 528, CA: 124, PH: 608, TW: 490,
+  TR: 792, PL: 616, SE: 752, NO: 578, DK: 208, FI: 246,
+  BE: 56, AT: 40, CH: 756, IE: 372, PT: 620, GR: 300,
+  CZ: 203, HU: 348, RO: 642, IL: 376, EG: 818, ZA: 710,
+  NG: 566, KE: 404, MA: 504, CL: 152, CO: 170, PE: 604,
+  AR: 32, EC: 218, BD: 50, PK: 586, LK: 144, MM: 104,
+  KH: 116, NZ: 554, RU: 643, UA: 804, KZ: 398, UZ: 860,
+  QA: 634, KW: 414, BH: 48, OM: 512, JO: 400, LB: 422,
+  PA: 591, CR: 188, GT: 320, DO: 214, HN: 340, SV: 222,
 };
 
-/* Numeric code → country name (EN) */
+/* M49 → country name (EN) */
 const COUNTRY_NAMES: Record<number, string> = {
-  842: "United States", 156: "China", 392: "Japan", 276: "Germany",
-  250: "France", 826: "United Kingdom", 704: "Vietnam", 764: "Thailand",
-  360: "Indonesia", 702: "Singapore", 458: "Malaysia", 36: "Australia",
-  356: "India", 784: "UAE", 682: "Saudi Arabia", 76: "Brazil",
-  484: "Mexico", 380: "Italy", 724: "Spain", 528: "Netherlands",
-  124: "Canada", 608: "Philippines", 490: "Taiwan", 410: "Korea",
+  410: "Korea", 842: "United States", 156: "China", 392: "Japan",
+  276: "Germany", 250: "France", 826: "United Kingdom", 704: "Vietnam",
+  764: "Thailand", 360: "Indonesia", 702: "Singapore", 458: "Malaysia",
+  36: "Australia", 356: "India", 784: "UAE", 682: "Saudi Arabia",
+  76: "Brazil", 484: "Mexico", 380: "Italy", 724: "Spain",
+  528: "Netherlands", 124: "Canada", 608: "Philippines", 490: "Taiwan",
+  792: "Turkey", 616: "Poland", 752: "Sweden", 578: "Norway",
+  208: "Denmark", 246: "Finland", 56: "Belgium", 40: "Austria",
+  756: "Switzerland", 372: "Ireland", 620: "Portugal", 300: "Greece",
+  203: "Czech Republic", 348: "Hungary", 642: "Romania", 376: "Israel",
+  818: "Egypt", 710: "South Africa", 566: "Nigeria", 404: "Kenya",
+  504: "Morocco", 152: "Chile", 170: "Colombia", 604: "Peru",
+  32: "Argentina", 218: "Ecuador", 50: "Bangladesh", 586: "Pakistan",
+  144: "Sri Lanka", 104: "Myanmar", 116: "Cambodia", 554: "New Zealand",
+  643: "Russia", 804: "Ukraine", 398: "Kazakhstan", 860: "Uzbekistan",
+  634: "Qatar", 414: "Kuwait", 48: "Bahrain", 512: "Oman",
+  400: "Jordan", 422: "Lebanon", 591: "Panama", 188: "Costa Rica",
+  320: "Guatemala", 214: "Dominican Republic", 340: "Honduras", 222: "El Salvador",
 };
 
 /* Numeric code → ISO2 */
@@ -40,7 +60,8 @@ for (const [iso, num] of Object.entries(COUNTRY_CODES)) {
   CODE_TO_ISO2[num] = iso;
 }
 
-const COMTRADE_BASE = "https://comtradeapi.un.org/data/v1/get/C/A/HS";
+/* Free Preview API — no auth key needed, max 500 records */
+const COMTRADE_BASE = "https://comtradeapi.un.org/public/v1/preview/C/A/HS";
 const CACHE_TTL_HOURS = 24;
 const MAX_YEARS = 5;
 const DEFAULT_YEARS = 3;
@@ -165,64 +186,48 @@ serve(async (req: Request) => {
     }
     const period = periodYears.join(",");
 
+    // Preview API: single call returns both world totals and partner breakdown
+    // (max 500 records, no auth needed)
     const comtradeUrl = new URL(COMTRADE_BASE);
     comtradeUrl.searchParams.set("reporterCode", String(reporterCode));
     comtradeUrl.searchParams.set("period", period);
-    comtradeUrl.searchParams.set("partnerCode", "0");
     comtradeUrl.searchParams.set("cmdCode", hsCode);
     comtradeUrl.searchParams.set("flowCode", flowCode);
+    // Dedup filters required by Preview API
+    comtradeUrl.searchParams.set("customsCode", "C00");
+    comtradeUrl.searchParams.set("partner2Code", "0");
+    comtradeUrl.searchParams.set("motCode", "0");
 
     let comtradeData: ComtradeRecord[] = [];
     let fetchError: string | null = null;
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
+      console.log("[comtrade-data] Fetching:", comtradeUrl.toString());
       const resp = await fetch(comtradeUrl.toString(), {
         signal: controller.signal,
       }).finally(() => clearTimeout(timeout));
 
       if (!resp.ok) {
         const errText = await resp.text();
-        console.error("[comtrade-data] Comtrade API error:", resp.status, errText);
+        console.error("[comtrade-data] Preview API error:", resp.status, errText);
         fetchError = `Comtrade API returned ${resp.status}`;
       } else {
         const json = await resp.json();
         comtradeData = json.data || [];
+        console.log("[comtrade-data] Got", comtradeData.length, "records");
       }
     } catch (err) {
       console.error("[comtrade-data] Comtrade fetch failed:", err);
       fetchError = err instanceof Error ? err.message : "Network error";
     }
 
-    // If world-level data obtained, now fetch partner breakdown
-    let partnerData: ComtradeRecord[] = [];
-    if (!fetchError && comtradeData.length > 0) {
-      try {
-        const partnerUrl = new URL(COMTRADE_BASE);
-        partnerUrl.searchParams.set("reporterCode", String(reporterCode));
-        partnerUrl.searchParams.set("period", String(periodYears[0]));
-        partnerUrl.searchParams.set("cmdCode", hsCode);
-        partnerUrl.searchParams.set("flowCode", flowCode);
-
-        const controller2 = new AbortController();
-        const timeout2 = setTimeout(() => controller2.abort(), 15000);
-
-        const resp2 = await fetch(partnerUrl.toString(), {
-          signal: controller2.signal,
-        }).finally(() => clearTimeout(timeout2));
-
-        if (resp2.ok) {
-          const json2 = await resp2.json();
-          partnerData = (json2.data || []).filter(
-            (r: ComtradeRecord) => r.partnerCode !== 0,
-          );
-        }
-      } catch (err) {
-        console.warn("[comtrade-data] Partner data fetch failed:", err);
-      }
-    }
+    // Preview API returns all partners in one call — separate world vs partner
+    const partnerData = comtradeData.filter(
+      (r: ComtradeRecord) => r.partnerCode !== 0,
+    );
 
     if (fetchError && comtradeData.length === 0) {
       const isKo = req.headers.get("accept-language")?.includes("ko");
@@ -284,13 +289,18 @@ serve(async (req: Request) => {
 interface ComtradeRecord {
   period: number;
   reporterCode: number;
+  reporterISO?: string;
+  reporterDesc?: string;
   partnerCode: number;
+  partnerISO?: string;
   partnerDesc?: string;
   primaryValue: number;
   netWgt?: number;
   qty?: number;
   cmdCode?: string;
   flowCode?: string;
+  fobvalue?: number;
+  cifvalue?: number;
 }
 
 interface RawCacheData {
@@ -331,19 +341,28 @@ function buildResponse(
     ? Math.round(((latestValue - previousValue) / previousValue) * 1000) / 10
     : 0;
 
-  // Top partners from latest year
+  // Top partners from latest year only
+  const latestYear = worldTotals.length > 0 ? worldTotals[0].period : 0;
   const sortedPartners = partnerRecords
-    .filter((r) => r.primaryValue > 0)
+    .filter((r) => r.primaryValue > 0 && r.period === latestYear)
     .sort((a, b) => (b.primaryValue || 0) - (a.primaryValue || 0))
     .slice(0, topPartners);
 
   const partnerTotal = sortedPartners.reduce((s, r) => s + (r.primaryValue || 0), 0);
 
   const topPartnersResult = sortedPartners.map((r) => {
-    const iso2 = CODE_TO_ISO2[r.partnerCode] || "";
+    const iso2 = r.partnerISO || CODE_TO_ISO2[r.partnerCode] || "";
     const countryName = r.partnerDesc || COUNTRY_NAMES[r.partnerCode] || `Code ${r.partnerCode}`;
     const share = latestValue > 0
       ? Math.round((r.primaryValue / latestValue) * 1000) / 10
+      : 0;
+
+    // Calculate YoY growth for this partner
+    const prevYearRecord = partnerRecords.find(
+      (pr) => pr.partnerCode === r.partnerCode && pr.period === latestYear - 1,
+    );
+    const partnerGrowth = prevYearRecord && prevYearRecord.primaryValue > 0
+      ? Math.round(((r.primaryValue - prevYearRecord.primaryValue) / prevYearRecord.primaryValue) * 1000) / 10
       : 0;
 
     return {
@@ -351,7 +370,7 @@ function buildResponse(
       country_name: countryName,
       value: r.primaryValue || 0,
       share,
-      growth: 0,
+      growth: partnerGrowth,
     };
   });
 
