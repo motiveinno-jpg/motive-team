@@ -4007,12 +4007,16 @@ function pgSettings(){
   h+=_admHubTabBar([
     {id:'api',icon:'🔑',label:AT('api_db')},
     {id:'exchange',icon:'💱',label:AT('exchange_rates')},
+    {id:'pricing',icon:'💰',label:_isKorean?'요금제':'Pricing'},
+    {id:'limits',icon:'📊',label:_isKorean?'플랜 제한':'Plan Limits'},
     {id:'toggles',icon:'🎛️',label:AT('feature_toggles')},
     {id:'cache',icon:'💾',label:AT('cache')},
     {id:'tools',icon:'🛠️',label:AT('tools')}
   ],'_settingsTab','api');
 
   if(tab==='exchange')return h+pgSettingsExchange();
+  if(tab==='pricing')return h+pgSettingsPricing();
+  if(tab==='limits')return h+pgSettingsLimits();
   if(tab==='toggles')return h+pgSettingsToggles();
   if(tab==='cache')return h+pgSettingsCache();
   if(tab==='tools')return h+pgSettingsTools();
@@ -4068,6 +4072,98 @@ function fetchLiveRates(){
   /* Simple fallback — in production, call an API */
   S._exchangeRates={USD_KRW:1380,EUR_KRW:1500,JPY_KRW:9.2,CNY_KRW:190,lastUpdated:new Date().toISOString()};
   UI.toast(AT('rates_updated_defaults'),'ok');render();
+}
+function pgSettingsPricing(){
+  var h='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>'+(_isKorean?'💰 요금제 관리':'💰 Pricing Management')+'</span><button class="btn btn-ghost btn-sm" onclick="Adm._reloadPricing()" style="margin-left:auto">🔄</button></div><div class="card-b" style="padding:0">';
+  h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>'+(_isKorean?'플랜':'Plan')+'</th><th>'+(_isKorean?'포탈':'Portal')+'</th><th>'+(_isKorean?'월':'Monthly')+'</th><th>'+(_isKorean?'6개월':'Semi-Annual')+'</th><th>'+(_isKorean?'연':'Annual')+'</th><th>KRW '+(_isKorean?'월':'Mo')+'</th><th>'+(_isKorean?'수정':'Edit')+'</th></tr></thead><tbody>';
+  var pricing=S._pricingRows||[];
+  if(!pricing.length){h+='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--w30)">'+(_isKorean?'로딩 중...':'Loading...')+'</td></tr>';}
+  pricing.forEach(function(p){
+    h+='<tr><td style="font-weight:700">'+U.esc(p.plan_key)+'</td><td>'+UI.badge(p.portal,p.portal==='buyer'?'pri':p.portal==='manufacturer'?'acc':'ghost')+'</td>'+
+      '<td>$'+Number(p.monthly).toLocaleString()+'</td><td>$'+Number(p.semi_annual).toLocaleString()+'</td><td>$'+Number(p.annual).toLocaleString()+'</td>'+
+      '<td>'+(p.krw_monthly?'₩'+Number(p.krw_monthly).toLocaleString():'—')+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" onclick="Adm._editPricing('+p.id+')">'+AT('edit')+'</button></td></tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  h+='<div style="padding:10px 14px;border-radius:8px;background:var(--w08);font-size:11px;color:var(--w40)">'+(_isKorean?'가격 변경은 즉시 반영됩니다. 기존 구독자에게는 다음 결제 주기부터 적용됩니다.':'Price changes take effect immediately. Existing subscribers will see changes at their next billing cycle.')+'</div>';
+  if(!S._pricingRows){setTimeout(function(){Adm._reloadPricing();},200);}
+  return h;
+}
+function _reloadPricing(){
+  sb.from('pricing_config').select('*').order('portal').order('monthly').then(function(r){
+    S._pricingRows=r.data||[];render();
+  }).catch(function(e){console.error('[pricing]',e);});
+}
+function _editPricing(id){
+  var p=(S._pricingRows||[]).find(function(x){return x.id===id;});if(!p)return;
+  var body='<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div class="grid-2"><div><label class="form-label">Plan Key</label><input class="form-input" value="'+U.esc(p.plan_key)+'" readonly style="opacity:.6"></div>'+
+    '<div><label class="form-label">Portal</label><input class="form-input" value="'+U.esc(p.portal)+'" readonly style="opacity:.6"></div></div>'+
+    '<div class="grid-3"><div><label class="form-label">Monthly ($)</label><input id="pc-m" class="form-input" type="number" step="0.01" value="'+p.monthly+'"></div>'+
+    '<div><label class="form-label">Semi-Annual ($)</label><input id="pc-s" class="form-input" type="number" step="0.01" value="'+p.semi_annual+'"></div>'+
+    '<div><label class="form-label">Annual ($)</label><input id="pc-a" class="form-input" type="number" step="0.01" value="'+p.annual+'"></div></div>'+
+    '<div class="grid-3"><div><label class="form-label">KRW Monthly</label><input id="pc-km" class="form-input" type="number" value="'+(p.krw_monthly||'')+'"></div>'+
+    '<div><label class="form-label">KRW Semi-Annual</label><input id="pc-ks" class="form-input" type="number" value="'+(p.krw_semi_annual||'')+'"></div>'+
+    '<div><label class="form-label">KRW Annual</label><input id="pc-ka" class="form-input" type="number" value="'+(p.krw_annual||'')+'"></div></div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'modal-pricing',title:(_isKorean?'요금 수정: ':'Edit Pricing: ')+p.plan_key+' ('+p.portal+')',body:body,footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\'modal-pricing\')">'+AT('cancel')+'</button><button class="btn btn-pri" onclick="Adm._savePricing('+id+')">'+AT('save')+'</button>',width:'560px'}));
+  UI.showModal('modal-pricing');
+}
+function _savePricing(id){
+  var upd={monthly:parseFloat((document.getElementById('pc-m')||{}).value)||0,semi_annual:parseFloat((document.getElementById('pc-s')||{}).value)||0,annual:parseFloat((document.getElementById('pc-a')||{}).value)||0,updated_at:new Date().toISOString()};
+  var km=(document.getElementById('pc-km')||{}).value;if(km)upd.krw_monthly=parseInt(km);
+  var ks=(document.getElementById('pc-ks')||{}).value;if(ks)upd.krw_semi_annual=parseInt(ks);
+  var ka=(document.getElementById('pc-ka')||{}).value;if(ka)upd.krw_annual=parseInt(ka);
+  sb.from('pricing_config').update(upd).eq('id',id).then(function(r){
+    if(r.error){UI.toast(AT('save_failed'),'err');return;}
+    closeModal('modal-pricing');UI.toast((_isKorean?'요금 저장됨':'Pricing saved'),'ok');_reloadPricing();_loadPricingFromDB();
+  }).catch(function(e){UI.toast(AT('save_failed'),'err');});
+}
+function pgSettingsLimits(){
+  var h='<div class="card" style="margin-bottom:16px"><div class="card-h"><span>'+(_isKorean?'📊 플랜 기능 제한':'📊 Plan Feature Limits')+'</span><button class="btn btn-ghost btn-sm" onclick="Adm._reloadLimits()" style="margin-left:auto">🔄</button></div><div class="card-b" style="padding:0">';
+  h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>'+(_isKorean?'플랜':'Plan')+'</th><th>'+(_isKorean?'분석':'Analyses')+'</th><th>'+(_isKorean?'상품':'Products')+'</th><th>'+(_isKorean?'프로젝트':'Projects')+'</th><th>'+(_isKorean?'문서':'Docs')+'</th><th>'+(_isKorean?'채팅':'Chat')+'</th><th>'+(_isKorean?'매칭':'Match')+'</th><th>'+(_isKorean?'에스크로':'Escrow')+'</th><th>'+(_isKorean?'수정':'Edit')+'</th></tr></thead><tbody>';
+  var limits=S._limitRows||[];
+  if(!limits.length){h+='<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--w30)">'+(_isKorean?'로딩 중...':'Loading...')+'</td></tr>';}
+  limits.forEach(function(l){
+    function fv(v){return v===-1?'<span style="color:var(--ok);font-weight:700">∞</span>':v===0?'<span style="color:var(--w20)">—</span>':'<span style="font-weight:600">'+v+'</span>';}
+    h+='<tr><td style="font-weight:700">'+U.esc(l.plan_key)+'</td>'+
+      '<td style="text-align:center">'+fv(l.analyses)+'</td><td style="text-align:center">'+fv(l.products)+'</td>'+
+      '<td style="text-align:center">'+fv(l.projects)+'</td><td style="text-align:center">'+fv(l.docs)+'</td>'+
+      '<td style="text-align:center">'+fv(l.chat)+'</td><td style="text-align:center">'+fv(l.matching)+'</td>'+
+      '<td style="text-align:center">'+(l.escrow?'<span style="color:var(--ok)">✓</span>':'<span style="color:var(--w20)">✗</span>')+'</td>'+
+      '<td><button class="btn btn-ghost btn-sm" onclick="Adm._editLimit('+l.id+')">'+AT('edit')+'</button></td></tr>';
+  });
+  h+='</tbody></table></div></div></div>';
+  h+='<div style="padding:10px 14px;border-radius:8px;background:var(--w08);font-size:11px;color:var(--w40)">'+(_isKorean?'-1 = 무제한, 0 = 비활성. 변경 즉시 반영됩니다.':'-1 = unlimited, 0 = disabled. Changes take effect immediately.')+'</div>';
+  if(!S._limitRows){setTimeout(function(){Adm._reloadLimits();},200);}
+  return h;
+}
+function _reloadLimits(){
+  sb.from('plan_limits').select('*').order('id').then(function(r){
+    S._limitRows=r.data||[];render();
+  }).catch(function(e){console.error('[limits]',e);});
+}
+function _editLimit(id){
+  var l=(S._limitRows||[]).find(function(x){return x.id===id;});if(!l)return;
+  var body='<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div><label class="form-label">Plan</label><input class="form-input" value="'+U.esc(l.plan_key)+'" readonly style="opacity:.6"></div>'+
+    '<div class="grid-3"><div><label class="form-label">Analyses</label><input id="pl-an" class="form-input" type="number" value="'+l.analyses+'"></div>'+
+    '<div><label class="form-label">Products</label><input id="pl-pr" class="form-input" type="number" value="'+l.products+'"></div>'+
+    '<div><label class="form-label">Projects</label><input id="pl-pj" class="form-input" type="number" value="'+l.projects+'"></div></div>'+
+    '<div class="grid-3"><div><label class="form-label">Docs</label><input id="pl-do" class="form-input" type="number" value="'+l.docs+'"></div>'+
+    '<div><label class="form-label">Chat</label><input id="pl-ch" class="form-input" type="number" value="'+l.chat+'"></div>'+
+    '<div><label class="form-label">Matching</label><input id="pl-ma" class="form-input" type="number" value="'+l.matching+'"></div></div>'+
+    '<div><label class="form-label" style="display:flex;align-items:center;gap:8px"><input id="pl-es" type="checkbox" '+(l.escrow?'checked':'')+'> Escrow '+(_isKorean?'사용 가능':'Enabled')+'</label></div>'+
+    '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'modal-limits',title:(_isKorean?'제한 수정: ':'Edit Limits: ')+l.plan_key,body:body,footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\'modal-limits\')">'+AT('cancel')+'</button><button class="btn btn-pri" onclick="Adm._saveLimit('+id+')">'+AT('save')+'</button>',width:'480px'}));
+  UI.showModal('modal-limits');
+}
+function _saveLimit(id){
+  var upd={analyses:parseInt((document.getElementById('pl-an')||{}).value),products:parseInt((document.getElementById('pl-pr')||{}).value),projects:parseInt((document.getElementById('pl-pj')||{}).value),docs:parseInt((document.getElementById('pl-do')||{}).value),chat:parseInt((document.getElementById('pl-ch')||{}).value),matching:parseInt((document.getElementById('pl-ma')||{}).value),escrow:(document.getElementById('pl-es')||{}).checked||false,updated_at:new Date().toISOString()};
+  sb.from('plan_limits').update(upd).eq('id',id).then(function(r){
+    if(r.error){UI.toast(AT('save_failed'),'err');return;}
+    closeModal('modal-limits');UI.toast((_isKorean?'제한 저장됨':'Limits saved'),'ok');_reloadLimits();
+  }).catch(function(e){UI.toast(AT('save_failed'),'err');});
 }
 function pgSettingsToggles(){
   var toggles=S._featureToggles||{sanctions_screening:false,buyer_matching:true,ai_analysis:true,comtrade_cache:true,email_notifications:true,escrow:true,whistle_brief:false,auto_translation:false};
@@ -7547,7 +7643,7 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   loadSanctionsLog:loadSanctionsLog,
   showBriefEditor:showBriefEditor,editBrief:editBrief,saveBriefDraft:saveBriefDraft,saveBriefPublish:saveBriefPublish,publishBrief:publishBrief,loadBriefs:loadBriefs,sendBrief:sendBrief,loadSubscribers:loadSubscribers,generateTrendSummary:generateTrendSummary,previewBrief:previewBrief,
   toggleLocCountry:toggleLocCountry,editLocCountry:editLocCountry,saveLocCountry:saveLocCountry,showAddCountry:showAddCountry,saveNewCountry:saveNewCountry,
-  saveExchangeRates:saveExchangeRates,fetchLiveRates:fetchLiveRates,toggleFeature:toggleFeature,saveFeatureToggles:saveFeatureToggles,saveRelayUrl:saveRelayUrl,
+  saveExchangeRates:saveExchangeRates,fetchLiveRates:fetchLiveRates,_reloadPricing:_reloadPricing,_editPricing:_editPricing,_savePricing:_savePricing,_reloadLimits:_reloadLimits,_editLimit:_editLimit,_saveLimit:_saveLimit,toggleFeature:toggleFeature,saveFeatureToggles:saveFeatureToggles,saveRelayUrl:saveRelayUrl,
   setMktTab:setMktTab,refreshMarketing:refreshMarketing,toggleCampaign:toggleCampaign,toggleAutomation:toggleAutomation,showCampaignForm:showCampaignForm,saveCampaignForm:saveCampaignForm,showAddContactForm:showAddContactForm,saveOutreachContact:saveOutreachContact,
   updateSP:updateSP,showSPForm:showSPForm,saveSPForm:saveSPForm,
   UI:UI};
