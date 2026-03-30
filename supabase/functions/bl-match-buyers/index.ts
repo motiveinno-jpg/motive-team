@@ -84,6 +84,160 @@ function getCountryName(code: string): { en: string; ko: string } {
   return COUNTRY_NAMES[upper] || { en: upper, ko: upper };
 }
 
+/* ── HS code → industry keyword mapping for Apollo.io search ── */
+const HS_INDUSTRY_MAP: Record<string, { keywords: string[]; titles: string[] }> = {
+  "33": { keywords: ["cosmetics", "beauty", "skincare", "personal care"], titles: ["buyer", "procurement", "import", "purchasing"] },
+  "34": { keywords: ["soap", "cleaning", "detergent"], titles: ["buyer", "procurement", "import"] },
+  "21": { keywords: ["food", "beverage", "grocery", "F&B"], titles: ["buyer", "import", "procurement", "sourcing"] },
+  "22": { keywords: ["beverage", "drinks", "alcohol"], titles: ["buyer", "import", "procurement"] },
+  "30": { keywords: ["pharmaceutical", "health", "medical"], titles: ["procurement", "supply chain", "import"] },
+  "39": { keywords: ["plastics", "polymer", "packaging"], titles: ["buyer", "procurement", "sourcing"] },
+  "61": { keywords: ["apparel", "fashion", "clothing", "textile"], titles: ["buyer", "merchandiser", "sourcing"] },
+  "62": { keywords: ["apparel", "fashion", "clothing"], titles: ["buyer", "merchandiser", "sourcing"] },
+  "64": { keywords: ["footwear", "shoes"], titles: ["buyer", "procurement", "sourcing"] },
+  "73": { keywords: ["steel", "iron", "metal products"], titles: ["buyer", "procurement", "import"] },
+  "84": { keywords: ["machinery", "industrial equipment", "manufacturing"], titles: ["procurement", "purchasing", "import"] },
+  "85": { keywords: ["electronics", "electrical", "semiconductor"], titles: ["buyer", "procurement", "sourcing", "supply chain"] },
+  "87": { keywords: ["automotive", "vehicles", "auto parts"], titles: ["procurement", "purchasing", "supply chain"] },
+  "90": { keywords: ["medical devices", "instruments", "optical"], titles: ["procurement", "purchasing", "import"] },
+  "94": { keywords: ["furniture", "home", "interior"], titles: ["buyer", "import", "sourcing"] },
+  "95": { keywords: ["toys", "games", "sports equipment"], titles: ["buyer", "import", "sourcing"] },
+};
+
+function getIndustryKeywords(hs4digit: string): { keywords: string[]; titles: string[] } {
+  const hs2 = hs4digit.substring(0, 2);
+  return HS_INDUSTRY_MAP[hs2] || {
+    keywords: ["import", "distribution", "wholesale", "trade"],
+    titles: ["buyer", "procurement", "import", "purchasing"],
+  };
+}
+
+/* ── Apollo.io People Search (free tier: 10K credits/month) ── */
+const APOLLO_API_BASE = "https://api.apollo.io/api/v1/mixed_people/search";
+
+interface ApolloSearchResult {
+  company_name: string;
+  country_code: string;
+  email: string | null;
+  website: string | null;
+  title: string;
+  person_name: string;
+  linkedin_url: string | null;
+}
+
+async function searchApollo(
+  apiKey: string,
+  industryKeywords: string[],
+  titles: string[],
+  targetCountries: string[],
+  limit: number,
+): Promise<ApolloSearchResult[]> {
+  const results: ApolloSearchResult[] = [];
+
+  try {
+    const searchBody = {
+      api_key: apiKey,
+      q_keywords: industryKeywords.join(" OR "),
+      person_titles: titles,
+      person_locations: targetCountries.map((c) => {
+        const name = COUNTRY_NAMES[c];
+        return name ? name.en : c;
+      }),
+      per_page: Math.min(limit, 25),
+      page: 1,
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const resp = await fetch(APOLLO_API_BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(searchBody),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
+
+    if (!resp.ok) {
+      console.error("[bl-match-buyers] Apollo API error:", resp.status);
+      return results;
+    }
+
+    const data = await resp.json();
+    const people = data.people || [];
+
+    for (const person of people) {
+      const org = person.organization || {};
+      if (!org.name) continue;
+
+      results.push({
+        company_name: org.name,
+        country_code: org.country || person.country || "",
+        email: person.email || null,
+        website: org.website_url || null,
+        title: person.title || "",
+        person_name: person.name || "",
+        linkedin_url: person.linkedin_url || null,
+      });
+    }
+
+    console.log(`[bl-match-buyers] Apollo returned ${results.length} results`);
+  } catch (err) {
+    console.error("[bl-match-buyers] Apollo search failed:", err instanceof Error ? err.message : String(err));
+  }
+
+  return results;
+}
+
+async function cacheApolloResults(
+  sbAdmin: ReturnType<typeof createClient>,
+  apolloResults: ApolloSearchResult[],
+  hs4digit: string,
+  hs6digit: string,
+): Promise<BlBuyerLead[]> {
+  const cachedLeads: BlBuyerLead[] = [];
+
+  for (const result of apolloResults) {
+    const countryCode = result.country_code.toUpperCase();
+    const countryName = COUNTRY_NAMES[countryCode]?.en || countryCode;
+
+    const leadData = {
+      company_name: result.company_name,
+      company_name_normalized: result.company_name.toLowerCase().trim(),
+      country: countryName,
+      country_code: countryCode,
+      hs_codes: [hs6digit],
+      hs_prefixes: [hs4digit],
+      import_volume_usd: null,
+      import_count: null,
+      import_frequency: null,
+      last_import_date: null,
+      website: result.website,
+      categories: [],
+      data_quality_score: result.email ? 60 : 30,
+      source: "apollo",
+      contact_name: result.person_name || null,
+      contact_email: result.email || null,
+    };
+
+    const { data: upserted, error } = await sbAdmin
+      .from("bl_buyer_leads")
+      .upsert(leadData, {
+        onConflict: "company_name_normalized,country_code",
+        ignoreDuplicates: false,
+      })
+      .select()
+      .single();
+
+    if (!error && upserted) {
+      cachedLeads.push(upserted as BlBuyerLead);
+    } else if (error) {
+      console.warn("[bl-match-buyers] Cache upsert error:", error.message);
+    }
+  }
+
+  return cachedLeads;
+}
+
 /* ── Scoring constants ── */
 const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000;
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
@@ -111,10 +265,12 @@ interface BlBuyerLead {
   import_count: number | null;
   import_frequency: string | null;
   last_import_date: string | null;
-  has_email: boolean | null;
+  contact_email: string | null;
+  contact_name: string | null;
   website: string | null;
   categories: string[] | null;
   data_quality_score: number | null;
+  source: string | null;
   created_at: string;
   updated_at: string | null;
 }
@@ -441,7 +597,42 @@ serve(async (req) => {
       );
     }
 
-    const allMatchedLeads: BlBuyerLead[] = leads || [];
+    let allMatchedLeads: BlBuyerLead[] = leads || [];
+
+    /* ── Apollo.io enrichment when DB results are insufficient ── */
+    const apolloApiKey = Deno.env.get("APOLLO_API_KEY");
+    const MIN_DB_RESULTS = 5;
+
+    if (allMatchedLeads.length < MIN_DB_RESULTS && apolloApiKey) {
+      console.log(`[bl-match-buyers] DB has ${allMatchedLeads.length} results, enriching via Apollo.io`);
+      const industry = getIndustryKeywords(hs4digit);
+      const searchCountries = validTargetCountries && validTargetCountries.length > 0
+        ? validTargetCountries
+        : ["US", "DE", "JP", "GB", "FR", "NL", "AU", "CA", "SG", "AE"];
+      const apolloLimit = Math.max(maxResults - allMatchedLeads.length, 10);
+
+      const apolloResults = await searchApollo(
+        apolloApiKey,
+        industry.keywords,
+        industry.titles,
+        searchCountries,
+        apolloLimit,
+      );
+
+      if (apolloResults.length > 0) {
+        const cached = await cacheApolloResults(sbAdmin, apolloResults, hs4digit, hs6digit);
+        console.log(`[bl-match-buyers] Apollo: ${apolloResults.length} found, ${cached.length} cached`);
+
+        const existingIds = new Set(allMatchedLeads.map((l) => l.id));
+        for (const newLead of cached) {
+          if (!existingIds.has(newLead.id)) {
+            allMatchedLeads.push(newLead);
+          }
+        }
+      }
+    } else if (allMatchedLeads.length < MIN_DB_RESULTS && !apolloApiKey) {
+      console.warn("[bl-match-buyers] Insufficient DB results and APOLLO_API_KEY not set");
+    }
 
     /* ── Get total count for metadata ── */
     const { count: totalInDb } = await sbAdmin
@@ -528,13 +719,15 @@ serve(async (req) => {
         import_count: lead.import_count || 0,
         import_frequency: lead.import_frequency || "sporadic",
         last_import_date: lead.last_import_date || null,
-        has_email: lead.has_email || false,
+        has_email: !!lead.contact_email,
+        contact_name: lead.contact_name || null,
         website: lead.website || null,
         categories: lead.categories || [],
         score: totalScore,
         score_breakdown: breakdown,
         match_reason_en: reasons.en,
         match_reason_ko: reasons.ko,
+        source: lead.source || "unknown",
       };
     });
 
