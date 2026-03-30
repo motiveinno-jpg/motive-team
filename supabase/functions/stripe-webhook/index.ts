@@ -4,11 +4,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const PLATFORM_FEE_RATE = 0.025; // 2.5%
 
-// Stripe Price ID → Plan mapping (for subscription updates via billing portal)
+// Stripe Price ID → Plan mapping (all billing cycles)
 const PRICE_TO_PLAN: Record<string, string> = {
-  "price_1R7KICP4t4OR5M7a6hb2R3DK": "starter",   // Starter $99/mo
-  "price_1R7KJWP4t4OR5M7a1jcYqGPb": "pro",        // Professional $199/mo
-  "price_1R7KKRP4t4OR5M7aKsyMlhSR": "enterprise", // Enterprise $449/mo
+  // Monthly
+  "price_1TBDCuBEJTGmEnmcZNjeU27n": "starter",
+  "price_1TBDCvBEJTGmEnmcu3yS9KwY": "pro",
+  "price_1TBDCvBEJTGmEnmcURkitVLN": "enterprise",
+  // Semi-annual (6mo)
+  "price_1TCG17BEJTGmEnmctEW5svtD": "starter",
+  "price_1TCG18BEJTGmEnmcnXYh1Nmc": "pro",
+  "price_1TCG18BEJTGmEnmcBzwQVelL": "enterprise",
+  // Annual
+  "price_1TCG17BEJTGmEnmcZkiwz4SW": "starter",
+  "price_1TCG18BEJTGmEnmcSFNLv1ZT": "pro",
+  "price_1TCG19BEJTGmEnmcUWaORRHP": "enterprise",
 };
 
 function detectPlanFromSubscription(sub: any): string | null {
