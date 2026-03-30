@@ -1,24 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-function getCorsOrigin(req: Request): string {
-  const origin = req.headers.get("origin") || "";
-  const ALLOWED_ORIGINS = [
-    "https://whistle-ai.com",
-    "https://www.whistle-ai.com",
-    "https://motiveinno-jpg.github.io",
-    "http://localhost:3000",
-    "http://localhost:5173",
-  ];
-  if (ALLOWED_ORIGINS.includes(origin)) return origin;
-  return "https://whistle-ai.com";
-}
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "https://motiveinno-jpg.github.io",
+];
 
-const DEFAULT_CORS = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+function getCorsHeaders(req?: Request) {
+  const origin = req?.headers.get("origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 const CSL_SOURCES = "SDN,DPL,EL,UVL,FSE,ISN,DTC,CMIC";
 const CACHE_TTL_HOURS = 24;
@@ -427,10 +423,7 @@ async function logToSanctionsLog(
 }
 
 serve(async (req: Request) => {
-  const corsHeaders = {
-    ...DEFAULT_CORS,
-    "Access-Control-Allow-Origin": getCorsOrigin(req),
-  };
+  const corsHeaders = getCorsHeaders(req);
 
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
