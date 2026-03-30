@@ -230,7 +230,7 @@ serve(async (req) => {
           const paymentCur = session.currency?.toUpperCase() || "USD";
           const paymentType = meta.payment_type || "sample"; // sample, deposit, full
 
-          await supabase.from("payments").insert({
+          const { error: escrowInsertErr } = await supabase.from("payments").insert({
             user_id: meta.user_id,
             deal_id: meta.deal_id,
             stripe_session_id: session.id,
@@ -244,6 +244,18 @@ serve(async (req) => {
             net_amount: paymentAmt * (1 - PLATFORM_FEE_RATE),
             created_at: new Date().toISOString(),
           });
+          if (escrowInsertErr) {
+            console.error("[webhook] CRITICAL: Escrow payment DB insert failed:", escrowInsertErr.message);
+            await notifyCEO(
+              `CRITICAL: Escrow DB insert failed — ${paymentCur} ${paymentAmt.toFixed(2)}`,
+              `<p style="color:red"><strong>Payment recorded in Stripe but NOT in DB!</strong></p>
+               <p><strong>Session:</strong> ${session.id}</p>
+               <p><strong>Deal:</strong> ${meta.deal_id}</p>
+               <p><strong>User:</strong> ${meta.user_id}</p>
+               <p><strong>Error:</strong> ${escrowInsertErr.message}</p>`,
+              supabase
+            );
+          }
 
           // Auto-update deal/matching status based on payment type
           if (meta.deal_id) {
@@ -585,6 +597,59 @@ serve(async (req) => {
             });
           }
         }
+        break;
+      }
+
+      /* ─── REFUND ─── */
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const piId = charge.payment_intent;
+        const refundedAmt = toDisplayAmount(charge.amount_refunded || 0, charge.currency || "usd");
+        const refundCur = charge.currency?.toUpperCase() || "USD";
+
+        // Update payment status in DB
+        if (piId) {
+          const { data: existingPayment } = await supabase
+            .from("payments")
+            .select("id, deal_id, user_id, amount, status")
+            .eq("stripe_payment_intent", piId)
+            .single();
+
+          if (existingPayment) {
+            const isFullRefund = charge.refunded === true;
+            await supabase
+              .from("payments")
+              .update({
+                status: isFullRefund ? "refunded" : "partially_refunded",
+                refunded_amount: refundedAmt,
+                refunded_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", existingPayment.id);
+
+            // Notify user
+            if (existingPayment.user_id) {
+              await supabase.from("notifications").insert({
+                user_id: existingPayment.user_id,
+                type: "payment",
+                title: isFullRefund ? "Payment Refunded" : "Partial Refund Processed",
+                body: `${refundCur} ${refundedAmt.toFixed(2)} has been refunded to your payment method.`,
+                link_page: existingPayment.deal_id ? "deals" : undefined,
+                link_id: existingPayment.deal_id || undefined,
+                is_read: false,
+              });
+            }
+          }
+        }
+
+        await notifyCEO(
+          `REFUND — ${refundCur} ${refundedAmt.toFixed(2)}`,
+          `<p><strong>Charge:</strong> ${charge.id}</p>
+           <p><strong>PI:</strong> ${piId || "N/A"}</p>
+           <p><strong>Amount Refunded:</strong> ${refundCur} ${refundedAmt.toFixed(2)}</p>
+           <p><strong>Full Refund:</strong> ${charge.refunded ? "Yes" : "No"}</p>`,
+          supabase
+        );
         break;
       }
 
