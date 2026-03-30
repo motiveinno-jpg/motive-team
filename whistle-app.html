@@ -6432,7 +6432,18 @@ function submitA(){
       var _aSub=S.user||{};var _aFree=(!_aSub.plan||_aSub.plan==='free');
       var _aOverage=g&&g.overage;var _overageAmt=OVERAGE_PRICE.usd;
       var _aPrice=_aFree?9.90:_aOverage?_overageAmt:(_aSub.plan==='starter'?9.90:0);
-      if(_aPrice>0&&!res._is_fallback){sb.from('billing_events').insert({user_id:S.user.id,event_type:_aOverage?'ai_analysis_overage':'ai_analysis',amount:_aPrice,currency:'USD',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free',is_overage:!!_aOverage,overage_rate:_aOverage?'$1.90/report':null}}).then(function(){}).catch(function(e){console.error('[billing] analysis event fail:',e);});}
+      if(_aPrice>0&&!res._is_fallback){
+        if(_aOverage){
+          /* Charge overage via Stripe off-session payment */
+          sb.functions.invoke('charge-overage',{body:{product_name:d.product_name,analysis_id:r.data.id}}).then(function(cr){
+            if(cr.error){console.error('[billing] overage charge EF error:',cr.error);return;}
+            var cd=cr.data;if(cd&&cd.success){console.info('[billing] overage charged: $'+cd.amount+' PI='+cd.payment_intent_id);}
+            else if(cd&&cd.error){console.error('[billing] overage charge failed:',cd.error);UI.toast(cd.error,'warn');}
+          }).catch(function(e){console.error('[billing] overage charge fail:',e);});
+        } else {
+          sb.from('billing_events').insert({user_id:S.user.id,event_type:'ai_analysis',amount:_aPrice,currency:'USD',status:'pending',metadata:{analysis_id:r.data.id,product:d.product_name,plan:_aSub.plan||'free'}}).then(function(){}).catch(function(e){console.error('[billing] analysis event fail:',e);});
+        }
+      }
     }).catch(function(err){
       console.error('[analyze-export] Client error:',err.message);
       var _errMsg=err.message||'';var _guideType='server';
