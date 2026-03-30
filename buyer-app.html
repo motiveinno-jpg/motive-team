@@ -1862,7 +1862,7 @@ function changeLang(lang){
   var rtlLangs=['ar','he','fa','ur'];
   document.documentElement.dir=rtlLangs.indexOf(lang)>=0?'rtl':'ltr';
   if(S.user){
-    sb.from('users').update({language:lang}).eq('id',S.user.id).then(function(){});
+    sb.from('users').update({language:lang}).eq('id',S.user.id).then(function(){}).catch(function(e){console.error('[lang] update:',e);});
     S.user.language=lang;
   }
   render();
@@ -2703,7 +2703,7 @@ function loadBuyerLinks(){
     S.buyerLinks=r.data||[];
     // Auto-link buyer_user_id if not set
     S.buyerLinks.forEach(function(b){
-      if(!b.buyer_user_id){sb.from('buyers').update({buyer_user_id:S.user.id}).eq('id',b.id).then(function(){});}
+      if(!b.buyer_user_id){sb.from('buyers').update({buyer_user_id:S.user.id}).eq('id',b.id).then(function(){}).catch(function(e){console.error('[buyer] autolink:',e);});}
     });
     if(S.buyerLinks.length){
       loadConversations();
@@ -5149,7 +5149,7 @@ function openDeal(dealId){
       setTimeout(function(){var el=document.getElementById('dealChatMsgs');if(el)el.scrollTop=el.scrollHeight;},100);
       // Mark unread
       var unread=(r.data||[]).filter(function(m){return m.sender_type!=='buyer'&&!m.read_at;});
-      if(unread.length){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unread.map(function(m){return m.id;})).then(function(){loadConversations();});}
+      if(unread.length){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unread.map(function(m){return m.id;})).then(function(){loadConversations();}).catch(function(e){console.error('[deal] mark read:',e);});}
     });
     initDealChatRealtime(deal.buyerLinkId,deal.sellerId);
   }
@@ -5174,7 +5174,7 @@ function initDealChatRealtime(buyerLinkId,sellerId){
     if(m.user_id===sellerId&&!S.dealMessages.find(function(x){return x.id===m.id;})){
       S.dealMessages.push(m);render();
       setTimeout(function(){var el=document.getElementById('dealChatMsgs');if(el)el.scrollTop=el.scrollHeight;},50);
-      if(m.sender_type!=='buyer'){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).then(function(){});}
+      if(m.sender_type!=='buyer'){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).then(function(){}).catch(function(e){console.error('[chat] mark read:',e);});}
     }
   }).subscribe(function(status,err){if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){console.error('Realtime subscription error:',status,err);}});
   /* Escrow status Realtime sync */
@@ -6358,12 +6358,12 @@ function acceptQuote(matchingId){
       buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
       body:'[Quotation Accepted] I accept the quotation. Let\'s proceed with the next steps.',
       message_type:'system',channel:'platform',direction:'inbound'
-    }).then(function(){});
+    }).then(function(){}).catch(function(e){console.error('[acceptQuote] msg:',e);});
     if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Quotation Accepted',esc(S.user.company_name||S.user.display_name||'Buyer')+' accepted your quotation',{link_page:'deals',link_id:deal.id});
     toast(_t('Quotation accepted! Moving to negotiation stage.','견적이 수락되었습니다! 협상 단계로 이동합니다.'),'ok');
     deal.matching.status='negotiation';
     buildDeals();render();
-  });
+  }).catch(function(e){console.error('[acceptQuote]',e);toast(_t('Failed','실패'),'err');});
 }
 
 function confirmSampleOk(matchingId){
@@ -6374,12 +6374,12 @@ function confirmSampleOk(matchingId){
       buyer_id:deal.buyerLinkId,user_id:deal.sellerId,sender_type:'buyer',
       body:'[Sample Approved] The sample quality meets our requirements. Let\'s finalize the order terms.',
       message_type:'system',channel:'platform',direction:'inbound'
-    }).then(function(){});
+    }).then(function(){}).catch(function(e){console.error('[sampleOk] msg:',e);});
     if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Sample Approved',esc(S.user.company_name||S.user.display_name||'Buyer')+' approved the sample',{link_page:'deals',link_id:deal.id});
     toast(_t('Sample approved! Moving to negotiation.','샘플이 승인되었습니다! 협상 단계로 이동합니다.'),'ok');
     deal.matching.status='negotiation';
     buildDeals();render();
-  });
+  }).catch(function(e){console.error('[confirmSampleOk]',e);toast(_t('Failed','실패'),'err');});
 }
 
 function confirmReadyToOrder(matchingId){
@@ -6395,7 +6395,7 @@ function confirmReadyToOrder(matchingId){
     if(deal.sellerId)_sendNotification(deal.sellerId,'deal','Ready to Order',esc(S.user.company_name||S.user.display_name||'Buyer')+' is ready to place an order',{link_page:'deals',link_id:deal.id});
     toast(_t('Order readiness confirmed! The seller will create the order.','주문 준비가 확인되었습니다! 셀러가 주문을 생성합니다.'),'ok');
     render();
-  });
+  }).catch(function(e){console.error('[confirmReadyToOrder]',e);toast(_t('Failed','실패'),'err');});
 }
 
 function confirmDelivery(matchingId){
@@ -6406,7 +6406,7 @@ function confirmDelivery(matchingId){
     toast(_t('Payment is not completed yet. Please complete payment before confirming delivery.','결제가 아직 완료되지 않았습니다. 수령 확인 전에 결제를 완료해 주세요.'),'err');return;
   }
   sb.from('matchings').update({status:'completed'}).eq('id',matchingId).then(function(){
-    if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){});
+    if(deal.order)sb.from('orders').update({status:'completed'}).eq('id',deal.order.id).then(function(){}).catch(function(e){console.error('[confirmDelivery] order update:',e);});
     // Server-side escrow transition (not localStorage)
     var _escDlv=_getEscrowStatus(deal.id);
     if(_escDlv&&(_escDlv.status==='shipping'||_escDlv.status==='secured'||_escDlv.status==='buyer_paid')){
@@ -6421,8 +6421,8 @@ function confirmDelivery(matchingId){
       toast(_t('Delivery confirmed! Deal completed.','수령이 확인되었습니다! 거래 완료.'),'ok');
       deal.matching.status='completed';
       buildDeals();render();
-    });
-  });
+    }).catch(function(e){console.error('[confirmDelivery] msg:',e);});
+  }).catch(function(e){console.error('[confirmDelivery]',e);toast(_t('Failed','실패'),'err');});
 }
 
 /* === SAMPLE REQUESTS === */
@@ -6458,7 +6458,7 @@ function submitSampleReq(matchingId){
       sender_type:'buyer',
       body:'[Sample Request] Qty: '+qty+' | Shipping: '+method+(notes?' | Notes: '+notes:''),
       message_type:'system',channel:'platform',direction:'inbound'
-    }).then(function(){});
+    }).then(function(){}).catch(function(e){console.error('[sampleReq] msg:',e);});
   });
 }
 
@@ -6747,11 +6747,11 @@ function submitStandaloneSample(){
         buyer_id:bid,user_id:sellerId,sender_type:'buyer',
         body:'[Sample Request] '+(d.productName?d.productName+' | ':'')+'Qty: '+qty+' | Shipping: '+method+(notes?' | '+notes:''),
         message_type:'system',channel:'platform',direction:'inbound'
-      }).then(function(){});
+      }).then(function(){}).catch(function(e){console.error('[sample] chat notify:',e);});
       // Notify seller
       _sendNotification(sellerId,'sample',_t('New Sample Request','새 샘플 요청'),esc(S.user.company_name||S.user.display_name||'Buyer')+_t(' requested a sample.',' 님이 샘플을 요청했습니다.'),{link_page:'samples'});
       S.modal=null;S.modalData=null;render();
-    });
+    }).catch(function(e){console.error('[sample] insert:',e);toast(_t('Failed to send request','요청 전송 실패'),'err');});
   }
 
   if(buyerLink){
@@ -6764,7 +6764,7 @@ function submitStandaloneSample(){
       if(r.error){toast(_t('Failed','실패'),'err');return;}
       S.buyerLinks.push(r.data);
       _doInsert(r.data.id);
-    });
+    }).catch(function(e){console.error('[sample] buyer insert:',e);toast(_t('Failed','실패'),'err');});
   }
 }
 
@@ -6784,7 +6784,7 @@ function loadConversations(){
     S.conversations=Object.values(convMap).sort(function(a,b){return new Date(b.lastMsg.created_at)-new Date(a.lastMsg.created_at);});
     S.chatUnread=S.conversations.reduce(function(s,c){return s+c.unread;},0);
     render();
-  });
+  }).catch(function(e){console.error('[loadConversations]',e);});
 }
 
 function _getSellerInitials(sellerId){
@@ -7012,7 +7012,7 @@ function openChat(buyerLinkId,sellerId){
     // Mark unread as read
     var unread=(r.data||[]).filter(function(m){return m.sender_type!=='buyer'&&!m.read_at;});
     if(unread.length){
-      sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unread.map(function(m){return m.id;})).then(function(){loadConversations();});
+      sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).in('id',unread.map(function(m){return m.id;})).then(function(){loadConversations();}).catch(function(e){console.error('[openChat] mark read:',e);});
     }
     // Auto-translate existing seller messages when auto-translate is on
     if(S._chatAutoTranslate){
@@ -7021,7 +7021,7 @@ function openChat(buyerLinkId,sellerId){
         translateMsg(m.id,tl);
       });
     }
-  });
+  }).catch(function(e){console.error('[openChat]',e);S.chatMessages=[];render();});
   initChatRealtime(buyerLinkId);
 }
 
@@ -7037,7 +7037,7 @@ function sendChat(){
     if(r.error){toast(_t('Failed to send','전송 실패'),'err');return;}
     S.chatMessages=S.chatMessages.filter(function(m){return!m.id.toString().startsWith('temp_');});
     S.chatMessages.push(r.data);render();scrollChatBottom();
-  });
+  }).catch(function(e){console.error('[sendChat]',e);toast(_t('Failed to send','전송 실패'),'err');});
 }
 
 function chatAttachFile(input){
@@ -7059,8 +7059,8 @@ function chatAttachFile(input){
       if(r.error){toast(_t('Send failed','전송 실패'),'err');return;}
       S.chatMessages=S.chatMessages.filter(function(m){return!m.id.toString().startsWith('temp_');});
       S.chatMessages.push(r.data);toast(_t('File sent','파일이 전송되었습니다'),'ok');render();scrollChatBottom();
-    });
-  });
+    }).catch(function(e){console.error('[chatAttach] msg insert:',e);toast(_t('Send failed','전송 실패'),'err');});
+  }).catch(function(e){console.error('[chatAttach] upload:',e);toast(_t('Upload failed','업로드 실패'),'err');});
   input.value='';
 }
 
@@ -7078,7 +7078,7 @@ function initChatRealtime(buyerLinkId){
           if(!getTranslation(m.id,tl))translateMsg(m.id,tl);
         }
       }
-      if(m.sender_type!=='buyer'){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).then(function(){});}
+      if(m.sender_type!=='buyer'){sb.from('messages').update({read_at:new Date().toISOString(),is_read:true}).eq('id',m.id).then(function(){}).catch(function(e){console.error('[chat] mark read:',e);});}
     } else {S.chatUnread++;render();}
   })
   .on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages',filter:'buyer_id=eq.'+buyerLinkId},function(payload){
@@ -7450,7 +7450,7 @@ function showOrderDetail(orderId){
   // Load milestones
   sb.from('payment_milestones').select('*').eq('order_id',orderId).order('created_at',{ascending:true}).limit(50).then(function(r){
     S.orderMilestones=r.data||[];render();
-  });
+  }).catch(function(e){console.error('[showOrderDetail] milestones:',e);S.orderMilestones=[];render();});
   render();
 }
 
@@ -7657,7 +7657,7 @@ function _handleDealReceiptSideEffects() {
       buyer_confirmed_at: new Date().toISOString(),
       delivered_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    }).eq('id', deal.matching.id || deal.id).then(function() {});
+    }).eq('id', deal.matching.id || deal.id).then(function() {}).catch(function(e){console.error('[receipt] matching update:',e);});
   }
   // Auto-release escrow
   var escData = _getEscrowStatus(dealId);
@@ -8236,7 +8236,7 @@ function loadSharedDocs(){
   var bids=getBuyerIds();if(!bids.length)return;
   sb.from('documents').select('*').in('buyer_id',bids).order('created_at',{ascending:false}).limit(50).then(function(r){
     S.sharedDocs=r.data||[];render();
-  });
+  }).catch(function(e){console.error('[loadSharedDocs]',e);S.sharedDocs=[];});
 }
 
 function pgDocs(){
@@ -8325,13 +8325,13 @@ function loadNotifications(){
       if(newest&&!newest.is_read){_showWebNotif(newest.title||'Whistle AI',newest.body||'',newest.type||'notification');}
     }
     render();
-  });
+  }).catch(function(e){console.error('[loadNotifications]',e);});
 }
 
 function toggleNotif(){S.notifOpen=!S.notifOpen;render();}
 
 function clickNotif(id,page,linkId){
-  sb.from('notifications').update({is_read:true}).eq('id',id).then(function(){loadNotifications();});
+  sb.from('notifications').update({is_read:true}).eq('id',id).then(function(){loadNotifications();}).catch(function(e){console.error('[clickNotif]',e);});
   S.notifOpen=false;
   if(page)nav(page);
   /* Deep link: auto-open specific deal/order */
@@ -8346,7 +8346,7 @@ function clickNotif(id,page,linkId){
 function markAllNotifRead(){
   var ids=S.notifications.filter(function(n){return!n.is_read;}).map(function(n){return n.id;});
   if(!ids.length)return;
-  sb.from('notifications').update({is_read:true}).in('id',ids).then(function(){loadNotifications();});
+  sb.from('notifications').update({is_read:true}).in('id',ids).then(function(){loadNotifications();}).catch(function(e){console.error('[markAllNotifRead]',e);});
 }
 
 /* === TRANSLATION === */
@@ -8518,7 +8518,7 @@ function loadSearchCredits(){
     S.searchCreditsUsed=r.count||0;
     S._searchCreditsLoaded=true;
     render();
-  });
+  }).catch(function(e){console.error('[loadSearchCredits]',e);});
 }
 
 function checkSearchCredits(){
@@ -8661,7 +8661,7 @@ function sendDirectMessage(){
       if(r.error){toast(_t('Failed to initialize messaging','메시징 초기화 실패'),'err');return;}
       S.buyerLinks.push(r.data);
       _insertDirectMessage(r.data.id,sellerId,body,d.context);
-    });
+    }).catch(function(e){console.error('[directMsg] buyer insert:',e);toast(_t('Failed to initialize messaging','메시징 초기화 실패'),'err');});
   }
 }
 
@@ -8682,7 +8682,7 @@ function _insertDirectMessage(buyerId,sellerId,body,context){
     S.modal=null;S.modalData=null;
     loadConversations();
     render();
-  });
+  }).catch(function(e){console.error('[directMessage]',e);toast(_t('Failed to send message','메시지 전송 실패'),'err');});
 }
 
 function pgMakerProfile(){

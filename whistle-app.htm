@@ -1344,7 +1344,7 @@ function reqExpertReview(docIdOrType,detail){
       if(r2.error){_toastE(r2.error,(T('service_request')));return;}
       UI.toast(T('customs_review_requested'),'ok');
     }).catch(function(e){console.error('[whistle]',e);UI.toast(T('error_occurred'),'err');});
-  });
+  }).catch(function(e){GP.done();console.error('[docReview]',e);UI.toast(T('error_occurred'),'err');});
 }
 
 /* === STATE === */
@@ -5103,7 +5103,7 @@ function toggleCurrency(){
   var local=_getLocalCurrency();
   S.currency=S.currency===local?'USD':local;
   localStorage.setItem('whistle_currency',S.currency);
-  if(S.user){sb.from('users').update({preferred_currency:S.currency}).eq('id',S.user.id).then(function(r){if(r.error)console.error('[toggleCurrency]',r.error);});}
+  if(S.user){sb.from('users').update({preferred_currency:S.currency}).eq('id',S.user.id).then(function(r){if(r.error)console.error('[toggleCurrency]',r.error);}).catch(function(e){console.error('[toggleCurrency]',e);});}
   render();
 }
 
@@ -5327,14 +5327,14 @@ function _acceptInvite(userId){
   if(token){
     sb.from('invitations').select('id,inviter_id').eq('invite_token',token).eq('status','pending').maybeSingle().then(function(r){
       if(!r.data)return;
-      sb.from('invitations').update({status:'accepted',accepted_by:userId,accepted_at:new Date().toISOString()}).eq('id',r.data.id).then(function(){});
-      sb.from('users').update({referred_by:r.data.inviter_id}).eq('id',userId).then(function(){});
+      sb.from('invitations').update({status:'accepted',accepted_by:userId,accepted_at:new Date().toISOString()}).eq('id',r.data.id).then(function(){}).catch(function(e){console.error('[invite] update:',e);});
+      sb.from('users').update({referred_by:r.data.inviter_id}).eq('id',userId).then(function(){}).catch(function(e){console.error('[invite] referral:',e);});
     }).catch(function(e){console.error('[invite accept]',e);});
   } else if(ref){
     sb.from('invitations').select('id,inviter_id').eq('referral_code',ref).eq('status','pending').order('created_at',{ascending:false}).limit(1).maybeSingle().then(function(r){
       if(!r.data)return;
-      sb.from('invitations').update({status:'accepted',accepted_by:userId,accepted_at:new Date().toISOString()}).eq('id',r.data.id).then(function(){});
-      sb.from('users').update({referred_by:r.data.inviter_id}).eq('id',userId).then(function(){});
+      sb.from('invitations').update({status:'accepted',accepted_by:userId,accepted_at:new Date().toISOString()}).eq('id',r.data.id).then(function(){}).catch(function(e){console.error('[invite] update:',e);});
+      sb.from('users').update({referred_by:r.data.inviter_id}).eq('id',userId).then(function(){}).catch(function(e){console.error('[invite] referral:',e);});
     }).catch(function(e){console.error('[invite accept]',e);});
   }
 }
@@ -6474,7 +6474,7 @@ function cancelAnalysis(){
   S._aiStartTime=null;S._aiProgressPct=0;S._aiProgressLabel='';S._aiPartial=null;S._submitting=false;GP.done();
   sb.from('analyses').update({status:'cancelled'}).eq('id',S.currentAnalysis.id).eq('user_id',S.user.id).then(function(){
     UI.toast(T('analysis_cancelled_toast'),'info');set({currentAnalysis:null});nav('analysis');
-  });
+  }).catch(function(e){console.error('[cancelAnalysis]',e);UI.toast(T('error_occurred'),'err');});
 }
 
 /* ── Analysis: reconnect to in-progress analyses after page refresh ── */
@@ -6701,7 +6701,7 @@ function autoCreateProduct(analysisId,res,productName){
       if(r2.error){UI.toast(T('auto_product_failed'),'warn');return;}
       loadP().then(function(){UI.toast((T('auto_product_registered'))+prod.name_ko,'ok');});
     }).catch(function(e){console.error('[whistle]',e);UI.toast(T('error_occurred'),'err');});
-  });
+  }).catch(function(e){console.error('[autoCreateProduct]',e);});
 }
 
 /* ── AI 영문 카탈로그 생성 ── */
@@ -6715,7 +6715,7 @@ function genCatalogEN(productId){
     sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).eq('user_id',S.user.id).then(function(r2){
       if(r2.error){UI.toast(T('save_failed'),'err');return;}
       loadP().then(function(){UI.toast(T('catalog_created'),'ok');closeModal('pm');render();});
-    });
+    }).catch(function(e){console.error('[catalog] save:',e);UI.toast(T('save_failed'),'err');});
   }).catch(function(err){UI.toast((T('catalog_creation_failed'))+err.message,'err');});
 }
 
