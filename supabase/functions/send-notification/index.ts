@@ -65,14 +65,14 @@ serve(async (req) => {
       }
     }
 
-    // Check if caller is admin
+    // Check if caller is admin (uses 'users' table — no separate 'profiles' table exists)
     const { data: callerProfile } = await sbAdmin
-      .from('profiles')
-      .select('is_admin')
+      .from('users')
+      .select('role')
       .eq('id', user.id)
       .single()
 
-    const isAdmin = callerProfile?.is_admin === true
+    const isAdmin = callerProfile?.role === 'admin'
 
     // Authorization: verify caller has relationship with each target user
     if (!isAdmin) {

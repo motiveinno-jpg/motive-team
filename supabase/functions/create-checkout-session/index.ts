@@ -113,6 +113,11 @@ serve(async (req) => {
       .eq("id", user.id)
       .single();
 
+    if (profileErr || !profile) {
+      console.error("[checkout] Profile fetch failed:", profileErr);
+      return jsonResponse({ error: "User profile not found" }, 404);
+    }
+
     let customerId: string | undefined;
     if (profile?.stripe_customer_id) {
       customerId = profile.stripe_customer_id;
