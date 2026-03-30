@@ -2690,6 +2690,158 @@ function _checkStripeCallback(){
   }
 }
 
+/* === OUTREACH MAGIC LINK HANDLING === */
+/* When a buyer clicks an outreach email CTA, they arrive with ?outreach={token} */
+var _outreachToken = null;
+var _pendingOutreachDealId = null;
+var _outreachRedirecting = false;
+
+function handleOutreachLanding(token) {
+  /* Show loading overlay while redirecting to magic link handler EF */
+  document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg,#060B18);z-index:9999">' +
+    '<div style="text-align:center">' +
+    '<div style="font-size:48px;margin-bottom:16px">&#x1F91D;</div>' +
+    '<div style="font-size:18px;font-weight:700;color:var(--w,#fff)">' + _t('Connecting you with the manufacturer...','제조사와 연결 중...') + '</div>' +
+    '<div style="font-size:14px;color:var(--w50,rgba(255,255,255,.5));margin-top:8px">' + _t('Setting up your deal room','딜룸을 준비하고 있습니다') + '</div>' +
+    '<div style="margin-top:24px"><div style="width:40px;height:40px;border:3px solid rgba(0,212,255,.2);border-top-color:#00D4FF;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto"></div></div>' +
+    '</div></div>' +
+    '<style>@keyframes spin{to{transform:rotate(360deg)}}</style>';
+  /* Redirect to bl-handle-magic-link EF which creates user/deal and returns Supabase magic link */
+  _outreachRedirecting = true;
+  window.location.href = SB_URL + '/functions/v1/bl-handle-magic-link?token=' + encodeURIComponent(token);
+}
+
+function _handleOutreachError() {
+  var p = new URLSearchParams(location.search);
+  var errType = p.get('error');
+  if (errType === 'outreach_failed') {
+    history.replaceState(null, '', location.pathname + location.hash);
+    setTimeout(function() {
+      toast(_t('Connection failed. Please try again or contact the manufacturer directly.', '연결에 실패했습니다. 다시 시도하거나 제조사에 직접 연락해주세요.'), 'err', 5000);
+    }, 500);
+  }
+  if (errType === 'outreach_expired') {
+    history.replaceState(null, '', location.pathname + location.hash);
+    setTimeout(function() {
+      toast(_t('This link has expired. Please request a new one from the manufacturer.', '이 링크의 유효기간이 만료되었습니다. 제조사에 새 링크를 요청해주세요.'), 'err', 5000);
+    }, 500);
+  }
+}
+
+function _handleOutreachDealHash() {
+  var hash = location.hash;
+  if (!hash || !hash.match(/^#deal\//)) return;
+  var dealId = hash.split('/')[1];
+  if (!dealId) return;
+  _pendingOutreachDealId = dealId;
+  /* If user and deals are already loaded, navigate immediately */
+  if (S.user && S.deals && S.deals.length) {
+    _navigateToOutreachDeal();
+  }
+  /* Otherwise, loadAllData will call _navigateToOutreachDeal after deals load */
+}
+
+function _navigateToOutreachDeal() {
+  if (!_pendingOutreachDealId) return;
+  var dealId = _pendingOutreachDealId;
+  _pendingOutreachDealId = null;
+  /* Clean hash to avoid re-triggering */
+  history.replaceState(null, '', location.pathname + '#deals');
+  S.page = 'deals';
+  /* Try to find and open the deal */
+  var deal = S.deals.find(function(d) { return d.id === dealId; });
+  if (deal) {
+    openDeal(dealId);
+    /* Show welcome modal if this is an outreach arrival */
+    if (sessionStorage.getItem('_outreach_welcome')) {
+      var welcomeData = null;
+      try { welcomeData = JSON.parse(sessionStorage.getItem('_outreach_welcome')); } catch(e) {}
+      sessionStorage.removeItem('_outreach_welcome');
+      _showOutreachWelcomeModal(welcomeData, deal);
+    }
+  } else {
+    /* Deal not yet in loaded list — fetch it directly */
+    sb.from('buyer_links').select('*,users!buyer_links_user_id_fkey(company_name,display_name)').eq('id', dealId).maybeSingle().then(function(r) {
+      if (r.data) {
+        /* Force reload deals then open */
+        render();
+        toast(_t('Opening your deal room...', '딜룸을 열고 있습니다...'), 'info');
+        setTimeout(function() {
+          var retryDeal = S.deals.find(function(d) { return d.id === dealId; });
+          if (retryDeal) openDeal(dealId);
+          else { nav('deals'); toast(_t('Deal room is being prepared. Please refresh in a moment.', '딜룸을 준비 중입니다. 잠시 후 새로고침해주세요.'), 'info', 4000); }
+        }, 2000);
+      } else {
+        nav('deals');
+        toast(_t('Deal not found. It may still be processing.', '딜을 찾을 수 없습니다. 아직 처리 중일 수 있습니다.'), 'warn', 4000);
+      }
+    }).catch(function() {
+      nav('deals');
+    });
+  }
+}
+
+function _showOutreachWelcomeModal(welcomeData, deal) {
+  var mfgName = '';
+  var productName = '';
+  if (welcomeData) {
+    mfgName = welcomeData.manufacturer || '';
+    productName = welcomeData.product || '';
+  }
+  if (!mfgName && deal) {
+    mfgName = (deal.matching && deal.matching.company_name) || '';
+  }
+  if (!productName && deal && deal.inquiry) {
+    productName = deal.inquiry.product_query || deal.title || '';
+  }
+  var detailLine = '';
+  if (mfgName && productName) {
+    detailLine = '<div style="font-size:14px;color:var(--w70);margin-top:12px;line-height:1.6">' +
+      esc(mfgName) + ' ' + _t('wants to discuss', '이(가)') + ' <strong style="color:var(--pri)">' + esc(productName) + '</strong> ' + _t('with you', '에 대해 논의하고 싶어합니다') +
+      '</div>';
+  } else if (mfgName) {
+    detailLine = '<div style="font-size:14px;color:var(--w70);margin-top:12px">' +
+      esc(mfgName) + ' ' + _t('wants to connect with you', '이(가) 연결을 요청했습니다') +
+      '</div>';
+  }
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = '_outreach_welcome_modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);backdrop-filter:blur(4px)';
+  overlay.innerHTML = '<div class="modal" style="max-width:440px;width:90%" onclick="event.stopPropagation()">' +
+    '<div style="padding:32px;text-align:center">' +
+    '<div style="font-size:48px;margin-bottom:12px">&#x1F389;</div>' +
+    '<div style="font-size:20px;font-weight:800;color:var(--w)">' + _t('Welcome to Whistle!', 'Whistle에 오신 것을 환영합니다!') + '</div>' +
+    detailLine +
+    '<div style="font-size:13px;color:var(--w50);margin-top:16px;line-height:1.6">' +
+    _t('This is your deal room where you can chat with the manufacturer, share documents, request samples, and manage your order — all in one place.',
+       '이곳은 제조사와 채팅하고, 문서를 공유하고, 샘플을 요청하고, 주문을 관리할 수 있는 딜룸입니다.') +
+    '</div>' +
+    '<button onclick="document.getElementById(\'_outreach_welcome_modal\').remove()" class="btn btn-pri btn-lg" style="margin-top:24px;min-width:200px">' +
+    _t('Start Chatting', '채팅 시작하기') +
+    '</button>' +
+    '</div></div>';
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  /* Focus the button for keyboard accessibility */
+  var btn = overlay.querySelector('button');
+  if (btn) setTimeout(function() { btn.focus(); }, 100);
+}
+
+/* Outreach email open tracking pixel */
+function _handleOutreachTrackOpen() {
+  var p = new URLSearchParams(location.search);
+  var eventId = p.get('track_open');
+  if (!eventId) return;
+  /* Fire tracking request and clean URL */
+  history.replaceState(null, '', location.pathname + location.hash);
+  fetch(SB_URL + '/functions/v1/bl-track-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SB_KEY },
+    body: JSON.stringify({ event_id: eventId, action: 'opened' })
+  }).catch(function(e) { console.error('[outreach] track open failed:', e); });
+}
+
 /* 랜딩페이지에서 저장한 관심 제품 → buyer_saved_products 자동 등록 */
 function importLandingSavedProducts(){
   if(!S.user)return;
@@ -5060,6 +5212,8 @@ function buildDeals(){
     }
   });
   S.deals=deals.sort(function(a,b){return new Date(b.created_at)-new Date(a.created_at);});
+  /* Auto-navigate to outreach deal if pending */
+  if (_pendingOutreachDealId) { setTimeout(function() { _navigateToOutreachDeal(); }, 300); }
   render();
 }
 
@@ -8955,8 +9109,8 @@ sb.auth.onAuthStateChange(function(event,session){
   else if(event==='PASSWORD_RECOVERY'){set({_pwRecovery:true});}
   else if(event==='SIGNED_IN'){if(!S.user&&session)loadUser();}
 });
-window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');var _guestPages={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
-window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');var _guestPages2={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages2[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
+window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&hp.indexOf('deal/')===0&&S.user){_pendingOutreachDealId=hp.split('/')[1];_navigateToOutreachDeal();return;}var _guestPages={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
+window.addEventListener('popstate',function(){var hp=location.hash.replace('#','');if(hp&&hp.indexOf('deal/')===0&&S.user){_pendingOutreachDealId=hp.split('/')[1];_navigateToOutreachDeal();return;}var _guestPages2={search:1,marketplace:1,'product-detail':1,'maker-profile':1};if(hp&&_BPL[hp]&&(S.user||_guestPages2[hp])){S.page=hp;S._inqFilter=null;S.notifOpen=false;S.modal=null;S.modalData=null;if(hp!=='deals'&&hp!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(hp!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(hp!=='product-detail')S._productDetailPage=null;if(hp!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;}closeMob();render();window.scrollTo(0,0);}});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifOpen){S.notifOpen=false;render();return;}var modal=document.querySelector('.modal-overlay');if(modal){B.closeModal();return;}if(S.modal){B.closeModal();return;}}});
 /* Korean language banner for KR users */
 (function(){
@@ -8969,7 +9123,22 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'){if(S.notifO
     document.body.prepend(b);
   }
 })();
-loadUser();
+/* === OUTREACH MAGIC LINK — pre-auth redirect === */
+(function() {
+  var _oParams = new URLSearchParams(location.search);
+  _outreachToken = _oParams.get('outreach');
+  if (_outreachToken) {
+    handleOutreachLanding(_outreachToken);
+    return; /* Page will redirect — do not proceed with normal init */
+  }
+  /* Handle outreach error params */
+  _handleOutreachError();
+  /* Handle email open tracking */
+  _handleOutreachTrackOpen();
+  /* Handle #deal/{id} hash from magic link redirect */
+  _handleOutreachDealHash();
+})();
+if (!_outreachRedirecting) loadUser();
 /* === CONNECTION RECOVERY === */
 (function(){
   var _offlineBannerId='_buyer_offline_banner';
