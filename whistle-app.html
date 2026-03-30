@@ -4461,6 +4461,7 @@ _ML = {
 'start_without_alibaba_account_fees_whistle_registe': { ko:'알리바바 계정 비용 없이 시작. Whistle이 총판으로 등록·운영하고, 수출 성사 시 수수료를 공유합니다.', en:'Start without Alibaba account fees. Whistle registers and operates as distributor, sharing commission on successful exports.' },
 'starting_ai_export_analysis': { ko:'AI 수출 분석을 시작합니다.', en:'Starting AI export analysis.' },
 'reconnecting_analysis': { ko:'진행 중인 분석에 다시 연결 중…', en:'Reconnecting to analysis in progress…', ja:'分析に再接続中…', zh:'正在重新连接分析…', vi:'Đang kết nối lại phân tích…', th:'กำลังเชื่อมต่อการวิเคราะห์อีกครั้ง…', es:'Reconectando al análisis…', fr:'Reconnexion à l\'analyse…', de:'Analyse wird wieder verbunden…', pt:'Reconectando à análise…', ar:'جارٍ إعادة الاتصال بالتحليل…', ru:'Переподключение к анализу…', id:'Menghubungkan kembali ke analisis…' },
+'stale_analysis_cancelled': { ko:'이전 분석이 시간 초과로 자동 취소되었습니다.', en:'A previous analysis timed out and was cancelled.', ja:'以前の分析がタイムアウトして自動キャンセルされました。', zh:'之前的分析已超时并被自动取消。', vi:'Phân tích trước đã hết thời gian và bị hủy.', th:'การวิเคราะห์ก่อนหน้าหมดเวลาและถูกยกเลิก', es:'Un análisis anterior agotó el tiempo y fue cancelado.', fr:'Une analyse précédente a expiré et a été annulée.', de:'Eine vorherige Analyse ist abgelaufen und wurde abgebrochen.', pt:'Uma análise anterior expirou e foi cancelada.', ar:'انتهت مهلة التحليل السابق وتم إلغاؤه.', ru:'Предыдущий анализ превысил время ожидания и был отменён.', id:'Analisis sebelumnya telah kedaluwarsa dan dibatalkan.' },
 'status': { ko:'\상\태', en:'Status' },
 'store': { ko:'스토어', en:'Store' },
 'store_id': { ko:'스토어 ID', en:'Store ID' },
@@ -6476,6 +6477,13 @@ function _reconnectAnalyzingPolls(){
   var inProgress=S.analyses.filter(function(a){return a.status==='analyzing';});
   if(!inProgress.length)return;
   var a=inProgress[0];
+  /* If analysis was started over 10 minutes ago, it's likely stuck — auto-cancel */
+  var _age=Date.now()-new Date(a.created_at).getTime();
+  if(_age>600000){
+    sb.from('analyses').update({status:'cancelled'}).eq('id',a.id).eq('user_id',S.user.id);
+    UI.toast(T('stale_analysis_cancelled')||'A previous analysis timed out and was cancelled.','info',6000);
+    return;
+  }
   set({currentAnalysis:a});
   S._aiStartTime=Date.now();S._aiProgressPct=0;S._aiProgressLabel=T('reconnecting_analysis')||'Reconnecting…';S._submitting=true;GP.start();
   render();
