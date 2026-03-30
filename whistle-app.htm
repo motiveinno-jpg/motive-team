@@ -1223,11 +1223,19 @@ function _checkStripeCallback(){
       S._planSub=sb.channel('plan-update-'+S.user.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'users',filter:'id=eq.'+S.user.id},function(payload){
         if(payload.new){
           if(payload.new.analysis_credits!==undefined){
+            var _prevCredits=S.user.analysis_credits||0;
             S.user.analysis_credits=payload.new.analysis_credits;
             var _curPlan=S.user.plan||'free';var _planMax=(PLAN_LIMITS[_curPlan]||PLAN_LIMITS.free).analyses;
             var _now=new Date();var _usedMonth=(S.analyses||[]).filter(function(a){var d=new Date(a.created_at);return d.getMonth()===_now.getMonth()&&d.getFullYear()===_now.getFullYear();}).length;
             var _overPlan=Math.max(0,_usedMonth-_planMax);S._singleAnalysisCredit=Math.max(0,(S.user.analysis_credits||0)-_overPlan);
             render();
+            /* Single analysis purchase: credits increased without plan change → restore form immediately */
+            if(payload.new.analysis_credits>_prevCredits&&!_planUpdated){
+              _planUpdated=true;
+              if(S._planSub){sb.removeChannel(S._planSub);S._planSub=null;}
+              UI.toast(TF('credits_added',{count:payload.new.analysis_credits-_prevCredits}),'ok',5000);
+              _restorePendingAnalysis();
+            }
           }
           if(payload.new.plan&&payload.new.plan!==_prevPlan){
             S.user.plan=payload.new.plan;render();
@@ -4609,6 +4617,7 @@ _ML = {
 'n_deals_in_progress': { ko:'{n}건 딜 진행중', en:'{n} deals in progress', ja:'{n}件の取引進行中', zh:'{n}笔交易进行中', vi:'{n} giao dịch đang tiến hành', th:'{n} ดีลกำลังดำเนินการ', de:'{n} Deals in Bearbeitung', fr:'{n} transactions en cours', es:'{n} acuerdos en progreso', pt:'{n} negócios em andamento', id:'{n} transaksi berlangsung', tr:'{n} anlaşma devam ediyor', ar:'{n} صفقة قيد التنفيذ' },
 'n_more_items': { ko:'외 {n}건 더', en:'{n} more', ja:'他{n}件', zh:'另外{n}条', vi:'thêm {n}', th:'อีก {n} รายการ', de:'{n} weitere', fr:'{n} de plus', es:'{n} más', pt:'mais {n}', id:'{n} lagi', tr:'{n} daha', ar:'{n} أخرى' },
 'plan_activated': { ko:'플랜이 {plan}로 활성화되었습니다!', en:'Plan activated: {plan}!', ja:'プランが{plan}に変更されました！', zh:'计划已激活：{plan}！', vi:'Gói đã kích hoạt: {plan}!', th:'แพลนเปิดใช้งาน: {plan}!', de:'Plan aktiviert: {plan}!', fr:'Plan activé : {plan} !', es:'¡Plan activado: {plan}!', pt:'Plano ativado: {plan}!', id:'Paket diaktifkan: {plan}!', tr:'Plan etkinleştirildi: {plan}!', ar:'تم تفعيل الخطة: {plan}!' },
+'credits_added': { ko:'{count}건의 분석 크레딧이 추가되었습니다!', en:'{count} analysis credit(s) added!', ja:'{count}件の分析クレジットが追加されました！', zh:'{count}个分析积分已添加！', vi:'Đã thêm {count} tín dụng phân tích!', th:'เพิ่ม {count} เครดิตวิเคราะห์แล้ว!', de:'{count} Analyse-Credit(s) hinzugefügt!', fr:'{count} crédit(s) d\'analyse ajouté(s) !', es:'¡{count} crédito(s) de análisis añadido(s)!', pt:'{count} crédito(s) de análise adicionado(s)!', id:'{count} kredit analisis ditambahkan!', tr:'{count} analiz kredisi eklendi!', ar:'تمت إضافة {count} رصيد تحليل!' },
 'payment_error_prefix': { ko:'결제 오류: {msg}', en:'Payment error: {msg}', ja:'決済エラー: {msg}', zh:'支付错误：{msg}', vi:'Lỗi thanh toán: {msg}', th:'ข้อผิดพลาดการชำระเงิน: {msg}', de:'Zahlungsfehler: {msg}', fr:'Erreur de paiement : {msg}', es:'Error de pago: {msg}', pt:'Erro de pagamento: {msg}', id:'Kesalahan pembayaran: {msg}', tr:'Ödeme hatası: {msg}', ar:'خطأ في الدفع: {msg}' },
 'sanctions_warning': { ko:'⚠️ {name}은(는) 국제 제재 대상국입니다. 수출 거래가 제한됩니다.', en:'⚠️ {name} is under international sanctions. Trade transactions are restricted.', ja:'⚠️ {name}は国際制裁対象国です。輸出取引が制限されます。', zh:'⚠️ {name}受国际制裁。贸易交易受限。', vi:'⚠️ {name} đang bị trừng phạt quốc tế. Giao dịch thương mại bị hạn chế.', th:'⚠️ {name} อยู่ภายใต้การคว่ำบาตร การค้าถูกจำกัด', de:'⚠️ {name} steht unter internationalen Sanktionen.', fr:'⚠️ {name} fait l\'objet de sanctions internationales.', es:'⚠️ {name} está bajo sanciones internacionales.', pt:'⚠️ {name} está sob sanções internacionais.', id:'⚠️ {name} di bawah sanksi internasional.', tr:'⚠️ {name} uluslararası yaptırım altında.', ar:'⚠️ {name} تحت عقوبات دولية.' },
 'about_n_min_sec': { ko:'약 {m}분 {s}초 남음', en:'~{m}m {s}s remaining', ja:'約{m}分{s}秒', zh:'约{m}分{s}秒', vi:'~{m} phút {s} giây', th:'ประมาณ {m} นาที {s} วินาที', de:'~{m} Min. {s} Sek.', fr:'~{m} min {s} s', es:'~{m} min {s} s', pt:'~{m} min {s} s', id:'~{m} mnt {s} dtk', tr:'~{m} dk {s} sn', ar:'~{m} دقيقة {s} ثانية' },
