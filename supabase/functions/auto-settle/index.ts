@@ -186,38 +186,96 @@ serve(async (req) => {
           .eq("id", deal.user_id)
           .single();
 
-        let transferSuccess = true;
-        if (sellerProfile?.stripe_connect_account_id) {
-          try {
-            await stripe.transfers.create({
-              amount: netAmountCents,
-              currency: payment.currency.toLowerCase(),
-              destination: sellerProfile.stripe_connect_account_id,
-              transfer_group: `escrow_${payment.deal_id}`,
+        if (!sellerProfile?.stripe_connect_account_id) {
+          // Seller has no Stripe Connect account — cannot transfer automatically
+          console.warn(
+            `[auto-settle] Seller has no Stripe Connect account, manual payout required. Payment ${payment.id}, seller ${deal.user_id}`,
+          );
+          await supabase
+            .from("payments")
+            .update({
+              status: "pending_manual_payout",
               metadata: {
-                deal_id: payment.deal_id,
-                payment_id: payment.id,
-                type: "escrow_settlement",
+                reason: "no_stripe_connect_account",
+                seller_id: deal.user_id,
+                attempted_at: new Date().toISOString(),
               },
+            })
+            .eq("id", payment.id);
+
+          // Notify admin about manual payout needed
+          const { data: admins } = await supabase
+            .from("users")
+            .select("id")
+            .eq("role", "admin");
+          for (const admin of admins || []) {
+            await supabase.from("notifications").insert({
+              user_id: admin.id,
+              type: "payment",
+              title: "Manual Payout Required",
+              body: `Payment ${payment.id} for deal ${payment.deal_id} requires manual payout. Seller (${deal.user_id}) has no Stripe Connect account.`,
+              link_page: "deals",
+              link_id: payment.deal_id,
+              is_read: false,
             });
-          } catch (transferErr: unknown) {
-            transferSuccess = false;
-            const tMsg = transferErr instanceof Error ? transferErr.message : String(transferErr);
-            console.error(`[auto-settle] Transfer failed for payment ${payment.id}:`, tMsg);
-            // Mark as transfer_failed, do NOT mark as settled
-            await supabase
-              .from("payments")
-              .update({
-                status: "transfer_failed",
-                metadata: { transfer_error: tMsg, attempted_at: new Date().toISOString() },
-              })
-              .eq("id", payment.id);
-            results.push({ id: payment.id, status: "failed", error: `Transfer failed: ${tMsg}` });
-            continue;
           }
+
+          results.push({
+            id: payment.id,
+            status: "pending_manual_payout",
+            error: "Seller has no Stripe Connect account",
+          });
+          continue;
         }
 
-        // Update payment status — only if transfer succeeded or no connected account
+        // Seller has a Stripe Connect account — attempt transfer
+        try {
+          await stripe.transfers.create({
+            amount: netAmountCents,
+            currency: payment.currency.toLowerCase(),
+            destination: sellerProfile.stripe_connect_account_id,
+            transfer_group: `escrow_${payment.deal_id}`,
+            metadata: {
+              deal_id: payment.deal_id,
+              payment_id: payment.id,
+              type: "escrow_settlement",
+            },
+          });
+        } catch (transferErr: unknown) {
+          const tMsg = transferErr instanceof Error ? transferErr.message : String(transferErr);
+          console.error(`[auto-settle] Transfer failed for payment ${payment.id}:`, tMsg);
+
+          // Mark as settlement_failed, do NOT mark as settled
+          await supabase
+            .from("payments")
+            .update({
+              status: "settlement_failed",
+              metadata: { transfer_error: tMsg, attempted_at: new Date().toISOString() },
+            })
+            .eq("id", payment.id);
+
+          // Notify admin about failed transfer
+          const { data: adminUsers } = await supabase
+            .from("users")
+            .select("id")
+            .eq("role", "admin");
+          for (const admin of adminUsers || []) {
+            await supabase.from("notifications").insert({
+              user_id: admin.id,
+              type: "payment",
+              title: "Settlement Transfer Failed",
+              body: `Stripe transfer failed for payment ${payment.id} (deal ${payment.deal_id}). Error: ${tMsg}`,
+              link_page: "deals",
+              link_id: payment.deal_id,
+              is_read: false,
+            });
+          }
+
+          results.push({ id: payment.id, status: "failed", error: `Transfer failed: ${tMsg}` });
+          continue;
+        }
+
+        // Transfer succeeded — mark as settled
         await supabase
           .from("payments")
           .update({
@@ -268,6 +326,7 @@ serve(async (req) => {
         processed: results.length,
         settled: results.filter((r) => r.status === "settled").length,
         failed: results.filter((r) => r.status === "failed").length,
+        pending_manual_payout: results.filter((r) => r.status === "pending_manual_payout").length,
         results,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },

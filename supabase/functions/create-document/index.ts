@@ -508,13 +508,13 @@ serve(async (req) => {
     }
 
     // Authorization: verify caller is deal owner (seller/buyer) or admin
-    const { data: callerProfile } = await sbAdmin
-      .from("profiles")
-      .select("is_admin")
+    const { data: callerUser } = await sbAdmin
+      .from("users")
+      .select("role")
       .eq("id", user.id)
       .single();
 
-    const isAdmin = callerProfile?.is_admin === true;
+    const isAdmin = callerUser?.role === "admin";
     const isSeller = dealRecord.user_id === user.id;
     const isBuyer = dealRecord.buyer_id === user.id;
 
@@ -543,7 +543,7 @@ serve(async (req) => {
         ? sbAdmin.from("buyers").select("*").eq("id", dealRecord.buyer_id).single()
         : Promise.resolve({ data: null, error: null }),
       dealRecord.user_id
-        ? sbAdmin.from("profiles").select("*").eq("id", dealRecord.user_id).single()
+        ? sbAdmin.from("users").select("*").eq("id", dealRecord.user_id).single()
         : Promise.resolve({ data: null, error: null }),
       dealRecord.user_id
         ? sbAdmin.from("companies").select("*").eq("user_id", dealRecord.user_id)
