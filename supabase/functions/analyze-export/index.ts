@@ -561,6 +561,47 @@ async function crawlWithRetry(url: string): Promise<CrawlResult> {
     } catch (e) { console.warn(`[crawl-retry] Googlebot UA failed: ${(e as Error).message}`); }
   }
 
+  // Tier 3: Jina Reader — handles JS-rendered pages, anti-bot, SPAs (free tier)
+  console.log(`[crawl-retry] ${url}: all direct methods failed, trying Jina Reader...`);
+  try {
+    const jinaUrl = `https://r.jina.ai/${url}`;
+    const ctrl = new AbortController();
+    const tm = setTimeout(() => ctrl.abort(), 15000);
+    const resp = await fetch(jinaUrl, {
+      headers: {
+        "Accept": "text/plain",
+        "X-Return-Format": "text",
+        "X-No-Cache": "true",
+      },
+      signal: ctrl.signal,
+    });
+    clearTimeout(tm);
+    if (resp.ok) {
+      const text = await resp.text();
+      if (text.length > 200) {
+        console.log(`[crawl-retry] Jina Reader success for ${url}: ${text.length} chars`);
+        // Extract title from first line (Jina returns "Title: ...\n..." format)
+        const titleMatch = text.match(/^Title:\s*(.+)/m);
+        const jinaTitle = titleMatch ? titleMatch[1].trim() : first.title || "";
+        return {
+          url,
+          success: true,
+          title: jinaTitle,
+          text: text.slice(0, MAX_CRAWL_TEXT_LENGTH),
+          image: (first as any).image || undefined,
+        };
+      }
+    }
+  } catch (e) { console.warn(`[crawl-retry] Jina Reader failed: ${(e as Error).message}`); }
+
+  // All tiers exhausted — return partial result with OG data if available
+  // Even a "failed" crawl may have OG tags from the initial attempt
+  if (first.success && first.text && first.text.length > 0) {
+    // Had some data, just not enough (< 200 chars) — return it anyway as partial
+    console.log(`[crawl-retry] Returning partial data for ${url}: ${first.text.length} chars`);
+    return first;
+  }
+
   return first;
 }
 
