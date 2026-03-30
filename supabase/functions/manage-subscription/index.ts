@@ -124,11 +124,18 @@ serve(async (req) => {
 
       /* ─── RECORD USAGE EVENT ─── */
       case "record_usage": {
-        await supabase.from("usage_events").insert({
+        const now = new Date();
+        const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+        await sbAdmin.from("usage_events").insert({
           user_id: user.id,
-          event_type: event_type || "ai_analysis",
-          details: details || {},
-          created_at: new Date().toISOString(),
+          feature: event_type || "ai_analysis",
+          quantity: details?.quantity || 1,
+          billable: true,
+          period_start: periodStart.toISOString(),
+          period_end: periodEnd.toISOString(),
+          metadata: details || {},
+          created_at: now.toISOString(),
         });
         return respond({ ok: true });
       }
