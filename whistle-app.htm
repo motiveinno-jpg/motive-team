@@ -4922,7 +4922,7 @@ function _stripeFetch(url,opts){
   var ctrl=new AbortController();
   var timer=setTimeout(function(){ctrl.abort();},30000);
   var fetchOpts=Object.assign({},opts||{},{signal:ctrl.signal});
-  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);return r;}).catch(function(e){
+  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);if(!r.ok){return r.text().then(function(t){try{var j=JSON.parse(t);if(j.error)throw new Error(j.error);throw new Error('Stripe API error ('+r.status+')');}catch(pe){if(pe.message&&pe.message.indexOf('Stripe API')!==-1)throw pe;throw new Error('Stripe API error ('+r.status+')');}});}return r;}).catch(function(e){
     clearTimeout(timer);
     var isTimeout=e.name==='AbortError';
     var msg=isTimeout?'Stripe API timeout (30s)':e.message||String(e);
@@ -5250,8 +5250,8 @@ function loadUser(){
       });
       /* Fire-and-forget: exchange rates + country data (non-blocking) */
       loadExchangeRate();_loadExRatesFromEdge();_loadCountryData();
-    });
-  });
+    }).catch(function(e){clearTimeout(_loadTimeout);console.error('[loadUser] profile load error:',e);set({loading:false});});
+  }).catch(function(e){clearTimeout(_loadTimeout);console.error('[loadUser] auth session error:',e);set({loading:false});});
 }
 var ANALYSIS_PAGE_SIZE=20;
 function loadA(loadMore){if(!S.user)return Promise.resolve();if(!loadMore){S._analysisPage=0;S._analysisHasMore=true;}var offset=S._analysisPage*ANALYSIS_PAGE_SIZE;return sb.from('analyses').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).range(offset,offset+ANALYSIS_PAGE_SIZE-1).then(function(r){var items=r.data||[];if(loadMore){S.analyses=(S.analyses||[]).concat(items);}else{S.analyses=items;}S._analysisHasMore=items.length>=ANALYSIS_PAGE_SIZE;S._analysisPage=(S._analysisPage||0)+1;}).catch(function(e){console.error('[loadA]',e);if(!loadMore)S.analyses=[];});}
@@ -15785,7 +15785,7 @@ function _upgradeSubscription(planId,newPriceId,cycle,btn,btnReset){
         loadUser();
       }
     }).catch(function(err){_rmOv();UI.toast(T('payment_connection_error'),'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}});
-  });
+  }).catch(function(err){_rmOv();console.error('[upgrade] auth error:',err);UI.toast(T('login_required'),'warn');if(btn){btn.disabled=false;btn.textContent=btnReset;}});
 }
 
 function closeStripeCheckout(){
@@ -15807,7 +15807,7 @@ function openBillingPortal(){
       if(data.url)window.open(data.url,'_blank');
       else UI.toast(_payErr(data.error)||(T('billing_portal_error')),'warn');
     }).catch(function(e){UI.toast(e.message||(T('billing_portal_error')),'err');});
-  });
+  }).catch(function(e){console.error('[billing-portal] auth error:',e);UI.toast(T('login_required'),'warn');});
 }
 
 function requestRefund(){
@@ -21021,7 +21021,7 @@ function _escrowTransition(dealId,newStatus,metadata){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({deal_id:dealId,new_status:newStatus,metadata:metadata||{}})
     });
-  }).then(function(r){return r.json();}).then(function(res){
+  }).then(function(r){if(!r.ok)return r.text().then(function(t){try{var j=JSON.parse(t);return Promise.reject(new Error(j.error||'Escrow transition failed'));}catch(e){return Promise.reject(new Error('Escrow transition failed ('+r.status+')'));}});return r.json();}).then(function(res){
     if(res.error){console.error('[escrow-transition]',res.error);return Promise.reject(new Error(res.error));}
     /* Update local cache from server response */
     if(res.escrow){

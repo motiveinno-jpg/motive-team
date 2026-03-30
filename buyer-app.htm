@@ -1716,7 +1716,7 @@ function _stripeFetch(url,opts){
   var ctrl=new AbortController();
   var timer=setTimeout(function(){ctrl.abort();},30000);
   var fetchOpts=Object.assign({},opts||{},{signal:ctrl.signal});
-  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);return r;}).catch(function(e){
+  return fetch(url,fetchOpts).then(function(r){clearTimeout(timer);if(!r.ok){return r.text().then(function(t){try{var j=JSON.parse(t);if(j.error)throw new Error(j.error);throw new Error('Stripe API error ('+r.status+')');}catch(pe){if(pe.message&&pe.message.indexOf('Stripe API')!==-1)throw pe;throw new Error('Stripe API error ('+r.status+')');}});}return r;}).catch(function(e){
     clearTimeout(timer);
     var isTimeout=e.name==='AbortError';
     var msg=isTimeout?'Stripe API timeout (30s)':e.message||String(e);
@@ -5636,7 +5636,7 @@ function _escrowTransition(dealId,newStatus,metadata){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_KEY},
       body:JSON.stringify({deal_id:dealId,new_status:newStatus,metadata:metadata||{}})
     });
-  }).then(function(r){return r.json();}).then(function(res){
+  }).then(function(r){if(!r.ok)return r.text().then(function(t){try{var j=JSON.parse(t);return Promise.reject(new Error(j.error||'Escrow transition failed'));}catch(e){return Promise.reject(new Error('Escrow transition failed ('+r.status+')'));}});return r.json();}).then(function(res){
     if(res.error){console.error('[escrow-transition]',res.error);return Promise.reject(new Error(res.error));}
     if(res.escrow){
       var esc=_dbEscrowToLocal(res.escrow);
@@ -7029,6 +7029,7 @@ function closeChat(){S.currentChat=null;if(S._chatChannel){sb.removeChannel(S._c
 
 function sendChat(){
   var inp=document.getElementById('chatInput');if(!inp||!inp.value.trim())return;
+  if(!S.currentChat){toast(_t('Please open a chat first','채팅을 먼저 열어주세요'),'warn');return;}
   var body=inp.value.trim();inp.value='';inp.style.height='auto';
   var msg={user_id:S.currentChat.sellerId,buyer_id:S.currentChat.buyerLinkId,body:body,sender_type:'buyer',message_type:'text',channel:'platform',direction:'inbound'};
   S.chatMessages.push(Object.assign({id:'temp_'+Date.now(),created_at:new Date().toISOString()},msg));
@@ -9025,7 +9026,7 @@ function initBuyerStripe(planId){
       if(data.url){closeModal('bck');window.location.href=data.url;}
       else{toast(_t('Payment session creation failed. Please try again.','결제 세션 생성에 실패했습니다. 다시 시도해 주세요.'),'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}}
     }).catch(function(err){toast(err.message||_t('Connection error','연결 오류'),'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}});
-  });
+  }).catch(function(err){console.error('[buyer-checkout] auth error:',err);toast(_t('Authentication error. Please log in again.','인증 오류. 다시 로그인해 주세요.'),'err');if(btn){btn.disabled=false;btn.textContent=_t('Pay with Card','카드 결제');}});
 }
 
 function closeStripeModal(){
@@ -9044,7 +9045,7 @@ function openBillingPortal(){
       if(data.url)window.open(data.url,'_blank');
       else toast(data.error||_t('Cannot open billing portal','결제 관리 페이지를 열 수 없습니다'),'warn');
     }).catch(function(e){toast(e.message||_t('Cannot open billing portal','결제 관리 페이지를 열 수 없습니다'),'err');});
-  });
+  }).catch(function(e){console.error('[buyer-billing-portal] auth error:',e);toast(_t('Authentication error. Please log in again.','인증 오류. 다시 로그인해 주세요.'),'err');});
 }
 
 function submitPartnership(){
