@@ -1221,9 +1221,18 @@ function _checkStripeCallback(){
     /* Realtime subscription for instant plan update */
     if(S.user&&S.user.id){
       S._planSub=sb.channel('plan-update-'+S.user.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'users',filter:'id=eq.'+S.user.id},function(payload){
-        if(payload.new&&payload.new.plan&&payload.new.plan!==_prevPlan){
-          S.user.plan=payload.new.plan;render();
-          _onPlanChange(payload.new.plan);
+        if(payload.new){
+          if(payload.new.analysis_credits!==undefined){
+            S.user.analysis_credits=payload.new.analysis_credits;
+            var _curPlan=S.user.plan||'free';var _planMax=(PLAN_LIMITS[_curPlan]||PLAN_LIMITS.free).analyses;
+            var _now=new Date();var _usedMonth=(S.analyses||[]).filter(function(a){var d=new Date(a.created_at);return d.getMonth()===_now.getMonth()&&d.getFullYear()===_now.getFullYear();}).length;
+            var _overPlan=Math.max(0,_usedMonth-_planMax);S._singleAnalysisCredit=Math.max(0,(S.user.analysis_credits||0)-_overPlan);
+            render();
+          }
+          if(payload.new.plan&&payload.new.plan!==_prevPlan){
+            S.user.plan=payload.new.plan;render();
+            _onPlanChange(payload.new.plan);
+          }
         }
       }).subscribe(function(status,err){if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){console.error('Realtime subscription error:',status,err);}});
     }
@@ -5184,7 +5193,7 @@ function loadUser(){
         _settled([_withTimeout(loadA(),FETCH_TIMEOUT),_withTimeout(loadP(),FETCH_TIMEOUT),_withTimeout(loadSR(),FETCH_TIMEOUT)]).then(function(r1){
           r1.forEach(function(x,i){if(x.status==='rejected')console.error('[init] Phase1 query '+i+' failed:',x.reason);});
           /* Render dashboard immediately with critical data */
-          var _paidCredits=(S.serviceRequests||[]).filter(function(sr){return sr.type==='single_analysis_payment'&&sr.status==='completed';}).length;
+          var _paidCredits=(S.user&&S.user.analysis_credits)||0;
           var _now=new Date();var _curPlan=S.user&&S.user.plan||'free';var _planMax=(PLAN_LIMITS[_curPlan]||PLAN_LIMITS.free).analyses;
           var _usedThisMonth=(S.analyses||[]).filter(function(a){var d=new Date(a.created_at);return d.getMonth()===_now.getMonth()&&d.getFullYear()===_now.getFullYear();}).length;
           var _overPlan=Math.max(0,_usedThisMonth-_planMax);S._singleAnalysisCredit=Math.max(0,_paidCredits-_overPlan);

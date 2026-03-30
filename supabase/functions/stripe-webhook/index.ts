@@ -4,6 +4,25 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const PLATFORM_FEE_RATE = 0.025; // 2.5%
 
+// Stripe Price ID → Plan mapping (for subscription updates via billing portal)
+const PRICE_TO_PLAN: Record<string, string> = {
+  "price_1R7KICP4t4OR5M7a6hb2R3DK": "starter",   // Starter $99/mo
+  "price_1R7KJWP4t4OR5M7a1jcYqGPb": "pro",        // Professional $199/mo
+  "price_1R7KKRP4t4OR5M7aKsyMlhSR": "enterprise", // Enterprise $449/mo
+};
+
+function detectPlanFromSubscription(sub: any): string | null {
+  // 1. Check metadata first
+  if (sub.metadata?.plan) return sub.metadata.plan;
+  // 2. Map from price ID
+  const items = sub.items?.data;
+  if (items?.length > 0) {
+    const priceId = items[0].price?.id;
+    if (priceId && PRICE_TO_PLAN[priceId]) return PRICE_TO_PLAN[priceId];
+  }
+  return null;
+}
+
 // Zero-decimal currencies — Stripe amount is already in final units
 const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
 
@@ -435,16 +454,46 @@ serve(async (req) => {
         const sub = event.data.object as Stripe.Subscription;
         const userId = sub.metadata?.user_id;
         if (userId) {
-          const status = sub.status === "active" ? "active" :
+          const isCanceling = sub.cancel_at_period_end === true && sub.status === "active";
+          const status = isCanceling ? "canceling" :
+                         sub.status === "active" ? "active" :
                          sub.status === "past_due" ? "past_due" :
                          sub.status === "canceled" ? "canceled" : sub.status;
+
+          const updateData: Record<string, any> = {
+            subscription_status: status,
+            updated_at: new Date().toISOString(),
+          };
+
+          // Sync plan field from subscription price
+          const detectedPlan = detectPlanFromSubscription(sub);
+          if (detectedPlan) {
+            updateData.plan = detectedPlan;
+          }
+
           await supabase
             .from("users")
-            .update({
-              subscription_status: status,
-              updated_at: new Date().toISOString(),
-            })
+            .update(updateData)
             .eq("id", userId);
+
+          // Notify on plan change
+          if (detectedPlan) {
+            const planName = detectedPlan.charAt(0).toUpperCase() + detectedPlan.slice(1);
+            await notifyCEO(
+              `Plan Change → ${planName} (${status})`,
+              `<p><strong>User:</strong> ${userId}</p>
+               <p><strong>New Plan:</strong> ${planName}</p>
+               <p><strong>Status:</strong> ${status}</p>`,
+              supabase
+            );
+            await notifyUser(supabase, userId, "subscription_change", {
+              action: isCanceling ? "Canceling at period end" : "Plan Updated",
+              details: isCanceling
+                ? `Your ${planName} plan will remain active until the end of the billing period.`
+                : `Your plan has been updated to ${planName}.`,
+              new_plan: planName,
+            });
+          }
         }
         break;
       }
@@ -490,6 +539,19 @@ serve(async (req) => {
               type: "subscription_renewal",
               created_at: new Date().toISOString(),
             });
+
+            // Ensure plan stays synced on renewal
+            const detectedPlan = detectPlanFromSubscription(sub);
+            if (detectedPlan) {
+              await supabase
+                .from("users")
+                .update({
+                  plan: detectedPlan,
+                  subscription_status: "active",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", userId);
+            }
           }
         }
         break;
