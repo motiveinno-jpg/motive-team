@@ -16,13 +16,13 @@ serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
-    if (!verifyAuth(req, cronSecret, serviceRoleKey)) {
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    if (!(await verifyAuth(req, cronSecret, serviceRoleKey, supabase))) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { "Content-Type": "application/json" },
       });
     }
-
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
     const now = new Date();
     let remindersSent = 0;
     const errors: string[] = [];
@@ -165,13 +165,35 @@ serve(async (req) => {
 });
 // ── Helpers ──
 
-function verifyAuth(req: Request, cronSecret: string | undefined, serviceRoleKey: string): boolean {
+async function verifyAuth(
+  req: Request,
+  cronSecret: string | undefined,
+  serviceRoleKey: string,
+  supabase: ReturnType<typeof createClient>,
+): Promise<boolean> {
   const cronHeader = req.headers.get("x-cron-secret");
+
+  // 1. Check env-based cron secret
   if (cronSecret && cronHeader && cronHeader.trim() === cronSecret.trim()) return true;
+
+  // 2. Check DB-based cron secret (fallback when env var missing)
+  if (!cronSecret && cronHeader) {
+    const { data: cfg } = await supabase
+      .from("system_config")
+      .select("value")
+      .eq("key", "cron_secret")
+      .single();
+    if (cfg && cronHeader.trim() === cfg.value.trim()) return true;
+  }
+
+  // 3. Check service role key via custom header
   const serviceKeyHeader = req.headers.get("x-service-key");
   if (serviceKeyHeader === serviceRoleKey) return true;
+
+  // 4. Check service role key in Authorization header
   const authHeader = req.headers.get("Authorization");
   if (authHeader && authHeader.replace("Bearer ", "") === serviceRoleKey) return true;
+
   return false;
 }
 
