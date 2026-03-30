@@ -426,10 +426,11 @@ var _userLang = (function() {
   var supported = ['ko','en','ja','zh','vi','th','de','fr','es','pt','id','tr','ar'];
   var params = new URLSearchParams(location.search);
   var langParam = params.get('lang');
-  if(langParam && supported.indexOf(langParam.toLowerCase()) >= 0) { try { localStorage.setItem('whistle_lang', langParam.toLowerCase()); } catch(e){} return langParam.toLowerCase(); }
-  var saved = null; try { saved = localStorage.getItem('whistle_lang') || localStorage.getItem('whistle_buyer_lang'); } catch(e){}
-  if(saved && supported.indexOf(saved) >= 0) return saved;
-  /* Auto-detect from browser language */
+  if(langParam && supported.indexOf(langParam.toLowerCase()) >= 0) { try { localStorage.setItem('whistle_lang', langParam.toLowerCase()); localStorage.setItem('whistle_lang_explicit','1'); } catch(e){} return langParam.toLowerCase(); }
+  /* Only use saved language if user explicitly chose it (not GeoIP auto-set) */
+  var isExplicit = false; try { isExplicit = localStorage.getItem('whistle_lang_explicit') === '1'; } catch(e){}
+  if(isExplicit) { var saved = null; try { saved = localStorage.getItem('whistle_lang'); } catch(e){} if(saved && supported.indexOf(saved) >= 0) return saved; }
+  /* Prefer browser language over GeoIP-cached value */
   var nav = (navigator.language || navigator.userLanguage || 'en').toLowerCase().split('-')[0];
   return supported.indexOf(nav) >= 0 ? nav : 'en';
 })();
@@ -1846,6 +1847,7 @@ function changeLang(lang){
   if(supported.indexOf(lang)<0)return;
   localStorage.setItem('whistle_lang',lang);
   localStorage.setItem('_lang',lang);
+  localStorage.setItem('whistle_lang_explicit','1');
   _userLang=lang;
   _isKorean=(lang==='ko');
   var rtlLangs=['ar','he','fa','ur'];
@@ -2494,8 +2496,10 @@ var _authErrMap={
 function _authErr(msg){if(!msg)return msg;for(var k in _authErrMap){if(msg.indexOf(k)>=0)return _authErrMap[k];}return msg;}
 function doLogin(f){
   var emailVal=f.email.value;
-  set({authError:'',_loggingIn:true,_loginEmail:emailVal});
-  sb.auth.signInWithPassword({email:emailVal,password:f.password.value}).then(function(r){
+  set({authError:'',_loggingIn:true,_loginEmail:emailVal,_showPortalSwitch:false});
+  sb.auth.signOut().then(function(){
+    return sb.auth.signInWithPassword({email:emailVal,password:f.password.value});
+  }).then(function(r){
     if(r.error){set({_loggingIn:false,authError:_authErr(r.error.message)});return;}
     set({_loggingIn:false,_loginEmail:''});
     loadUser();
@@ -2595,9 +2599,9 @@ function loadUser(){
         /* Map country to default language if user hasn't explicitly chosen */
         var _countryLangMap={KR:'ko',JP:'ja',CN:'zh',VN:'vi',TH:'th',DE:'de',FR:'fr',ES:'es',BR:'pt',PT:'pt',ID:'id',TR:'tr',SA:'ar',AE:'ar',EG:'ar'};
         var _expectedLang=_countryLangMap[_authCountry]||'en';
-        /* Only override if user hasn't manually chosen a language different from their country default */
-        var _storedLang=localStorage.getItem('whistle_lang');
-        if(!_storedLang||_storedLang==='en'){_userLang=_expectedLang;}
+        /* Only override if user hasn't explicitly chosen a language */
+        var _isExplicitLang=false;try{_isExplicitLang=localStorage.getItem('whistle_lang_explicit')==='1';}catch(e){}
+        if(!_isExplicitLang){_userLang=_expectedLang;}
         try{localStorage.setItem('whistle_lang',_userLang);localStorage.setItem('_lang',_userLang);}catch(e){}
         window.__isKorean=_isKorean;window.__whistleLang=_userLang;
       }
