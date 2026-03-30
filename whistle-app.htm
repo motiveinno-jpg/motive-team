@@ -6829,22 +6829,26 @@ function genReport(d){
 /* ── Analysis: report view ── */
 function pgAReport(){
   var a=S.currentAnalysis,r=a.ai_result||{};
-  // Failed / cancelled analysis — show friendly error page, do NOT render broken data
+  // Failed / cancelled analysis — check for partial results before showing error page
   if(a.status==='failed'||a.status==='cancelled'){
     var _failErr=(r&&r.error)||'';
-    return '<div style="max-width:540px;margin:40px auto;text-align:center">'+
-      '<button class="btn btn-ghost btn-sm" onclick="App.set({currentAnalysis:null})" style="margin-bottom:24px">← '+T('back_to_list')+'</button>'+
-      '<div style="font-size:48px;margin-bottom:16px">'+(a.status==='cancelled'?'🚫':'❌')+'</div>'+
-      '<div style="font-size:20px;font-weight:800;color:var(--w90);margin-bottom:8px">'+(a.status==='cancelled'?T('analysis_cancelled'):T('analysis_failed'))+'</div>'+
-      '<div style="font-size:14px;font-weight:700;color:var(--w70);margin-bottom:12px">'+UI.esc(a.product_name)+'</div>'+
-      '<div style="font-size:13px;color:var(--w40);line-height:1.6;margin-bottom:24px">'+
-        (T('an_error_occurred_during_ai_analysistry_reanalyzin'))+
-        (_failErr?'<div style="margin-top:8px;padding:8px 12px;border-radius:8px;background:var(--w04);border:1px solid var(--w08);font-size:11px;color:var(--w30)">'+UI.esc(_failErr)+'</div>':'')+
-      '</div>'+
-      '<div style="display:flex;gap:12px;justify-content:center">'+
-        '<button class="btn btn-pri" onclick="App.rerunA(\''+a.id+'\')">🔬 '+T('re_analyze')+'</button>'+
-        '<button class="btn btn-ghost" onclick="App.delA(\''+a.id+'\')">🗑️ '+T('delete')+'</button>'+
-      '</div></div>';
+    var _hasPartial=r&&r.overall_score&&(r.summary||r.hs_code||r.regulatory||r.market_fit);
+    if(!_hasPartial){
+      return '<div style="max-width:540px;margin:40px auto;text-align:center">'+
+        '<button class="btn btn-ghost btn-sm" onclick="App.set({currentAnalysis:null})" style="margin-bottom:24px">← '+T('back_to_list')+'</button>'+
+        '<div style="font-size:48px;margin-bottom:16px">'+(a.status==='cancelled'?'🚫':'❌')+'</div>'+
+        '<div style="font-size:20px;font-weight:800;color:var(--w90);margin-bottom:8px">'+(a.status==='cancelled'?T('analysis_cancelled'):T('analysis_failed'))+'</div>'+
+        '<div style="font-size:14px;font-weight:700;color:var(--w70);margin-bottom:12px">'+UI.esc(a.product_name)+'</div>'+
+        '<div style="font-size:13px;color:var(--w40);line-height:1.6;margin-bottom:24px">'+
+          (T('an_error_occurred_during_ai_analysistry_reanalyzin'))+
+          (_failErr?'<div style="margin-top:8px;padding:8px 12px;border-radius:8px;background:var(--w04);border:1px solid var(--w08);font-size:11px;color:var(--w30)">'+UI.esc(_failErr)+'</div>':'')+
+        '</div>'+
+        '<div style="display:flex;gap:12px;justify-content:center">'+
+          '<button class="btn btn-pri" onclick="App.rerunA(\''+a.id+'\')">🔬 '+T('re_analyze')+'</button>'+
+          '<button class="btn btn-ghost" onclick="App.delA(\''+a.id+'\')">🗑️ '+T('delete')+'</button>'+
+        '</div></div>';
+    }
+    /* Has partial results — show them with a warning banner, then fall through to normal report rendering */
   }
   // Loading state
   if(a.status==='analyzing'){var _st=S._aiStartTime||Date.now();if(!S._aiStartTime)S._aiStartTime=Date.now();var _el=Math.floor((Date.now()-_st)/1000);var _stages=_isKorean?[{n:'제품 데이터 추출',t:3,icon:'📦'},{n:'빠른 분석 (점수 · HS코드)',t:6,icon:'⚡'},{n:'핵심 분석 (FTA · 관세)',t:12,icon:'🏷️'},{n:'시장 · 경쟁 · 인증 분석',t:20,icon:'🌍'},{n:'가격 · 액션플랜',t:30,icon:'💰'},{n:'종합 리포트 생성',t:40,icon:'📋'}]:[{n:'Product Data Extraction',t:3,icon:'📦'},{n:'Quick Analysis (Score · HS)',t:6,icon:'⚡'},{n:'Core Analysis (FTA · Tariff)',t:12,icon:'🏷️'},{n:'Market · Competition · Certs',t:20,icon:'🌍'},{n:'Pricing · Action Plan',t:30,icon:'💰'},{n:'Final Report Generation',t:40,icon:'📋'}];var _lbl=S._aiProgressLabel||'';var _ci=0;if(_lbl==='pricing_done'||_lbl==='merging')_ci=5;else if(_lbl==='market_done')_ci=4;else if(_lbl==='core_done')_ci=3;else if(_lbl==='ai_parallel_started')_ci=2;else if(_lbl==='phase1_done')_ci=1;else if(_lbl==='crawl_done')_ci=1;else{for(var _i=0;_i<_stages.length;_i++){if(_el>=_stages[_i].t)_ci=_i+1;}}if(_ci>=_stages.length)_ci=_stages.length-1;var _hasPhase1=!!(_lbl==='phase1_done'||_lbl==='ai_parallel_started'||_lbl==='core_done'||_lbl==='market_done');var _pct;var _serverPct=S._aiProgressPct||0;if(_serverPct>0){_pct=_serverPct;}else if(_el<8)_pct=Math.round(_el/8*25);else if(_el<25)_pct=25+Math.round((_el-8)/17*50);else if(_el<45)_pct=75+Math.round((_el-25)/20*20);else _pct=Math.min(95+Math.round((_el-45)/30*3),98);if(_serverPct>_pct)_pct=_serverPct;
@@ -6920,6 +6924,15 @@ function pgAReport(){
   };
 
   var h='';
+
+  // === PARTIAL RESULTS BANNER (for failed analyses with usable data) ===
+  if(a.status==='failed'&&_hasPartial){
+    h+='<div style="padding:12px 16px;border-radius:10px;background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.2);margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">';
+    h+='<span style="font-size:20px">⚠️</span>';
+    h+='<div style="flex:1;min-width:200px"><div style="font-size:13px;font-weight:700;color:var(--acc)">'+(_isKorean?'부분 분석 결과':'Partial Analysis Results')+'</div>';
+    h+='<div style="font-size:11px;color:var(--w40);margin-top:2px">'+(_isKorean?'분석이 완료되기 전에 중단되었습니다. 일부 섹션이 누락되었을 수 있습니다.':'Analysis was interrupted before completion. Some sections may be missing.')+'</div></div>';
+    h+='<button class="btn btn-pri btn-sm" onclick="App.rerunA(\''+a.id+'\')">🔬 '+(_isKorean?'재분석':'Re-analyze')+'</button></div>';
+  }
 
   // === HEADER ===
   h+='<div class="an-detail-header" style="display:flex;align-items:flex-start;gap:12px;margin-bottom:20px;flex-wrap:wrap">';
