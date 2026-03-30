@@ -1176,7 +1176,7 @@ function _stripeOneAnalysis(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'?checkout=success#analysis',cancel_url:location.origin+location.pathname+'?checkout=cancel#analysis'})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       if(data.url){window.location.href=data.url;}
       else if(data.error){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();var _dm=data.debug_msg?' ['+data.debug_msg+']':'';UI.toast(_payErr(data.error)+_dm,'err');}
     }).catch(function(e){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();UI.toast(e.message||(T('payment_connection_error')),'err');});
@@ -4904,7 +4904,7 @@ function loadExchangeRate(){
   /* 1차: 릴레이 서버 */
   _relayReady.then(function(){
     if(!RELAY_URL)return _loadExRateFallback();
-    fetch(RELAY_URL+'/api/exchange-rate').then(function(r){return r.json();}).then(function(d){
+    fetch(RELAY_URL+'/api/exchange-rate').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
       if(d&&d.ok&&d.rate){S.exchangeRate=d.rate;window._exRate=d.rate;}else{_loadExRateFallback();}
     }).catch(function(){_loadExRateFallback();});
   });
@@ -4935,23 +4935,23 @@ function _loadExRateFallback(){
   /* 3차 폴백: localStorage 캐시 (1시간 이내면 사용) */
   var cached=localStorage.getItem('whistle_exrate');
   if(cached){try{var c=JSON.parse(cached);if(c.rate&&c.time&&Date.now()-c.time<3600000){S.exchangeRate=c.rate;window._exRate=c.rate;}}catch(e){console.error('[exrate]',e);}}
-  _fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',null,10000).then(function(r){return r.json();}).then(function(d){
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',null,10000).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
   }).catch(function(e){console.error('[exrate] Frankfurter USD/KRW failed (using cache):',e.name||e.message);});
   /* 다통화 환율 로드 (KRW 기준 → 시장별 통화 표시용) */
   var cachedMulti=localStorage.getItem('whistle_fxrates');
   if(cachedMulti){try{var cm=JSON.parse(cachedMulti);if(cm.rates&&cm.time&&Date.now()-cm.time<3600000){window._fxRates=cm.rates;window._fxRatesUpdated=new Date(cm.time);_updateFxIndicator();}}catch(e){console.error('[exrate]',e);}}
-  _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,SGD,THB,INR,CAD,CHF,CZK,DKK,HKD,HUF,IDR,ILS,ISK,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,TRY,ZAR',null,10000).then(function(r){return r.json();}).then(function(d){
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,SGD,THB,INR,CAD,CHF,CZK,DKK,HKD,HUF,IDR,ILS,ISK,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,TRY,ZAR',null,10000).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     if(d&&d.rates){window._fxRates=d.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();localStorage.setItem('whistle_fxrates',JSON.stringify({rates:d.rates,time:Date.now()}));}
   }).catch(function(e){console.error('[exrate] Frankfurter multi-currency failed (using cache):',e.name||e.message);});
 }
 function refreshExRate(){
   S._exRateLoading=true;render();
-  _fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',null,10000).then(function(r){return r.json();}).then(function(d){
+  _fetchWithTimeout('https://api.frankfurter.app/latest?from=USD&to=KRW',null,10000).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     S._exRateLoading=false;
     if(d&&d.rates&&d.rates.KRW){S.exchangeRate=d.rates.KRW;window._exRate=d.rates.KRW;S._exRateTime=new Date().toLocaleTimeString(U.loc(),{hour:'2-digit',minute:'2-digit'});UI.toast(T('toast_fx_update')+d.rates.KRW.toLocaleString(),'ok');localStorage.setItem('whistle_exrate',JSON.stringify({rate:d.rates.KRW,time:Date.now()}));}
     /* 다통화도 갱신 */
-    _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,SGD,THB,INR,CAD,CHF,CZK,DKK,HKD,HUF,IDR,ILS,ISK,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,TRY,ZAR',null,10000).then(function(r2){return r2.json();}).then(function(d2){
+    _fetchWithTimeout('https://api.frankfurter.app/latest?from=KRW&to=USD,JPY,CNY,EUR,GBP,AUD,BRL,SGD,THB,INR,CAD,CHF,CZK,DKK,HKD,HUF,IDR,ILS,ISK,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,TRY,ZAR',null,10000).then(function(r2){if(!r2.ok)throw new Error('HTTP '+r2.status);return r2.json();}).then(function(d2){
       if(d2&&d2.rates){window._fxRates=d2.rates;window._fxRatesUpdated=new Date();_updateFxIndicator();localStorage.setItem('whistle_fxrates',JSON.stringify({rates:d2.rates,time:Date.now()}));}
     }).catch(function(e2){console.error('[fx] multi-currency refresh failed:', e2.name||e2.message);});
     render();
@@ -5071,7 +5071,7 @@ function _loadWorldBankData(){
   var indicators=['NY.GDP.MKTP.CD','NE.EXP.GNFS.CD'];
   var _wbDone=0;
   indicators.forEach(function(ind){
-    _fetchWithTimeout('https://api.worldbank.org/v2/country/'+countries+'/indicator/'+ind+'?format=json&date=2022:2024&per_page=100',null,10000).then(function(r){return r.json();}).then(function(d){
+    _fetchWithTimeout('https://api.worldbank.org/v2/country/'+countries+'/indicator/'+ind+'?format=json&date=2022:2024&per_page=100',null,10000).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
       if(!d||!d[1])return;
       d[1].forEach(function(row){
         if(!row.value)return;
@@ -6720,7 +6720,7 @@ function genCatalogEN(productId){
   var p=S.products.find(function(x){return x.id===productId;});if(!p){UI.toast(T('product_not_found'),'err');return;}
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_english_catalog')),'info');
-  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){return r.json();}).then(function(data){
+  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(!data.ok)throw new Error(data.error||(T('generation_failed')));
     var res=data.result;
     sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).eq('user_id',S.user.id).then(function(r2){
@@ -9186,7 +9186,7 @@ function naverSearch(productId){
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast(T('searching'),'info');
   fetch(RELAY_URL+'/api/naver/search?q='+encodeURIComponent(keyword)+'&display=20',{headers:{'ngrok-skip-browser-warning':'1'}})
-    .then(function(r){return r.json();})
+    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(function(data){
       if(!data||data.error){UI.toast(data&&data.error||(T('search_failed')),'err');return;}
       var items=data.items||data.results||[];
@@ -9412,7 +9412,7 @@ function openPjChat(buyerId){
 function _autoTranslateBuyerMsg(msgId,text){
   if(!text||!msgId)return;
   _getAccessToken().then(function(_tk){
-    fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},body:JSON.stringify({text:text,target:'ko'})}).then(function(r){return r.json();}).then(function(d){
+    fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},body:JSON.stringify({text:text,target:'ko'})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
       if(d.ok&&d.translated&&d.translated!==text){
         var meta={translated:d.translated,target_lang:'ko',auto:true};
         sb.from('messages').update({metadata:meta}).eq('id',msgId).eq('user_id',S.user.id).then(function(){
@@ -9459,7 +9459,7 @@ function sendPjChat(){
     /* 자동번역 */
     if(needTranslate){
       _getAccessToken().then(function(_tk){
-      fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},body:JSON.stringify({text:text,target:buyerLang})}).then(function(tr){return tr.json();}).then(function(td){
+      fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},body:JSON.stringify({text:text,target:buyerLang})}).then(function(tr){if(!tr.ok)throw new Error('HTTP '+tr.status);return tr.json();}).then(function(td){
         if(td.ok&&td.translated){
           var meta=r.data.metadata||{};meta.translated=td.translated;meta.target_lang=buyerLang;
           sb.from('messages').update({metadata:meta}).eq('id',r.data.id).eq('user_id',S.user.id).then(function(){
@@ -12527,7 +12527,7 @@ function fetchTradeReqs(pjId){
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},
     body:JSON.stringify({origin_country:pOrigin,dest_country:pDest,category:pCat,hs_code:hsCode,product_name:prodName})
-  }).then(function(r){return r.json();}).then(function(d){
+  }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     S._tradeReqLoading=false;
     if(d.ok){S._tradeReqData=d;_toast((_isKorean?'무역 요건 분석 완료':'Trade requirements analysis complete'),'ok');}
     else{_toast((_isKorean?'분석 실패: ':'Analysis failed: ')+(d.error||(_isKorean?'알 수 없는 오류':'Unknown error')),'err');}
@@ -12633,7 +12633,7 @@ function getCertGuide(pjId,idx){
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_guide')),'info');
   fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
-  .then(function(r){return r.json();}).then(function(data){
+  .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(data.ok&&data.guide){
       cert.ai_guide=data.guide;
       sb.from('projects').update({stage_progress:sp,updated_at:new Date().toISOString()}).eq('id',pjId).eq('user_id',S.user.id).then(function(r){
@@ -13788,7 +13788,7 @@ function translateEmail(targetLang){
   UI.toast((T('subject')+'+')+langLabel+(T('translating_2')),'info');
   var texts=[sj.value,bd.value];
   Promise.all(texts.map(function(t){
-    return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
+    return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
   })).then(function(results){
     sj.value=results[0];bd.value=results[1];
     UI.toast(langLabel+' 번역 완료','ok');
@@ -13803,7 +13803,7 @@ function aiImproveEmail(){
   var prompt='You are an expert B2B trade email writer. Improve this business email to be more professional, persuasive, and clear. Keep the same language. Keep all factual details (prices, dates, names). Make it concise but impactful. Return ONLY the improved email body text, no explanation.\n\nSubject: '+sj.value+'\n\nBody:\n'+bd.value;
   fetch(RELAY_URL+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
     body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:2000})
-  }).then(function(r){return r.json();}).then(function(d){
+  }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     if(d.ok&&d.text){bd.value=d.text;UI.toast(T('ai_improved_please_review'),'ok');}
     else{UI.toast(T('ai_improvement_failed'),'err');}
   }).catch(function(){UI.toast(T('ai_server_connection_failed'),'err');});
@@ -13815,7 +13815,7 @@ function sendE(){
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');if(btn){btn.disabled=false;btn.textContent=_isKorean?'발송':'Send';}return;}
   fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
     body:JSON.stringify({to:d.to,subject:d.subject||'',bodyText:d.body||'',userId:S.user.id,buyerId:buyerId||null})
-  }).then(function(r){return r.json();}).then(function(data){
+  }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(data.ok){
       if(data.method==='logged_only'){
         UI.toast(T('email_api_not_configured'),'warn');
@@ -14043,14 +14043,14 @@ function translateChatMsg(msgId,targetLang,batchAll){
   _chatTranslations[key]='loading';render();
   var _doTranslate=function(){
     _getAccessToken().then(function(_tk){
-    fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
+    fetch(SB_URL+'/functions/v1/translate-chat',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tk},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
       _chatTranslations[key]=d.ok?d.translated:text;render();
     }).catch(function(){_chatTranslations[key]=text;render();});
     });
   };
   if(typeof RELAY_URL!=='undefined'&&RELAY_URL){
   _relayReady.then(function(){
-    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){return r.json();}).then(function(d){
+    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
       _chatTranslations[key]=d.ok?d.translated:text;render();
     }).catch(function(){_doTranslate();});
   });
@@ -15467,7 +15467,7 @@ function sendRFQEmail(){
   fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     to:email,subject:'[RFQ] Freight Quotation Request — '+(S.company&&S.company.name_en||'Korean Manufacturer'),
     bodyText:window._lastRFQ,userId:S.user.id
-  })}).then(function(r){return r.json();}).then(function(data){
+  })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(data.ok)UI.toast(T('quote_request_sent_to_forwarder'),'ok');
     else{window.open('mailto:'+email+'?subject=[RFQ] Freight Quote&body='+encodeURIComponent(window._lastRFQ));UI.toast((T('switching_to_mailto')),'info');}
   }).catch(function(){window.open('mailto:'+email+'?subject=[RFQ]&body='+encodeURIComponent(window._lastRFQ));});
@@ -15759,7 +15759,7 @@ function initStripeCheckout(planId){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({price_id:priceId,plan:planId,billing_cycle:cycle,success_url:location.origin+location.pathname+'?checkout=success#subscription',cancel_url:location.origin+location.pathname+'?checkout=cancel#subscription'})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       if(data.error){_rmOv();UI.toast(_payErr(data.error),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
       if(data.url){_savePendingAnalysis();window.location.href=data.url;}
       else{_rmOv();UI.toast(T('payment_session_failed'),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}}
@@ -15776,7 +15776,7 @@ function _upgradeSubscription(planId,newPriceId,cycle,btn,btnReset){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({action:'upgrade',new_price_id:newPriceId,plan:planId,billing_cycle:cycle})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       _rmOv();
       if(data.error){UI.toast(_payErr(data.error),'err');if(btn){btn.disabled=false;btn.textContent=btnReset;}return;}
       if(data.ok){
@@ -15803,7 +15803,7 @@ function openBillingPortal(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({return_url:location.href})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       if(data.url)window.open(data.url,'_blank');
       else UI.toast(_payErr(data.error)||(T('billing_portal_error')),'warn');
     }).catch(function(e){UI.toast(e.message||(T('billing_portal_error')),'err');});
@@ -15838,7 +15838,7 @@ function _submitRefund(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({refund_type:'subscription_cooling',reason:reason})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       GP.done();closeModal('refund-req');
       if(data.ok||data.refund_id){
         UI.toast(T('refund_processed'),'ok',6000);
@@ -16737,7 +16737,7 @@ function _executeClaimRefund(orderId,claimIdx,newStatus,o,claims,cl,paymentInten
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+sr.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({refund_type:'escrow_dispute',payment_intent_id:paymentIntentId,deal_id:dealId||'',reason:cl.description||'Escrow claim refund'})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       GP.done();
       if(data.error){UI.toast((T('refund_failed_prefix'))+data.error,'err');return;}
       /* 환불 성공 — 클레임 상태 업데이트 */
@@ -17035,7 +17035,7 @@ function findBuyersAI(){
     targetMarket:d.target_market,productCategory:d.product_cat||'Skincare',fobPrice:d.fob_hint||'',
     productName:prod?prod.name_en||prod.name_ko:'',hsCode:prod?prod.hs_code:'3304.99',
     certifications:certs.join(', ')||'None'
-  })}).then(function(r){return r.json();}).then(function(data){
+  })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(!data.ok||!data.buyers||!data.buyers.length){
       var _abr2=document.getElementById('ai-buyers-result');if(_abr2)_abr2.innerHTML='<div style="padding:16px;color:var(--err)">'+(_isKorean?'바이어 찾기 실패. 다시 시도해주세요.':'Failed to find buyers. Please try again.')+'</div>';return;
     }
@@ -17185,7 +17185,7 @@ function sendBuyerInviteEmail(email,link,coupon){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({email:email,type:'buyer',inviter_name:S.user.name||S.user.company_name||'',inviter_company:S.user.company_name||''})
-    }).then(function(res){return res.json();}).then(function(data){
+    }).then(function(res){if(!res.ok)throw new Error('HTTP '+res.status);return res.json();}).then(function(data){
       if(data.error){UI.toast((T('send_failed_prefix'))+data.error,'err');return;}
       UI.toast(data.email_sent?(_isKorean?email+'에게 초대 메일 발송 완료!':'Invitation email sent to '+email+'!'):(_isKorean?'초대 등록 완료 (메일 설정 확인 필요)':'Invitation registered (check email settings)'),'ok');
     }).catch(function(err){UI.toast(T('send_failed_2'),'err');});
@@ -17456,7 +17456,7 @@ function getMeetingPrep(mid){
   UI.toast((T('generating_ai_briefing')),'info');
   fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     meeting:m,buyer:buyer,product:product,company:S.company
-  })}).then(function(r){return r.json();}).then(function(j){
+  })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(j){
     if(j.error){UI.toast((T('failed_prefix'))+j.error,'err');return;}
     sb.from('meetings').update({ai_briefing:j.briefing}).eq('id',mid).eq('user_id',S.user.id).then(function(){
       var mm=S.meetings.find(function(x){return x.id===mid;});if(mm)mm.ai_briefing=j.briefing;
@@ -17700,7 +17700,7 @@ function refreshShipmentTracking(shipId){
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},
     body:JSON.stringify({shipment_id:shipId})
-  }).then(function(r){return r.json();}).then(function(data){
+  }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(data.ok){
       var idx=(S.shipments||[]).findIndex(function(s){return s.id===shipId;});
       if(idx>-1){
@@ -17735,7 +17735,7 @@ function refreshAllShipments(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+tk},
       body:JSON.stringify({shipment_id:sh.id})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       if(data.ok){
         var idx=(S.shipments||[]).findIndex(function(s){return s.id===sh.id;});
         if(idx>-1){
@@ -19183,7 +19183,7 @@ function getAlibabaReply(iqId){
   UI.toast((T('generating_ai_response')),'info');
   fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
     inquiry:iq,product:product,company:S.company
-  })}).then(function(r){return r.json();}).then(function(j){
+  })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(j){
     if(j.error){UI.toast((T('failed_prefix'))+j.error,'err');return;}
     sb.from('alibaba_inquiries').update({reply_draft:j.reply,status:iq.status==='new'?'replied':iq.status}).eq('id',iqId).eq('user_id',S.user.id).then(function(){
       var i2=S.alibabaInquiries.find(function(x){return x.id===iqId;});if(i2){i2.reply_draft=j.reply;if(i2.status==='new')i2.status='replied';}
@@ -21440,7 +21440,7 @@ function triggerAutoRelease(dealId){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({action:'release_escrow',payment_intent_id:esc.stripe_payment_intent,deal_id:dealId})
-    }).then(function(r){return r.json();}).then(function(data){
+    }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       if(data.error){UI.toast((T('settlement_failed_prefix'))+data.error,'err');return;}
       _setEscrow(dealId,Object.assign(esc,{status:'released',releasedAt:new Date().toISOString()}));
       UI.toast((T('settlement_complete_prefix'))+data.currency+' '+data.amount.toFixed(2)+(T('will_be_deposited')),'ok');
@@ -22211,7 +22211,7 @@ function genTrendReport(){
 
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');S._trendReportLoading=false;render();return;}
   fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:1024})})
-  .then(function(r){return r.json();})
+  .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
   .then(function(data){
     var aiText=(data.content&&data.content[0]&&data.content[0].text)||'';
     var parsed=null;
@@ -23309,7 +23309,7 @@ function pushNotif(type,title,body,linkPage,linkId,telegram){
   if(S.notifications.length>30)S.notifications.pop();
   render();
   _showWebNotif(title,body||'',type);
-  fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:S.user.id,type:type,title:title,body:body||'',linkPage:linkPage||'',linkId:linkId||'',telegram:!!telegram})}).then(function(r){return r.json();}).then(function(d){if(d.ok&&d.id)n.id=d.id;}).catch(function(){
+  fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:S.user.id,type:type,title:title,body:body||'',linkPage:linkPage||'',linkId:linkId||'',telegram:!!telegram})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){if(d.ok&&d.id)n.id=d.id;}).catch(function(){
     // Fallback: persist to Supabase directly if relay is down
     _sendNotification(S.user.id,type,title,body||'',{link_page:linkPage||null,link_id:linkId||null});
   });
@@ -23348,7 +23348,7 @@ function submitPartnership(){
   if(!name||!name.value.trim()){UI.toast(T('please_enter_contact_name'),'warn');return;}
   if(!email||!email.value.trim()){UI.toast(T('please_enter_email_dot'),'warn');return;}
   var data={company:company.value.trim(),name:name.value.trim(),email:email.value.trim(),phone:phone?phone.value.trim():'',type:type?type.value:'',message:message?message.value.trim():'',page:'whistle-partnership',user_id:S.user?S.user.id:''};
-  fetch(RELAY_URL+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){return r.json();}).then(function(d){UI.toast(T('partnership_received'),'ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';}).catch(function(){UI.toast(T('send_failed_prefix'),'err');});
+  fetch(RELAY_URL+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){UI.toast(T('partnership_received'),'ok');if(company)company.value='';if(name)name.value='';if(email)email.value='';if(phone)phone.value='';if(type)type.value='';if(message)message.value='';}).catch(function(){UI.toast(T('send_failed_prefix'),'err');});
 }
 
 /* 물류 파트너 제휴 문의 → service_requests 테이블 (관리자 어드민에 표시) */
@@ -23497,7 +23497,7 @@ function sendInvite(type){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({email:email,type:type,inviter_name:S.user.name||S.user.company_name||'',inviter_company:S.user.company_name||''})
-    }).then(function(res){return res.json();}).then(function(data){
+    }).then(function(res){if(!res.ok)throw new Error('HTTP '+res.status);return res.json();}).then(function(data){
       if(data.error){UI.toast((T('invitation_failed_prefix'))+data.error,'err');return;}
       if(!S._pendingInvites)S._pendingInvites=[];
       S._pendingInvites.unshift({email:email,type:type,created_at:new Date().toISOString(),email_sent:data.email_sent,invite_link:data.invite_link});
@@ -23538,7 +23538,7 @@ function genMarketingContent(productId){
   var body='<div id="mkt-result" style="text-align:center;padding:24px"><div class="spinner" style="margin:0 auto 12px"></div><div style="font-size:13px;color:var(--w40)">AI가 마케팅 소재를 생성 중입니다...</div></div>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'mkt-modal',title:'🎨 AI 마케팅 소재 생성 — '+U.esc(p.name_ko||''),body:body,width:'640px'}));
   UI.showModal('mkt-modal');
-  fetchRetry('/api/chat',{method:'POST',body:JSON.stringify({messages:[{role:'user',content:'You are an export marketing expert. Generate marketing materials for this Korean product:\n\nProduct: '+U.esc(p.name_ko||'')+'\nEnglish Name: '+U.esc(p.name_en||'')+'\nCategory: '+U.esc(p.category||'')+'\nFOB Price: $'+(p.fob_price||'TBD')+'\nDescription: '+U.esc(p.description_en||'')+'\n\nGenerate:\n1. Product Description (English, 150 words, professional export-ready)\n2. Social Media Post (3 variations for LinkedIn/Instagram)\n3. Buyer Outreach Email Template (professional, concise)\n\nFormat each section with clear headers.'}]})}).then(function(r){return r.json();}).then(function(data){
+  fetchRetry('/api/chat',{method:'POST',body:JSON.stringify({messages:[{role:'user',content:'You are an export marketing expert. Generate marketing materials for this Korean product:\n\nProduct: '+U.esc(p.name_ko||'')+'\nEnglish Name: '+U.esc(p.name_en||'')+'\nCategory: '+U.esc(p.category||'')+'\nFOB Price: $'+(p.fob_price||'TBD')+'\nDescription: '+U.esc(p.description_en||'')+'\n\nGenerate:\n1. Product Description (English, 150 words, professional export-ready)\n2. Social Media Post (3 variations for LinkedIn/Instagram)\n3. Buyer Outreach Email Template (professional, concise)\n\nFormat each section with clear headers.'}]})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     var text=(data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content)||data.result||'생성 실패';
     var el=document.getElementById('mkt-result');
     if(el){
@@ -23863,7 +23863,7 @@ function fetchComtradeData(analysisId,hsCode){
     var headers={'Content-Type':'application/json'};
     if(tk)headers['Authorization']='Bearer '+tk;
     return fetch(SB_URL+'/functions/v1/comtrade-data',{method:'POST',headers:headers,body:JSON.stringify({hs_code:hsCode,reporter:'KR',flow:'export',years:3,top_partners:10})});
-  }).then(function(r){return r.json();}).then(function(d){
+  }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     if(!d.ok){trigger.innerHTML='<div style="color:var(--err);font-size:12px">'+UI.esc(d.error||(T('failed_to_fetch_data')))+'</div><button class="btn btn-ghost btn-sm" onclick="App.fetchComtradeData(\''+analysisId+'\',\''+hsCode+'\')" style="font-size:11px;margin-top:8px">'+(T('retry'))+'</button>';return;}
     trigger.style.display='none';result.style.display='block';result.innerHTML=_renderComtradeResult(d);
   }).catch(function(e){console.error('[comtrade]',e);trigger.innerHTML='<div style="color:var(--err);font-size:12px">'+(T('network_error_occurred'))+'</div><button class="btn btn-ghost btn-sm" onclick="App.fetchComtradeData(\''+analysisId+'\',\''+hsCode+'\')" style="font-size:11px;margin-top:8px">'+(T('retry'))+'</button>';});
