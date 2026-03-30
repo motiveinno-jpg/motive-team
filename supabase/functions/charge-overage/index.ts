@@ -36,18 +36,18 @@ function checkRateLimit(userId: string): boolean {
   return true;
 }
 
-function jsonResponse(
-  body: Record<string, unknown>,
-  status = 200,
-): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
+
+  function jsonResponse(
+    body: Record<string, unknown>,
+    status = 200,
+  ): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
