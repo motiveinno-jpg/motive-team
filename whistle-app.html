@@ -4459,6 +4459,7 @@ _ML = {
 'start_with_ai_analysis': { ko:'AI 수출분석으로 시작', en:'Start with AI Analysis' },
 'start_without_alibaba_account_fees_whistle_registe': { ko:'알리바바 계정 비용 없이 시작. Whistle이 총판으로 등록·운영하고, 수출 성사 시 수수료를 공유합니다.', en:'Start without Alibaba account fees. Whistle registers and operates as distributor, sharing commission on successful exports.' },
 'starting_ai_export_analysis': { ko:'AI 수출 분석을 시작합니다.', en:'Starting AI export analysis.' },
+'reconnecting_analysis': { ko:'진행 중인 분석에 다시 연결 중…', en:'Reconnecting to analysis in progress…', ja:'分析に再接続中…', zh:'正在重新连接分析…', vi:'Đang kết nối lại phân tích…', th:'กำลังเชื่อมต่อการวิเคราะห์อีกครั้ง…', es:'Reconectando al análisis…', fr:'Reconnexion à l\'analyse…', de:'Analyse wird wieder verbunden…', pt:'Reconectando à análise…', ar:'جارٍ إعادة الاتصال بالتحليل…', ru:'Переподключение к анализу…', id:'Menghubungkan kembali ke analisis…' },
 'status': { ko:'\상\태', en:'Status' },
 'store': { ko:'스토어', en:'Store' },
 'store_id': { ko:'스토어 ID', en:'Store ID' },
@@ -5211,6 +5212,8 @@ function loadUser(){
           var hp=location.hash.replace('#','');if(hp&&PL[hp])S.page=hp;
           render();
           var ol=document.getElementById('appLoadingOverlay');if(ol){ol.style.opacity='0';setTimeout(function(){ol.remove()},500);}
+          /* Reconnect to in-progress analyses (e.g. after page refresh) */
+          _reconnectAnalyzingPolls();
           /* Phase 2: Non-critical data — load in background after first render */
           _settled([
             _withTimeout(loadPr(),FETCH_TIMEOUT),_withTimeout(loadB(),FETCH_TIMEOUT),_withTimeout(loadOrders(),FETCH_TIMEOUT),
@@ -6464,6 +6467,63 @@ function cancelAnalysis(){
   sb.from('analyses').update({status:'cancelled'}).eq('id',S.currentAnalysis.id).eq('user_id',S.user.id).then(function(){
     UI.toast(T('analysis_cancelled_toast'),'info');set({currentAnalysis:null});nav('analysis');
   });
+}
+
+/* ── Analysis: reconnect to in-progress analyses after page refresh ── */
+function _reconnectAnalyzingPolls(){
+  if(!S.analyses||!S.analyses.length)return;
+  var inProgress=S.analyses.filter(function(a){return a.status==='analyzing';});
+  if(!inProgress.length)return;
+  var a=inProgress[0];
+  set({currentAnalysis:a});
+  S._aiStartTime=Date.now();S._aiProgressPct=0;S._aiProgressLabel=T('reconnecting_analysis')||'Reconnecting…';S._submitting=true;GP.start();
+  render();
+  /* Realtime subscription */
+  if(S._aiRealtime)sb.removeChannel(S._aiRealtime);
+  S._aiRealtime=sb.channel('analysis-'+a.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'analyses',filter:'id=eq.'+a.id},function(payload){
+    var row=payload.new;if(!row)return;
+    if(row.ai_result&&row.ai_result._progress_pct){S._aiProgressPct=row.ai_result._progress_pct;S._aiProgressLabel=row.ai_result._progress||'';if(row.ai_result._partial)S._aiPartial=row.ai_result._partial;render();}
+    if(row.status==='completed'&&row.ai_result&&row.ai_result.analysis_version){
+      if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;}S._aiStartTime=null;S._submitting=false;GP.done();
+      if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}
+      autoCreateProduct(a.id,row.ai_result,a.product_name);
+      loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===a.id;});set({currentAnalysis:ua||Object.assign({},a,row)});UI.toast(T('ai_analysis_complete'),'ok');_postAnalysisUpsell();});
+    }
+    if(row.status==='failed'){
+      if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;}S._aiStartTime=null;S._submitting=false;GP.done();
+      if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}
+      var _fr=(row.ai_result&&row.ai_result.error)||'';var _gt='server';
+      if(_fr.indexOf('crawl')>=0)_gt='crawl';else if(_fr.indexOf('timeout')>=0)_gt='timeout';
+      else if(_fr.indexOf('rate')>=0||_fr.indexOf('limit')>=0||_fr.indexOf('quota')>=0)_gt='rate_limit';
+      _showAnalysisGuidance(_gt,{product_name:a.product_name},a.id);
+    }
+  }).subscribe();
+  /* Fallback polling */
+  if(S._aiTimer)clearInterval(S._aiTimer);
+  var _maxPoll=300000;
+  S._aiTimer=setInterval(function(){
+    if(!S.currentAnalysis||S.currentAnalysis.status!=='analyzing'){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;return;}
+    var _elapsed=Date.now()-(S._aiStartTime||Date.now());
+    if(_elapsed>_maxPoll){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}_showAnalysisGuidance('timeout',{product_name:a.product_name},a.id);return;}
+    render();
+    sb.from('analyses').select('status,ai_result').eq('id',a.id).single().then(function(chk){
+      if(!chk.data||chk.data.status==='analyzing'){
+        if(chk.data&&chk.data.ai_result&&chk.data.ai_result._progress_pct){S._aiProgressPct=chk.data.ai_result._progress_pct;S._aiProgressLabel=chk.data.ai_result._progress||'';if(chk.data.ai_result._partial)S._aiPartial=chk.data.ai_result._partial;}
+        return;
+      }
+      clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;S._submitting=false;GP.done();
+      if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}
+      if(chk.data.status==='completed'&&chk.data.ai_result&&chk.data.ai_result.analysis_version){
+        autoCreateProduct(a.id,chk.data.ai_result,a.product_name);
+        loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===a.id;});set({currentAnalysis:ua||Object.assign({},a,chk.data)});UI.toast(T('ai_analysis_complete'),'ok');_postAnalysisUpsell();});
+      }else if(chk.data.status==='failed'){
+        var _fr2=(chk.data.ai_result&&chk.data.ai_result.error)||'';var _gt2='server';
+        if(_fr2.indexOf('crawl')>=0)_gt2='crawl';else if(_fr2.indexOf('timeout')>=0)_gt2='timeout';
+        else if(_fr2.indexOf('rate')>=0||_fr2.indexOf('limit')>=0||_fr2.indexOf('quota')>=0)_gt2='rate_limit';
+        _showAnalysisGuidance(_gt2,{product_name:a.product_name},a.id);
+      }else{_showAnalysisGuidance('server',{product_name:a.product_name},a.id);}
+    });
+  },5000);
 }
 
 /* ── Analysis: input validation ── */
