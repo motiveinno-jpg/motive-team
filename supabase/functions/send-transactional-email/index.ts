@@ -335,6 +335,9 @@ serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sbAdmin = createClient(supabaseUrl, serviceKey);
 
+    // Parse body first to check email type for auth exceptions
+    const body = await req.json();
+
     // Auth check — require JWT or valid internal secret
     const authHeader = req.headers.get("Authorization");
     const internalSecret = req.headers.get("X-Internal-Secret");
@@ -342,14 +345,18 @@ serve(async (req) => {
 
     const hasValidInternal = expectedSecret && internalSecret === expectedSecret;
 
-    if (!authHeader && !hasValidInternal) {
+    // Allow "welcome" type without full JWT auth (user just signed up, may not have session yet)
+    // The Supabase API gateway already validates the apikey header
+    const isPublicType = body.type === "welcome";
+
+    if (!authHeader && !hasValidInternal && !isPublicType) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    if (authHeader && !hasValidInternal) {
+    if (authHeader && !hasValidInternal && !isPublicType) {
       const token = authHeader.replace("Bearer ", "");
       // Allow service role key for server-to-server calls (send-notification → send-transactional-email)
       if (token !== serviceKey) {
@@ -362,8 +369,6 @@ serve(async (req) => {
         }
       }
     }
-
-    const body = await req.json();
     const {
       to,
       user_id,
