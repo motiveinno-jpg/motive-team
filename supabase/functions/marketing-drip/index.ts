@@ -768,7 +768,7 @@ serve(async (req) => {
     await sbAdmin
       .from("marketing_automations")
       .update({
-        last_run: new Date().toISOString(),
+        last_run_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("name", automationName);
