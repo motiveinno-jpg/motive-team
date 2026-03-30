@@ -3653,6 +3653,7 @@ _ML = {
 'all_certifications_already_in_checklist': { ko:'모든 인증이 이미 체크리스트에 있습니다', en:'All certifications already in checklist' },
 'all_payments_are_processed_in_usd_final_charge_may': { ko:'💳 모든 결제는 USD(미국 달러)로 처리됩니다. 실제 청구액은 카드사 환율에 따라 다를 수 있습니다.', en:'💳 All payments are processed in USD. Final charge may vary based on exchange rate.', ja:'💳 全ての決済はUSD（米ドル）で処理されます。最終請求額は為替レートにより異なる場合があります。', zh:'💳 所有付款以美元处理。最终金额可能因汇率而异。', de:'💳 Alle Zahlungen werden in USD verarbeitet. Der Endbetrag kann je nach Wechselkurs variieren.', fr:'💳 Tous les paiements sont traités en USD. Le montant final peut varier selon le taux de change.', es:'💳 Todos los pagos se procesan en USD. El monto final puede variar según el tipo de cambio.' },
 'all_shipments_refreshed': { ko:'모든 배송 갱신 완료', en:'All shipments refreshed' },
+'shipments_refresh_partial': { ko:'{total}건 중 {ok}건 갱신 완료 (일부 실패)', en:'{ok} of {total} shipments refreshed (some failed)' },
 'almost_done': { ko:'곧 완료됩니다', en:'Almost done' },
 'already_exists': { ko:' \이\미 \등\록\됨', en:' already exists' },
 'amount_usd': { ko:'금액 (USD)', en:'Amount (USD)' },
@@ -17688,7 +17689,7 @@ function refreshAllShipments(){
   var active=(S.shipments||[]).filter(function(s){return s.status!=='delivered'&&s.status!=='canceled';});
   if(!active.length){UI.toast(T('no_active_shipments'),'info');return;}
   UI.toast(T('refreshing_prefix')+active.length+T('n_shipments_ellipsis'),'info');
-  var done=0;
+  var done=0;var _failCount=0;
   _getAccessToken().then(function(tk){
   if(!tk)return;
   active.forEach(function(sh){
@@ -17706,9 +17707,13 @@ function refreshAllShipments(){
           S.shipments[idx].tracking_metadata={progress_pct:data.progress_pct,days_remaining:data.days_remaining};
         }
       }
-    }).catch(function(){}).finally(function(){
+    }).catch(function(e){console.error('[tracking] refresh fail:',e);_failCount++;}).finally(function(){
       done++;
-      if(done>=active.length){UI.toast(T('all_shipments_refreshed'),'ok');render();}
+      if(done>=active.length){
+        if(_failCount>0)UI.toast(TF('shipments_refresh_partial',{ok:active.length-_failCount,total:active.length}),'warn');
+        else UI.toast(T('all_shipments_refreshed'),'ok');
+        render();
+      }
     });
   });
   });
