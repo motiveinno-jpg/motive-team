@@ -194,19 +194,16 @@ serve(async (req) => {
       return new Response("Invalid signature", { status: 400 });
     }
 
-    // Idempotency: skip if this event was already processed
-    const { data: existing } = await supabase
+    // Idempotency: atomic insert with unique constraint — prevents race condition
+    const { error: idempErr } = await supabase
       .from("webhook_debug_log")
-      .select("id")
-      .eq("message", event.id)
-      .maybeSingle();
-    if (existing) {
+      .insert({ message: event.id, data: { type: event.type } });
+    if (idempErr && (idempErr.code === "23505" || idempErr.message?.includes("duplicate"))) {
       return new Response(JSON.stringify({ received: true, duplicate: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
     }
-    await supabase.from("webhook_debug_log").insert({ message: event.id, data: { type: event.type } });
 
     switch (event.type) {
       /* ─── ONE-TIME PAYMENT (escrow, analysis) ─── */
