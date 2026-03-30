@@ -4783,8 +4783,8 @@ function T(key){
     return v[1];
   }
   var ml=_ML[key];
-  if(ml) return ml[_userLang]||ml['en']||key;
-  var fb=_T[key]; if(fb) return fb[1];
+  if(ml){var _mlv=ml[_userLang]||ml['en']||ml['ko'];if(!_mlv){for(var _lk in ml){if(ml[_lk]){_mlv=ml[_lk];break;}}}return _mlv||key;}
+  var fb=_T[key]; if(fb) return fb[1]||fb[0]||key;
   return key;
 }
 /* TF(key, {var:val}) — T() with variable substitution. Use {var} placeholders in translations. */
@@ -5059,9 +5059,13 @@ function loadUser(){
         /* Map country to default language for proper localization */
         var _cLangMap={KR:'ko',JP:'ja',CN:'zh',VN:'vi',TH:'th',DE:'de',FR:'fr',ES:'es',BR:'pt',PT:'pt',ID:'id',TR:'tr',SA:'ar',AE:'ar',EG:'ar'};
         var _expectedLang=_cLangMap[_authCountry]||'en';
-        /* Only override if user hasn't manually chosen a specific language */
-        var _storedLang=localStorage.getItem('whistle_lang');
-        if(!_storedLang||_storedLang==='en'||(_isKorean&&_storedLang!=='ko')||(!_isKorean&&_storedLang==='ko')){_userLang=_expectedLang;}
+        /* URL ?lang= parameter takes highest priority (user's explicit intent) */
+        var _urlLang=(new URLSearchParams(location.search)).get('lang');
+        if(_urlLang&&['ko','en','ja','zh','vi','th','de','fr','es','pt','id','tr','ar'].indexOf(_urlLang)>=0){_userLang=_urlLang;}
+        /* DB users.language field takes second priority */
+        else if(r.data.language&&['ko','en','ja','zh','vi','th','de','fr','es','pt','id','tr','ar'].indexOf(r.data.language)>=0){_userLang=r.data.language;}
+        /* Country-based mapping — override stale localStorage */
+        else{var _storedLang=localStorage.getItem('whistle_lang');if(!_storedLang||_storedLang==='en'||(_isKorean&&_storedLang!=='ko')||(!_isKorean&&_storedLang==='ko')||(_storedLang!==_expectedLang&&!r.data.language)){_userLang=_expectedLang;}}
         localStorage.setItem('_lang',_userLang);
         localStorage.setItem('whistle_lang',_userLang);
         document.documentElement.setAttribute('lang',_userLang);if(typeof _setDir==='function')_setDir(_userLang);
@@ -10721,6 +10725,7 @@ function _ccCurrencySymbol(cur){
   return CURRENCY_SYMBOLS[cur]||'$';
 }
 function _ccFormatPrice(val,cur){
+  if(!isFinite(val)||isNaN(val))val=0;
   var sym=_ccCurrencySymbol(cur);
   var _noDecimal={JPY:true,KRW:true,VND:true};
   if(_noDecimal[cur])return sym+Math.round(val).toLocaleString();
@@ -10786,7 +10791,8 @@ function calcDocCost(){
     var costInCur=cur==='KRW'?costKRW:(costKRW/krwPerUsd);
     var _ccFb={EUR:0.92,JPY:150,GBP:0.79,CNY:7.25,THB:36,VND:24500,INR:83.5,BRL:5.0,SGD:1.35,AUD:1.55,CAD:1.37,AED:3.67};
     if(cur!=='USD'&&cur!=='KRW'){var _curRateK=(window._fxRates&&window._fxRates[cur])?window._fxRates[cur]:0;costInCur=_curRateK?(costKRW*_curRateK):((costKRW/krwPerUsd)*(_ccFb[cur]||1));}
-    var marginPct=((activeUnit-costInCur)/activeUnit*100);
+    var marginPct=activeUnit>0?((activeUnit-costInCur)/activeUnit*100):0;
+    if(!isFinite(marginPct)||isNaN(marginPct))marginPct=0;
     var mColor=marginPct>=30?'var(--ok)':marginPct>=15?'var(--acc)':'var(--err)';
     if(marginEl){marginEl.textContent=marginPct.toFixed(1)+'%';marginEl.style.color=mColor;}
   }else{
@@ -11186,6 +11192,19 @@ function viewPjDoc(docId){
   if(!doc){UI.toast(T('doc_not_found'),'warn');return;}
   var content={};try{content=typeof doc.content==='string'?JSON.parse(doc.content):doc.content||{};}catch(e){content={};}
   var items=content.items||[];
+  /* Normalize item fields — _genDocInner uses 'price', submitPjDoc uses 'unit_price' */
+  items=items.map(function(it){if(!it.unit_price&&it.price)it.unit_price=it.price;if(!it.price&&it.unit_price)it.price=it.unit_price;return it;});
+  /* Normalize ref fields — _genDocInner stores in content.ref, submitPjDoc stores flat */
+  if(content.ref){
+    if(!content.incoterms)content.incoterms=content.ref.terms||'';
+    if(!content.payment_terms)content.payment_terms=content.ref.payment||'';
+    if(!content.port_loading)content.port_loading=content.ref.port_loading||content.ref.port||'';
+    if(!content.port_discharge)content.port_discharge=content.ref.dest_port||'';
+    if(!content.hs_code)content.hs_code=content.ref.hs_code||'';
+    if(!content.country_origin)content.country_origin=content.ref.country_of_origin||'';
+    if(!content.vessel_name)content.vessel_name=content.ref.vessel||'';
+    if(!content.ship_date)content.ship_date=content.ref.ship_date||'';
+  }
   var typeN={pi:'PROFORMA INVOICE',ci:'COMMERCIAL INVOICE',pl:'PACKING LIST',co:'CERTIFICATE OF ORIGIN',sc:'SALES CONTRACT',bl:'B/L INSTRUCTIONS',ic:'INSURANCE CERTIFICATE',cd:'CUSTOMS DECLARATION',lc:'L/C CHECKLIST',isc:'ISF (10+2)',hsc:'HS CODE CERTIFICATE',cfs:'CERTIFICATE OF FREE SALE',fc:'FUMIGATION CERTIFICATE',msds:'MATERIAL SAFETY DATA SHEET',ed:'EXPORT DECLARATION',sli:'SHIPPER LETTER OF INSTRUCTION',isf:'ISF FILING',ams:'AMS FILING'};
   var typeK={pi:'견적송장',ci:'상업송장',pl:'패킹리스트',co:'원산지증명서',sc:'수출계약서',bl:'선적지시서',ic:'적하보험증권',cd:'수출신고참고',lc:'LC체크리스트',isc:'ISF (10+2)',hsc:'HS코드 인증서',cfs:'자유판매증명서',fc:'훈증소독증명서',msds:'물질안전보건자료',ed:'수출신고서',sli:'선적지시서(SLI)',isf:'ISF 서류',ams:'AMS 서류'};
   var c=S.company||{};
@@ -11193,6 +11212,8 @@ function viewPjDoc(docId){
   var buyerName=buyer?(buyer.company_name||buyer.contact_name||''):'';
   var buyerAddr=buyer?(buyer.address||''):'';
   var buyerCountry=buyer?(buyer.country||''):'';
+  /* Fallback buyer info from content.buyer (used by _genDocInner) */
+  if(!buyerName&&content.buyer){buyerName=content.buyer.buyer_company||content.buyer.buyer_contact||'';buyerAddr=content.buyer.buyer_address||'';buyerCountry=content.buyer.buyer_country||'';}
   var docDate=new Date(doc.created_at).toLocaleDateString('en',{year:'numeric',month:'short',day:'numeric'});
   var total=content.total||items.reduce(function(s,it){return s+(parseFloat(it.qty)||0)*(parseFloat(it.unit_price)||0);},0);
   function xe(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
