@@ -15,36 +15,47 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const resendKey = Deno.env.get("RESEND_API_KEY");
     const cronSecret = Deno.env.get("CRON_SECRET");
+    const sb = createClient(supabaseUrl, serviceKey);
 
-    // Auth: Bearer token OR x-cron-secret header
+    // Auth: cron secret (env or DB) → service_role key → admin JWT
     let isAuthorized = false;
 
     const cronHeader = req.headers.get("x-cron-secret");
+
+    // 1. Check env-based cron secret
     if (cronSecret && cronHeader && cronHeader.trim() === cronSecret.trim()) {
       isAuthorized = true;
     }
 
+    // 2. Check DB-based cron secret (fallback when env var missing)
+    if (!isAuthorized && cronHeader) {
+      const { data: cfg } = await sb.from("system_config").select("value").eq("key", "cron_secret").single();
+      if (cfg && cronHeader.trim() === cfg.value.trim()) {
+        isAuthorized = true;
+      }
+    }
+
+    // 3. Check service_role key or admin JWT
     if (!isAuthorized) {
       const authHeader = req.headers.get("Authorization");
       const token = authHeader?.replace("Bearer ", "");
-      if (!token) return json({ error: "Unauthorized" }, 401);
 
       if (token === serviceKey) {
         isAuthorized = true;
-      } else {
-        const sb = createClient(supabaseUrl, serviceKey);
+      } else if (token) {
         const { data: { user } } = await sb.auth.getUser(token);
-        if (!user) return json({ error: "Unauthorized" }, 401);
-        const { data: userData } = await sb.from("users").select("role").eq("id", user.id).single();
-        if (!userData || userData.role !== "admin") return json({ error: "Admin only" }, 403);
-        isAuthorized = true;
+        if (user) {
+          const { data: userData } = await sb.from("users").select("role").eq("id", user.id).single();
+          if (userData && userData.role === "admin") {
+            isAuthorized = true;
+          }
+        }
       }
     }
 
     if (!isAuthorized) return json({ error: "Unauthorized" }, 401);
     if (!resendKey) return json({ error: "RESEND_API_KEY not configured" }, 500);
 
-    const sb = createClient(supabaseUrl, serviceKey);
     const body = await req.json();
     const { action } = body;
 

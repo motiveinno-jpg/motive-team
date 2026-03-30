@@ -56,6 +56,8 @@ async function handleGetRates(
   const cached = await getCachedRates(sbAdmin);
 
   if (cached) {
+    // Sync cached rates to exchange_rates table (async, non-blocking)
+    syncToExchangeRates(sbAdmin, cached.rates);
     return jsonResponse({
       base: "USD",
       rates: cached.rates,
@@ -174,15 +176,19 @@ async function cacheRates(
   rates: Record<string, number>,
 ): Promise<void> {
   const expiresAt = new Date(Date.now() + CACHE_TTL_HOURS * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
 
   await sbAdmin
     .from("exchange_rates_cache")
     .insert({
       base_currency: "USD",
       rates,
-      fetched_at: new Date().toISOString(),
+      fetched_at: now,
       expires_at: expiresAt,
     });
+
+  // Also sync to exchange_rates table
+  await syncToExchangeRates(sbAdmin, rates);
 }
 
 async function getOrFetchRates(
@@ -234,6 +240,28 @@ async function fetchFreshRates(): Promise<Record<string, number> | null> {
   } catch (err) {
     console.error("[exchange-rates] Fetch failed:", err);
     return null;
+  }
+}
+
+/* ─── Sync to exchange_rates table ─── */
+
+async function syncToExchangeRates(
+  sbAdmin: ReturnType<typeof createClient>,
+  rates: Record<string, number>,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const upserts = Object.entries(rates).map(([code, rate]) => ({
+    currency_code: code,
+    rate_to_usd: rate,
+    source: "er-api",
+    updated_at: now,
+  }));
+
+  if (upserts.length) {
+    const { error } = await sbAdmin
+      .from("exchange_rates")
+      .upsert(upserts, { onConflict: "currency_code" });
+    if (error) console.error("[exchange-rates] sync failed:", error.message);
   }
 }
 

@@ -1801,8 +1801,12 @@ var S={
   // Manufacturer profile
   _viewMakerId:null,_makerProfile:null,_makerProducts:[],_makerUser:null,_makerLoading:false,_makerSaved:false
 };
-var FX={USD:1,KRW:1400,JPY:155,AED:3.67,EUR:0.92,GBP:0.79,CNY:7.24,THB:34.5,VND:25400,INR:83.5,BRL:5.0,MXN:17.2,SGD:1.34,AUD:1.53,CAD:1.36,TWD:31.5,CHF:0.89,CZK:23.5,DKK:6.9,HKD:7.82,HUF:370,IDR:15700,ILS:3.7,MYR:4.7,NOK:10.8,NZD:1.68,PHP:56,PLN:4.0,SEK:10.5,TRY:32,ZAR:18.7,SAR:3.75,PKR:278,BDT:110,NGN:1550,EGP:49,COP:3950,CLP:940,ARS:870};
-(function loadFxRates(){sb.functions.invoke('exchange-rates').then(function(r){if(r.data&&r.data.rates){var rates=r.data.rates;for(var k in rates)FX[k]=rates[k];FX.USD=1;}}).catch(function(e){console.error(e);});})();
+var FX={USD:1,KRW:1380,JPY:150,EUR:0.92,GBP:0.79,CNY:7.25};
+(function loadFxRates(){
+  sb.from('exchange_rates').select('currency_code,rate_to_usd').then(function(r){
+    if(r.data&&r.data.length){r.data.forEach(function(row){FX[row.currency_code]=row.rate_to_usd;});FX.USD=1;}
+  }).catch(function(e){console.error('[fx] DB load failed:',e);});
+})();
 function fxConvert(usd,toCur){if(!usd||!toCur||toCur==='USD')return usd;var rate=FX[toCur];return rate?Math.round(usd*rate):usd;}
 function fxFormat(usd,cur){cur=cur||S.currency;if(!usd)return'Price on request';var v=fxConvert(parseFloat(usd),cur);var sym={USD:'$',KRW:'₩',JPY:'¥',CNY:'¥',AED:'AED ',EUR:'€',GBP:'£',AUD:'A$',CAD:'C$',CHF:'CHF ',SGD:'S$',HKD:'HK$',INR:'₹',THB:'฿',VND:'₫',IDR:'Rp',MXN:'MX$',BRL:'R$',TRY:'₺',ZAR:'R',SAR:'SAR ',TWD:'NT$',PHP:'₱',MYR:'RM',PLN:'zł',SEK:'kr',NOK:'kr',DKK:'kr'};var noDecimal=['KRW','JPY','VND','IDR','CLP','COP','PKR','NGN','HUF'];return(sym[cur]||cur+' ')+(noDecimal.indexOf(cur)>=0?Math.round(v).toLocaleString():v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}));}
 function fxFromKRW(krw,toCur){if(!krw)return 0;var usd=parseFloat(krw)/FX.KRW;if(toCur==='USD')return Math.round(usd*100)/100;return fxConvert(usd,toCur);}
@@ -9064,39 +9068,13 @@ function submitPartnership(){
 }
 
 /* === FTA SIMULATOR PAGE === */
-var _FTA_COUNTRIES = [
-  {code:'US',name:'United States',flag:'🇺🇸'},
-  {code:'JP',name:'Japan',flag:'🇯🇵'},
-  {code:'CN',name:'China',flag:'🇨🇳'},
-  {code:'DE',name:'Germany',flag:'🇩🇪'},
-  {code:'GB',name:'United Kingdom',flag:'🇬🇧'},
-  {code:'FR',name:'France',flag:'🇫🇷'},
-  {code:'NL',name:'Netherlands',flag:'🇳🇱'},
-  {code:'IT',name:'Italy',flag:'🇮🇹'},
-  {code:'ES',name:'Spain',flag:'🇪🇸'},
-  {code:'VN',name:'Vietnam',flag:'🇻🇳'},
-  {code:'SG',name:'Singapore',flag:'🇸🇬'},
-  {code:'AU',name:'Australia',flag:'🇦🇺'},
-  {code:'CA',name:'Canada',flag:'🇨🇦'},
-  {code:'IN',name:'India',flag:'🇮🇳'},
-  {code:'ID',name:'Indonesia',flag:'🇮🇩'},
-  {code:'TH',name:'Thailand',flag:'🇹🇭'},
-  {code:'MY',name:'Malaysia',flag:'🇲🇾'},
-  {code:'PH',name:'Philippines',flag:'🇵🇭'},
-  {code:'NZ',name:'New Zealand',flag:'🇳🇿'},
-  {code:'CL',name:'Chile',flag:'🇨🇱'},
-  {code:'PE',name:'Peru',flag:'🇵🇪'},
-  {code:'CO',name:'Colombia',flag:'🇨🇴'},
-  {code:'TR',name:'Turkey',flag:'🇹🇷'},
-  {code:'IL',name:'Israel',flag:'🇮🇱'},
-  {code:'KH',name:'Cambodia',flag:'🇰🇭'},
-  {code:'NO',name:'Norway',flag:'🇳🇴'},
-  {code:'CH',name:'Switzerland',flag:'🇨🇭'},
-  {code:'MX',name:'Mexico',flag:'🇲🇽'},
-  {code:'BR',name:'Brazil',flag:'🇧🇷'},
-  {code:'AE',name:'UAE',flag:'🇦🇪'},
-  {code:'SA',name:'Saudi Arabia',flag:'🇸🇦'}
-];
+var _FTA_COUNTRIES = [];
+(function loadFtaCountries(){
+  sb.from('localization_countries').select('code,name,flag').order('name').then(function(r){
+    if(r.data&&r.data.length){_FTA_COUNTRIES=r.data.map(function(c){return{code:c.code,name:c.name,flag:c.flag||''};});}
+    else{_FTA_COUNTRIES=[{code:'US',name:'United States',flag:'🇺🇸'},{code:'JP',name:'Japan',flag:'🇯🇵'},{code:'CN',name:'China',flag:'🇨🇳'},{code:'DE',name:'Germany',flag:'🇩🇪'},{code:'GB',name:'United Kingdom',flag:'🇬🇧'},{code:'VN',name:'Vietnam',flag:'🇻🇳'},{code:'SG',name:'Singapore',flag:'🇸🇬'},{code:'AU',name:'Australia',flag:'🇦🇺'},{code:'CA',name:'Canada',flag:'🇨🇦'},{code:'IN',name:'India',flag:'🇮🇳'}];}
+  }).catch(function(e){console.error('[fta] load countries:',e);_FTA_COUNTRIES=[{code:'US',name:'United States',flag:'🇺🇸'},{code:'JP',name:'Japan',flag:'🇯🇵'},{code:'CN',name:'China',flag:'🇨🇳'}];});
+})();
 var _FTA_ORIGIN_COUNTRIES = [
   {code:'KR',name:'South Korea',flag:'🇰🇷'},
   {code:'CN',name:'China',flag:'🇨🇳'},

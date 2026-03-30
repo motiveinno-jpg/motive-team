@@ -20,26 +20,36 @@ serve(async (req) => {
   }
 
   try {
-    // Auth: require either cron secret, service role key, or valid admin JWT
+    // Auth: cron secret (env or DB) → service_role key → admin JWT
     const cronSecret = Deno.env.get("CRON_SECRET");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sbUrl = Deno.env.get("SUPABASE_URL")!;
+    const sbCheck = createClient(sbUrl, serviceRoleKey);
     const authHeader = req.headers.get("Authorization");
     const cronHeader = req.headers.get("x-cron-secret");
 
     let isAuthorized = false;
 
-    // 1. Check cron secret (trimmed to avoid whitespace issues)
+    // 1. Check env-based cron secret
     if (cronSecret && cronHeader && cronHeader.trim() === cronSecret.trim()) {
       isAuthorized = true;
     }
 
-    // 2. Check service role key via custom header (for cron/internal calls)
+    // 2. Check DB-based cron secret (fallback when env var missing)
+    if (!isAuthorized && cronHeader) {
+      const { data: cfg } = await sbCheck.from("system_config").select("value").eq("key", "cron_secret").single();
+      if (cfg && cronHeader.trim() === cfg.value.trim()) {
+        isAuthorized = true;
+      }
+    }
+
+    // 3. Check service role key via custom header
     const serviceKeyHeader = req.headers.get("x-service-key");
     if (!isAuthorized && serviceKeyHeader && serviceKeyHeader === serviceRoleKey) {
       isAuthorized = true;
     }
 
-    // 3. Check service role key in Authorization header
+    // 4. Check service role key in Authorization header
     if (!isAuthorized && authHeader) {
       const token = authHeader.replace("Bearer ", "");
       if (token === serviceRoleKey) {
@@ -47,10 +57,8 @@ serve(async (req) => {
       }
     }
 
-    // 4. Check valid admin user JWT
+    // 5. Check valid admin user JWT
     if (!isAuthorized && authHeader) {
-      const sbUrl = Deno.env.get("SUPABASE_URL")!;
-      const sbCheck = createClient(sbUrl, serviceRoleKey);
       const token = authHeader.replace("Bearer ", "");
       const {
         data: { user },

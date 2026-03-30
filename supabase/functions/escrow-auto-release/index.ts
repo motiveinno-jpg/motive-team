@@ -17,23 +17,36 @@ serve(async (req) => {
   }
 
   try {
-    // ── Auth: cron secret or service role key ──
+    // ── Auth: cron secret (env or DB) → service_role key ──
     const cronSecret = Deno.env.get("CRON_SECRET");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const cronHeader = req.headers.get("x-cron-secret");
     const serviceKeyHeader = req.headers.get("x-service-key");
     const authHeader = req.headers.get("Authorization");
 
     let isAuthorized = false;
 
+    // 1. env-based cron secret
     if (cronSecret && cronHeader && cronHeader.trim() === cronSecret.trim()) {
       isAuthorized = true;
     }
 
+    // 2. DB-based cron secret fallback
+    if (!isAuthorized && cronHeader) {
+      const sbAuth = createClient(supabaseUrl, serviceRoleKey);
+      const { data: cfg } = await sbAuth.from("system_config").select("value").eq("key", "cron_secret").single();
+      if (cfg && cronHeader.trim() === cfg.value.trim()) {
+        isAuthorized = true;
+      }
+    }
+
+    // 3. service role key via custom header
     if (!isAuthorized && serviceKeyHeader && serviceKeyHeader === serviceRoleKey) {
       isAuthorized = true;
     }
 
+    // 4. service role key in Authorization header
     if (!isAuthorized && authHeader) {
       const token = authHeader.replace("Bearer ", "");
       if (token === serviceRoleKey) {
@@ -49,7 +62,6 @@ serve(async (req) => {
     }
 
     // ── Init clients ──
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
 
     if (!stripeKey) {

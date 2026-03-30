@@ -1528,8 +1528,11 @@ function loadAll(){
     sb.from('sp_settlements').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.spSettlements=r.data||[];}),
     sb.from('sp_tiers').select('*').limit(200).then(function(r){S.spTiers=r.data||[];}),
     sb.from('sp_referrals').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.spReferrals=r.data||[];}),
-    sb.from('sp_referral_codes').select('*').limit(200).then(function(r){S.spReferralCodes=r.data||[];})
-  ]).then(function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();});
+    sb.from('sp_referral_codes').select('*').limit(200).then(function(r){S.spReferralCodes=r.data||[];}),
+    sb.from('localization_countries').select('*').order('readiness',{ascending:false}).then(function(r){
+      S.localizationCountries=(r.data||[]).map(function(c){return{id:c.id,name:c.name,code:c.code,flag:c.flag,isActive:c.is_active,certs:c.certs||'',ftas:c.ftas||'',templates:c.templates||0,lang:c.lang||'en',readiness:c.readiness||1};});
+    })
+  ]).then(function(){_loadPricingFromDB();var hp=location.hash.replace('#','');if(hp&&_APL[hp])S.page=hp;render();});
 }
 
 /* === AUTH === */
@@ -1714,13 +1717,30 @@ function filterBySearch(arr,fields){
   });
 }
 
-/* === PAYMENT CONSTANTS === */
-/* Buyer plans (USD) */
+/* === PAYMENT CONSTANTS (defaults — overridden by DB pricing_config on load) === */
 var PLAN_PRICE_BUYER={starter:{m:29,s:156.60,a:278.40},pro:{m:89,s:480.60,a:854.40},enterprise:{m:499,s:2694.60,a:4790.40}};
-/* Manufacturer plans (KRW → USD@1400) */
 var PLAN_PRICE_MFR={starter:{m:99,s:534.60,a:950.40,krw_m:129000,krw_s:696600,krw_a:1238400},pro:{m:199,s:1074.60,a:1910.40,krw_m:269000,krw_s:1452600,krw_a:2582400},alibaba:{m:199,s:1074.60,a:1910.40,setup_total:2000000,setup_voucher:300000}};
-/* Combined lookup (기본은 buyer 기준, starter=basic alias) */
 var PLAN_PRICE={starter:{m:99,s:534.60,a:950.40},basic:{m:99,s:534.60,a:950.40},pro:{m:199,s:1074.60,a:1910.40},alibaba:{m:199,s:1074.60,a:1910.40},enterprise:{m:449,s:2424.60,a:4310.40}};
+function _loadPricingFromDB(){
+  sb.from('pricing_config').select('*').eq('is_active',true).then(function(r){
+    if(!r.data||!r.data.length)return;
+    var buyer={},mfr={},gen={};
+    r.data.forEach(function(row){
+      var obj={m:Number(row.monthly),s:Number(row.semi_annual),a:Number(row.annual)};
+      if(row.krw_monthly)obj.krw_m=Number(row.krw_monthly);
+      if(row.krw_semi_annual)obj.krw_s=Number(row.krw_semi_annual);
+      if(row.krw_annual)obj.krw_a=Number(row.krw_annual);
+      if(row.setup_total)obj.setup_total=Number(row.setup_total);
+      if(row.setup_voucher)obj.setup_voucher=Number(row.setup_voucher);
+      if(row.portal==='buyer')buyer[row.plan_key]=obj;
+      else if(row.portal==='manufacturer')mfr[row.plan_key]=obj;
+      else gen[row.plan_key]=obj;
+    });
+    if(Object.keys(buyer).length)PLAN_PRICE_BUYER=buyer;
+    if(Object.keys(mfr).length)PLAN_PRICE_MFR=mfr;
+    if(Object.keys(gen).length){PLAN_PRICE=gen;if(gen.starter&&!gen.basic)PLAN_PRICE.basic=gen.starter;}
+  }).catch(function(e){console.error('[pricing] DB load failed:',e);});
+}
 var CYCLE_L={monthly:AT('monthly'),semi_annual:AT('n6_months'),annual:AT('annual')};
 var CYCLE_M={monthly:1,semi_annual:6,annual:12};
 var ESC_ST={none:['None','ghost'],requested:['Requested','acc'],buyer_paid:['Buyer Paid','pri'],secured:['Secured','ok'],shipping:['Shipping','purple'],delivered:['Delivered','ok'],release_requested:['Release Requested','acc'],released:['Released','ok'],cancelled:['Cancelled','ghost'],disputed:['Disputed','err'],refunded:['Refunded','err'],platform_hold:['Platform Hold','warn'],pending_deposit:['Awaiting Deposit','ghost'],funded:['Funded','pri'],in_production:['In Production','acc'],shipped:['Shipped','purple'],inspection:['Inspecting','acc']};
@@ -6109,42 +6129,8 @@ function sendBrief(briefId){
 }
 
 /* ═══ 5. Global Localization Settings ═══ */
-var LOC_COUNTRIES=[
-  {name:'United States',code:'US',flag:'\uD83C\uDDFA\uD83C\uDDF8',isActive:true,certs:'FDA,FCC,UL',ftas:'KORUS FTA',templates:12,lang:'en',readiness:9},
-  {name:'Japan',code:'JP',flag:'\uD83C\uDDEF\uD83C\uDDF5',isActive:true,certs:'JIS,PSE,JFRL',ftas:'RCEP,Korea-Japan',templates:10,lang:'ja',readiness:8},
-  {name:'China',code:'CN',flag:'\uD83C\uDDE8\uD83C\uDDF3',isActive:true,certs:'CCC,CFDA,GB',ftas:'RCEP,Korea-China FTA',templates:11,lang:'zh',readiness:8},
-  {name:'Germany',code:'DE',flag:'\uD83C\uDDE9\uD83C\uDDEA',isActive:true,certs:'CE,TUV,GS',ftas:'EU-Korea FTA',templates:9,lang:'de',readiness:8},
-  {name:'United Kingdom',code:'GB',flag:'\uD83C\uDDEC\uD83C\uDDE7',isActive:true,certs:'UKCA,BSI',ftas:'UK-Korea FTA',templates:8,lang:'en',readiness:7},
-  {name:'Vietnam',code:'VN',flag:'\uD83C\uDDFB\uD83C\uDDF3',isActive:true,certs:'CR,QCVN',ftas:'RCEP,VKFTA,EVFTA',templates:7,lang:'vi',readiness:7},
-  {name:'Singapore',code:'SG',flag:'\uD83C\uDDF8\uD83C\uDDEC',isActive:true,certs:'PSB,TUV SUD',ftas:'RCEP,KSFTA',templates:6,lang:'en',readiness:8},
-  {name:'Thailand',code:'TH',flag:'\uD83C\uDDF9\uD83C\uDDED',isActive:true,certs:'TISI,FDA Thai',ftas:'RCEP,AKFTA',templates:6,lang:'th',readiness:6},
-  {name:'India',code:'IN',flag:'\uD83C\uDDEE\uD83C\uDDF3',isActive:true,certs:'BIS,FSSAI,ISI',ftas:'CEPA',templates:7,lang:'hi',readiness:6},
-  {name:'Indonesia',code:'ID',flag:'\uD83C\uDDEE\uD83C\uDDE9',isActive:true,certs:'SNI,BPOM',ftas:'RCEP,AKFTA',templates:5,lang:'id',readiness:5},
-  {name:'Australia',code:'AU',flag:'\uD83C\uDDE6\uD83C\uDDFA',isActive:true,certs:'RCM,TGA,ASNZ',ftas:'RCEP,KAFTA',templates:7,lang:'en',readiness:7},
-  {name:'Canada',code:'CA',flag:'\uD83C\uDDE8\uD83C\uDDE6',isActive:true,certs:'CSA,Health Canada',ftas:'CKFTA',templates:7,lang:'en',readiness:7},
-  {name:'France',code:'FR',flag:'\uD83C\uDDEB\uD83C\uDDF7',isActive:true,certs:'CE,NF',ftas:'EU-Korea FTA',templates:8,lang:'fr',readiness:7},
-  {name:'Netherlands',code:'NL',flag:'\uD83C\uDDF3\uD83C\uDDF1',isActive:true,certs:'CE',ftas:'EU-Korea FTA',templates:6,lang:'nl',readiness:7},
-  {name:'Italy',code:'IT',flag:'\uD83C\uDDEE\uD83C\uDDF9',isActive:true,certs:'CE,IMQ',ftas:'EU-Korea FTA',templates:6,lang:'it',readiness:6},
-  {name:'Spain',code:'ES',flag:'\uD83C\uDDEA\uD83C\uDDF8',isActive:true,certs:'CE,AENOR',ftas:'EU-Korea FTA',templates:5,lang:'es',readiness:6},
-  {name:'UAE',code:'AE',flag:'\uD83C\uDDE6\uD83C\uDDEA',isActive:true,certs:'ESMA,Halal',ftas:'Korea-GCC (negotiating)',templates:5,lang:'ar',readiness:5},
-  {name:'Saudi Arabia',code:'SA',flag:'\uD83C\uDDF8\uD83C\uDDE6',isActive:true,certs:'SASO,SFDA,Halal',ftas:'Korea-GCC (negotiating)',templates:5,lang:'ar',readiness:5},
-  {name:'Malaysia',code:'MY',flag:'\uD83C\uDDF2\uD83C\uDDFE',isActive:true,certs:'SIRIM,Halal JAKIM',ftas:'RCEP,AKFTA',templates:5,lang:'ms',readiness:6},
-  {name:'Philippines',code:'PH',flag:'\uD83C\uDDF5\uD83C\uDDED',isActive:true,certs:'BPS,FDA PH',ftas:'RCEP,AKFTA',templates:4,lang:'en',readiness:5},
-  {name:'Mexico',code:'MX',flag:'\uD83C\uDDF2\uD83C\uDDFD',isActive:false,certs:'NOM,COFEPRIS',ftas:'(none)',templates:3,lang:'es',readiness:4},
-  {name:'Brazil',code:'BR',flag:'\uD83C\uDDE7\uD83C\uDDF7',isActive:false,certs:'INMETRO,ANVISA',ftas:'Mercosur-Korea (exploring)',templates:3,lang:'pt',readiness:3},
-  {name:'Turkey',code:'TR',flag:'\uD83C\uDDF9\uD83C\uDDF7',isActive:false,certs:'TSE,CE (accepted)',ftas:'Korea-Turkey FTA',templates:3,lang:'tr',readiness:4},
-  {name:'Poland',code:'PL',flag:'\uD83C\uDDF5\uD83C\uDDF1',isActive:false,certs:'CE',ftas:'EU-Korea FTA',templates:4,lang:'pl',readiness:5},
-  {name:'Sweden',code:'SE',flag:'\uD83C\uDDF8\uD83C\uDDEA',isActive:false,certs:'CE',ftas:'EU-Korea FTA',templates:4,lang:'sv',readiness:5},
-  {name:'Switzerland',code:'CH',flag:'\uD83C\uDDE8\uD83C\uDDED',isActive:false,certs:'CE(accepted),Swissmedic',ftas:'EFTA-Korea FTA',templates:3,lang:'de',readiness:5},
-  {name:'Norway',code:'NO',flag:'\uD83C\uDDF3\uD83C\uDDF4',isActive:false,certs:'CE(accepted)',ftas:'EFTA-Korea FTA',templates:3,lang:'no',readiness:5},
-  {name:'New Zealand',code:'NZ',flag:'\uD83C\uDDF3\uD83C\uDDFF',isActive:false,certs:'RCM',ftas:'RCEP,NZ-Korea FTA',templates:4,lang:'en',readiness:6},
-  {name:'Chile',code:'CL',flag:'\uD83C\uDDE8\uD83C\uDDF1',isActive:false,certs:'SEC,ISP',ftas:'Korea-Chile FTA',templates:3,lang:'es',readiness:4},
-  {name:'Peru',code:'PE',flag:'\uD83C\uDDF5\uD83C\uDDEA',isActive:false,certs:'INACAL',ftas:'Korea-Peru FTA',templates:2,lang:'es',readiness:3},
-  {name:'Colombia',code:'CO',flag:'\uD83C\uDDE8\uD83C\uDDF4',isActive:false,certs:'ICONTEC,INVIMA',ftas:'Korea-Colombia FTA',templates:2,lang:'es',readiness:3}
-];
 function pgLocalization(){
-  var countries=S.localizationCountries.length?S.localizationCountries:LOC_COUNTRIES;
-  if(!S.localizationCountries.length)S.localizationCountries=LOC_COUNTRIES;
+  var countries=S.localizationCountries||[];
   var tab=S._locTab||'all';
   var filtered=tab==='active'?countries.filter(function(c){return c.isActive;}):tab==='inactive'?countries.filter(function(c){return !c.isActive;}):countries;
   var search=(S.searchFilter||'').toLowerCase();
@@ -6196,7 +6182,12 @@ function pgLocalization(){
 }
 function toggleLocCountry(code){
   var idx=S.localizationCountries.findIndex(function(c){return c.code===code;});
-  if(idx>=0){S.localizationCountries[idx].isActive=!S.localizationCountries[idx].isActive;render();}
+  if(idx<0)return;
+  var newVal=!S.localizationCountries[idx].isActive;
+  S.localizationCountries[idx].isActive=newVal;render();
+  sb.from('localization_countries').update({is_active:newVal,updated_at:new Date().toISOString()}).eq('code',code).then(function(r){
+    if(r.error){console.error('[loc] toggle error:',r.error.message);UI.toast(AT('save_failed'),'err');}
+  }).catch(function(e){console.error('[loc] toggle:',e);});
 }
 function editLocCountry(code){
   var c=S.localizationCountries.find(function(x){return x.code===code;});
@@ -6217,13 +6208,18 @@ function editLocCountry(code){
 function saveLocCountry(code){
   var idx=S.localizationCountries.findIndex(function(c){return c.code===code;});
   if(idx<0)return;
-  S.localizationCountries[idx].name=(document.getElementById('loc-name')||{}).value||S.localizationCountries[idx].name;
-  S.localizationCountries[idx].lang=(document.getElementById('loc-lang')||{}).value||S.localizationCountries[idx].lang;
-  S.localizationCountries[idx].readiness=parseInt((document.getElementById('loc-readiness')||{}).value)||S.localizationCountries[idx].readiness;
-  S.localizationCountries[idx].certs=(document.getElementById('loc-certs')||{}).value||'';
-  S.localizationCountries[idx].ftas=(document.getElementById('loc-ftas')||{}).value||'';
-  S.localizationCountries[idx].templates=parseInt((document.getElementById('loc-templates')||{}).value)||0;
-  closeModal('loc-edit');UI.toast(AT('country_settings_saved'),'ok');render();
+  var c=S.localizationCountries[idx];
+  c.name=(document.getElementById('loc-name')||{}).value||c.name;
+  c.lang=(document.getElementById('loc-lang')||{}).value||c.lang;
+  c.readiness=parseInt((document.getElementById('loc-readiness')||{}).value)||c.readiness;
+  c.certs=(document.getElementById('loc-certs')||{}).value||'';
+  c.ftas=(document.getElementById('loc-ftas')||{}).value||'';
+  c.templates=parseInt((document.getElementById('loc-templates')||{}).value)||0;
+  closeModal('loc-edit');render();
+  sb.from('localization_countries').update({name:c.name,lang:c.lang,readiness:c.readiness,certs:c.certs,ftas:c.ftas,templates:c.templates,updated_at:new Date().toISOString()}).eq('code',code).then(function(r){
+    if(r.error){console.error('[loc] save error:',r.error.message);UI.toast(AT('save_failed'),'err');return;}
+    UI.toast(AT('country_settings_saved'),'ok');
+  }).catch(function(e){console.error('[loc] save:',e);UI.toast(AT('save_failed'),'err');});
 }
 function showAddCountry(){
   var body=
@@ -6243,13 +6239,17 @@ function saveNewCountry(){
   var code=((document.getElementById('loc-new-code')||{}).value||'').toUpperCase();
   if(!name||!code){UI.toast(AT('name_and_code_are_required'),'warn');return;}
   if(S.localizationCountries.find(function(c){return c.code===code;})){UI.toast(AT('code_already_exists'),'warn');return;}
-  S.localizationCountries.push({
-    name:name,code:code,flag:(document.getElementById('loc-new-flag')||{}).value||'',
-    isActive:false,certs:(document.getElementById('loc-new-certs')||{}).value||'',
-    ftas:(document.getElementById('loc-new-ftas')||{}).value||'',templates:0,
-    lang:(document.getElementById('loc-new-lang')||{}).value||'en',readiness:1
-  });
-  closeModal('loc-add');UI.toast(AT('country_added'),'ok');render();
+  var flag=(document.getElementById('loc-new-flag')||{}).value||'';
+  var certs=(document.getElementById('loc-new-certs')||{}).value||'';
+  var ftas=(document.getElementById('loc-new-ftas')||{}).value||'';
+  var lang=(document.getElementById('loc-new-lang')||{}).value||'en';
+  closeModal('loc-add');
+  sb.from('localization_countries').insert({name:name,code:code,flag:flag,is_active:false,certs:certs,ftas:ftas,templates:0,lang:lang,readiness:1}).select().then(function(r){
+    if(r.error){console.error('[loc] insert error:',r.error.message);UI.toast(AT('save_failed'),'err');return;}
+    var row=r.data&&r.data[0];
+    S.localizationCountries.push({id:row?row.id:null,name:name,code:code,flag:flag,isActive:false,certs:certs,ftas:ftas,templates:0,lang:lang,readiness:1});
+    UI.toast(AT('country_added'),'ok');render();
+  }).catch(function(e){console.error('[loc] insert:',e);UI.toast(AT('save_failed'),'err');});
 }
 
 /* ═══ 6. Enhanced Logistics Dashboard ═══ */
