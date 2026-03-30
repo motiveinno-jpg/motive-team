@@ -1,11 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-cron-secret",
-};
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "https://motiveinno-jpg.github.io",
+];
+
+function getCorsHeaders(req?: Request) {
+  const origin = req?.headers.get("origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  };
+}
 
 const FROM_EMAIL = "Whistle AI <hello@whistle-ai.com>";
 const MAX_BATCH_SIZE = 40; // Leave 10/hr headroom for transactional emails
@@ -517,6 +526,7 @@ async function incrementRateLimit(
 // ─── Main Handler ────────────────────────────────────────
 
 serve(async (req) => {
+  const CORS_HEADERS = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS_HEADERS });
   }

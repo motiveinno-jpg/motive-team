@@ -2,14 +2,25 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.14.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "https://motiveinno-jpg.github.io",
+];
+
+function getCorsHeaders(req?: Request) {
+  const origin = req?.headers.get("origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -59,12 +70,12 @@ serve(async (req) => {
     const body = await req.json();
 
     // Validate return_url — prevent open redirect
-    const ALLOWED_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com"];
+    const ALLOWED_REDIRECT_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com", "https://motiveinno-jpg.github.io"];
     let safeReturnUrl = "https://whistle-ai.com";
     if (body.return_url) {
       try {
         const parsed = new URL(body.return_url);
-        const isAllowed = ALLOWED_ORIGINS.some((origin) => {
+        const isAllowed = ALLOWED_REDIRECT_ORIGINS.some((origin) => {
           const allowedHost = new URL(origin).hostname;
           return parsed.hostname === allowedHost || parsed.hostname.endsWith("." + allowedHost);
         });

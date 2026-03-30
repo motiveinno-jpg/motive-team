@@ -1400,8 +1400,8 @@ var U={
 var tc=null;
 var UI={
   toast:function(msg,type,dur){type=type||'info';dur=dur||3000;if(!tc){tc=document.createElement('div');tc.className='toast-container';document.body.appendChild(tc);}var icons={ok:'\u2713',err:'\u2715',warn:'\u26A0',info:'\u2139'};var el=document.createElement('div');el.className='toast toast-'+type;el.innerHTML='<span>'+((icons[type])||'\u2139')+'</span><span>'+U.esc(msg)+'</span>';tc.appendChild(el);setTimeout(function(){el.style.opacity='0';el.style.transform='translateX(100px)';el.style.transition='all .3s';setTimeout(function(){el.remove();},300);},dur);},
-  showModal:function(id){var e=document.getElementById(id);if(e)e.classList.add('show');},
-  hideModal:function(id){var e=document.getElementById(id);if(e)e.classList.remove('show');},
+  showModal:function(id){var e=document.getElementById(id);if(!e)return;e.classList.add('show');e._prevFocus=document.activeElement;var focusable=e.querySelectorAll('button,input,select,textarea,a,[tabindex]:not([tabindex="-1"])');if(focusable.length)focusable[0].focus();e._trapHandler=function(ev){if(ev.key!=='Tab'||!focusable.length)return;if(ev.shiftKey&&document.activeElement===focusable[0]){ev.preventDefault();focusable[focusable.length-1].focus();}else if(!ev.shiftKey&&document.activeElement===focusable[focusable.length-1]){ev.preventDefault();focusable[0].focus();}};e.addEventListener('keydown',e._trapHandler);},
+  hideModal:function(id){var e=document.getElementById(id);if(!e)return;e.classList.remove('show');if(e._trapHandler)e.removeEventListener('keydown',e._trapHandler);if(e._prevFocus&&e._prevFocus.focus)try{e._prevFocus.focus();}catch(x){}},
   modal:function(o){return'<div class="modal-overlay" id="'+o.id+'" onclick="if(event.target===this)Adm.closeModal(\''+o.id+'\')"><div class="modal" style="max-width:'+(o.width||'640px')+'"><div class="modal-h"><h3>'+o.title+'</h3><button class="modal-close" onclick="Adm.closeModal(\''+o.id+'\')">&#10005;</button></div><div class="modal-b">'+o.body+'</div>'+(o.footer?'<div class="modal-f">'+o.footer+'</div>':'')+'</div></div>';},
   badge:function(t,type){return'<span class="badge badge-'+(type||'pri')+'">'+t+'</span>';},
   sb:function(s){var m={pending:[AT('pending'),'acc'],processing:[AT('processing'),'pri'],completed:[AT('done'),'ok'],cancelled:[AT('cancelled'),'ghost'],failed:[AT('failed'),'err'],draft:[AT('draft'),'ghost'],active:[AT('active'),'ok'],paused:[AT('paused'),'acc'],analyzing:[AT('analyzing'),'pri'],review:[AT('reviewing'),'purple'],approved:[AT('approved'),'ok'],accepted:[AT('accepted'),'pri'],planning:[AT('planning'),'pri'],certification:[AT('cert'),'acc'],buyer_search:[AT('matching'),'purple'],negotiation:[AT('negotiation'),'acc'],shipping:[AT('shipping'),'pri']};var r=m[s]||[s,'ghost'];return this.badge(r[0],r[1]);},
@@ -3981,7 +3981,32 @@ function pgDealDetail(deal){
     }).join(''):'<div style="color:var(--w40);font-size:13px">'+AT('no_events')+'</div>')+
   '</div></div>';
 
-  return backBtn+header+infoGrid+'<div class="grid-2">'+participantsHtml+stageManageHtml+'</div>'+quotesHtml+docsHtml+milestonesHtml+eventsHtml;
+  // SP Assignments for this deal
+  var dealSPAssigns=(S.spAssignments||[]).filter(function(a){return a.deal_id===d.id;});
+  var activeSPs=S.serviceProviders.filter(function(sp){return sp.status==='active';});
+  var spAssignHtml='<div class="card" style="margin-bottom:16px"><div class="card-h">🏢 '+(_isKorean?'서비스 제공자 배정':'SP Assignments')+' ('+dealSPAssigns.length+')<button class="btn btn-pri btn-sm" style="margin-left:auto" onclick="Adm.showAssignSPModal(\''+d.id+'\')">+ '+(_isKorean?'SP 배정':'Assign SP')+'</button></div><div class="card-b">';
+  if(dealSPAssigns.length){
+    spAssignHtml+='<table class="tbl"><thead><tr><th>'+(_isKorean?'업체':'Company')+'</th><th>'+(_isKorean?'유형':'Type')+'</th><th>'+(_isKorean?'수수료':'Fee')+'</th><th>'+(_isKorean?'상태':'Status')+'</th><th>'+(_isKorean?'배정일':'Assigned')+'</th><th></th></tr></thead><tbody>';
+    dealSPAssigns.forEach(function(a){
+      var sp=S.serviceProviders.find(function(x){return x.id===a.sp_id;});
+      var spName=sp?U.esc(sp.company_name):'('+a.sp_id.slice(0,8)+'…)';
+      var stBadge=a.status==='completed'?UI.badge(_isKorean?'완료':'Done','ok'):a.status==='accepted'?UI.badge(_isKorean?'수락':'Accepted','pri'):a.status==='requested'?UI.badge(_isKorean?'요청':'Requested','acc'):UI.badge(a.status||'—','ghost');
+      var tyBadge=UI.badge(a.sp_type==='customs_broker'?(_isKorean?'관세사':'Customs'):(_isKorean?'포워더':'Forwarder'),a.sp_type==='customs_broker'?'pri':'acc');
+      var feeStr=a.fee_amount?Number(a.fee_amount).toLocaleString()+' '+(a.fee_currency||'KRW'):'—';
+      spAssignHtml+='<tr><td style="font-weight:600;font-size:12px">'+spName+'</td><td>'+tyBadge+'</td><td style="font-family:JetBrains Mono;font-size:12px">'+feeStr+'</td><td>'+stBadge+'</td><td style="font-size:11px">'+U.fd(a.created_at)+'</td>';
+      spAssignHtml+='<td style="text-align:right">';
+      if(a.status==='requested')spAssignHtml+='<button class="btn btn-ok btn-sm" style="font-size:10px;padding:2px 8px" onclick="Adm.updateSPAssign(\''+a.id+'\',\'accepted\')">'+(_isKorean?'수락':'Accept')+'</button> ';
+      if(a.status==='accepted')spAssignHtml+='<button class="btn btn-ok btn-sm" style="font-size:10px;padding:2px 8px" onclick="Adm.updateSPAssign(\''+a.id+'\',\'completed\')">'+(_isKorean?'완료':'Complete')+'</button> ';
+      if(a.status!=='completed'&&a.status!=='cancelled')spAssignHtml+='<button class="btn btn-danger btn-sm" style="font-size:10px;padding:2px 8px" onclick="Adm.updateSPAssign(\''+a.id+'\',\'cancelled\')">'+(_isKorean?'취소':'Cancel')+'</button>';
+      spAssignHtml+='</td></tr>';
+    });
+    spAssignHtml+='</tbody></table>';
+  } else {
+    spAssignHtml+='<div style="text-align:center;padding:16px;color:var(--w30);font-size:12px">'+(_isKorean?'배정된 SP 없음 — 관세사 또는 포워더를 배정하세요':'No SP assigned — assign a customs broker or forwarder')+'</div>';
+  }
+  spAssignHtml+='</div></div>';
+
+  return backBtn+header+infoGrid+'<div class="grid-2">'+participantsHtml+stageManageHtml+'</div>'+spAssignHtml+quotesHtml+docsHtml+milestonesHtml+eventsHtml;
 }
 
 function viewDeal(did){
@@ -5407,6 +5432,62 @@ function saveSPForm(){
   });
 }
 
+
+/* === SP Assignment to Deal === */
+function showAssignSPModal(dealId){
+  var activeSPs=S.serviceProviders.filter(function(sp){return sp.status==='active';});
+  var opts=activeSPs.map(function(sp){
+    var tl=SP_TYPE_L();
+    return '<option value="'+sp.id+'">'+U.esc(sp.company_name)+' ('+U.esc(tl[sp.type]||sp.type)+')</option>';
+  }).join('');
+  if(!opts){UI.toast(_isKorean?'활성 SP가 없습니다':'No active SPs available','warn');return;}
+  var body='<div style="display:flex;flex-direction:column;gap:10px">'+
+    '<div><label style="font-size:11px;font-weight:700;color:var(--w40)">'+(_isKorean?'서비스 제공자':'Service Provider')+'</label><select id="sp-assign-id" style="width:100%;padding:10px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px">'+opts+'</select></div>'+
+    '<div><label style="font-size:11px;font-weight:700;color:var(--w40)">'+(_isKorean?'배정 유형':'Assignment Type')+'</label><select id="sp-assign-type" style="width:100%;padding:10px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px"><option value="customs_broker">'+AT('sp_customs_broker')+'</option><option value="forwarder">'+AT('sp_forwarder')+'</option></select></div>'+
+    '<div class="grid-2"><div><label style="font-size:11px;font-weight:700;color:var(--w40)">'+(_isKorean?'수수료':'Fee')+'</label><input id="sp-assign-fee" type="number" min="0" step="1000" style="width:100%;padding:10px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px"></div><div><label style="font-size:11px;font-weight:700;color:var(--w40)">'+(_isKorean?'통화':'Currency')+'</label><select id="sp-assign-cur" style="width:100%;padding:10px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px"><option value="KRW">KRW</option><option value="USD">USD</option></select></div></div>'+
+    '<div><label style="font-size:11px;font-weight:700;color:var(--w40)">'+(_isKorean?'메모':'Notes')+'</label><textarea id="sp-assign-notes" rows="2" style="width:100%;padding:10px;border-radius:8px;background:var(--sf);border:1px solid var(--bd);color:var(--w90);font-size:12px;resize:vertical"></textarea></div>'+
+  '</div>';
+  document.body.insertAdjacentHTML('beforeend',UI.modal({id:'sp-assign-modal',title:_isKorean?'🏢 SP 배정':'🏢 Assign SP',body:body,footer:'<button class="btn btn-ghost" onclick="Adm.closeModal(\'sp-assign-modal\')">'+AT('cancel')+'</button><button class="btn btn-pri" onclick="Adm.saveAssignSP(\''+dealId+'\')">'+(_isKorean?'배정':'Assign')+'</button>',width:'480px'}));
+  UI.showModal('sp-assign-modal');
+  /* Auto-select type based on SP */
+  var sel=document.getElementById('sp-assign-id');
+  sel.addEventListener('change',function(){
+    var sp=S.serviceProviders.find(function(x){return x.id===sel.value;});
+    if(sp)document.getElementById('sp-assign-type').value=sp.type;
+  });
+  var firstSP=activeSPs[0];
+  if(firstSP)document.getElementById('sp-assign-type').value=firstSP.type;
+}
+
+function saveAssignSP(dealId){
+  var spId=document.getElementById('sp-assign-id').value;
+  var spType=document.getElementById('sp-assign-type').value;
+  var fee=document.getElementById('sp-assign-fee').value;
+  var cur=document.getElementById('sp-assign-cur').value;
+  var notes=document.getElementById('sp-assign-notes').value.trim();
+  if(!spId){UI.toast(_isKorean?'SP를 선택하세요':'Select an SP','warn');return;}
+  var data={deal_id:dealId,sp_id:spId,sp_type:spType,status:'requested',fee_currency:cur,notes:notes||null};
+  if(fee)data.fee_amount=Number(fee);
+  sb.from('deal_sp_assignments').insert(data).select().single().then(function(r){
+    if(r.error){UI.toast(AT('failed')+': '+r.error.message,'err');return;}
+    S.spAssignments.unshift(r.data);
+    closeModal('sp-assign-modal');
+    UI.toast(_isKorean?'SP 배정 완료':'SP assigned','ok');render();
+  });
+}
+
+function updateSPAssign(assignId,newStatus){
+  if(!confirm(_isKorean?'상태를 "'+newStatus+'"로 변경하시겠습니까?':'Change status to "'+newStatus+'"?'))return;
+  var upd={status:newStatus};
+  if(newStatus==='accepted')upd.accepted_at=new Date().toISOString();
+  if(newStatus==='completed')upd.completed_at=new Date().toISOString();
+  sb.from('deal_sp_assignments').update(upd).eq('id',assignId).then(function(r){
+    if(r.error){UI.toast(AT('failed'),'err');return;}
+    var a=S.spAssignments.find(function(x){return x.id===assignId;});
+    if(a){a.status=newStatus;if(upd.accepted_at)a.accepted_at=upd.accepted_at;if(upd.completed_at)a.completed_at=upd.completed_at;}
+    UI.toast(AT('updated'),'ok');render();
+  });
+}
 
 var PL={dashboard:AT('ð_dashboard'),analytics:AT('ð_analytics2'),sellers:AT('ð_manufacturers'),buyersMgmt:AT('ð_buyers'),matchings:AT('ð_matching_deals2'),ordersMgmt:AT('ð_orders_revenue'),disputes:AT('â_ï_disputes'),payments:AT('ð_³_payments_escrow'),chat:AT('ð_chat_monitor'),users:AT('ð_users'),analyses:AT('ð_ai_analysis2'),services:AT('ð_¼_service_requests'),products:AT('ð_products'),projects:AT('ð_projects2'),documents:AT('ð_documents2'),health:AT('ð_ï_system_health'),settings:AT('â_ï_settings'),alibabaMgmt:AT('ð_ª_alibaba'),dealsMgmt:AT('ð_deal_room2'),errorMonitor:AT('ð_error_monitor'),usershub:AT('ð_users'),dealhub:AT('ð_matching_deals'),orderpay:AT('ð_orders_payments'),contenthub:AT('ð_products_projects'),systemhub:AT('ð_ï_system_errors'),voucherReport:AT('ð_voucher_report'),changelog:AT('ð_changelog'),buyerVerify:AT('â_buyer_verification'),sanctionsLog:AT('ð_sanctions_screening'),briefMgmt:AT('ð_whistle_brief'),localization:AT('ð_localization'),certTracking:AT('ð_certification_tracking'),marketing:AT('ð_marketing'),spMgmt:AT('sp_management'),opsGuide:AT('ops_guide_title')};
 
@@ -7341,7 +7422,7 @@ function renderSidebar(){
     if(m.id==='div')return '<div class="nav-section"></div>';
     if(m.id==='sec')return '<div style="font-size:9px;font-weight:700;color:var(--w20);text-transform:uppercase;letter-spacing:1px;padding:12px 16px 4px;margin-top:4px">'+m.label+'</div>';
     var isActive=_isHubActive(m.id);
-    return '<div class="nav-item '+(isActive?'active':'')+'" onclick="Adm.nav(\''+m.id+'\')"><span class="icon">'+m.icon+'</span><span>'+m.label+'</span>'+(m.count?'<span class="badge-count">'+m.count+'</span>':'')+'</div>';
+    return '<div class="nav-item '+(isActive?'active':'')+'" onclick="Adm.nav(\''+m.id+'\')" role="menuitem"'+(isActive?' aria-current="page"':'')+'><span class="icon">'+m.icon+'</span><span>'+m.label+'</span>'+(m.count?'<span class="badge-count">'+m.count+'</span>':'')+'</div>';
   }).join('')+'</div><div class="sidebar-footer"><div style="padding:6px 8px 8px;border-bottom:1px solid var(--bd);margin-bottom:8px"><div style="font-size:10px;font-weight:600;color:var(--w20);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">'+AT('go_to_platform')+'</div><a href="/app?stay=app" style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:11px;color:var(--w40);text-decoration:none;border-radius:6px" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\'transparent\'"><span>🏭</span><span>'+AT('manufacturer_app')+'</span></a><a href="/app/buyer" style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:11px;color:var(--w40);text-decoration:none;border-radius:6px" onmouseover="this.style.background=\'var(--w08)\'" onmouseout="this.style.background=\'transparent\'"><span>🌏</span><span>'+AT('buyer_app')+'</span></a></div><div style="padding:8px 12px;font-size:11px;color:var(--w40)"><div style="font-weight:600">'+(S.user?S.user.email:'')+'</div><div style="font-size:10px;margin-top:2px">Admin</div></div><div class="nav-item" onclick="Adm.doLogout()" style="color:var(--w40);margin-top:4px"><span class="icon">🚪</span><span>'+AT('log_out2')+'</span></div></div></div>';
 }
 
@@ -7649,7 +7730,7 @@ window.Adm={set:set,nav:nav,render:render,doLogin:doLogin,doLogout:doLogout,doRe
   toggleLocCountry:toggleLocCountry,editLocCountry:editLocCountry,saveLocCountry:saveLocCountry,showAddCountry:showAddCountry,saveNewCountry:saveNewCountry,
   saveExchangeRates:saveExchangeRates,fetchLiveRates:fetchLiveRates,_reloadPricing:_reloadPricing,_editPricing:_editPricing,_savePricing:_savePricing,_reloadLimits:_reloadLimits,_editLimit:_editLimit,_saveLimit:_saveLimit,toggleFeature:toggleFeature,saveFeatureToggles:saveFeatureToggles,saveRelayUrl:saveRelayUrl,
   setMktTab:setMktTab,refreshMarketing:refreshMarketing,toggleCampaign:toggleCampaign,toggleAutomation:toggleAutomation,showCampaignForm:showCampaignForm,saveCampaignForm:saveCampaignForm,showAddContactForm:showAddContactForm,saveOutreachContact:saveOutreachContact,
-  updateSP:updateSP,showSPForm:showSPForm,saveSPForm:saveSPForm,
+  updateSP:updateSP,showSPForm:showSPForm,saveSPForm:saveSPForm,showAssignSPModal:showAssignSPModal,saveAssignSP:saveAssignSP,updateSPAssign:updateSPAssign,
   UI:UI};
 loadUser();
 window.addEventListener('hashchange',function(){var hp=location.hash.replace('#','');if(hp&&_APL[hp]&&S.user)nav(hp);});

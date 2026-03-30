@@ -8,13 +8,23 @@ const AUTO_SETTLE_DAYS = 7;
 // Zero-decimal currencies — amount is already in smallest unit
 const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-cron-secret, x-service-key",
-};
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "https://motiveinno-jpg.github.io",
+];
+
+function getCorsHeaders(req?: Request) {
+  const origin = req?.headers.get("origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type, x-cron-secret, x-service-key",
+  };
+}
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }

@@ -1,12 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "https://motiveinno-jpg.github.io",
+];
+
+function getCorsHeaders(req?: Request) {
+  const origin = req?.headers.get("origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  };
+}
 
 const EXCHANGE_API_URL = "https://open.er-api.com/v6/latest/USD";
 const CACHE_TTL_HOURS = 6;
@@ -19,9 +28,13 @@ const TARGET_CURRENCIES = [
   "SAR", "PKR", "BDT", "NGN", "EGP", "COP", "CLP", "ARS",
 ];
 
+let _corsHeaders: Record<string, string> = getCorsHeaders();
+
 serve(async (req: Request) => {
+  _corsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: _corsHeaders });
   }
 
   try {
@@ -270,6 +283,6 @@ async function syncToExchangeRates(
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ..._corsHeaders, "Content-Type": "application/json" },
   });
 }

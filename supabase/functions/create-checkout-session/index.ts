@@ -2,11 +2,20 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "https://esm.sh/stripe@14.14.0?target=deno";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://whistle-ai.com",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+const ALLOWED_ORIGINS = [
+  "https://whistle-ai.com",
+  "https://motiveinno-jpg.github.io",
+];
+
+function getCorsHeaders(req?: Request) {
+  const origin = req?.headers.get("origin") || "";
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  return {
+    "Access-Control-Allow-Origin": allowed,
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
+  };
+}
 
 const ONE_ANALYSIS_AMOUNT_CENTS = 990;
 const ALLOWED_CURRENCIES = ["usd", "eur", "gbp", "jpy", "krw", "cny"];
@@ -31,13 +40,15 @@ function checkRateLimit(
   return true;
 }
 
+let _currentReqCorsHeaders: Record<string, string> = getCorsHeaders();
+
 function jsonResponse(
   body: Record<string, unknown>,
   status = 200,
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ..._currentReqCorsHeaders, "Content-Type": "application/json" },
   });
 }
 
@@ -47,8 +58,10 @@ function isPositiveFiniteNumber(value: unknown): value is number {
 }
 
 serve(async (req) => {
+  _currentReqCorsHeaders = getCorsHeaders(req);
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: _currentReqCorsHeaders });
   }
 
   try {
@@ -91,12 +104,12 @@ serve(async (req) => {
     const { type, deal_id, price_id, plan, billing_cycle } = body;
 
     // Validate redirect URLs — hostname comparison to prevent open redirect
-    const ALLOWED_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com"];
+    const ALLOWED_REDIRECT_ORIGINS = ["https://whistle-ai.com", "https://www.whistle-ai.com", "https://motiveinno-jpg.github.io"];
     const validateRedirectUrl = (url: string | undefined): string | undefined => {
       if (!url) return undefined;
       try {
         const parsed = new URL(url);
-        const isAllowed = ALLOWED_ORIGINS.some((origin) => {
+        const isAllowed = ALLOWED_REDIRECT_ORIGINS.some((origin) => {
           const allowedHost = new URL(origin).hostname;
           return parsed.hostname === allowedHost || parsed.hostname.endsWith("." + allowedHost);
         });
