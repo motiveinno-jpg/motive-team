@@ -6384,8 +6384,11 @@ function submitA(){
     S._aiStartTime=Date.now();S._aiProgressPct=0;S._aiProgressLabel='';S._aiPartial=null;set({currentAnalysis:r.data});UI.toast(T('starting_ai_export_analysis'),'info');
     /* Realtime subscription for progressive updates */
     if(S._aiRealtime)sb.removeChannel(S._aiRealtime);
-    S._aiRealtime=sb.channel('analysis-'+r.data.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'analyses',filter:'id=eq.'+r.data.id},function(payload){
+    var _thisAnalysisId=r.data.id;
+    S._aiRealtime=sb.channel('analysis-'+_thisAnalysisId).on('postgres_changes',{event:'UPDATE',schema:'public',table:'analyses',filter:'id=eq.'+_thisAnalysisId},function(payload){
       var row=payload.new;if(!row)return;
+      /* Guard: ignore stale Realtime events if user started a new analysis */
+      if(S.currentAnalysis&&S.currentAnalysis.id!==_thisAnalysisId){if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}return;}
       /* Progressive progress update + partial results for live preview */
       if(row.ai_result&&row.ai_result._progress_pct){S._aiProgressPct=row.ai_result._progress_pct;S._aiProgressLabel=row.ai_result._progress||'';if(row.ai_result._partial)S._aiPartial=row.ai_result._partial;if(row.ai_result._phase===1&&!S._aiPartial){S._aiPartial=row.ai_result;}render();}
       /* Completion */

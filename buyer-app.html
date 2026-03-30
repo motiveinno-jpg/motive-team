@@ -2097,23 +2097,23 @@ function nextBuyerOb(step){
     if(!cn||!dn){toast(_t('Please fill in Company Name and Contact Name','회사명과 담당자명을 입력해 주세요'),'warn');return;}
     if(!co){toast(_t('Please select your country','국가를 선택해 주세요'),'warn');return;}
     S.user.company_name=cn;S.user.display_name=dn;S.user.country=co;S.user.phone=ph;S.user.onboarding_step=1;render();
-    sb.from('users').update({company_name:cn,display_name:dn,country:co||null,phone:ph||null,onboarding_step:1}).eq('id',S.user.id).then(function(){}).catch(function(e){console.warn('[onboarding step0 save error]',e);});
+    sb.from('users').update({company_name:cn,display_name:dn,country:co||null,phone:ph||null,onboarding_step:1}).eq('id',S.user.id).then(function(){}).catch(function(e){console.error('[onboarding step0 save error]',e);});
   }else if(step===1){
     var sel=S.user.interests||[];
     if(!sel.length){toast(_t('Please select at least one category','최소 하나의 카테고리를 선택해 주세요'),'warn');return;}
     S.user.onboarding_step=2;render();
-    sb.from('users').update({interests:JSON.stringify(sel),onboarding_step:2}).eq('id',S.user.id).then(function(){}).catch(function(e){console.warn('[onboarding step1 save error]',e);});
+    sb.from('users').update({interests:JSON.stringify(sel),onboarding_step:2}).eq('id',S.user.id).then(function(){}).catch(function(e){console.error('[onboarding step1 save error]',e);});
   }else if(step===2){
     var exp=S.user.import_experience||'new';
     S.user.onboarding_step=3;render();
-    sb.from('users').update({import_experience:exp,onboarding_step:3}).eq('id',S.user.id).then(function(){}).catch(function(e){console.warn('[onboarding step2 save error]',e);});
+    sb.from('users').update({import_experience:exp,onboarding_step:3}).eq('id',S.user.id).then(function(){}).catch(function(e){console.error('[onboarding step2 save error]',e);});
   }
 }
 
 function goToOnboardingStep(step){S.user.onboarding_step=step;render();}
 function skipBuyerOnboarding(){
   S.user.onboarding_completed=true;S.page='dashboard';render();
-  sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id).then(function(){}).catch(function(e){console.warn('[skip onboarding save error]',e);});
+  sb.from('users').update({onboarding_completed:true}).eq('id',S.user.id).then(function(){}).catch(function(e){console.error('[skip onboarding save error]',e);});
 }
 
 function completeBuyerOnboarding(){
@@ -2121,7 +2121,7 @@ function completeBuyerOnboarding(){
   if(S.user.interests)data.interests=JSON.stringify(S.user.interests);
   if(S.user.import_experience)data.import_experience=S.user.import_experience;
   S.user.onboarding_completed=true;S.page='search';render();
-  sb.from('users').update(data).eq('id',S.user.id).then(function(){}).catch(function(e){console.warn('[complete onboarding save error]',e);});
+  sb.from('users').update(data).eq('id',S.user.id).then(function(){}).catch(function(e){console.error('[complete onboarding save error]',e);});
 }
 
 /* === SOURCING — CATEGORY-BASED MANUFACTURER MATCHING === */
@@ -2714,8 +2714,8 @@ function loadSellerInfo(){
     sb.from('users').select('id,email,display_name,company_name').in('id',sellerIds).then(function(r2){
       (r2.data||[]).forEach(function(u){if(!S.sellerInfo[u.id])S.sellerInfo[u.id]={user_id:u.id,name_en:u.company_name||u.display_name,name_ko:u.company_name};});
       render();
-    });
-  });
+    }).catch(function(e){console.error('[loadSellerInfo] users:',e);});
+  }).catch(function(e){console.error('[loadSellerInfo] companies:',e);});
 }
 
 function getSellerName(uid){var s=S.sellerInfo[uid];return s?(s.name_en||s.name_ko||'Seller'):'Seller';}
@@ -2724,14 +2724,14 @@ function loadInquiries(){
   if(!S.user)return;
   sb.from('contact_requests').select('*').eq('buyer_id',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.inquiries=r.data||[];render();
-  });
+  }).catch(function(e){console.error('[loadInquiries]',e);});
 }
 
 function loadSavedProducts(){
   if(!S.user)return;
   sb.from('buyer_saved_products').select('*').eq('user_id',S.user.id).order('created_at',{ascending:false}).limit(200).then(function(r){
     S.savedProducts=r.data||[];render();
-  });
+  }).catch(function(e){console.error('[loadSavedProducts]',e);});
 }
 
 /* === DASHBOARD === */
@@ -4404,11 +4404,11 @@ function acceptProposal(propId,reqId){
     }).select().single().then(function(mr){
       if(mr.error){toast('Matching error: '+mr.error.message,'err');return;}
       // 3. Update proposal
-      sb.from('buyer_request_proposals').update({status:'accepted',matching_id:mr.data.id,buyer_id:newBuyer.id,updated_at:new Date().toISOString()}).eq('id',propId).then(function(){});
+      sb.from('buyer_request_proposals').update({status:'accepted',matching_id:mr.data.id,buyer_id:newBuyer.id,updated_at:new Date().toISOString()}).eq('id',propId).then(function(){}).catch(function(e){console.error('[acceptProposal] update proposal:',e);});
       // 4. Reject others
-      sb.from('buyer_request_proposals').update({status:'rejected',updated_at:new Date().toISOString()}).eq('request_id',reqId).neq('id',propId).then(function(){});
+      sb.from('buyer_request_proposals').update({status:'rejected',updated_at:new Date().toISOString()}).eq('request_id',reqId).neq('id',propId).then(function(){}).catch(function(e){console.error('[acceptProposal] reject others:',e);});
       // 5. Close request
-      sb.from('buyer_requests').update({status:'completed',accepted_proposal_id:propId,updated_at:new Date().toISOString()}).eq('id',reqId).then(function(){});
+      sb.from('buyer_requests').update({status:'completed',accepted_proposal_id:propId,updated_at:new Date().toISOString()}).eq('id',reqId).then(function(){}).catch(function(e){console.error('[acceptProposal] close request:',e);});
       // 6. Send initial chat message to start conversation
       sb.from('messages').insert({
         buyer_id:newBuyer.id,user_id:prop.seller_user_id,sender_type:'buyer',
