@@ -147,6 +147,7 @@ serve(async (req) => {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${serviceKey}`,
+          'X-Internal-Secret': Deno.env.get("INTERNAL_SERVICE_SECRET") || "",
         },
         body: JSON.stringify({
           to: targetUser.email,

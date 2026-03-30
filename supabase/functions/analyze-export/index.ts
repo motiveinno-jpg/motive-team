@@ -1939,6 +1939,7 @@ ${isEn ? "Output JSON:" : "JSON 출력:"}
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          "X-Internal-Secret": Deno.env.get("INTERNAL_SERVICE_SECRET") || "",
         },
         body: JSON.stringify({
           user_id: user.id,
