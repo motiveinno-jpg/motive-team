@@ -297,6 +297,7 @@ select option{background:var(--card);color:var(--w90)}textarea{resize:vertical;m
 }
 @media(max-width:768px){.modal-overlay{align-items:flex-end}.modal{max-width:100%;width:100%;border-radius:16px 16px 0 0;max-height:90vh;animation:slideUpSheet .25s ease}.modal-h{padding:12px 16px}.modal-h::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--w20);margin:0 auto 8px}}
 @keyframes slideUpSheet{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 .mob-toggle{display:none;width:44px;height:44px;border-radius:8px;background:var(--w08);border:none;color:var(--w60);font-size:16px;cursor:pointer;align-items:center;justify-content:center;transition:all .15s}
 .mob-toggle:hover{background:var(--w12);color:var(--w)}
 .notif-dot{width:7px;height:7px;border-radius:50%;background:var(--err);position:absolute;top:-1px;right:-1px;animation:pulse 2s infinite}
@@ -1130,6 +1131,29 @@ function _closeBlurPaywall(){
   var el=document.getElementById('analysis-blur-paywall');
   if(el)el.remove();
   _restorePendingAnalysis();
+}
+
+/* ── Post-analysis upsell for free/low-quota users ── */
+function _postAnalysisUpsell(){
+  var cur=S.user&&S.user.plan||'free';
+  if(cur==='enterprise'||cur==='alibaba')return;
+  var g=_planGate('analysis');
+  var remaining=g.max>0?(g.max-(g.used||0)):0;
+  if(g.max===-1)return;
+  /* Show upsell after free user uses their only analysis, or paid user is at limit */
+  if(remaining>1)return;
+  setTimeout(function(){
+    var isKo=_isKorean;
+    var msg=remaining<=0
+      ?(isKo?'무료 분석을 모두 사용했습니다. 추가 분석이 필요하시면 플랜을 업그레이드하세요.':'You\'ve used all free analyses. Upgrade for more.')
+      :(isKo?'무료 분석이 <b>'+remaining+'회</b> 남았습니다. 무제한 분석이 필요하시면 플랜을 확인하세요.':'<b>'+remaining+'</b> free analysis remaining. Check plans for unlimited access.');
+    var el=document.getElementById('post-analysis-upsell');if(el)el.remove();
+    var d=document.createElement('div');d.id='post-analysis-upsell';
+    d.style.cssText='position:fixed;bottom:24px;right:24px;z-index:9998;max-width:360px;padding:16px 20px;border-radius:14px;background:rgba(12,18,36,.96);border:1px solid rgba(99,102,241,.3);box-shadow:0 8px 32px rgba(0,0,0,.4);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);animation:slideUp .3s ease-out';
+    d.innerHTML='<div style="display:flex;align-items:flex-start;gap:12px"><span style="font-size:20px;flex-shrink:0">💎</span><div style="flex:1"><div style="font-size:13px;color:var(--w80);line-height:1.5;margin-bottom:10px">'+msg+'</div><div style="display:flex;gap:8px"><button class="btn btn-sm" onclick="document.getElementById(\'post-analysis-upsell\').remove();App.nav(\'subscription\')" style="font-size:11px;padding:6px 14px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#3b82f6);color:#fff;border:none;font-weight:700">'+(isKo?'플랜 보기':'View Plans')+'</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'post-analysis-upsell\').remove()" style="font-size:11px;padding:6px 10px;color:var(--w40)">'+(isKo?'닫기':'Close')+'</button></div></div></div>';
+    document.body.appendChild(d);
+    setTimeout(function(){var e=document.getElementById('post-analysis-upsell');if(e)e.remove();},15000);
+  },2000);
 }
 
 function payOneAnalysis(){
@@ -6163,7 +6187,15 @@ var _catExamples={
   '_default':{hs:'3304.99.5000',product:'Product Name (English)',brand:'Brand Name'}
 };
 /* ── Analysis: multi-step input form ── */
-function startAForm(){S.analysisStep=1;S.analysisData={urls:[''],files:[],selling_points:[],target_markets:['US'],existing_certs:[],price_krw:'',origin_country:(S.user&&S.user.country)||''};document.body.classList.add('analysis-form-active');render();}
+function startAForm(){
+  /* Approaching-limit soft nudge */
+  var _ag=_planGate('analysis');var _cur=S.user&&S.user.plan||'free';
+  if(!_ag.blocked&&_ag.max>0&&_ag.max!==-1){
+    var _rem=_ag.max-(_ag.used||0);
+    if(_rem<=1&&_cur!=='free'){UI.toast(TF('free_analysis_remaining',{remaining:_rem,used:_ag.used,max:_ag.max}),'warn',8000);}
+  }
+  S.analysisStep=1;S.analysisData={urls:[''],files:[],selling_points:[],target_markets:['US'],existing_certs:[],price_krw:'',origin_country:(S.user&&S.user.country)||''};document.body.classList.add('analysis-form-active');render();
+}
 function _clearAFormClass(){document.body.classList.remove('analysis-form-active');}
 
 function pgAForm(){
@@ -6329,7 +6361,7 @@ function submitA(){
         if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;}S._aiStartTime=null;S._submitting=false;GP.done();
         if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}
         autoCreateProduct(r.data.id,row.ai_result,d.product_name);
-        loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,row)});UI.toast((row.ai_result&&row.ai_result._timeout)?T('ai_analysis_partial'):T('ai_analysis_complete'),'ok');});
+        loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,row)});UI.toast((row.ai_result&&row.ai_result._timeout)?T('ai_analysis_partial'):T('ai_analysis_complete'),'ok');_postAnalysisUpsell();});
       }
       if(row.status==='failed'){
         if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;}S._aiStartTime=null;S._submitting=false;GP.done();
@@ -6341,7 +6373,7 @@ function submitA(){
       }
     }).subscribe(function(status,err){if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){console.error('Realtime subscription error:',status,err);}});
     /* Fallback polling (in case Realtime misses) */
-    if(S._aiTimer)clearInterval(S._aiTimer);var _maxPollTime=300000;S._aiTimer=setInterval(function(){if(!S.currentAnalysis||S.currentAnalysis.status!=='analyzing'){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;return;}var _elapsed=Date.now()-(S._aiStartTime||Date.now());if(_elapsed>_maxPollTime){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}_showAnalysisGuidance('timeout',d,r.data.id);return;}render();sb.from('analyses').select('status,ai_result').eq('id',r.data.id).single().then(function(chk){if(!chk.data||chk.data.status==='analyzing'){if(chk.data&&chk.data.ai_result&&chk.data.ai_result._progress_pct){S._aiProgressPct=chk.data.ai_result._progress_pct;S._aiProgressLabel=chk.data.ai_result._progress||'';if(chk.data.ai_result._partial)S._aiPartial=chk.data.ai_result._partial;}return;}clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;S._submitting=false;GP.done();if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}if(chk.data.status==='completed'&&chk.data.ai_result&&chk.data.ai_result.analysis_version){var _isPartialPoll=chk.data.ai_result._timeout;if(_isPartialPoll){UI.toast(T('some_analysis_sections_were_skipped_due_to_timeout'),'warn');}autoCreateProduct(r.data.id,chk.data.ai_result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,chk.data)});UI.toast((_isPartialPoll?T('ai_analysis_partial'):T('ai_analysis_complete')),'ok');});}else if(chk.data.status==='failed'){var _failReason=(chk.data.ai_result&&chk.data.ai_result.error)||'';var _guideType='server';if(_failReason.indexOf('crawl')>=0)_guideType='crawl';else if(_failReason.indexOf('timeout')>=0)_guideType='timeout';else if(_failReason.indexOf('rate')>=0||_failReason.indexOf('limit')>=0||_failReason.indexOf('quota')>=0)_guideType='rate_limit';_showAnalysisGuidance(_guideType,d,r.data.id);}else{_showAnalysisGuidance('server',d,r.data.id);}});},5000);
+    if(S._aiTimer)clearInterval(S._aiTimer);var _maxPollTime=300000;S._aiTimer=setInterval(function(){if(!S.currentAnalysis||S.currentAnalysis.status!=='analyzing'){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;return;}var _elapsed=Date.now()-(S._aiStartTime||Date.now());if(_elapsed>_maxPollTime){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}_showAnalysisGuidance('timeout',d,r.data.id);return;}render();sb.from('analyses').select('status,ai_result').eq('id',r.data.id).single().then(function(chk){if(!chk.data||chk.data.status==='analyzing'){if(chk.data&&chk.data.ai_result&&chk.data.ai_result._progress_pct){S._aiProgressPct=chk.data.ai_result._progress_pct;S._aiProgressLabel=chk.data.ai_result._progress||'';if(chk.data.ai_result._partial)S._aiPartial=chk.data.ai_result._partial;}return;}clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;S._submitting=false;GP.done();if(S._aiRealtime){sb.removeChannel(S._aiRealtime);S._aiRealtime=null;}if(chk.data.status==='completed'&&chk.data.ai_result&&chk.data.ai_result.analysis_version){var _isPartialPoll=chk.data.ai_result._timeout;if(_isPartialPoll){UI.toast(T('some_analysis_sections_were_skipped_due_to_timeout'),'warn');}autoCreateProduct(r.data.id,chk.data.ai_result,d.product_name);loadA().then(function(){var ua=S.analyses.find(function(x){return x.id===r.data.id;});set({currentAnalysis:ua||Object.assign({},r.data,chk.data)});UI.toast((_isPartialPoll?T('ai_analysis_partial'):T('ai_analysis_complete')),'ok');_postAnalysisUpsell();});}else if(chk.data.status==='failed'){var _failReason=(chk.data.ai_result&&chk.data.ai_result.error)||'';var _guideType='server';if(_failReason.indexOf('crawl')>=0)_guideType='crawl';else if(_failReason.indexOf('timeout')>=0)_guideType='timeout';else if(_failReason.indexOf('rate')>=0||_failReason.indexOf('limit')>=0||_failReason.indexOf('quota')>=0)_guideType='rate_limit';_showAnalysisGuidance(_guideType,d,r.data.id);}else{_showAnalysisGuidance('server',d,r.data.id);}});},5000);
     /* AI 분석 API 호출 — 이미지는 Storage 업로드 후 URL 전달 + Vision용 base64 추출 */
     var _imgFiles=(d.files||[]).filter(function(f){return f._file&&f.type&&f.type.startsWith('image/');});
     /* Extract first image base64 for Claude Vision (max 4MB) */
@@ -22805,6 +22837,28 @@ function pgGuideTradeShow(){
   return h;
 }
 
+/* ── Sidebar: compact usage meter ── */
+function _sidebarUsageMeter(){
+  var cur=S.user&&S.user.plan||'free';
+  if(cur==='enterprise'||cur==='alibaba')return '';
+  var g=_planGate('analysis');
+  var used=g.used||0;var max=g.max;
+  if(max===-1)return '';
+  var pct=max>0?Math.min(used/max*100,100):100;
+  var isLow=pct>=80;var isOut=used>=max;
+  var barColor=isOut?'var(--err)':isLow?'var(--acc)':'var(--pri)';
+  var remaining=Math.max(max-used,0);
+  var label=_isKorean?'AI 분석 '+remaining+'회 남음':'AI: '+remaining+' left';
+  if(isOut)label=_isKorean?'AI 분석 한도 초과':'AI limit reached';
+  var h='<div style="padding:8px 12px;margin:0 8px 6px;cursor:pointer" onclick="App.nav(\'subscription\')" title="'+(_isKorean?'구독 관리':'Manage subscription')+'">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="font-size:10px;color:'+(isOut?'var(--err)':'var(--w40)')+';font-weight:600">'+label+'</span><span style="font-size:9px;color:var(--w30)">'+used+'/'+max+'</span></div>';
+  h+='<div style="height:3px;border-radius:2px;background:var(--w08);overflow:hidden"><div style="height:100%;border-radius:2px;background:'+barColor+';width:'+pct+'%;transition:width .3s"></div></div>';
+  if(isOut)h+='<div style="margin-top:6px;text-align:center"><button class="btn btn-sm" onclick="event.stopPropagation();App.nav(\'subscription\')" style="font-size:10px;padding:4px 12px;border-radius:6px;background:linear-gradient(135deg,#6366f1,#3b82f6);color:#fff;border:none;font-weight:700;width:100%">'+(_isKorean?'업그레이드':'Upgrade')+'</button></div>';
+  else if(isLow)h+='<div style="margin-top:4px;text-align:center;font-size:9px;color:var(--acc);cursor:pointer" onclick="event.stopPropagation();App.nav(\'subscription\')">'+(_isKorean?'플랜 보기 →':'View plans →')+'</div>';
+  h+='</div>';
+  return h;
+}
+
 function renderSidebar(){
   var isAlibaba=S.user&&S.user.plan==='alibaba'&&_isKorean;
   var menu=[
@@ -22829,7 +22883,7 @@ function renderSidebar(){
   /* 읽지 않은 메시지 총합 */
   var _totalUnread=0;if(S._chatUnread){Object.keys(S._chatUnread).forEach(function(k){_totalUnread+=S._chatUnread[k]||0;});}
   function _isActive(mid){if(_hubPages[mid])return _hubPages[mid].indexOf(S.page)!==-1||S.page===mid;return S.page===mid;}
-  return '<nav class="sidebar" role="navigation" aria-label="Main navigation"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">'+UI.pb(S.user&&S.user.plan||'free')+'</div></div></div><div class="sidebar-nav">'+menu.map(function(m){if(m.id==='div')return '<div class="nav-section"></div>';if(m.id==='sec')return '<div style="font-size:9px;font-weight:700;color:var(--w20);text-transform:uppercase;letter-spacing:1px;padding:12px 16px 4px;margin-top:4px">'+m.label+'</div>';var _badge='';if(m.id==='comms'&&_totalUnread>0)_badge='<span class="badge-count">'+_totalUnread+'</span>';return '<div class="nav-item '+(_isActive(m.id)?'active':'')+'" onclick="App.nav(\''+m.id+'\')"><span class="icon">'+m.icon+'</span><span>'+m.label+'</span>'+_badge+'</div>';}).join('')+'</div><div class="sidebar-footer">'+'<div style="padding:6px 8px;margin-bottom:4px"><div class="nav-item'+(S.page==='guide'?' active':'')+'" onclick="App.nav(\'guide\')" style="'+(S.page==='guide'?'':'color:var(--w40);')+'font-size:12px"><span class="icon">📚</span><span>'+T('nav_guide')+'</span></div></div>'+'<div class="nav-item" onclick="App.doLogout()" style="color:var(--w40)"><span class="icon">🚪</span><span>'+T('nav_logout')+'</span></div></div></nav>';
+  return '<nav class="sidebar" role="navigation" aria-label="Main navigation"><div class="sidebar-header"><div class="sidebar-logo">W</div><div><div class="sidebar-title">Whistle AI</div><div class="sidebar-sub">'+UI.pb(S.user&&S.user.plan||'free')+'</div></div></div><div class="sidebar-nav">'+menu.map(function(m){if(m.id==='div')return '<div class="nav-section"></div>';if(m.id==='sec')return '<div style="font-size:9px;font-weight:700;color:var(--w20);text-transform:uppercase;letter-spacing:1px;padding:12px 16px 4px;margin-top:4px">'+m.label+'</div>';var _badge='';if(m.id==='comms'&&_totalUnread>0)_badge='<span class="badge-count">'+_totalUnread+'</span>';return '<div class="nav-item '+(_isActive(m.id)?'active':'')+'" onclick="App.nav(\''+m.id+'\')"><span class="icon">'+m.icon+'</span><span>'+m.label+'</span>'+_badge+'</div>';}).join('')+'</div><div class="sidebar-footer">'+_sidebarUsageMeter()+'<div style="padding:6px 8px;margin-bottom:4px"><div class="nav-item'+(S.page==='guide'?' active':'')+'" onclick="App.nav(\'guide\')" style="'+(S.page==='guide'?'':'color:var(--w40);')+'font-size:12px"><span class="icon">📚</span><span>'+T('nav_guide')+'</span></div></div>'+'<div class="nav-item" onclick="App.doLogout()" style="color:var(--w40)"><span class="icon">🚪</span><span>'+T('nav_logout')+'</span></div></div></nav>';
 }
 
 /* Debounced render — use for rapid state changes (typing, scroll, etc.) */
