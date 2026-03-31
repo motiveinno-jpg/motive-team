@@ -1,5 +1,5 @@
 /* Whistle AI Service Worker — Caching + Web Push */
-var CACHE_VERSION = 'whistle-v4-20260331';
+var CACHE_VERSION = 'whistle-v5-20260331';
 var STATIC_ASSETS = [
   '/',
   '/whistle-main.htm',
