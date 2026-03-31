@@ -10,6 +10,8 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23c8ff00' width='100' height='100' rx='20'/><text x='50' y='68' text-anchor='middle' font-size='50' font-weight='900' fill='%230a0a0a'>M</text></svg>">
 <title>하준 PM — MOTIVE</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <style>
 :root{--bg:#060B18;--bg2:#141414;--bg3:#1a1a1a;--bd:#222;--tx:#e8e8e8;--tx2:#888;--tx3:#555;--ac:#c8ff00;--r:12px}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -131,6 +133,36 @@ body{height:100dvh;font-family:'Sora','Noto Sans KR',-apple-system,BlinkMacSyste
 </div>
 
 <script>
+// ── 인증 게이트: MOTIVE 팀 계정만 접근 허용 ──
+(function(){
+  var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
+  var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
+  // 허용 도메인: motiveinno.com 이메일 또는 admin 역할
+  var ALLOWED_DOMAINS = ['motiveinno.com', 'mo-tive.com'];
+  var sb = window.supabase.createClient(SB_URL, SB_KEY);
+  sb.auth.getSession().then(function(res){
+    var session = res.data && res.data.session;
+    if(!session){
+      window.location.replace('/ko?redirect=chat');
+      return;
+    }
+    var email = session.user && session.user.email || '';
+    var domain = email.split('@')[1] || '';
+    var isAllowed = ALLOWED_DOMAINS.includes(domain);
+    if(!isAllowed){
+      // 역할 추가 확인 (admin)
+      sb.from('users').select('role').eq('id', session.user.id).single().then(function(r){
+        if(!r.data || r.data.role !== 'admin'){
+          sb.auth.signOut();
+          window.location.replace('/ko');
+        }
+      });
+    }
+  }).catch(function(){
+    window.location.replace('/ko');
+  });
+})();
+
 const CHANNEL = 'ceo-direct';
 let relayUrl = localStorage.getItem('pm-relay') || '';
 let messages = [];
@@ -141,12 +173,15 @@ let lastSyncCount = 0;
 function now(){const d=new Date();return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0')}
 
 function fmt(text){
-  return text
+  var escaped=text
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
     .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/```([\s\S]*?)```/g,'<pre>$1</pre>')
     .replace(/\n/g,'<br>');
+  return typeof DOMPurify!=='undefined'
+    ? DOMPurify.sanitize(escaped,{ALLOWED_TAGS:['strong','code','pre','br'],ALLOWED_ATTR:[]})
+    : escaped;
 }
 
 function render(){

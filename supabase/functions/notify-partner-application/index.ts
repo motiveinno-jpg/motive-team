@@ -63,6 +63,15 @@ serve(async (req) => {
     )
   }
 
+  // Server-side origin validation (defense-in-depth beyond CORS headers)
+  const requestOrigin = req.headers.get('origin') || ''
+  if (requestOrigin && !ALLOWED_ORIGINS.includes(requestOrigin)) {
+    return new Response(
+      JSON.stringify({ error: 'Forbidden origin' }),
+      { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } },
+    )
+  }
+
   const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
   if (!checkRateLimit(clientIp)) {
     return new Response(

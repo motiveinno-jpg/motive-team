@@ -123,52 +123,97 @@ serve(async (req) => {
     const { error } = await sbAdmin.from('notifications').insert(rows)
     if (error) throw error
 
-    // Send email notifications (fire-and-forget, don't block response)
+    // Send email notifications — collect results, don't block response
+    const emailResults: Array<{ user_id: string; status: 'sent' | 'skipped' | 'failed'; reason?: string }> = []
+    const emailPromises: Promise<void>[] = []
+
     for (const n of notifications) {
-      if (n.skip_email) continue
+      if (n.skip_email) {
+        emailResults.push({ user_id: n.target_user_id, status: 'skipped', reason: 'skip_email flag' })
+        continue
+      }
 
       const emailType = EMAIL_TYPE_MAP[n.type]
-      if (!emailType && !ALWAYS_EMAIL_TYPES.has(n.type)) continue
+      if (!emailType && !ALWAYS_EMAIL_TYPES.has(n.type)) {
+        emailResults.push({ user_id: n.target_user_id, status: 'skipped', reason: 'no email type mapping' })
+        continue
+      }
 
-      // Check user's email notification preference
       const { data: targetUser } = await sbAdmin
         .from('users')
         .select('email, display_name, preferred_language, email_notifications')
         .eq('id', n.target_user_id)
         .single()
 
-      if (!targetUser?.email) continue
-      // Respect user preference (default: ON)
-      if (targetUser.email_notifications === false) continue
+      if (!targetUser?.email) {
+        emailResults.push({ user_id: n.target_user_id, status: 'skipped', reason: 'no email address' })
+        continue
+      }
+      if (targetUser.email_notifications === false) {
+        emailResults.push({ user_id: n.target_user_id, status: 'skipped', reason: 'user opted out' })
+        continue
+      }
 
-      // Fire-and-forget email
-      fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
+      const internalSecret = Deno.env.get('INTERNAL_SERVICE_SECRET')
+      if (!internalSecret) {
+        console.error('INTERNAL_SERVICE_SECRET not configured — email skipped')
+        emailResults.push({ user_id: n.target_user_id, status: 'skipped', reason: 'missing secret config' })
+        continue
+      }
+
+      const emailPayload = JSON.stringify({
+        to: targetUser.email,
+        user_id: n.target_user_id,
+        type: emailType || 'default',
+        data: {
+          name: targetUser.display_name || '',
+          title: n.title,
+          message: n.message || '',
+          subject: n.title,
+          ...(n.email_data || {}),
+        },
+        lang: targetUser.preferred_language || 'en',
+      })
+
+      const sendPromise = fetch(`${supabaseUrl}/functions/v1/send-transactional-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${serviceKey}`,
-          'X-Internal-Secret': Deno.env.get("INTERNAL_SERVICE_SECRET") || "",
+          'X-Internal-Secret': internalSecret,
         },
-        body: JSON.stringify({
-          to: targetUser.email,
-          user_id: n.target_user_id,
-          type: emailType || 'default',
-          data: {
-            name: targetUser.display_name || '',
-            title: n.title,
-            message: n.message || '',
-            subject: n.title,
-            ...(n.email_data || {}),
-          },
-          lang: targetUser.preferred_language || 'en',
-        }),
+        body: emailPayload,
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          throw new Error(`HTTP ${res.status}: ${body.substring(0, 200)}`)
+        }
+        emailResults.push({ user_id: n.target_user_id, status: 'sent' })
       }).catch((e: unknown) => {
-        console.error('Email send failed:', e instanceof Error ? e.message : String(e))
+        const msg = e instanceof Error ? e.message : String(e)
+        console.error(`Email send failed for user ${n.target_user_id}:`, msg)
+        emailResults.push({ user_id: n.target_user_id, status: 'failed', reason: msg })
       })
+
+      emailPromises.push(sendPromise)
+    }
+
+    // Await all email sends (non-blocking to caller — settled before response)
+    if (emailPromises.length > 0) {
+      await Promise.allSettled(emailPromises)
+    }
+
+    const emailFailed = emailResults.filter((r) => r.status === 'failed')
+    if (emailFailed.length > 0) {
+      console.error(`[send-notification] ${emailFailed.length} email(s) failed:`, JSON.stringify(emailFailed))
     }
 
     return new Response(
-      JSON.stringify({ success: true, count: rows.length }),
+      JSON.stringify({
+        success: true,
+        count: rows.length,
+        email_results: emailResults,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (e) {

@@ -922,30 +922,50 @@ serve(async (req: Request) => {
 
     const userPlan = userData?.plan || "free";
     const singleCredits = userData?.analysis_credits || 0;
+
+    // Unknown plan names fall back to free (1 lifetime). Log for ops visibility.
+    const isKnownPlan = Object.prototype.hasOwnProperty.call(PLAN_LIMITS, userPlan);
+    if (!isKnownPlan) {
+      console.warn(`[analyze-export] Unknown plan "${userPlan}" for user ${user.id} — applying free limit`);
+    }
     const monthlyLimit = PLAN_LIMITS[userPlan] ?? 1;
 
-    // Count this month's analyses (skip for unlimited plans)
+    // Count analyses: free plan = lifetime (cumulative), paid plans = monthly reset
     if (monthlyLimit !== -1) {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const { count: monthlyUsage } = await sbAdmin
+      let usageQuery = sbAdmin
         .from("analyses")
         .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .gte("created_at", startOfMonth.toISOString());
+        .eq("user_id", user.id);
 
-      const used = monthlyUsage || 0;
+      // Paid plans: count only this month's analyses
+      if (userPlan !== "free") {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        usageQuery = usageQuery.gte("created_at", startOfMonth.toISOString());
+      }
+      // Free plan: count all analyses (lifetime limit of 1)
+
+      const { count: usageCount } = await usageQuery;
+      const used = usageCount || 0;
 
       if (used >= monthlyLimit && singleCredits <= 0) {
         const isKo = req.headers.get("accept-language")?.includes("ko");
+        const limitMsg = !isKnownPlan
+          ? (isKo
+              ? `플랜 인식 오류로 분석이 제한됩니다. support@whistle-ai.com으로 문의해주세요.`
+              : `Plan recognition error. Please contact support@whistle-ai.com.`)
+          : userPlan === "free"
+            ? (isKo
+                ? `무료 플랜 분석 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드해주세요.`
+                : `Free plan analysis limit (${monthlyLimit}) exceeded. Please upgrade your plan.`)
+            : (isKo
+                ? `월간 분석 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
+                : `Monthly analysis limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`);
         return new Response(
           JSON.stringify({
             ok: false,
-            error: isKo
-              ? `월간 분석 한도(${monthlyLimit}회)를 초과했습니다. 플랜을 업그레이드하거나 단건 분석을 구매해주세요.`
-              : `Monthly analysis limit (${monthlyLimit}) exceeded. Please upgrade your plan or purchase a single analysis.`,
+            error: limitMsg,
             code: "PLAN_LIMIT_EXCEEDED",
             limit: monthlyLimit,
             used,

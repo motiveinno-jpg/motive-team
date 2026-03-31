@@ -827,11 +827,20 @@ function btnLoad(btn,loading){
 
 var SB_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
 var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
+/* Open redirect 방지: Stripe/Supabase billing URL만 허용 */
+function _isSafeRedirectUrl(url){
+  if(!url||typeof url!=='string')return false;
+  try{
+    var u=new URL(url);
+    var ALLOWED=['checkout.stripe.com','billing.stripe.com','lylktgxngrlxmsldxdqj.supabase.co'];
+    return ALLOWED.some(function(h){return u.hostname===h;});
+  }catch(e){return false;}
+}
 var sb=window.supabase.createClient(SB_URL,SB_ANON_KEY);window._sb=sb;
 var RELAY_URL=(location.hostname==='localhost'||location.hostname==='127.0.0.1')?'http://localhost:3456':'https://api.whistle-ai.com';window.RELAY_URL=RELAY_URL;
 var _relayReady=(function(){if(RELAY_URL)return Promise.resolve();return fetch('relay-url.txt?t='+Date.now()).then(function(r){return r.ok?r.text():null}).then(function(t){if(t){t=t.trim();if(t.startsWith('https://')){RELAY_URL=t;window.RELAY_URL=t;}}}).catch(function(e){console.error('relay-url fetch failed',e);})})();
 function fetchRetry(url,opts,retries){retries=retries||3;var delay=1000;return _relayReady.then(function(){return _fetchRetry(url,opts,retries,delay);});}
-function _fetchRetry(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'}},opts||{})).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetry(url,opts,retries-1,delay*2));},delay);});});}
+function _fetchRetry(url,opts,retries,delay){return fetch(url.startsWith('/')?RELAY_URL+url:url,Object.assign({headers:{'Content-Type':'application/json'}},opts||{})).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r;}).catch(function(err){if(retries<=1)throw err;return new Promise(function(resolve){setTimeout(function(){resolve(_fetchRetry(url,opts,retries-1,delay*2));},delay);});});}
 
 /* === CSV EXPORT === */
 function exportCSV(data,filename){
@@ -1201,7 +1210,7 @@ function _stripeOneAnalysis(){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({type:'one_analysis',price_id:STRIPE_CONFIG.prices.one_analysis,success_url:location.origin+location.pathname+'?checkout=success#analysis',cancel_url:location.origin+location.pathname+'?checkout=cancel#analysis'})
     }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
-      if(data.url){window.location.href=data.url;}
+      if(data.url&&_isSafeRedirectUrl(data.url)){window.location.href=data.url;}
       else if(data.error){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();var _dm=data.debug_msg?' ['+data.debug_msg+']':'';UI.toast(_payErr(data.error)+_dm,'err');}
     }).catch(function(e){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();UI.toast(e.message||(T('payment_connection_error')),'err');});
   }).catch(function(e){var o=document.getElementById('_payLoadingOverlay');if(o)o.remove();console.error('[one-analysis] auth error:',e);UI.toast(T('toast_login_required'),'warn');});
@@ -7318,7 +7327,7 @@ function genCatalogEN(productId){
   var p=S.products.find(function(x){return x.id===productId;});if(!p){UI.toast(T('product_not_found'),'err');return;}
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_english_catalog')),'info');
-  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
+  fetch(RELAY_URL+'/api/whistle/catalog-en',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name_ko:p.name_ko,name_en:p.name_en,category:p.category,fob_price:p.fob_price,moq:p.moq,description_ko:p.description_ko,certifications:p.certifications,specifications:p.specifications})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(!data.ok)throw new Error(data.error||(T('generation_failed')));
     var res=data.result;
     sb.from('products').update({description_en:res.description_en,specifications:Object.assign(p.specifications||{},{ai_catalog:res})}).eq('id',productId).eq('user_id',S.user.id).then(function(r2){
@@ -10043,7 +10052,7 @@ function naverSearch(productId){
   if(!keyword){UI.toast(T('no_product_name'),'warn');return;}
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast(T('searching'),'info');
-  fetch(RELAY_URL+'/api/naver/search?q='+encodeURIComponent(keyword)+'&display=20',{headers:{'ngrok-skip-browser-warning':'1'}})
+  fetch(RELAY_URL+'/api/naver/search?q='+encodeURIComponent(keyword)+'&display=20')
     .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
     .then(function(data){
       if(!data||data.error){UI.toast(data&&data.error||(T('search_failed')),'err');return;}
@@ -11587,6 +11596,9 @@ function openPjDocModal(docType){
     body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('origin_label'))+'</label><input class="form-input" name="country_origin" value="'+(S.company&&S.company.country||'Republic of Korea')+'" style="font-size:12px"></div>';
     body+='</div>';
     body+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">';
+    body+='<div style="flex:2;min-width:180px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(_isKorean?'통관고유부호 (수출자)':'Exporter Customs Code')+'</label><input class="form-input" name="customs_code" placeholder="'+(_isKorean?'예: KR1234567890 (관세청 등록번호)':'e.g. KR1234567890 (Customs Registration No.)')+'" style="font-size:12px"></div>';
+    body+='</div>';
+    body+='<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">';
     body+='<div style="flex:1;min-width:100px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('total_cartons'))+'</label><input class="form-input" name="total_cartons" type="number" placeholder="'+T('eg_prefix')+'50" style="font-size:12px"></div>';
     body+='<div style="flex:1;min-width:100px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('net_weight_kg'))+'</label><input class="form-input" name="net_weight" type="number" step="0.1" placeholder="'+T('eg_prefix')+'450" style="font-size:12px"></div>';
     body+='<div style="flex:1;min-width:100px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('gross_weight_kg'))+'</label><input class="form-input" name="gross_weight" type="number" step="0.1" placeholder="'+T('eg_prefix')+'520" style="font-size:12px"></div>';
@@ -11630,10 +11642,11 @@ function openPjDocModal(docType){
     body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('transport_mode'))+'</label><select class="form-input" name="co_transport" style="font-size:12px"><option value="Ocean">'+T('ocean_transport')+' </option><option value="Air">'+T('air_transport')+'</option><option value="Multimodal">'+T('multimodal_transport')+'</option></select></div>';
     body+='</div>';
     body+='<div style="display:flex;gap:8px;flex-wrap:wrap">';
-    body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('fta_agreement'))+'</label><select class="form-input" name="co_fta" style="font-size:12px"><option value="">'+T('fta_general_co')+'</option><option value="KORUS">'+T('fta_korus')+'</option><option value="KR-EU">'+T('fta_kr_eu')+'</option><option value="KR-CN">'+T('fta_kr_cn')+'</option><option value="RCEP">'+T('fta_rcep')+'</option><option value="KR-ASEAN">'+T('fta_kr_asean')+'</option><option value="KR-VN">'+T('fta_kr_vn')+'</option><option value="KR-JP">'+T('fta_kr_jp')+'</option><option value="KR-IN">'+T('fta_kr_in')+'</option><option value="KR-AU">'+T('fta_kr_au')+'</option><option value="KR-UK">'+T('fta_kr_uk')+'</option><option value="KR-TR">'+T('fta_kr_tr')+'</option></select></div>';
+    body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+(T('fta_agreement'))+'</label><select class="form-input" name="co_fta" id="co-fta-select" onchange="(function(v){var m={\'KORUS\':\'KORUS FTA — Certificate of Origin (KCCI)\',\'KR-EU\':\'EU FTA — EUR.1 / REX Declaration (KCCI)\',\'KR-CN\':\'한-중 FTA — 원산지증명서 (대한상의)\',\'RCEP\':\'RCEP — Certificate of Origin Form RCEP\',\'KR-ASEAN\':\'ASEAN FTA — Form AK (KCCI)\',\'KR-VN\':\'VKFTA — Form VK (KCCI)\',\'KR-JP\':\'RCEP/한-일 — Form RCEP\',\'KR-IN\':\'CEPA — Certificate of Origin (KITA)\',\'KR-AU\':\'KAFTA — Certificate of Origin (KCCI)\',\'KR-UK\':\'UKFTA — UK Certificate of Origin (KCCI)\',\'KR-TR\':\'한-터키 FTA — Form TR (KCCI)\'};var el=document.getElementById(\'co-fta-hint\');if(el)el.textContent=m[v]||(v?\'일반 원산지증명서 (비FTA 통관용)\':\'FTA 협정을 선택하면 해당 서식명이 표시됩니다.\');})((this||event.target).value)" style="font-size:12px"><option value="">'+T('fta_general_co')+'</option><option value="KORUS">'+T('fta_korus')+'</option><option value="KR-EU">'+T('fta_kr_eu')+'</option><option value="KR-CN">'+T('fta_kr_cn')+'</option><option value="RCEP">'+T('fta_rcep')+'</option><option value="KR-ASEAN">'+T('fta_kr_asean')+'</option><option value="KR-VN">'+T('fta_kr_vn')+'</option><option value="KR-JP">'+T('fta_kr_jp')+'</option><option value="KR-IN">'+T('fta_kr_in')+'</option><option value="KR-AU">'+T('fta_kr_au')+'</option><option value="KR-UK">'+T('fta_kr_uk')+'</option><option value="KR-TR">'+T('fta_kr_tr')+'</option></select></div>';
     body+='<div style="flex:1;min-width:140px"><label style="font-size:10px;color:var(--w40);display:block;margin-bottom:3px">'+T('issuing_authority')+'</label><select class="form-input" name="co_issuer" style="font-size:12px"><option value="KCCI">'+T('issuer_kcci')+'</option><option value="CUSTOMS">'+T('issuer_customs')+'</option><option value="KITA">'+T('issuer_kita')+'</option></select></div>';
     body+='</div>';
-    body+='<div style="margin-top:8px;padding:6px 10px;border-radius:6px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.5">';
+    body+='<div style="margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.12);font-size:10px;color:var(--ok);line-height:1.5" id="co-fta-hint">FTA 협정을 선택하면 해당 서식명이 표시됩니다.</div>';
+    body+='<div style="margin-top:6px;padding:6px 10px;border-radius:6px;background:var(--w04);font-size:10px;color:var(--w40);line-height:1.5">';
     body+=(T('fta_co_is_required_for_preferential_tariff_rates_g'));
     body+='</div>';
     body+='</div>';
@@ -12346,7 +12359,7 @@ function viewPjDoc(docId){
     docHTML='<div id="pjDocPrintArea" style="width:100%;max-width:680px;margin:0 auto;padding:40px 50px;font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;color:#111;background:#fff;line-height:1.5">'
     +'<div style="position:relative"><div style="position:absolute;top:10px;right:0;font-size:12px;font-weight:800;color:#c00;border:2px solid #c00;padding:2px 12px;transform:rotate(-5deg)">ORIGINAL</div><div style="font-size:24px;font-weight:800;color:#003366">COMMERCIAL INVOICE</div><div style="font-size:10px;color:#666">For Customs Clearance and Payment Purposes</div></div>'
     +'<div style="display:flex;gap:10px;margin:16px 0;font-size:10px"><div style="padding:4px 10px;background:#003366;color:#fff;border-radius:3px"><strong>Invoice No:</strong> '+xe(doc.doc_number)+'</div><div style="padding:4px 10px;background:#f0f4f8;border:1px solid #cde;border-radius:3px"><strong>Date:</strong> '+docDate+'</div>'+(content.bl_number?'<div style="padding:4px 10px;background:#f0f4f8;border:1px solid #cde;border-radius:3px"><strong>B/L No:</strong> '+xe(content.bl_number)+'</div>':'')+'</div>'
-    +'<div style="display:flex;gap:20px;margin-bottom:16px"><div style="flex:1;border:1px solid #ddd;padding:10px"><div style="font-size:8px;font-weight:700;color:#003366;text-transform:uppercase;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:2px">SHIPPER / EXPORTER</div>'+sellerBlock+'</div><div style="flex:1;border:1px solid #ddd;padding:10px"><div style="font-size:8px;font-weight:700;color:#003366;text-transform:uppercase;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:2px">CONSIGNEE</div>'+buyerBlock+'</div></div>'
+    +'<div style="display:flex;gap:20px;margin-bottom:16px"><div style="flex:1;border:1px solid #ddd;padding:10px"><div style="font-size:8px;font-weight:700;color:#003366;text-transform:uppercase;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:2px">SHIPPER / EXPORTER</div>'+sellerBlock+(content.customs_code?'<div style="margin-top:4px;font-size:8px;color:#555"><strong>Customs Code:</strong> '+xe(content.customs_code)+'</div>':'')+'</div><div style="flex:1;border:1px solid #ddd;padding:10px"><div style="font-size:8px;font-weight:700;color:#003366;text-transform:uppercase;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:2px">CONSIGNEE</div>'+buyerBlock+'</div></div>'
     +(content.notify_party?'<div style="margin-bottom:16px;border:1px solid #ddd;padding:10px"><div style="font-size:8px;font-weight:700;color:#003366;text-transform:uppercase;margin-bottom:4px;border-bottom:1px solid #eee;padding-bottom:2px">NOTIFY PARTY</div><div style="font-size:10px">'+xe(content.notify_party)+'</div></div>':'')
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;font-size:9px">'
     +'<div style="padding:6px 8px;background:#f0f7ff;border:1px solid #cde"><div style="color:#666;font-size:8px">Country of Origin</div><div style="font-weight:600">'+xe(content.country_origin||'Republic of Korea')+'</div></div>'
@@ -13499,7 +13512,7 @@ function getCertGuide(pjId,idx){
   var cat=prod?prod.category:'Beauty & Cosmetics';
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_guide')),'info');
-  fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
+  fetch(RELAY_URL+'/api/whistle/cert-guide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({certName:cert.name,productCategory:cat,targetCountry:tc})})
   .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(data.ok&&data.guide){
       cert.ai_guide=data.guide;
@@ -14655,7 +14668,7 @@ function translateEmail(targetLang){
   UI.toast((T('subject')+'+')+langLabel+(T('translating_2')),'info');
   var texts=[sj.value,bd.value];
   Promise.all(texts.map(function(t){
-    return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
+    return fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,target:targetLang})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){return d.ok?d.translated:t;}).catch(function(){return t;});
   })).then(function(results){
     sj.value=results[0];bd.value=results[1];
     UI.toast(langLabel+(_isKorean?' 번역 완료':' translation complete'),'ok');
@@ -14668,7 +14681,7 @@ function aiImproveEmail(){
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast(T('ai_improving_your_email'),'info');
   var prompt='You are an expert B2B trade email writer. Improve this business email to be more professional, persuasive, and clear. Keep the same language. Keep all factual details (prices, dates, names). Make it concise but impactful. Return ONLY the improved email body text, no explanation.\n\nSubject: '+sj.value+'\n\nBody:\n'+bd.value;
-  fetch(RELAY_URL+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+  fetch(RELAY_URL+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:2000})
   }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
     if(d.ok&&d.text){bd.value=d.text;UI.toast(T('ai_improved_please_review'),'ok');}
@@ -14680,7 +14693,7 @@ function sendE(){
   var btn=document.querySelector('#em .btn-pri');if(btn){btn.disabled=true;btn.textContent=_isKorean?'발송 중...':'Sending...';}
   var bs=document.querySelector('#ef [name=bsel]');var buyerId=bs?bs.value:'';
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');if(btn){btn.disabled=false;btn.textContent=_isKorean?'발송':'Send';}return;}
-  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({to:d.to,subject:d.subject||'',bodyText:d.body||'',userId:S.user.id,buyerId:buyerId||null})
   }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
     if(data.ok){
@@ -14917,7 +14930,7 @@ function translateChatMsg(msgId,targetLang,batchAll){
   };
   if(typeof RELAY_URL!=='undefined'&&RELAY_URL){
   _relayReady.then(function(){
-    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
+    fetch(RELAY_URL+'/api/translate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,target:targetLang||'en'})}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(d){
       _chatTranslations[key]=d.ok?d.translated:text;render();
     }).catch(function(){_doTranslate();});
   });
@@ -15475,6 +15488,7 @@ function _renderFTAResult(el,r,hsDisplay,value){
   if(r.origin_rule)h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,184,0,.06);border:1px solid rgba(255,184,0,.1);font-size:12px"><span style="font-weight:700;color:var(--acc)">'+(_isKorean?'원산지 기준:':'Origin Rule:')+'</span> <span style="color:var(--w60)">'+UI.esc(r.origin_rule)+'</span></div>';
   if(r.required_docs&&r.required_docs.length)h+='<div style="margin-top:6px;font-size:11px;color:var(--w40)">'+(_isKorean?'필요서류: ':'Required Docs: ')+r.required_docs.map(function(d2){return UI.esc(d2);}).join(', ')+'</div>';
   if(r.recommendation)h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,212,255,.06);border:1px solid rgba(0,212,255,.1);font-size:12px;color:var(--pri)">💡 '+UI.esc(r.recommendation)+'</div>';
+  h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,167,38,.06);border:1px solid rgba(255,167,38,.15);font-size:11px;color:#FFA726;display:flex;gap:8px;align-items:flex-start">⚠️ <span>'+(_isKorean?'본 관세율은 AI가 공개 FTA 협정문 기반으로 <b>추정</b>한 값입니다. 실제 통관 시 관세청 또는 관세사에게 반드시 최종 확인하시기 바랍니다.':'Tariff rates are <b>AI-estimated</b> based on public FTA data. Please verify with customs authorities or a licensed broker before shipment.')+'</span></div>';
   h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   h+='<button class="btn btn-pri btn-sm" onclick="App.ftaToCost()">💰 '+(_isKorean?'물류비 계산에 적용':'Apply to Cost Calc')+'</button>';
   h+='<button class="btn btn-ghost btn-sm" onclick="App.reqExpertReview(\'fta\',\''+UI.esc(hsDisplay)+'\')">👨‍💼 '+(_isKorean?'관세사 상담':'Customs Consultation')+'</button>';
@@ -15505,6 +15519,7 @@ function _renderFTAMultiResult(el,results,hsDisplay,value){
   });
   h+='</tbody></table></div>';
   if(results.length>0&&results[0].best_fta)h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.1);font-size:12px;color:var(--ok)">🏆 '+(_isKorean?'최적 시장':'Best Market')+': <b>'+UI.esc(results[0].destination||'')+'</b> — '+UI.esc(results[0].best_fta||'')+' ('+(results[0].best_rate||0)+'%)</div>';
+  h+='<div style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(255,167,38,.06);border:1px solid rgba(255,167,38,.15);font-size:11px;color:#FFA726;display:flex;gap:8px;align-items:flex-start">⚠️ <span>'+(_isKorean?'본 관세율은 AI가 공개 FTA 협정문 기반으로 <b>추정</b>한 값입니다. 실제 통관 시 관세청 또는 관세사에게 반드시 최종 확인하시기 바랍니다.':'Tariff rates are <b>AI-estimated</b> based on public FTA data. Please verify with customs authorities or a licensed broker before shipment.')+'</span></div>';
   h+='</div>';
   S._costFTAResultHTML=h;
   el.innerHTML=h;
@@ -16331,7 +16346,7 @@ function sendRFQEmail(){
   if(!window._lastRFQ){UI.toast((T('create_an_rfq_first')),'warn');return;}
   UI.prompt('포워더 이메일 주소',function(email){
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
-  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     to:email,subject:'[RFQ] Freight Quotation Request — '+(S.company&&S.company.name_en||'Korean Manufacturer'),
     bodyText:window._lastRFQ,userId:S.user.id
   })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
@@ -16628,7 +16643,7 @@ function initStripeCheckout(planId){
       body:JSON.stringify({price_id:priceId,plan:planId,billing_cycle:cycle,success_url:location.origin+location.pathname+'?checkout=success#subscription',cancel_url:location.origin+location.pathname+'?checkout=cancel#subscription'})
     }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
       if(data.error){_rmOv();UI.toast(_payErr(data.error),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}return;}
-      if(data.url){_savePendingAnalysis();window.location.href=data.url;}
+      if(data.url&&_isSafeRedirectUrl(data.url)){_savePendingAnalysis();window.location.href=data.url;}
       else{_rmOv();UI.toast(T('payment_session_failed'),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}}
     }).catch(function(err){_rmOv();UI.toast(err.message||(T('payment_connection_error')),'err');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
   }).catch(function(err){_rmOv();console.error('[checkout] auth error:',err);UI.toast(T('login_required'),'warn');if(btn){btn.disabled=false;btn.textContent=_btnReset;}});
@@ -16671,7 +16686,7 @@ function openBillingPortal(){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+r.data.session.access_token,'apikey':SB_ANON_KEY},
       body:JSON.stringify({return_url:location.href})
     }).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(data){
-      if(data.url)window.open(data.url,'_blank');
+      if(data.url&&_isSafeRedirectUrl(data.url))window.open(data.url,'_blank');
       else UI.toast(_payErr(data.error)||(T('billing_portal_error')),'warn');
     }).catch(function(e){UI.toast(e.message||(T('billing_portal_error')),'err');});
   }).catch(function(e){console.error('[billing-portal] auth error:',e);UI.toast(T('login_required'),'warn');});
@@ -17899,7 +17914,7 @@ function findBuyersAI(){
   if(prod&&S.projects.length){var sp=S.projects[0].stage_progress||{};certs=(sp.certs||[]).filter(function(c){return _normCertStatus(c.status)==='approved';}).map(function(c){return c.name;});}
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   var _abr=document.getElementById('ai-buyers-result');if(_abr)_abr.innerHTML='<div style="padding:20px;text-align:center"><div class="spinner" style="margin:0 auto 10px"></div><div style="font-size:13px;color:var(--w40)">'+(_isKorean?'AI가 '+d.target_market+' 시장 바이어를 분석중...':'AI analyzing buyers in '+d.target_market+' market...')+'</div></div>';
-  fetch(RELAY_URL+'/api/whistle/find-buyers',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/find-buyers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     targetMarket:d.target_market,productCategory:d.product_cat||'Skincare',fobPrice:d.fob_hint||'',
     productName:prod?prod.name_en||prod.name_ko:'',hsCode:prod?prod.hs_code:'3304.99',
     certifications:certs.join(', ')||'None'
@@ -18322,7 +18337,7 @@ function getMeetingPrep(mid){
   var product=S.products.length?S.products[0]:null;
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_briefing')),'info');
-  fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/meeting-prep',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     meeting:m,buyer:buyer,product:product,company:S.company
   })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(j){
     if(j.error){UI.toast((T('failed_prefix'))+j.error,'err');return;}
@@ -19471,7 +19486,7 @@ function submitProposal(reqId){
     loadMyProposals();loadMarketplace();
     var req=S.marketplaceRequests.find(function(x){return x.id===reqId;});
     if(req){
-      fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},
+      fetch(RELAY_URL+'/api/whistle/notify',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({userId:req.buyer_user_id,type:'marketplace',title:'New proposal: '+req.title,body:(comp.name_en||comp.name_ko||S.user.company_name)+' submitted a proposal',linkPage:'marketplace',telegram:true})
       }).then(function(r){if(r&&!r.ok)console.error('[whistle] notify HTTP '+r.status);}).catch(function(e){console.error('[whistle]',e);});
     }
@@ -20054,7 +20069,7 @@ function getAlibabaReply(iqId){
   var product=S.products.length?S.products[0]:null;
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');return;}
   UI.toast((T('generating_ai_response')),'info');
-  fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({
+  fetch(RELAY_URL+'/api/whistle/alibaba-reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     inquiry:iq,product:product,company:S.company
   })}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(function(j){
     if(j.error){UI.toast((T('failed_prefix'))+j.error,'err');return;}
@@ -23160,7 +23175,7 @@ function genTrendReport(){
   prompt+=(_isKorean?'다음 형식으로 JSON 응답':'Respond in JSON format')+':\n{"summary":"200'+(_isKorean?'자 요약':' char summary')+'","market_insights":"'+(_isKorean?'시장분석 300자':'300 char market analysis')+'","recommendations":[{"icon":"emoji","title":"'+(_isKorean?'제목':'title')+'","desc":"'+(_isKorean?'설명':'description')+'"}]}';
 
   if(!RELAY_URL){UI.toast(T('server_required'),'warn');S._trendReportLoading=false;render();return;}
-  fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:1024})})
+  fetch(RELAY_URL+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:prompt}],max_tokens:1024})})
   .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
   .then(function(data){
     var aiText=(data.content&&data.content[0]&&data.content[0].text)||'';
@@ -25207,7 +25222,7 @@ sb.auth.onAuthStateChange(function(event, session){
     toggle:function(){open=!open;r();},
     pick:function(t){msgs.push({from:'user',text:t});if(ar[t]){msgs.push({from:'bot',text:ar[t]});msgs.push({from:'bot',text:_wkC?'더 자세한 상담을 원하시면 아래 정보를 남겨주세요.':'Please leave your info below for a detailed consultation.'});step=1;}r();},
     submitInfo:function(){var n=document.getElementById('wc-name'),e=document.getElementById('wc-email'),p=document.getElementById('wc-phone');info.name=n?n.value:'';info.email=e?e.value:'';info.phone=p?p.value:'';if(!info.name){UI.toast(T('enter_name_company'),'warn');return;}msgs.push({from:'bot',text:_wkC?info.name+'님, 반갑습니다! 궁금한 점을 자유롭게 입력해주세요.':'Nice to meet you, '+info.name+'! Feel free to type your questions.'});step=2;r();},
-    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var _r=RELAY||window.RELAY_URL||'';if(!_r){msgs.push({from:'bot',text:_wkC?'문의가 접수되었습니다. creative@mo-tive.com으로도 문의 가능합니다.':'Your inquiry has been received. You can also reach us at creative@mo-tive.com.'});r();return;}fetch(_r+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'1'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(resp){if(!resp.ok)throw new Error('HTTP '+resp.status);return resp.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||(_wkC?'접수되었습니다.':'Received.')});r();}}).catch(function(){msgs.push({from:'bot',text:_wkC?'전송에 실패했습니다. creative@mo-tive.com으로 문의해주세요.':'Failed to send. Please contact creative@mo-tive.com.'});r();});}
+    send:function(){var inp=document.getElementById('wc-input');if(!inp||!inp.value.trim())return;var msg=inp.value.trim();msgs.push({from:'user',text:msg});r();var _r=RELAY||window.RELAY_URL||'';if(!_r){msgs.push({from:'bot',text:_wkC?'문의가 접수되었습니다. creative@mo-tive.com으로도 문의 가능합니다.':'Your inquiry has been received. You can also reach us at creative@mo-tive.com.'});r();return;}fetch(_r+'/api/whistle/chat-inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:info.name,email:info.email,phone:info.phone,message:msg,page:PAGE})}).then(function(resp){if(!resp.ok)throw new Error('HTTP '+resp.status);return resp.json();}).then(function(d){if(d.ok){msgs.push({from:'bot',text:d.reply||(_wkC?'접수되었습니다.':'Received.')});r();}}).catch(function(){msgs.push({from:'bot',text:_wkC?'전송에 실패했습니다. creative@mo-tive.com으로 문의해주세요.':'Failed to send. Please contact creative@mo-tive.com.'});r();});}
   };r();
 })();
 </script>

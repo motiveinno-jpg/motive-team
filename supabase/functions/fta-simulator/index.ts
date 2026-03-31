@@ -190,6 +190,16 @@ serve(async (req: Request) => {
       );
     }
 
+    // HS code format validation: 4-10 digits (with optional dots/spaces stripped)
+    const cleanedHsCode = String(effectiveHsCode).replace(/[\s.\-]/g, "");
+    if (!/^\d{4,10}$/.test(cleanedHsCode)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "Invalid HS code format. Must be 4-10 digits (e.g., 8471.30 or 847130)." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    effectiveHsCode = cleanedHsCode;
+
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
       return new Response(
@@ -218,7 +228,12 @@ serve(async (req: Request) => {
       });
 
       return new Response(
-        JSON.stringify({ ok: true, results: aiResult }),
+        JSON.stringify({
+          ok: true,
+          results: aiResult,
+          ai_disclaimer: "관세율은 AI가 공개 FTA 협정문 기반으로 추정한 값입니다. 실제 통관 시에는 관세청 또는 관세사에게 최종 확인하시기 바랍니다.",
+          ai_disclaimer_en: "Tariff rates are AI-estimated based on publicly available FTA agreements. Please verify with customs authorities or a licensed customs broker before actual shipment.",
+        }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -247,7 +262,12 @@ serve(async (req: Request) => {
     });
 
     return new Response(
-      JSON.stringify({ ok: true, result }),
+      JSON.stringify({
+        ok: true,
+        result,
+        ai_disclaimer: "관세율은 AI가 공개 FTA 협정문 기반으로 추정한 값입니다. 실제 통관 시에는 관세청 또는 관세사에게 최종 확인하시기 바랍니다.",
+        ai_disclaimer_en: "Tariff rates are AI-estimated based on publicly available FTA agreements. Please verify with customs authorities or a licensed customs broker before actual shipment.",
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {

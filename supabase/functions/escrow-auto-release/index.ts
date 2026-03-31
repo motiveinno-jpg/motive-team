@@ -159,6 +159,24 @@ serve(async (req) => {
         console.error(`Failed to auto-cancel order ${order.id}:`, errMsg);
         details.push({ order_id: order.id, action: "auto_cancel", status: "failed", error: errMsg });
         await logAction(supabase, order.id, "auto_cancel_failed", errMsg);
+        // CEO 알림: 환불 실패 → 수동 처리 필요. admin 계정에 긴급 알림 삽입
+        try {
+          const { data: adminUser } = await supabase
+            .from("users").select("id").eq("role", "admin").limit(1).single();
+          if (adminUser?.id) {
+            await supabase.from("notifications").insert({
+              user_id: adminUser.id,
+              type: "payment",
+              title: `⚠️ URGENT: Refund FAILED — Order ${order.id}`,
+              body: `Stripe refund failed (3 retries). MANUAL REFUND REQUIRED.\nPI: ${order.stripe_payment_intent || "N/A"}\nError: ${errMsg}`,
+              link_page: "deals",
+              link_id: order.id,
+              is_read: false,
+            });
+          }
+        } catch (notifyErr: unknown) {
+          console.error("Failed to notify admin of refund failure:", notifyErr instanceof Error ? notifyErr.message : String(notifyErr));
+        }
       }
     }
 
@@ -236,6 +254,24 @@ serve(async (req) => {
         console.error(`Failed to auto-confirm order ${order.id}:`, errMsg);
         details.push({ order_id: order.id, action: "auto_confirm", status: "failed", error: errMsg });
         await logAction(supabase, order.id, "auto_confirm_failed", errMsg);
+        // CEO 알림: 자동 확인 + 캡처 실패 → 수동 처리 필요
+        try {
+          const { data: adminUser } = await supabase
+            .from("users").select("id").eq("role", "admin").limit(1).single();
+          if (adminUser?.id) {
+            await supabase.from("notifications").insert({
+              user_id: adminUser.id,
+              type: "payment",
+              title: `⚠️ URGENT: Auto-confirm FAILED — Order ${order.id}`,
+              body: `Stripe capture failed (3 retries). MANUAL CAPTURE REQUIRED.\nPI: ${order.stripe_payment_intent || "N/A"}\nError: ${errMsg}`,
+              link_page: "deals",
+              link_id: order.id,
+              is_read: false,
+            });
+          }
+        } catch (notifyErr: unknown) {
+          console.error("Failed to notify admin of capture failure:", notifyErr instanceof Error ? notifyErr.message : String(notifyErr));
+        }
       }
     }
 
