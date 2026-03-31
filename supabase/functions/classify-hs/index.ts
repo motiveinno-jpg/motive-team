@@ -201,6 +201,7 @@ serve(async (req: Request) => {
       );
     }
 
+    const CLAUDE_MODEL = Deno.env.get("CLAUDE_MODEL") ?? "claude-sonnet-4-6";
     const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!anthropicKey) {
       return new Response(
@@ -298,7 +299,7 @@ Output JSON only.`;
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: CLAUDE_MODEL,
         max_tokens: 2000,
         messages: [{ role: "user", content: prompt }],
       }),

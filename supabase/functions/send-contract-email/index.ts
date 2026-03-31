@@ -312,7 +312,7 @@ serve(async (req) => {
       if (status) query = query.eq("status", status);
 
       const { data, error } = await query;
-      if (error) return json({ error: error.message }, 500);
+      if (error) { console.error("[send-contract-email] DB error:", error.message); return json({ error: "Database error. Please try again." }, 500); }
       return json({ data });
     }
 
@@ -325,7 +325,7 @@ serve(async (req) => {
         .update({ status: "cancelled" })
         .eq("id", signature_request_id);
 
-      if (error) return json({ error: error.message }, 500);
+      if (error) { console.error("[send-contract-email] DB error:", error.message); return json({ error: "Database error. Please try again." }, 500); }
       return json({ success: true });
     }
 

@@ -209,6 +209,12 @@ serve(async (req: Request) => {
     }
 
     /* 복수 시장 비교 */
+    if (effectiveDestinations !== undefined && (!Array.isArray(effectiveDestinations) || effectiveDestinations.length === 0)) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "destinations must be a non-empty array of country codes" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     if (effectiveDestinations && Array.isArray(effectiveDestinations) && effectiveDestinations.length > 0) {
       const destInfo = effectiveDestinations.map((d: string) => {
         const ftas = origin_country === "KR" ? (COUNTRY_FTA[d] || ["확인 필요"]) : ["Check applicable FTAs"];

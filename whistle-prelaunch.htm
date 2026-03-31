@@ -248,15 +248,29 @@ body{background:#060B18;color:#fff;font-family:'Inter',-apple-system,sans-serif;
 </footer>
 
 <script>
-// Countdown timer — set launch date (100 days from now as default, adjust as needed)
+// ── 런칭 후 자동 리다이렉트 ──
+// LAUNCH_DATE를 실제 런칭일로 변경하면 그 이후 접근자는 메인으로 자동 이동
 (function(){
-  // Fixed launch date — 2026-06-21 (100 days from 2026-03-13)
-  var launch = new Date('2026-06-21T00:00:00+09:00');
+  var LAUNCH_DATE = new Date('2026-06-21T00:00:00+09:00');
+  var LAUNCHED = new Date() >= LAUNCH_DATE;
+
+  if(LAUNCHED){
+    // 런칭 이후: /ko (한국어 랜딩)으로 즉시 리다이렉트
+    window.location.replace('/ko');
+    return;
+  }
+
+  // Countdown timer
   function tick(){
-    var now=new Date();var diff=launch-now;
-    if(diff<=0){document.getElementById('cd-days').textContent='0';document.getElementById('cd-hours').textContent='0';document.getElementById('cd-mins').textContent='0';document.getElementById('cd-secs').textContent='0';return;}
+    var now=new Date();var diff=LAUNCH_DATE-now;
+    if(diff<=0){
+      // 카운트다운 끝나면 리다이렉트
+      window.location.replace('/ko');
+      return;
+    }
     var d=Math.floor(diff/86400000);var h=Math.floor((diff%86400000)/3600000);var m=Math.floor((diff%3600000)/60000);var s=Math.floor((diff%60000)/1000);
-    document.getElementById('cd-days').textContent=d;document.getElementById('cd-hours').textContent=String(h).padStart(2,'0');document.getElementById('cd-mins').textContent=String(m).padStart(2,'0');document.getElementById('cd-secs').textContent=String(s).padStart(2,'0');
+    var elD=document.getElementById('cd-days');var elH=document.getElementById('cd-hours');var elM=document.getElementById('cd-mins');var elS=document.getElementById('cd-secs');
+    if(elD)elD.textContent=d;if(elH)elH.textContent=String(h).padStart(2,'0');if(elM)elM.textContent=String(m).padStart(2,'0');if(elS)elS.textContent=String(s).padStart(2,'0');
   }
   tick();setInterval(tick,1000);
 })();
@@ -270,21 +284,34 @@ function sharePage(type){
   else if(type==='copy'){navigator.clipboard.writeText(url).then(function(){var b=document.getElementById('share-copy-btn');b.textContent='Copied!';b.style.color='#00E676';setTimeout(function(){b.textContent='Copy Link';b.style.color='#fff';},2000);});}
 }
 
-// Live counters (pull from Supabase if available, otherwise simulate)
+// Live counters (pull from Supabase if available, with 5-min localStorage cache)
 (function(){
   var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
   var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
-  function fetchCount(table,el){
+  var CACHE_KEY='wl_counters_v1';
+  var CACHE_TTL=5*60*1000; // 5 minutes
+  function applyCount(el,val){if(el&&val)el.textContent=Number(val).toLocaleString();}
+  function fetchCount(table,cb){
     fetch(SB_URL+'/rest/v1/'+table+'?select=id&limit=0',{
       headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'count=exact'}
     }).then(function(r){
       var cnt=r.headers.get('content-range');
-      if(cnt){var total=cnt.split('/')[1];if(total&&total!=='*')el.textContent=Number(total).toLocaleString();}
+      if(cnt){var total=cnt.split('/')[1];if(total&&total!=='*')cb(Number(total));}
     }).catch(function(){});
   }
-  fetchCount('companies',document.getElementById('cnt-mfr'));
-  fetchCount('buyers',document.getElementById('cnt-buyer'));
-  fetchCount('products',document.getElementById('cnt-prod'));
+  var cached=null;
+  try{cached=JSON.parse(localStorage.getItem(CACHE_KEY)||'null');}catch(e){}
+  if(cached&&(Date.now()-cached.ts)<CACHE_TTL){
+    applyCount(document.getElementById('cnt-mfr'),cached.mfr);
+    applyCount(document.getElementById('cnt-buyer'),cached.buyer);
+    applyCount(document.getElementById('cnt-prod'),cached.prod);
+  }else{
+    var data={ts:Date.now(),mfr:null,buyer:null,prod:null};
+    function tryCache(){if(data.mfr!==null&&data.buyer!==null&&data.prod!==null){try{localStorage.setItem(CACHE_KEY,JSON.stringify(data));}catch(e){}}}
+    fetchCount('companies',function(n){data.mfr=n;applyCount(document.getElementById('cnt-mfr'),n);tryCache();});
+    fetchCount('buyers',function(n){data.buyer=n;applyCount(document.getElementById('cnt-buyer'),n);tryCache();});
+    fetchCount('products',function(n){data.prod=n;applyCount(document.getElementById('cnt-prod'),n);tryCache();});
+  }
 })();
 
 // Fade-up observer

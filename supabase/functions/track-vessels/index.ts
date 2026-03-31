@@ -175,7 +175,7 @@ async function handleBulkRefresh(
 
   if (error) {
     console.error("Bulk refresh fetch error:", error.message);
-    return new Response(JSON.stringify({ ok: false, error: error.message }), {
+    return new Response(JSON.stringify({ ok: false, error: "Database error. Please try again." }), {
       status: 500,
       headers: corsHeaders,
     });

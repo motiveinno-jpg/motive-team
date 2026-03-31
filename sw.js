@@ -1,5 +1,5 @@
 /* Whistle AI Service Worker — Caching + Web Push */
-var CACHE_VERSION = 'whistle-v3';
+var CACHE_VERSION = 'whistle-v4-20260331';
 var STATIC_ASSETS = [
   '/',
   '/whistle-main.htm',
@@ -8,6 +8,7 @@ var STATIC_ASSETS = [
   '/whistle-icon-512.png',
   '/apple-touch-icon.png',
   '/favicon.svg',
+  '/offline.htm',
 ];
 
 // API / Supabase 요청 패턴 — 캐시 하지 않음
@@ -123,16 +124,19 @@ self.addEventListener('fetch', function(event) {
         return caches.match(req).then(function(cached) {
           if (cached) return cached;
           // 오프라인 폴백
-          return caches.match('/whistle-main.htm').then(function(fallback) {
-            if (fallback) return fallback;
-            return new Response(
-              '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Whistle AI — Offline</title>' +
-              '<style>body{font-family:sans-serif;background:#060B18;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px}' +
-              'h1{font-size:24px}p{color:#999;font-size:14px}button{background:#0088FF;color:#fff;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:14px}</style></head>' +
-              '<body><h1>🔌 오프라인 상태</h1><p>인터넷 연결을 확인해 주세요.</p>' +
-              '<button onclick="location.reload()">다시 시도</button></body></html>',
-              { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-            );
+          return caches.match('/offline.htm').then(function(offline) {
+            if (offline) return offline;
+            return caches.match('/whistle-main.htm').then(function(fallback) {
+              if (fallback) return fallback;
+              return new Response(
+                '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Whistle AI — Offline</title>' +
+                '<style>body{font-family:sans-serif;background:#060B18;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px}' +
+                'h1{font-size:24px}p{color:rgba(255,255,255,.5);font-size:14px}button{background:linear-gradient(135deg,#00D4FF,#0088FF);color:#060B18;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600}</style></head>' +
+                '<body><h1>📡 오프라인 상태</h1><p>인터넷 연결을 확인해 주세요.</p>' +
+                '<button onclick="location.reload()">다시 시도</button></body></html>',
+                { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+              );
+            });
           });
         });
       })

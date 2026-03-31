@@ -133,6 +133,16 @@ function generateContent(
         vessel_flight: deal.vessel ?? PLACEHOLDER,
         port_of_loading: deal.port_of_loading ?? PLACEHOLDER,
         port_of_discharge: deal.port_of_discharge ?? PLACEHOLDER,
+        // 한국 수출 필수 — 통관고유부호 (수출자 세관 고유번호)
+        customs_unique_code: data.sellerCompany?.customs_code ?? data.sellerCompany?.customs_unique_code ?? PLACEHOLDER,
+        // 화인 (박스/화물 식별 마크)
+        marks_and_numbers: deal.marks_and_numbers ?? PLACEHOLDER,
+        // 원산지 국가 (CI 필수 기재)
+        country_of_origin: product.origin_country ?? "Korea (Republic of)",
+        // 총 수량 및 중량 요약
+        total_gross_weight: product.gross_weight ?? PLACEHOLDER,
+        total_net_weight: product.net_weight ?? PLACEHOLDER,
+        total_cbm: product.cbm ?? PLACEHOLDER,
       };
 
     case "PL":
@@ -148,21 +158,57 @@ function generateContent(
         packing_method: deal.packing_method ?? "Carton Box",
       };
 
-    case "CO":
+    case "CO": {
+      const ftaAgreement: string = String(deal.fta_agreement ?? "");
+      const buyerCountry: string = String(buyer.country ?? "");
+      // FTA별 인증기관 및 서식 결정
+      const coFormMap: Record<string, { form: string; certifier: string; authority: string }> = {
+        "KOREA-US FTA": { form: "Form A / KR-US FTA", certifier: "Korea Customs Service (self-certification or KCS)", authority: "KCS" },
+        "KOREA-EU FTA": { form: "EUR.1 / REX Declaration", certifier: "Korea Chamber of Commerce and Industry", authority: "KCCI" },
+        "KOREA-ASEAN FTA": { form: "Form AK", certifier: "Korea Chamber of Commerce and Industry", authority: "KCCI" },
+        "KOREA-CHINA FTA": { form: "Form K", certifier: "Korea Chamber of Commerce and Industry", authority: "KCCI" },
+        "KOREA-JAPAN EPA": { form: "Form K-J", certifier: "Korea Chamber of Commerce and Industry", authority: "KCCI" },
+        "RCEP": { form: "RCEP Form", certifier: "Korea Chamber of Commerce and Industry", authority: "KCCI" },
+      };
+      const coInfo = ftaAgreement && coFormMap[ftaAgreement]
+        ? coFormMap[ftaAgreement]
+        : { form: "General (non-FTA)", certifier: "Korea Chamber of Commerce and Industry", authority: "KCCI" };
+      // 원산지 기준 (원산지 결정 기준)
+      const originCriteria: string = String(deal.origin_criteria ?? (deal.fta_applicable ? "Wholly Obtained (WO)" : PLACEHOLDER));
       return {
         ...base,
         doc_type: "Certificate of Origin",
         doc_number: docNumber,
-        origin_country: product.origin_country ?? "KR",
+        origin_country: product.origin_country ?? "Republic of Korea",
+        origin_country_code: "KR",
         hs_code: product.hs_code ?? PLACEHOLDER,
         goods_description: product.description ?? product.name ?? PLACEHOLDER,
+        // 원산지 결정 기준
+        origin_criteria: originCriteria,
         certifier: {
-          name: "Korea Chamber of Commerce and Industry",
-          authority: "KCCI",
+          name: coInfo.certifier,
+          authority: coInfo.authority,
+          form_type: coInfo.form,
         },
         fta_applicable: deal.fta_applicable ?? false,
-        fta_agreement: deal.fta_agreement ?? PLACEHOLDER,
+        fta_agreement: ftaAgreement || PLACEHOLDER,
+        destination_country: buyerCountry || PLACEHOLDER,
+        exporter: {
+          name: seller.company,
+          address: seller.address,
+          country: "Republic of Korea",
+        },
+        importer: {
+          name: buyer.name,
+          address: buyer.address,
+          country: buyerCountry || PLACEHOLDER,
+        },
+        // CO 서명란 (수출자 자가증명 또는 기관 도장)
+        declaration: language === "ko"
+          ? "본인은 상기 물품이 대한민국에서 생산/제조되었음을 확인합니다."
+          : "The undersigned hereby declares that the above-mentioned goods originated in the Republic of Korea.",
       };
+    }
 
     case "SC":
       return {

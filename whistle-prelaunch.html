@@ -284,21 +284,34 @@ function sharePage(type){
   else if(type==='copy'){navigator.clipboard.writeText(url).then(function(){var b=document.getElementById('share-copy-btn');b.textContent='Copied!';b.style.color='#00E676';setTimeout(function(){b.textContent='Copy Link';b.style.color='#fff';},2000);});}
 }
 
-// Live counters (pull from Supabase if available, otherwise simulate)
+// Live counters (pull from Supabase if available, with 5-min localStorage cache)
 (function(){
   var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
   var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
-  function fetchCount(table,el){
+  var CACHE_KEY='wl_counters_v1';
+  var CACHE_TTL=5*60*1000; // 5 minutes
+  function applyCount(el,val){if(el&&val)el.textContent=Number(val).toLocaleString();}
+  function fetchCount(table,cb){
     fetch(SB_URL+'/rest/v1/'+table+'?select=id&limit=0',{
       headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'count=exact'}
     }).then(function(r){
       var cnt=r.headers.get('content-range');
-      if(cnt){var total=cnt.split('/')[1];if(total&&total!=='*')el.textContent=Number(total).toLocaleString();}
+      if(cnt){var total=cnt.split('/')[1];if(total&&total!=='*')cb(Number(total));}
     }).catch(function(){});
   }
-  fetchCount('companies',document.getElementById('cnt-mfr'));
-  fetchCount('buyers',document.getElementById('cnt-buyer'));
-  fetchCount('products',document.getElementById('cnt-prod'));
+  var cached=null;
+  try{cached=JSON.parse(localStorage.getItem(CACHE_KEY)||'null');}catch(e){}
+  if(cached&&(Date.now()-cached.ts)<CACHE_TTL){
+    applyCount(document.getElementById('cnt-mfr'),cached.mfr);
+    applyCount(document.getElementById('cnt-buyer'),cached.buyer);
+    applyCount(document.getElementById('cnt-prod'),cached.prod);
+  }else{
+    var data={ts:Date.now(),mfr:null,buyer:null,prod:null};
+    function tryCache(){if(data.mfr!==null&&data.buyer!==null&&data.prod!==null){try{localStorage.setItem(CACHE_KEY,JSON.stringify(data));}catch(e){}}}
+    fetchCount('companies',function(n){data.mfr=n;applyCount(document.getElementById('cnt-mfr'),n);tryCache();});
+    fetchCount('buyers',function(n){data.buyer=n;applyCount(document.getElementById('cnt-buyer'),n);tryCache();});
+    fetchCount('products',function(n){data.prod=n;applyCount(document.getElementById('cnt-prod'),n);tryCache();});
+  }
 })();
 
 // Fade-up observer
