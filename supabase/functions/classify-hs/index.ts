@@ -41,6 +41,29 @@ const HS_CHAPTERS: Record<string, string> = {
   "97": "예술품, 골동품",
 };
 
+/* HS코드 형식 검증 */
+// 유효한 章번호 01-97 (77은 예약, 98-99는 국내전용)
+const VALID_CHAPTERS = new Set([
+  1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+  21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,
+  39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,
+  57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,
+  75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,
+  94,95,96,97,
+]);
+
+function validateHsCode(raw: string): { valid: boolean; digits: string; chapter: number; warning?: string } {
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (digits.length < 6 || digits.length > 10) {
+    return { valid: false, digits, chapter: 0, warning: `HS code length invalid (${digits.length} digits; expected 6-10)` };
+  }
+  const chapter = parseInt(digits.substring(0, 2), 10);
+  if (!VALID_CHAPTERS.has(chapter)) {
+    return { valid: false, digits, chapter, warning: `HS Chapter ${String(chapter).padStart(2,"0")} does not exist in the Harmonized System` };
+  }
+  return { valid: true, digits, chapter };
+}
+
 /* 화장품/K-Beauty 세부 HS코드 (가장 빈번한 수출품) */
 const COSMETICS_HS: Record<string, string> = {
   "3304.10": "입술 화장용 제품류 (립스틱, 립글로스 등)",
@@ -348,6 +371,26 @@ Output JSON only.`;
         }
       );
     }
+
+    // ─── HS코드 형식 검증 및 추정 플래그 부착 ───
+    if (result.primary?.code) {
+      const primaryVal = validateHsCode(String(result.primary.code));
+      result.primary.is_estimated = true;
+      result.primary.validated_format = primaryVal.valid;
+      if (!primaryVal.valid) {
+        result.primary.format_warning = primaryVal.warning;
+        console.error(`[classify-hs] Primary code format invalid: ${result.primary.code} — ${primaryVal.warning}`);
+      }
+    }
+    if (Array.isArray(result.alternatives)) {
+      result.alternatives = result.alternatives.map((alt: Record<string, unknown>) => {
+        const v = validateHsCode(String(alt.code || ""));
+        return { ...alt, is_estimated: true, validated_format: v.valid, ...(v.warning ? { format_warning: v.warning } : {}) };
+      });
+    }
+    result.disclaimer = "HS code classification is an AI estimate for reference only. Always verify with your customs broker or the official national tariff schedule before use.";
+    result.disclaimer_ko = "본 HS코드는 AI 추정치로 참고용입니다. 통관 전 반드시 관세사 또는 공식 관세율표를 통해 확인하시기 바랍니다.";
+    // ─── End HS validation ───
 
     // Track usage in rate_limits
     await sbAdmin

@@ -237,6 +237,9 @@ serve(async (req: Request) => {
         JSON.stringify({
           ok: true,
           results: aiResult,
+          is_estimated: true,
+          data_note_ko: "본 관세율은 공개 FTA 협정문 기반 AI 추정치입니다. 최신 개정사항, 품목별 예외조항, 계절관세, TRQ 등이 반영되지 않을 수 있습니다.",
+          data_note: "All tariff rates are AI-estimated values based on publicly available FTA texts. Recent schedule amendments, product exclusions, seasonal duties, and TRQ limitations may not be reflected.",
           ai_disclaimer: "관세율은 AI가 공개 FTA 협정문 기반으로 추정한 값입니다. 실제 통관 시에는 관세청 또는 관세사에게 최종 확인하시기 바랍니다.",
           ai_disclaimer_en: "Tariff rates are AI-estimated based on publicly available FTA agreements. Please verify with customs authorities or a licensed customs broker before actual shipment.",
         }),
@@ -271,6 +274,9 @@ serve(async (req: Request) => {
       JSON.stringify({
         ok: true,
         result,
+        is_estimated: true,
+        data_note_ko: "본 관세율은 공개 FTA 협정문 기반 AI 추정치입니다. 최신 개정사항, 품목별 예외조항, 계절관세, TRQ 등이 반영되지 않을 수 있습니다.",
+        data_note: "All tariff rates are AI-estimated values based on publicly available FTA texts. Recent schedule amendments, product exclusions, seasonal duties, and TRQ limitations may not be reflected.",
         ai_disclaimer: "관세율은 AI가 공개 FTA 협정문 기반으로 추정한 값입니다. 실제 통관 시에는 관세청 또는 관세사에게 최종 확인하시기 바랍니다.",
         ai_disclaimer_en: "Tariff rates are AI-estimated based on publicly available FTA agreements. Please verify with customs authorities or a licensed customs broker before actual shipment.",
       }),
@@ -355,7 +361,8 @@ ${originLabel}이 체결한 FTA를 기준으로 특혜세율을 산출하세요.
 JSON 배열만 출력하세요.`;
 }
 
-async function callAI(apiKey: string, prompt: string) {
+async function callAI(apiKey: string, prompt: string, model?: string) {
+  const resolvedModel = model ?? Deno.env.get("CLAUDE_MODEL") ?? "claude-sonnet-4-6";
   const aiController = new AbortController();
   const aiTimeout = setTimeout(() => aiController.abort(), 30000);
 
@@ -367,7 +374,7 @@ async function callAI(apiKey: string, prompt: string) {
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
+      model: resolvedModel,
       max_tokens: 3000,
       messages: [{ role: "user", content: prompt }],
     }),
