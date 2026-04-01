@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>파트너 신청 | Whistle AI</title>
 <meta name="description" content="Whistle AI 수출 플랫폼 파트너 신청 - 관세사, 포워더, 기타 서비스 제공자">
+<meta property="og:title" content="Whistle AI 파트너 신청">
+<meta property="og:description" content="Whistle AI 수출 플랫폼의 파트너가 되세요. 관세사, 포워더, 기타 서비스 제공자 환영합니다.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://whistle-ai.com/partner-apply">
+<meta property="og:image" content="https://whistle-ai.com/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Whistle AI 파트너 신청">
+<meta name="twitter:description" content="Whistle AI 수출 플랫폼의 파트너가 되어 수출 기업을 도와주세요.">
 <link rel="icon" href="/favicon.ico">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
@@ -442,6 +450,11 @@
     <h2 class="form-title" id="formTitle">파트너 정보 입력</h2>
 
     <div class="error-msg" id="errorMsg"></div>
+    <!-- Honeypot: 봇 방지 (스타일로 숨김 — 사람은 입력 안 함) -->
+    <div style="position:absolute;left:-9999px;top:-9999px;opacity:0;pointer-events:none" aria-hidden="true">
+      <label for="_hp_website">Website</label>
+      <input type="text" id="_hp_website" name="website" tabindex="-1" autocomplete="off">
+    </div>
 
     <!-- Common Fields -->
     <div class="form-row">
@@ -675,8 +688,29 @@
     document.getElementById('errorMsg').classList.remove('visible');
   }
 
+  var _formLoadTime = Date.now();
+
   async function submitApplication() {
     hideError();
+
+    /* Honeypot check: 봇이 숨겨진 필드를 채우면 차단 */
+    if (document.getElementById('_hp_website').value) {
+      console.warn('[spam] honeypot triggered');
+      return;
+    }
+    /* 타이밍 체크: 3초 미만 제출은 봇으로 간주 */
+    if (Date.now() - _formLoadTime < 3000) {
+      showError('잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    /* 재제출 Rate limit: 60초 내 중복 제출 차단 */
+    var SUBMIT_COOLDOWN = 60 * 1000;
+    var lastSubmit = Number(localStorage.getItem('pa_last_submit_ts') || 0);
+    if (lastSubmit && (Date.now() - lastSubmit) < SUBMIT_COOLDOWN) {
+      var remaining = Math.ceil((SUBMIT_COOLDOWN - (Date.now() - lastSubmit)) / 1000);
+      showError('잠시 후 다시 시도해 주세요. (' + remaining + '초 후 가능)');
+      return;
+    }
 
     var companyName = document.getElementById('companyName').value.trim();
     var contactName = document.getElementById('contactName').value.trim();
@@ -772,6 +806,7 @@
         }),
       }).catch(function(e) { console.error('Telegram notify failed:', e); });
 
+      localStorage.setItem('pa_last_submit_ts', String(Date.now()));
       document.getElementById('appForm').style.display = 'none';
       document.getElementById('typeSelector').style.display = 'none';
       document.getElementById('successSection').classList.add('visible');
