@@ -98,8 +98,8 @@ body{height:100dvh;font-family:'Sora','Noto Sans KR',-apple-system,BlinkMacSyste
     <div class="hd-status"><span class="hd-dot"></span>온라인</div>
   </div>
   <div class="hd-right">
+    <div id="rtStatus" style="font-size:10px;color:var(--tx3);display:flex;align-items:center;gap:4px"><span id="rtDot" style="width:6px;height:6px;border-radius:50%;background:var(--tx3);display:inline-block"></span><span id="rtLabel">연결 중</span></div>
     <button class="hd-btn" onclick="clearChat()">초기화</button>
-    <button class="hd-btn" onclick="openSettings()">설정</button>
   </div>
 </div>
 
@@ -119,56 +119,17 @@ body{height:100dvh;font-family:'Sora','Noto Sans KR',-apple-system,BlinkMacSyste
   </div>
 </div>
 
-<div class="modal" id="settingsModal">
-  <div class="modal-box">
-    <div class="modal-title">릴레이 서버 설정</div>
-    <div class="modal-label">릴레이 URL</div>
-    <input class="modal-input" id="relayInput" placeholder="https://xxxx.ngrok-free.dev">
-    <div style="font-size:11px;color:var(--tx3);margin-bottom:14px">아이맥 릴레이 서버 URL을 입력하세요. MOTIVE 웹과 동일한 URL입니다.</div>
-    <div class="modal-btns">
-      <button class="modal-btn modal-cancel" onclick="closeSettings()">취소</button>
-      <button class="modal-btn modal-save" onclick="saveSettings()">저장</button>
-    </div>
-  </div>
-</div>
 
 <script>
-// ── 인증 게이트: MOTIVE 팀 계정만 접근 허용 ──
-(function(){
-  var SB_URL='https://lylktgxngrlxmsldxdqj.supabase.co';
-  var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
-  // 허용 도메인: motiveinno.com 이메일 또는 admin 역할
-  var ALLOWED_DOMAINS = ['motiveinno.com', 'mo-tive.com'];
-  var sb = window.supabase.createClient(SB_URL, SB_KEY);
-  sb.auth.getSession().then(function(res){
-    var session = res.data && res.data.session;
-    if(!session){
-      window.location.replace('/ko?redirect=chat');
-      return;
-    }
-    var email = session.user && session.user.email || '';
-    var domain = email.split('@')[1] || '';
-    var isAllowed = ALLOWED_DOMAINS.includes(domain);
-    if(!isAllowed){
-      // 역할 추가 확인 (admin)
-      sb.from('users').select('role').eq('id', session.user.id).single().then(function(r){
-        if(!r.data || r.data.role !== 'admin'){
-          sb.auth.signOut();
-          window.location.replace('/ko');
-        }
-      });
-    }
-  }).catch(function(){
-    window.location.replace('/ko');
-  });
-})();
-
+/* ── Supabase Realtime 기반 CEO 직통 채팅 (M16) ── */
+const SB_URL  = 'https://lylktgxngrlxmsldxdqj.supabase.co';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx5bGt0Z3huZ3JseG1zbGR4ZHFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MTQ2OTAsImV4cCI6MjA4NzM5MDY5MH0.8kgcDCMBT_STf43MVkeUUiq-K6r-Ytp3nUQ6d-nL2D0';
 const CHANNEL = 'ceo-direct';
-let relayUrl = localStorage.getItem('pm-relay') || '';
-let messages = [];
+const ALLOWED_DOMAINS = ['motiveinno.com', 'mo-tive.com'];
+
+const sb = window.supabase.createClient(SB_URL, SB_KEY);
 let sending = false;
-let syncTimer = null;
-let lastSyncCount = 0;
+let authToken = '';
 
 function now(){const d=new Date();return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0')}
 
@@ -184,32 +145,42 @@ function fmt(text){
     : escaped;
 }
 
-function render(){
+function setStatus(connected){
+  const dot=document.getElementById('rtDot');
+  const lbl=document.getElementById('rtLabel');
+  if(dot){dot.style.background=connected?'var(--ac)':'#ff6b6b';}
+  if(lbl){lbl.textContent=connected?'실시간 연결':'연결 끊김';}
+}
+
+function appendMessage(role, content, time){
   const box=document.getElementById('msgs');
-  if(!messages.length){
-    box.innerHTML=`<div class="welcome">
-      <div class="welcome-icon">PM</div>
-      <h2>하준 PM</h2>
-      <p>채희웅 대표님, 안녕하세요!<br>무엇이든 편하게 말씀해주세요.</p>
-      <div class="quick-btns">
-        <button class="quick-btn" onclick="quickSend('오늘 할 일 정리해줘')">오늘 할 일</button>
-        <button class="quick-btn" onclick="quickSend('진행 상황 알려줘')">진행 상황</button>
-        <button class="quick-btn" onclick="quickSend('새 프로젝트 아이디어 논의하자')">새 프로젝트</button>
-      </div>
+  const welcome=box.querySelector('.welcome');
+  if(welcome)welcome.remove();
+  const isMe=role==='user';
+  const div=document.createElement('div');
+  div.className='msg'+(isMe?' me':'');
+  div.innerHTML=`<div class="msg-av">${isMe?'채':'PM'}</div>
+    <div class="msg-body">
+      <div class="msg-text">${fmt(content)}</div>
+      <div class="msg-time">${time||''}</div>
     </div>`;
-    return;
-  }
-  box.innerHTML=messages.map(m=>{
-    const isMe=m.role==='user';
-    return`<div class="msg ${isMe?'me':''}">
-      <div class="msg-av">${isMe?'채':'PM'}</div>
-      <div class="msg-body">
-        <div class="msg-text">${fmt(m.content)}</div>
-        <div class="msg-time">${m.time||''}</div>
-      </div>
-    </div>`;
-  }).join('');
+  box.appendChild(div);
   box.scrollTop=box.scrollHeight;
+}
+
+function renderWelcome(){
+  const box=document.getElementById('msgs');
+  if(box.querySelector('.msg'))return;
+  box.innerHTML=`<div class="welcome">
+    <div class="welcome-icon">PM</div>
+    <h2>하준 PM</h2>
+    <p>채희웅 대표님, 안녕하세요!<br>무엇이든 편하게 말씀해주세요.</p>
+    <div class="quick-btns">
+      <button class="quick-btn" onclick="quickSend('오늘 할 일 정리해줘')">오늘 할 일</button>
+      <button class="quick-btn" onclick="quickSend('진행 상황 알려줘')">진행 상황</button>
+      <button class="quick-btn" onclick="quickSend('새 프로젝트 아이디어 논의하자')">새 프로젝트</button>
+    </div>
+  </div>`;
 }
 
 function autoResize(el){
@@ -218,13 +189,46 @@ function autoResize(el){
   document.getElementById('sendBtn').disabled=!el.value.trim();
 }
 
-function onKey(e){
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}
+function onKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}
+
+function quickSend(text){document.getElementById('inp').value=text;send();}
+
+async function loadHistory(){
+  const {data}=await sb.from('ceo_chat_messages')
+    .select('role,content,created_at')
+    .eq('channel_id',CHANNEL)
+    .order('created_at',{ascending:true})
+    .limit(50);
+  if(data&&data.length){
+    data.forEach(m=>{
+      const t=m.created_at?new Date(m.created_at).getHours()+':'+String(new Date(m.created_at).getMinutes()).padStart(2,'0'):'';
+      appendMessage(m.role,m.content,t);
+    });
+  }else{
+    renderWelcome();
+  }
 }
 
-function quickSend(text){
-  document.getElementById('inp').value=text;
-  send();
+function subscribeRealtime(){
+  sb.channel('ceo_chat:'+CHANNEL)
+    .on('postgres_changes',{
+      event:'INSERT',
+      schema:'public',
+      table:'ceo_chat_messages',
+      filter:'channel_id=eq.'+CHANNEL
+    },function(payload){
+      const m=payload.new;
+      if(m.role==='assistant'){
+        document.getElementById('typing').classList.remove('show');
+        const t=m.created_at?new Date(m.created_at).getHours()+':'+String(new Date(m.created_at).getMinutes()).padStart(2,'0'):'';
+        appendMessage('assistant',m.content,t);
+        sending=false;
+        document.getElementById('sendBtn').disabled=false;
+      }
+    })
+    .subscribe(function(status){
+      setStatus(status==='SUBSCRIBED');
+    });
 }
 
 async function send(){
@@ -232,87 +236,40 @@ async function send(){
   const text=inp.value.trim();
   if(!text||sending)return;
 
-  if(!relayUrl){openSettings();return}
-
-  messages.push({role:'user',content:text,time:now()});
-  render();
+  appendMessage('user',text,now());
   inp.value='';inp.style.height='auto';
   document.getElementById('sendBtn').disabled=true;
-
   sending=true;
   document.getElementById('typing').classList.add('show');
 
   try{
-    const r=await fetch(relayUrl.replace(/\/$/,'')+'/api/chat',{
+    const res=await fetch(SB_URL+'/functions/v1/ceo-chat',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Bypass-Tunnel-Reminder':'true','ngrok-skip-browser-warning':'true'},
-      body:JSON.stringify({
-        system:'너는 하준 PM이다. 채희웅 대표님의 첫 번째 AI 파트너. 항상 한글로, 친근하고 유능하게 대화한다. 대표님이 묻는 것에 직접적으로 답하고, 필요하면 팀원을 언급한다. 짧고 핵심적으로 답한다.',
-        message:text,
-        channelId:CHANNEL
-      })
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+authToken,
+        'apikey':SB_KEY,
+      },
+      body:JSON.stringify({message:text,channel_id:CHANNEL})
     });
-    const d=await r.json();
-    if(d.ok&&d.text){
-      messages.push({role:'assistant',content:d.text,time:now()});
-    }else{
-      messages.push({role:'assistant',content:'연결 오류: '+(d.error||'응답 없음'),time:now()});
+    if(!res.ok){
+      const err=await res.json().catch(()=>({}));
+      throw new Error(err.error||'서버 오류');
     }
+    // 응답은 Realtime으로 수신됨 — 여기선 별도 처리 불필요
   }catch(e){
-    messages.push({role:'assistant',content:'서버 연결 실패. 설정에서 릴레이 URL을 확인해주세요.',time:now()});
+    document.getElementById('typing').classList.remove('show');
+    appendMessage('assistant','⚠️ 오류: '+(e.message||'연결 실패'),now());
+    sending=false;
+    document.getElementById('sendBtn').disabled=false;
   }
-
-  sending=false;
-  document.getElementById('typing').classList.remove('show');
-  render();
-  // 서버와 다시 동기화
-  setTimeout(syncFromServer,500);
 }
 
-function clearChat(){
+async function clearChat(){
   if(!confirm('대화 내용을 초기화할까요?'))return;
-  messages=[];lastSyncCount=0;
-  render();
-  if(relayUrl){fetch(relayUrl.replace(/\/$/,'')+'/api/history/'+CHANNEL,{method:'DELETE',headers:{'Bypass-Tunnel-Reminder':'true'}}).catch(()=>{});}
-}
-
-function openSettings(){document.getElementById('settingsModal').classList.add('show');document.getElementById('relayInput').value=relayUrl}
-function closeSettings(){document.getElementById('settingsModal').classList.remove('show')}
-function saveSettings(){
-  relayUrl=document.getElementById('relayInput').value.trim();
-  localStorage.setItem('pm-relay',relayUrl);
-  closeSettings();
-  startSync();
-}
-
-// 서버에서 히스토리 동기화
-async function syncFromServer(){
-  if(!relayUrl||sending)return;
-  try{
-    const r=await fetch(relayUrl.replace(/\/$/,'')+'/api/history/'+CHANNEL,{
-      headers:{'Bypass-Tunnel-Reminder':'true','ngrok-skip-browser-warning':'true'}
-    });
-    const d=await r.json();
-    if(d.ok&&d.history){
-      const serverCount=d.history.length;
-      if(serverCount!==lastSyncCount){
-        lastSyncCount=serverCount;
-        // 서버 히스토리를 로컬 시간 포맷으로 변환
-        messages=d.history.map(m=>{
-          let t='';
-          if(m.time){try{const dt=new Date(m.time);t=dt.getHours()+':'+String(dt.getMinutes()).padStart(2,'0')}catch(e){}}
-          return{role:m.role,content:m.content,time:t||m.time||''};
-        });
-        render();
-      }
-    }
-  }catch(e){}
-}
-
-function startSync(){
-  if(syncTimer)clearInterval(syncTimer);
-  syncFromServer();
-  syncTimer=setInterval(syncFromServer,3000);
+  await sb.from('ceo_chat_messages').delete().eq('channel_id',CHANNEL);
+  document.getElementById('msgs').innerHTML='';
+  renderWelcome();
 }
 
 // iOS 키보드 대응
@@ -325,9 +282,24 @@ document.getElementById('inp').addEventListener('focus',()=>{
   setTimeout(()=>document.getElementById('inp').scrollIntoView({block:'end',behavior:'smooth'}),300);
 });
 
-// 초기화
-render();
-if(!relayUrl){setTimeout(openSettings,500)}else{startSync()}
+// ── 인증 후 초기화 ──
+(async function init(){
+  const {data:{session},error}=await sb.auth.getSession();
+  if(error||!session){window.location.replace('/ko?redirect=chat');return;}
+
+  const email=session.user.email||'';
+  const domain=email.split('@')[1]||'';
+  const domainOk=ALLOWED_DOMAINS.includes(domain);
+
+  if(!domainOk){
+    const {data:u}=await sb.from('users').select('role').eq('id',session.user.id).single();
+    if(!u||u.role!=='admin'){sb.auth.signOut();window.location.replace('/ko');return;}
+  }
+
+  authToken=session.access_token;
+  await loadHistory();
+  subscribeRealtime();
+})();
 </script>
 </body>
 </html>
