@@ -40,3 +40,15 @@ if [ $CHANGED -eq 0 ]; then
 else
   echo "📋 총 ${CHANGED}개 파일 동기화 완료"
 fi
+
+# SW 캐시 버전 자동 갱신 (배포 시마다 새 버전으로 캐시 무효화)
+SW_FILE="sw.js"
+if [ -f "$SW_FILE" ]; then
+  NEW_VERSION="whistle-v$(date '+%Y%m%d-%H%M')"
+  CURRENT=$(grep -o "whistle-v[0-9A-Z_-]*" "$SW_FILE" | head -1)
+  if [ "$CURRENT" != "$NEW_VERSION" ]; then
+    sed -i '' "s/${CURRENT}/${NEW_VERSION}/g" "$SW_FILE" 2>/dev/null || \
+    sed -i "s/${CURRENT}/${NEW_VERSION}/g" "$SW_FILE"
+    echo "🔄 SW 캐시 버전 갱신: ${CURRENT} → ${NEW_VERSION}"
+  fi
+fi
