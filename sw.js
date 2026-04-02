@@ -1,8 +1,6 @@
 /* Whistle AI Service Worker — Caching + Web Push */
-var CACHE_VERSION = 'whistle-v20260402-2238';
+var CACHE_VERSION = 'whistle-v20260403-0031';
 var STATIC_ASSETS = [
-  '/',
-  '/whistle-main.htm',
   '/manifest.webmanifest',
   '/whistle-icon-192.png',
   '/whistle-icon-512.png',
@@ -44,7 +42,7 @@ self.addEventListener('install', function(event) {
   );
 });
 
-// ── Activate: 이전 버전 캐시 정리 ──
+// ── Activate: 이전 버전 캐시 정리 + HTML 캐시 퍼지 ──
 self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
@@ -53,6 +51,27 @@ self.addEventListener('activate', function(event) {
           .filter(function(name) { return name !== CACHE_VERSION; })
           .map(function(name) { return caches.delete(name); })
       );
+    }).then(function() {
+      // 현재 캐시에서 HTML 항목 제거 (이전 버전 잔여분)
+      return caches.open(CACHE_VERSION).then(function(cache) {
+        return cache.keys().then(function(keys) {
+          return Promise.all(
+            keys.filter(function(req) {
+              var url = req.url;
+              return url.endsWith('.html') || url.endsWith('.htm') || url.endsWith('/');
+            }).map(function(req) {
+              return cache.delete(req);
+            })
+          );
+        });
+      });
+    }).then(function() {
+      // 모든 클라이언트에 업데이트 알림 → 자동 리로드
+      return self.clients.matchAll({ type: 'window' }).then(function(clients) {
+        clients.forEach(function(client) {
+          client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION });
+        });
+      });
     }).then(function() {
       return self.clients.claim();
     })
@@ -109,35 +128,20 @@ self.addEventListener('fetch', function(event) {
     return;
   }
 
-  // HTML 페이지: 네트워크 우선, 실패 시 캐시 폴백
+  // HTML 페이지: 네트워크 전용 (캐싱 안 함) — 오프라인 시 폴백만 제공
   if (req.headers.get('Accept') && req.headers.get('Accept').includes('text/html')) {
     event.respondWith(
-      fetch(req).then(function(res) {
-        if (res && res.status === 200) {
-          var resClone = res.clone();
-          caches.open(CACHE_VERSION).then(function(cache) {
-            cache.put(req, resClone);
-          });
-        }
-        return res;
-      }).catch(function() {
-        return caches.match(req).then(function(cached) {
-          if (cached) return cached;
-          // 오프라인 폴백
-          return caches.match('/offline.htm').then(function(offline) {
-            if (offline) return offline;
-            return caches.match('/whistle-main.htm').then(function(fallback) {
-              if (fallback) return fallback;
-              return new Response(
-                '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Whistle AI — Offline</title>' +
-                '<style>body{font-family:sans-serif;background:#060B18;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px}' +
-                'h1{font-size:24px}p{color:rgba(255,255,255,.5);font-size:14px}button{background:linear-gradient(135deg,#00D4FF,#0088FF);color:#060B18;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600}</style></head>' +
-                '<body><h1>📡 오프라인 상태</h1><p>인터넷 연결을 확인해 주세요.</p>' +
-                '<button onclick="location.reload()">다시 시도</button></body></html>',
-                { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-              );
-            });
-          });
+      fetch(req).catch(function() {
+        return caches.match('/offline.htm').then(function(offline) {
+          if (offline) return offline;
+          return new Response(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Whistle AI — Offline</title>' +
+            '<style>body{font-family:sans-serif;background:#060B18;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px}' +
+            'h1{font-size:24px}p{color:rgba(255,255,255,.5);font-size:14px}button{background:linear-gradient(135deg,#00D4FF,#0088FF);color:#060B18;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600}</style></head>' +
+            '<body><h1>Offline</h1><p>Please check your internet connection.</p>' +
+            '<button onclick="location.reload()">Retry</button></body></html>',
+            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          );
         });
       })
     );
