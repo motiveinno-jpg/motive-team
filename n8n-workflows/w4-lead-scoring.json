@@ -1,0 +1,120 @@
+{
+  "name": "W4: Lead Scoring & Alert Engine",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-event",
+        "options": {}
+      },
+      "name": "Webhook (Lead Event)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $json;\nconst eventType = event.event_type || event.type;\nconst leadId = event.lead_id;\n\n// Scoring rules\nconst scoreMap = {\n  'email_open': 5,\n  'email_click': 15,\n  'email_reply': 30,\n  'signup': 50,\n  'analysis_run': 25,\n  'product_view': 10,\n  'rfq_sent': 40,\n  'payment': 100\n};\n\nconst scoreChange = scoreMap[eventType] || 0;\n\nreturn [{\n  json: {\n    lead_id: leadId,\n    event_type: eventType,\n    score_change: scoreChange,\n    metadata: event.metadata || {}\n  }\n}];"
+      },
+      "name": "Calculate Score Change",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?id=eq.{{ $json.lead_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=representation"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  score: { $inc: $json.score_change },\n  updated_at: new Date().toISOString()\n}) }}"
+      },
+      "name": "Update Lead Score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  lead_id: $json.lead_id,\n  event_type: $json.event_type,\n  metadata: $json.metadata\n}) }}"
+      },
+      "name": "Log Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 480]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "1", "leftValue": "={{ $json.score_change }}", "rightValue": 25, "operator": {"type": "number", "operation": "gte"}}
+          ]
+        }
+      },
+      "name": "High Score Event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TG_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chat_id: $env.TG_CEO_CHAT_ID,\n  text: '🔥 High-Value Lead Activity!\\n\\nEvent: ' + $json.event_type + '\\nScore Change: +' + $json.score_change + '\\nLead ID: ' + $json.lead_id + '\\n\\n→ Check admin: https://whistle-ai.com/admin',\n  parse_mode: 'HTML'\n}) }}"
+      },
+      "name": "Alert CEO",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 200]
+    }
+  ],
+  "connections": {
+    "Webhook (Lead Event)": {
+      "main": [[{"node": "Calculate Score Change", "type": "main", "index": 0}]]
+    },
+    "Calculate Score Change": {
+      "main": [
+        [
+          {"node": "Update Lead Score", "type": "main", "index": 0},
+          {"node": "Log Event", "type": "main", "index": 0},
+          {"node": "High Score Event?", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "High Score Event?": {
+      "main": [
+        [{"node": "Alert CEO", "type": "main", "index": 0}],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [{"name": "whistle-ai"}, {"name": "lead-scoring"}]
+}

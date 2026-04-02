@@ -1,0 +1,130 @@
+{
+  "name": "W5: Daily Outreach Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 0 * * *"}]
+        }
+      },
+      "name": "Daily 9 AM KST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?select=id,lead_type,score,created_at&created_at=gte.{{ new Date(Date.now() - 86400000).toISOString() }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"}
+          ]
+        }
+      },
+      "name": "Fetch New Leads (24h)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_queue?select=id,status,sent_at,opened_at,clicked_at&created_at=gte.{{ new Date(Date.now() - 86400000).toISOString() }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"}
+          ]
+        }
+      },
+      "name": "Fetch Email Stats (24h)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 420]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/users?select=id,role,created_at&created_at=gte.{{ new Date(Date.now() - 86400000).toISOString() }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"}
+          ]
+        }
+      },
+      "name": "Fetch New Signups (24h)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 560]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.first()?.json || [];\nconst emails = $input.all()[1]?.json || [];\nconst signups = $input.all()[2]?.json || [];\n\nconst leadsArr = Array.isArray(leads) ? leads : [];\nconst emailsArr = Array.isArray(emails) ? emails : [];\nconst signupsArr = Array.isArray(signups) ? signups : [];\n\nconst newLeads = leadsArr.length;\nconst mfgLeads = leadsArr.filter(l => l.lead_type === 'manufacturer').length;\nconst buyerLeads = leadsArr.filter(l => l.lead_type === 'buyer').length;\nconst highScoreLeads = leadsArr.filter(l => l.score >= 50).length;\n\nconst sent = emailsArr.filter(e => e.status === 'sent').length;\nconst opened = emailsArr.filter(e => e.opened_at).length;\nconst clicked = emailsArr.filter(e => e.clicked_at).length;\nconst openRate = sent > 0 ? (opened / sent * 100).toFixed(1) : '0';\nconst clickRate = sent > 0 ? (clicked / sent * 100).toFixed(1) : '0';\n\nconst newUsers = signupsArr.length;\nconst newMfg = signupsArr.filter(u => u.role === 'client').length;\nconst newBuyers = signupsArr.filter(u => u.role === 'buyer').length;\n\nconst date = new Date().toLocaleDateString('ko-KR', {year:'numeric', month:'long', day:'numeric', weekday:'long'});\n\nconst msg = `📊 Whistle AI Daily Report\\n${date}\\n\\n` +\n  `🎯 New Leads: ${newLeads}\\n` +\n  `  - Manufacturers: ${mfgLeads}\\n` +\n  `  - Buyers: ${buyerLeads}\\n` +\n  `  - High Score (50+): ${highScoreLeads}\\n\\n` +\n  `📧 Emails (24h):\\n` +\n  `  - Sent: ${sent}\\n` +\n  `  - Opened: ${opened} (${openRate}%)\\n` +\n  `  - Clicked: ${clicked} (${clickRate}%)\\n\\n` +\n  `👥 New Signups: ${newUsers}\\n` +\n  `  - Manufacturers: ${newMfg}\\n` +\n  `  - Buyers: ${newBuyers}\\n\\n` +\n  `🔗 Admin: https://whistle-ai.com/admin`;\n\nreturn [{json: {message: msg}}];"
+      },
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TG_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chat_id: $env.TG_CEO_CHAT_ID,\n  text: $json.message,\n  parse_mode: 'HTML'\n}) }}"
+      },
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    }
+  ],
+  "connections": {
+    "Daily 9 AM KST": {
+      "main": [
+        [
+          {"node": "Fetch New Leads (24h)", "type": "main", "index": 0},
+          {"node": "Fetch Email Stats (24h)", "type": "main", "index": 0},
+          {"node": "Fetch New Signups (24h)", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Fetch New Leads (24h)": {
+      "main": [[{"node": "Merge All Data", "type": "main", "index": 0}]]
+    },
+    "Fetch Email Stats (24h)": {
+      "main": [[{"node": "Merge All Data", "type": "main", "index": 1}]]
+    },
+    "Fetch New Signups (24h)": {
+      "main": [[{"node": "Build Report", "type": "main", "index": 0}]]
+    },
+    "Merge All Data": {
+      "main": [[{"node": "Build Report", "type": "main", "index": 0}]]
+    },
+    "Build Report": {
+      "main": [[{"node": "Send to Telegram", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [{"name": "whistle-ai"}, {"name": "reporting"}]
+}

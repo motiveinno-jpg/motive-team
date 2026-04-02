@@ -1,0 +1,144 @@
+{
+  "name": "W1: Apollo.io Lead Import",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "hours", "hoursInterval": 24}]
+        }
+      },
+      "name": "Daily Trigger (2 AM KST)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/v1/mixed_people/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Cache-Control", "value": "no-cache"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  api_key: $env.APOLLO_API_KEY,\n  q_organization_keyword_tags: ['manufacturer', 'OEM', 'ODM', 'exporter'],\n  person_titles: ['CEO', 'COO', 'VP Sales', 'Export Manager', 'International Sales', 'Business Development'],\n  organization_num_employees_ranges: ['11,50', '51,200', '201,500'],\n  person_locations: ['South Korea', 'Japan', 'Germany', 'United States', 'Vietnam', 'Thailand', 'India', 'China'],\n  page: 1,\n  per_page: 25\n}) }}"
+      },
+      "name": "Apollo Search Manufacturers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/v1/mixed_people/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Cache-Control", "value": "no-cache"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  api_key: $env.APOLLO_API_KEY,\n  q_organization_keyword_tags: ['importer', 'distributor', 'procurement', 'sourcing', 'trading company'],\n  person_titles: ['Procurement Manager', 'Sourcing Director', 'Import Manager', 'Buyer', 'Supply Chain'],\n  organization_num_employees_ranges: ['11,50', '51,200', '201,1000'],\n  person_locations: ['United States', 'Germany', 'United Kingdom', 'France', 'Canada', 'Australia', 'UAE', 'Singapore'],\n  page: 1,\n  per_page: 25\n}) }}"
+      },
+      "name": "Apollo Search Buyers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 420]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "fieldsToMatch": {
+          "values": [{"field1": "id", "field2": "id"}]
+        },
+        "options": {}
+      },
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform Apollo results to leads format\nconst items = $input.all();\nconst leads = [];\n\nfor (const item of items) {\n  const people = item.json.people || [];\n  for (const p of people) {\n    if (!p.email) continue;\n    \n    const org = p.organization || {};\n    const country = (p.country || org.country || '').toUpperCase();\n    const countryMap = {\n      'SOUTH KOREA': 'KR', 'KOREA': 'KR', 'JAPAN': 'JP',\n      'GERMANY': 'DE', 'UNITED STATES': 'US', 'USA': 'US',\n      'VIETNAM': 'VN', 'THAILAND': 'TH', 'INDIA': 'IN',\n      'CHINA': 'CN', 'UNITED KINGDOM': 'GB', 'UK': 'GB',\n      'FRANCE': 'FR', 'CANADA': 'CA', 'AUSTRALIA': 'AU',\n      'UAE': 'AE', 'SINGAPORE': 'SG'\n    };\n    const countryCode = countryMap[country] || country.substring(0, 2);\n    \n    // Determine lead type from search context\n    const titles = (p.title || '').toLowerCase();\n    const isManufacturer = titles.includes('export') || \n      titles.includes('ceo') || titles.includes('manufacturing');\n    const leadType = isManufacturer ? 'manufacturer' : 'buyer';\n    \n    // Score based on data completeness\n    let score = 10;\n    if (p.email_status === 'verified') score += 10;\n    if (p.phone_numbers?.length) score += 5;\n    if (org.website_url) score += 5;\n    if (org.estimated_num_employees > 50) score += 5;\n    \n    leads.push({\n      json: {\n        source: 'apollo',\n        company_name: org.name || '',\n        contact_name: p.name || (p.first_name + ' ' + p.last_name),\n        email: p.email,\n        phone: p.phone_numbers?.[0]?.sanitized_number || null,\n        website: org.website_url || null,\n        category: org.industry || null,\n        region: countryCode,\n        country: countryCode,\n        lead_type: leadType,\n        segment: leadType === 'manufacturer' ? 'global_mfg' : 'global_buyer',\n        score: score,\n        raw_data: {\n          apollo_id: p.id,\n          title: p.title,\n          linkedin_url: p.linkedin_url,\n          org_id: org.id,\n          employees: org.estimated_num_employees,\n          industry: org.industry,\n          keywords: org.keywords\n        }\n      }\n    });\n  }\n}\n\nreturn leads;"
+      },
+      "name": "Transform to Lead Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "resolution=merge-duplicates"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  source: $json.source,\n  company_name: $json.company_name,\n  contact_name: $json.contact_name,\n  email: $json.email,\n  phone: $json.phone,\n  website: $json.website,\n  category: $json.category,\n  region: $json.region,\n  country: $json.country,\n  lead_type: $json.lead_type,\n  segment: $json.segment,\n  score: $json.score,\n  raw_data: $json.raw_data\n}) }}"
+      },
+      "name": "Upsert to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TG_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chat_id: $env.TG_CEO_CHAT_ID,\n  text: '🎯 Lead Import Complete\\n\\nNew leads added: ' + $input.all().length + '\\nSource: Apollo.io\\nTime: ' + new Date().toISOString(),\n  parse_mode: 'HTML'\n}) }}"
+      },
+      "name": "Notify CEO via Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 300]
+    }
+  ],
+  "connections": {
+    "Daily Trigger (2 AM KST)": {
+      "main": [
+        [
+          {"node": "Apollo Search Manufacturers", "type": "main", "index": 0},
+          {"node": "Apollo Search Buyers", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Apollo Search Manufacturers": {
+      "main": [[{"node": "Merge Results", "type": "main", "index": 0}]]
+    },
+    "Apollo Search Buyers": {
+      "main": [[{"node": "Merge Results", "type": "main", "index": 1}]]
+    },
+    "Merge Results": {
+      "main": [[{"node": "Transform to Lead Format", "type": "main", "index": 0}]]
+    },
+    "Transform to Lead Format": {
+      "main": [[{"node": "Upsert to Supabase", "type": "main", "index": 0}]]
+    },
+    "Upsert to Supabase": {
+      "main": [[{"node": "Notify CEO via Telegram", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [{"name": "whistle-ai"}, {"name": "lead-generation"}]
+}
