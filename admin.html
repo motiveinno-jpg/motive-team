@@ -1454,7 +1454,7 @@ var S={
   _buyerVerifyTab:'pending',_sanctionsFilter:'all',_briefTab:'all',_locTab:'all',
   _settingsTab:'api',_certFilter:'all',_logisticsFilter:'all',
   marketingCampaigns:[],marketingEvents:[],marketingAutomations:[],_mktTab:'overview',
-  outreachCampaigns:[],outreachSends:[],outreachContacts:[],
+  outreachCampaigns:[],outreachSends:[],outreachContacts:[],outreachLeads:[],outreachEmailEvents:[],outreachEmailQueue:[],
   billingEvents:[],usageEvents:[],invoices:[],revenueConfig:[]
 };
 
@@ -1529,6 +1529,9 @@ function loadAll(){
     sb.from('outreach_campaigns').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.outreachCampaigns=r.data||[];}),
     sb.from('outreach_sends').select('*').order('sent_at',{ascending:false}).limit(500).then(function(r){S.outreachSends=r.data||[];}),
     sb.from('outreach_contacts').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.outreachContacts=r.data||[];}),
+    sb.from('leads').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.outreachLeads=r.data||[];}),
+    sb.from('email_events').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.outreachEmailEvents=r.data||[];}),
+    sb.from('email_queue').select('*').order('created_at',{ascending:false}).limit(500).then(function(r){S.outreachEmailQueue=r.data||[];}),
     sb.from('service_providers').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.serviceProviders=r.data||[];}),
     sb.from('deal_sp_assignments').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.spAssignments=r.data||[];}),
     sb.from('sp_reviews').select('*').order('created_at',{ascending:false}).limit(200).then(function(r){S.spReviews=r.data||[];}),
@@ -7107,22 +7110,73 @@ function _mktOutreach(){
   var campaigns=S.outreachCampaigns||[];
   var sends=S.outreachSends||[];
   var contacts=S.outreachContacts||[];
+  var leads=S.outreachLeads||[];
+  var emailEvents=S.outreachEmailEvents||[];
+  var emailQueue=S.outreachEmailQueue||[];
   var h='';
 
-  // Stats cards
+  // Lead stats
+  var totalLeads=leads.length;
+  var hotLeads=leads.filter(function(l){return (l.score||0)>=50;}).length;
+  var warmLeads=leads.filter(function(l){return (l.score||0)>=20&&(l.score||0)<50;}).length;
+  var coldLeads=leads.filter(function(l){return (l.score||0)<20;}).length;
+  var leadsByCountry={};
+  leads.forEach(function(l){if(l.country){leadsByCountry[l.country]=(leadsByCountry[l.country]||0)+1;}});
+  var topCountries=Object.keys(leadsByCountry).sort(function(a,b){return leadsByCountry[b]-leadsByCountry[a];}).slice(0,5);
+
+  // Email event stats
+  var clickEvents=emailEvents.filter(function(e){return e.event_type==='email_click';}).length;
+  var replyEvents=emailEvents.filter(function(e){return e.event_type==='email_reply';}).length;
+  var bounceEvents=emailEvents.filter(function(e){return e.event_type==='email_bounce';}).length;
+
+  // Queue stats
+  var queuePending=emailQueue.filter(function(q){return q.status==='pending';}).length;
+  var queueSent=emailQueue.filter(function(q){return q.status==='sent';}).length;
+
+  // Lead Pipeline
+  h+='<div style="margin-bottom:12px;font-size:14px;font-weight:700">'+(_isKorean?'📊 리드 파이프라인':'📊 Lead Pipeline')+'</div>';
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.statCard(_isKorean?'총 리드':'Total Leads',totalLeads,'🎯','')+
+    UI.statCard(_isKorean?'핫 리드 (50+)':'Hot (50+)',hotLeads,'🔥','')+
+    UI.statCard(_isKorean?'웜 리드 (20-49)':'Warm (20-49)',warmLeads,'🌡️','')+
+    UI.statCard(_isKorean?'콜드 리드 (<20)':'Cold (<20)',coldLeads,'❄️','')+
+  '</div>';
+
+  // Top countries
+  if(topCountries.length){
+    h+='<div class="card" style="margin-bottom:16px"><div class="card-h">'+(_isKorean?'국가별 리드':'Leads by Country')+'</div><div class="card-b" style="display:flex;gap:8px;flex-wrap:wrap">';
+    topCountries.forEach(function(c){
+      h+='<span class="badge badge-pri" style="font-size:12px">'+esc(c)+' <b>'+leadsByCountry[c]+'</b></span>';
+    });
+    h+='</div></div>';
+  }
+
+  // Outreach stats
   var totalContacts=contacts.length;
   var totalSent=sends.filter(function(s){return s.status==='sent';}).length;
   var totalFailed=sends.filter(function(s){return s.status==='failed';}).length;
   var totalOpened=sends.filter(function(s){return s.opened_at;}).length;
   var openRate=totalSent>0?Math.round(totalOpened/totalSent*1000)/10:0;
+  var clickRate=totalSent>0?Math.round(clickEvents/totalSent*1000)/10:0;
+  var replyRate=totalSent>0?Math.round(replyEvents/totalSent*1000)/10:0;
   var catCounts={};
   contacts.forEach(function(c){catCounts[c.category]=(catCounts[c.category]||0)+1;});
 
-  h+='<div class="grid-4" style="margin-bottom:16px">'+
+  h+='<div style="margin-bottom:12px;margin-top:8px;font-size:14px;font-weight:700">'+(_isKorean?'📧 이메일 성과':'📧 Email Performance')+'</div>';
+  h+='<div class="grid-5" style="margin-bottom:16px">'+
     UI.statCard(AT('total_contacts'),totalContacts,'👥','')+
     UI.statCard(AT('sent_ok'),totalSent,'✅','')+
-    UI.statCard(AT('failed2'),totalFailed,'❌','')+
     UI.statCard(AT('open_rate'),openRate+'%','📬','')+
+    UI.statCard(_isKorean?'클릭률':'Click Rate',clickRate+'%','🔗','')+
+    UI.statCard(_isKorean?'답장률':'Reply Rate',replyRate+'%','💬','')+
+  '</div>';
+
+  // Queue status + bounce
+  h+='<div class="grid-4" style="margin-bottom:16px">'+
+    UI.statCard(_isKorean?'대기 중':'Queue Pending',queuePending,'⏳','')+
+    UI.statCard(_isKorean?'발송 완료':'Queue Sent',queueSent,'📤','')+
+    UI.statCard(_isKorean?'반송':'Bounced',bounceEvents,'🔴','')+
+    UI.statCard(AT('failed2'),totalFailed,'❌','')+
   '</div>';
 
   // Category breakdown
