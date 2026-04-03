@@ -1,0 +1,186 @@
+{
+  "name": "W2: Email Sequence Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "minutes", "minutesInterval": 30}]
+        }
+      },
+      "name": "Every 30 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_queue?status=eq.pending&scheduled_at=lte.{{ new Date().toISOString() }}&order=scheduled_at.asc&limit=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        }
+      },
+      "name": "Fetch Pending Emails",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "1", "leftValue": "={{ $json.length }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}
+          ]
+        }
+      },
+      "name": "Has Pending?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "={{ $json }}",
+        "options": {}
+      },
+      "name": "Split Emails",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [920, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_queue?status=eq.sent&created_at=gte.{{ new Date(new Date().setHours(0,0,0,0)).toISOString() }}&select=id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Prefer", "value": "count=exact"}
+          ]
+        }
+      },
+      "name": "Check Daily Limit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "1", "leftValue": "={{ $('Check Daily Limit').first().json.length }}", "rightValue": 50, "operator": {"type": "number", "operation": "lt"}}
+          ]
+        }
+      },
+      "name": "Under Daily Limit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1140, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.INSTANTLY_API_URL || 'https://api.instantly.ai/api/v1' }}/email/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.INSTANTLY_API_KEY }}"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  campaign_id: $json.campaign_id,\n  to: $json.to_email,\n  subject: $json.subject,\n  body: $json.body_html,\n  from: $json.from_email || $env.OUTREACH_FROM_EMAIL || 'hello@mail.whistle-ai.com',\n  reply_to: 'creative@mo-tive.com'\n}) }}"
+      },
+      "name": "Send via Instantly",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 100]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_queue?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  status: 'sent',\n  sent_at: new Date().toISOString(),\n  instantly_message_id: $json.message_id || null\n}) }}"
+      },
+      "name": "Update Queue Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1620, 100]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_queue?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  status: 'rate_limited',\n  error_message: 'Daily send limit reached'\n}) }}"
+      },
+      "name": "Mark Rate Limited",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1380, 350]
+    }
+  ],
+  "connections": {
+    "Every 30 Min": {
+      "main": [[{"node": "Fetch Pending Emails", "type": "main", "index": 0}]]
+    },
+    "Fetch Pending Emails": {
+      "main": [[{"node": "Has Pending?", "type": "main", "index": 0}]]
+    },
+    "Has Pending?": {
+      "main": [
+        [
+          {"node": "Split Emails", "type": "main", "index": 0},
+          {"node": "Check Daily Limit", "type": "main", "index": 0}
+        ],
+        []
+      ]
+    },
+    "Split Emails": {
+      "main": [[{"node": "Under Daily Limit?", "type": "main", "index": 0}]]
+    },
+    "Under Daily Limit?": {
+      "main": [
+        [{"node": "Send via Instantly", "type": "main", "index": 0}],
+        [{"node": "Mark Rate Limited", "type": "main", "index": 0}]
+      ]
+    },
+    "Send via Instantly": {
+      "main": [[{"node": "Update Queue Status", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [{"name": "whistle-ai"}, {"name": "email-outreach"}]
+}

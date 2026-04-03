@@ -1,0 +1,184 @@
+{
+  "name": "W3: Email Event Tracking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-event",
+        "options": {}
+      },
+      "name": "Webhook (Instantly Events)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $json;\n\n// Instantly.ai webhook payload normalization\nconst eventType = event.event || event.event_type || 'unknown';\nconst email = event.email || event.to_email || '';\nconst campaignId = event.campaign_id || '';\nconst messageId = event.message_id || '';\nconst timestamp = event.timestamp || new Date().toISOString();\n\n// Map Instantly event types to our internal types\nconst typeMap = {\n  'email_opened': 'email_open',\n  'email_clicked': 'email_click',\n  'email_replied': 'email_reply',\n  'email_bounced': 'email_bounce',\n  'email_unsubscribed': 'email_unsubscribe',\n  'open': 'email_open',\n  'click': 'email_click',\n  'reply': 'email_reply',\n  'bounce': 'email_bounce',\n  'unsubscribe': 'email_unsubscribe'\n};\n\nconst normalizedType = typeMap[eventType] || eventType;\n\n// Score adjustments per event\nconst scoreMap = {\n  'email_open': 5,\n  'email_click': 15,\n  'email_reply': 30,\n  'email_bounce': -10,\n  'email_unsubscribe': -20\n};\n\nreturn [{\n  json: {\n    event_type: normalizedType,\n    email: email,\n    campaign_id: campaignId,\n    message_id: messageId,\n    score_change: scoreMap[normalizedType] || 0,\n    timestamp: timestamp,\n    raw: event\n  }\n}];"
+      },
+      "name": "Normalize Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  event_type: $json.event_type,\n  email: $json.email,\n  campaign_id: $json.campaign_id,\n  message_id: $json.message_id,\n  metadata: $json.raw\n}) }}"
+      },
+      "name": "Log to email_events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/email_queue?to_email=eq.{{ encodeURIComponent($json.email) }}&message_id=eq.{{ $json.message_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  last_event: $json.event_type,\n  last_event_at: $json.timestamp\n}) }}"
+      },
+      "name": "Update Queue Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?email=eq.{{ encodeURIComponent($json.email) }}&select=id,score",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"}
+          ]
+        }
+      },
+      "name": "Find Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "1", "leftValue": "={{ $json.length }}", "rightValue": 0, "operator": {"type": "number", "operation": "gt"}}
+          ]
+        }
+      },
+      "name": "Lead Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1180, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/leads?id=eq.{{ $json[0].id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"},
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "Prefer", "value": "return=representation"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  score: Math.max(0, ($json[0].score || 0) + $('Normalize Event').first().json.score_change),\n  updated_at: new Date().toISOString()\n}) }}"
+      },
+      "name": "Update Lead Score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1420, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {"id": "1", "leftValue": "={{ $('Normalize Event').first().json.event_type }}", "rightValue": "email_reply", "operator": {"type": "string", "operation": "equals"}}
+          ]
+        }
+      },
+      "name": "Is Reply?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1420, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot{{ $env.TG_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  chat_id: $env.TG_CEO_CHAT_ID,\n  text: '📧 Email Reply Received!\\n\\nFrom: ' + $('Normalize Event').first().json.email + '\\nCampaign: ' + $('Normalize Event').first().json.campaign_id + '\\n\\n→ Check Instantly dashboard',\n  parse_mode: 'HTML'\n}) }}"
+      },
+      "name": "Alert CEO (Reply)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1660, 400]
+    }
+  ],
+  "connections": {
+    "Webhook (Instantly Events)": {
+      "main": [[{"node": "Normalize Event", "type": "main", "index": 0}]]
+    },
+    "Normalize Event": {
+      "main": [
+        [
+          {"node": "Log to email_events", "type": "main", "index": 0},
+          {"node": "Update Queue Record", "type": "main", "index": 0},
+          {"node": "Find Lead", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Find Lead": {
+      "main": [[{"node": "Lead Exists?", "type": "main", "index": 0}]]
+    },
+    "Lead Exists?": {
+      "main": [
+        [
+          {"node": "Update Lead Score", "type": "main", "index": 0},
+          {"node": "Is Reply?", "type": "main", "index": 0}
+        ],
+        []
+      ]
+    },
+    "Is Reply?": {
+      "main": [
+        [{"node": "Alert CEO (Reply)", "type": "main", "index": 0}],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "tags": [{"name": "whistle-ai"}, {"name": "email-outreach"}, {"name": "event-tracking"}]
+}
