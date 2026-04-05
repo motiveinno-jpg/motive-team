@@ -1003,6 +1003,29 @@ function checkSanctionAndWarn(countryCode){
   UI.toast(TF('sanctions_warning',{name:name}),'err');
   return true;
 }
+/* E.164 international phone validator (2026-04-05)
+   Accepts: +{country_code}{number} with 7-15 digits total, or local formats with hyphens/spaces/parens.
+   Strips non-digits then checks length 7-15. */
+function isValidE164Phone(raw){
+  if(!raw)return true; /* empty is handled by required check */
+  var s=String(raw).trim();
+  var digits=s.replace(/[^0-9]/g,'');
+  if(s.charAt(0)==='+'){
+    /* strict E.164: + then 8-15 digits */
+    return digits.length>=8&&digits.length<=15;
+  }
+  /* local format: 7-15 digits */
+  return digits.length>=7&&digits.length<=15;
+}
+/* Normalize to E.164 if country code known */
+function normalizeToE164(raw,countryDialCode){
+  if(!raw)return '';
+  var s=String(raw).trim();
+  var digits=s.replace(/[^0-9]/g,'');
+  if(s.charAt(0)==='+')return '+'+digits;
+  if(countryDialCode){var cc=String(countryDialCode).replace(/[^0-9]/g,'');return '+'+cc+digits.replace(/^0+/,'');}
+  return digits;
+}
 /* High-risk countries (enhanced due diligence required) */
 var HIGH_RISK_COUNTRIES = ['CN','PK','LB','IQ','ER','BI','ML','GN','HT','TD'];
 function isHighRiskCountry(code){if(!code)return false;return HIGH_RISK_COUNTRIES.indexOf(code.toUpperCase())>=0;}
@@ -4847,6 +4870,8 @@ _ML = {
 'credits_added': { ko:'{count}건의 분석 크레딧이 추가되었습니다!', en:'{count} analysis credit(s) added!', ja:'{count}件の分析クレジットが追加されました！', zh:'{count}个分析积分已添加！', vi:'Đã thêm {count} tín dụng phân tích!', th:'เพิ่ม {count} เครดิตวิเคราะห์แล้ว!', de:'{count} Analyse-Credit(s) hinzugefügt!', fr:'{count} crédit(s) d\'analyse ajouté(s) !', es:'¡{count} crédito(s) de análisis añadido(s)!', pt:'{count} crédito(s) de análise adicionado(s)!', id:'{count} kredit analisis ditambahkan!', tr:'{count} analiz kredisi eklendi!', ar:'تمت إضافة {count} رصيد تحليل!' },
 'payment_error_prefix': { ko:'결제 오류: {msg}', en:'Payment error: {msg}', ja:'決済エラー: {msg}', zh:'支付错误：{msg}', vi:'Lỗi thanh toán: {msg}', th:'ข้อผิดพลาดการชำระเงิน: {msg}', de:'Zahlungsfehler: {msg}', fr:'Erreur de paiement : {msg}', es:'Error de pago: {msg}', pt:'Erro de pagamento: {msg}', id:'Kesalahan pembayaran: {msg}', tr:'Ödeme hatası: {msg}', ar:'خطأ في الدفع: {msg}' },
 'sanctions_warning': { ko:'⚠️ {name}은(는) 국제 제재 대상국입니다. 수출 거래가 제한됩니다.', en:'⚠️ {name} is under international sanctions. Trade transactions are restricted.', ja:'⚠️ {name}は国際制裁対象国です。輸出取引が制限されます。', zh:'⚠️ {name}受国际制裁。贸易交易受限。', vi:'⚠️ {name} đang bị trừng phạt quốc tế. Giao dịch thương mại bị hạn chế.', th:'⚠️ {name} อยู่ภายใต้การคว่ำบาตร การค้าถูกจำกัด', de:'⚠️ {name} steht unter internationalen Sanktionen.', fr:'⚠️ {name} fait l\'objet de sanctions internationales.', es:'⚠️ {name} está bajo sanciones internacionales.', pt:'⚠️ {name} está sob sanções internacionais.', id:'⚠️ {name} di bawah sanksi internasional.', tr:'⚠️ {name} uluslararası yaptırım altında.', ar:'⚠️ {name} تحت عقوبات دولية.' },
+'sanctions_signup_blocked': { ko:'가입 불가: {name}은(는) OFAC/UN 국제 제재 대상국으로 서비스 이용이 제한됩니다.', en:'Signup blocked: {name} is subject to OFAC/UN international sanctions and cannot use this service.', ja:'登録不可：{name}はOFAC/UN国際制裁対象のため、本サービスをご利用いただけません。', zh:'无法注册：{name}受 OFAC/UN 国际制裁，无法使用本服务。', vi:'Không thể đăng ký: {name} thuộc diện trừng phạt quốc tế OFAC/UN.', th:'ไม่สามารถสมัคร: {name} อยู่ภายใต้การคว่ำบาตร OFAC/UN', de:'Registrierung nicht möglich: {name} unterliegt OFAC/UN-Sanktionen.', fr:'Inscription bloquée : {name} est soumis aux sanctions OFAC/UN.', es:'Registro bloqueado: {name} está sujeto a sanciones OFAC/UN.', pt:'Cadastro bloqueado: {name} está sujeito a sanções OFAC/UN.', id:'Pendaftaran diblokir: {name} terkena sanksi OFAC/UN.', tr:'Kayıt engellendi: {name} OFAC/UN yaptırımları altındadır.', ar:'التسجيل محظور: {name} يخضع لعقوبات OFAC/UN الدولية.' },
+'phone_e164_invalid': { ko:'전화번호 형식이 올바르지 않습니다. 국가번호 포함 예: +821012345678 또는 +14155551234', en:'Invalid phone number format. Include country code, e.g. +14155551234 or +821012345678', ja:'電話番号の形式が正しくありません。国コード付きで入力してください（例: +81901234567）', zh:'电话号码格式不正确。请包含国家代码，例如 +8613812345678', vi:'Số điện thoại không hợp lệ. Vui lòng kèm mã quốc gia, ví dụ: +84912345678', th:'รูปแบบเบอร์โทรไม่ถูกต้อง โปรดใส่รหัสประเทศ เช่น +66812345678', de:'Ungültiges Telefonformat. Ländercode einfügen, z. B. +49301234567', fr:'Format invalide. Incluez l\'indicatif, ex. +33123456789', es:'Formato inválido. Incluya el código de país, ej. +34612345678', pt:'Formato inválido. Inclua o código do país, ex. +5511912345678', id:'Format nomor salah. Sertakan kode negara, mis. +628123456789', tr:'Geçersiz telefon. Ülke kodu ekleyin: +905321234567', ar:'صيغة الهاتف غير صحيحة. أدخل رمز البلد مثل +971501234567' },
 'about_n_min_sec': { ko:'약 {m}분 {s}초 남음', en:'~{m}m {s}s remaining', ja:'約{m}分{s}秒', zh:'约{m}分{s}秒', vi:'~{m} phút {s} giây', th:'ประมาณ {m} นาที {s} วินาที', de:'~{m} Min. {s} Sek.', fr:'~{m} min {s} s', es:'~{m} min {s} s', pt:'~{m} min {s} s', id:'~{m} mnt {s} dtk', tr:'~{m} dk {s} sn', ar:'~{m} دقيقة {s} ثانية' },
 'about_n_sec': { ko:'약 {s}초 남음', en:'~{s}s remaining', ja:'約{s}秒', zh:'约{s}秒', vi:'~{s} giây', th:'ประมาณ {s} วินาที', de:'~{s} Sek.', fr:'~{s} s', es:'~{s} s', pt:'~{s} s', id:'~{s} dtk', tr:'~{s} sn', ar:'~{s} ثانية' },
 'hs_verification_request': { ko:'HS코드 관세사 검증 요청 ({detail})', en:'HS Code verification request ({detail})', ja:'HSコード検証リクエスト ({detail})', zh:'HS编码验证请求 ({detail})', vi:'Yêu cầu xác minh mã HS ({detail})', th:'คำขอตรวจสอบรหัส HS ({detail})', de:'HS-Code Überprüfungsanfrage ({detail})', fr:'Demande de vérification code SH ({detail})', es:'Solicitud de verificación código SA ({detail})', pt:'Solicitação de verificação código SH ({detail})', id:'Permintaan verifikasi kode HS ({detail})', tr:'HS kodu doğrulama talebi ({detail})', ar:'طلب التحقق من رمز النظام المنسق ({detail})' },
@@ -5883,9 +5908,11 @@ function doSignup(e){e.preventDefault();var f=e.target;
   var _pw=f.password.value;if(_pw.length<8||!/[a-zA-Z]/.test(_pw)||!/[0-9]/.test(_pw)||!/[^a-zA-Z0-9]/.test(_pw))return set({authError:(T('password_requirements'))});
   S.authError='';var _signupCountry=f.country&&f.country.value?f.country.value:'';
   if(!_signupCountry)return set({authError:(T('please_select_your_country'))});
+  /* OFAC sanctions block (2026-04-05) */
+  if(isSanctionedCountry(_signupCountry)){return set({authError:TF('sanctions_signup_blocked',{name:getSanctionLabel(_signupCountry)})});}
   var _contactName=f.contact_name?f.contact_name.value.trim():'';
   var _promoCode=f.promo_code?f.promo_code.value.trim():'';
-  var _meta={role:'client',company_name:f.company_name.value,contact_name:_contactName,country:_signupCountry,terms_accepted_at:new Date().toISOString()};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;if(_promoCode)_meta.promo_code=_promoCode;
+  var _meta={role:'client',company_name:f.company_name.value,contact_name:_contactName,country:_signupCountry,language:_userLang,preferred_currency:(_COUNTRY_STATIC_FALLBACK[_signupCountry]&&_COUNTRY_STATIC_FALLBACK[_signupCountry].currency)||'USD',terms_accepted_at:new Date().toISOString()};if(f.has_voucher&&f.has_voucher.checked)_meta.has_voucher=true;if(_promoCode)_meta.promo_code=_promoCode;
   sb.auth.signUp({email:f.email.value,password:f.password.value,options:{data:_meta,emailRedirectTo:window.location.origin+'/app'}}).then(function(r){
     if(r.error)return set({authError:_authErr(r.error.message)});
     if(r.data&&r.data.user&&r.data.user.identities&&r.data.user.identities.length===0)return set({authError:(T('email_already_registered'))});
@@ -8123,8 +8150,8 @@ function pgAReport(){
     h+='</div></div></div>';
   }
 
-  // === ALIBABA STRATEGY (only if user opted in via project) ===
-  if(r.alibaba_strategy&&S.currentAnalysis&&S.currentAnalysis.alibaba_customer){
+  // === ALIBABA STRATEGY (hidden globally 2026-04-05) ===
+  if(false&&r.alibaba_strategy&&S.currentAnalysis&&S.currentAnalysis.alibaba_customer){
     var ali=r.alibaba_strategy;
     h+='<div class="card" style="margin-bottom:10px;border-color:rgba(255,184,0,.12)"><div class="card-h"><span>🏪 '+(T('alibaba_strategy'))+'</span>';
     if(ali.score)h+='<span class="badge badge-acc" style="font-size:10px">'+(T('export_readiness')+' ')+ali.score+(T('pts'))+'</span>';
@@ -8142,8 +8169,8 @@ function pgAReport(){
     h+='</div></div>';
   }
 
-  // === ALIBABA SUITABILITY SCORE (only if user opted in) ===
-  if(_isKorean&&r.alibaba_suitability&&S.currentAnalysis&&S.currentAnalysis.alibaba_customer){
+  // === ALIBABA SUITABILITY SCORE (hidden globally 2026-04-05) ===
+  if(false&&_isKorean&&r.alibaba_suitability&&S.currentAnalysis&&S.currentAnalysis.alibaba_customer){
     var als=r.alibaba_suitability;var alsCol=als.score>=75?'var(--ok)':als.score>=55?'var(--acc)':'var(--err)';var alsGrade=als.grade||(als.score>=75?(T('recommended')):als.score>=55?(T('moderate')):(T('not_recommended')));
     h+='<div class="card" style="margin-bottom:10px;border-color:'+alsCol+'25;background:linear-gradient(135deg,'+alsCol+'04,transparent)">';
     h+='<div class="card-h"><span>🏪 '+(T('alibaba_suitability'))+'</span><span class="badge" style="background:'+alsCol+'15;color:'+alsCol+';font-size:11px;font-weight:800">'+alsGrade+' · '+als.score+(T('score_suffix_100'))+'</span></div>';
@@ -8294,10 +8321,8 @@ function pgAReport(){
   h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:24px">📑</span><div><div style="font-size:14px;font-weight:700;color:var(--w90)">'+T('act_voucher_title')+'</div><div style="font-size:10px;color:var(--w40)">'+T('act_voucher_desc')+'</div></div></div>';
   h+='<div style="display:flex;gap:4px;flex-wrap:wrap"><span class="badge badge-acc" style="font-size:9px">'+T('act_voucher_amount')+'</span><span class="badge badge-acc" style="font-size:9px">'+T('act_voucher_sme')+'</span></div></div>';
 
-  // Tool 4: 알리바바 리스팅 가이드
-  h+='<div class="card" style="cursor:pointer;transition:all .2s;border-color:rgba(249,115,22,.15)" onclick="App.genAlibabaGuide()">';
-  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:24px">🏪</span><div><div style="font-size:14px;font-weight:700;color:var(--w90)">'+T('act_alibaba_guide')+'</div><div style="font-size:10px;color:var(--w40)">'+T('act_alibaba_desc')+'</div></div></div>';
-  h+='<div style="display:flex;gap:4px;flex-wrap:wrap"><span class="badge badge-ghost" style="font-size:9px;color:#f97316;border-color:#f97316">Keywords</span><span class="badge badge-ghost" style="font-size:9px;color:#f97316;border-color:#f97316">Pricing</span></div></div>';
+  // Tool 4: 알리바바 리스팅 가이드 (hidden globally 2026-04-05)
+  /* removed */
 
   // Tool 5: 관세사 연결 (준비중)
   h+='<div class="card" style="opacity:.7;border-color:rgba(255,255,255,.06);position:relative">';
@@ -9279,12 +9304,14 @@ var STAGE_INFO={
 };
 function getProjectStages(p){
   var base=['planning','certification','buyer_search','sample','negotiation','payment','production','documents','shipping','customs','settlement','completed'];
-  if(p&&p.alibaba_customer)base.splice(2,0,'alibaba_listing');
+  /* Alibaba stage hidden globally (2026-04-05) — partnership pending */
   return base;
 }
 /* 기존 프로젝트에 빠진 단계 체크리스트 자동 보충 */
 function _ensureStageProgress(p){
   if(!p)return;var sp=p.stage_progress||{};var changed=false;
+  /* Strip legacy alibaba_listing stage (hidden globally 2026-04-05) */
+  if(sp.alibaba_listing){delete sp.alibaba_listing;changed=true;}
   var stages=getProjectStages(p);
   stages.forEach(function(s){
     if(!sp[s]||!sp[s].length){
@@ -9497,7 +9524,7 @@ function getRoadmap(category,market){
 
 function buildStageProgress(category,market,existingCerts,isAlibaba){
   var rm=getRoadmap(category,market);
-  var stages=['planning','certification','buyer_search','sample','negotiation','payment','production','documents','shipping','customs','settlement','completed'];if(isAlibaba)stages.splice(2,0,'alibaba_listing');
+  var stages=['planning','certification','buyer_search','sample','negotiation','payment','production','documents','shipping','customs','settlement','completed'];/* Alibaba stage hidden globally */
   var sp={};
   stages.forEach(function(stage){
     var stageRM=rm[stage]||STAGE_DEFAULTS[stage];
@@ -9572,7 +9599,6 @@ function showDirectProjectForm(){
   body+='<div class="form-group"><label class="form-label">'+(T('target_market_multi'))+'</label>';
   body+=countryCheckboxes('market_',['US']);
   body+='</div>';
-  body+='<div class="form-group"><label class="form-label"><input type="checkbox" name="include_alibaba" style="accent-color:var(--pri);margin-right:6px">'+(T('include_alibaba_stage'))+'</label></div>';
   body+='</form>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'directpj',title:(T('direct_project_registration')),body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'directpj\')">'+(T('cancel'))+'</button><button class="btn btn-pri" onclick="App.submitDirectProject()">🚀 '+(T('create_project'))+'</button>',width:'560px'}));
   UI.showModal('directpj');
@@ -9629,7 +9655,6 @@ function showProductProjectForm(){
   body+='<div class="form-group"><label class="form-label">'+(T('target_market'))+'</label>';
   body+=countryCheckboxes('market_',['US']);
   body+='</div>';
-  body+='<div class="form-group"><label class="form-label"><input type="checkbox" name="include_alibaba" style="accent-color:var(--pri);margin-right:6px">'+(T('include_alibaba_stage'))+'</label></div>';
   body+='</form>';
   document.body.insertAdjacentHTML('beforeend',UI.modal({id:'prodpj',title:(T('project_from_existing_product')),body:body,footer:'<button class="btn btn-ghost" onclick="App.closeModal(\'prodpj\')">'+(T('cancel'))+'</button><button class="btn btn-pri" onclick="App.submitProductProject()">🚀 '+(T('create_project'))+'</button>',width:'520px'}));
   UI.showModal('prodpj');
@@ -9703,7 +9728,7 @@ function submitCloneProject(){
 
 function createPj(aid){
   var g=_planGate('project');if(g.blocked){UI.toast(g.label+' '+(T('limit_exceeded_upgrade'))+'','warn');nav('subscription');return;}
-  var isAlibaba=confirm(T('include_alibaba_listing_stages_in_this_projectnnth'));
+  var isAlibaba=false;
   var a=S.analyses.find(function(x){return x.id===aid;});if(!a)return;
   var linkedProd=S.products.find(function(p){return p.analysis_id===aid;});
   var category=(a.ai_result&&a.ai_result.category)||(linkedProd&&linkedProd.category)||'Other';
@@ -17226,6 +17251,13 @@ function saveSt(){
       return;
     }
   }
+  /* E.164 international phone validation (2026-04-05) */
+  if(d.phone&&!isValidE164Phone(d.phone)){
+    UI.toast(T('phone_e164_invalid'),'warn');
+    var _pel=document.querySelector('[name=phone]');
+    if(_pel){_pel.style.borderColor='var(--err)';_pel.focus();_pel.addEventListener('input',function(){this.style.borderColor='';},{once:true});}
+    return;
+  }
   var q=S.company&&S.company.id?sb.from('companies').update(d).eq('id',S.company.id).eq('user_id',S.user.id):sb.from('companies').insert(Object.assign(d,{user_id:S.user.id}));
   q.then(function(r){
     if(r.error){UI.toast((T('failed_prefix'))+r.error.message,'err');return;}
@@ -20795,7 +20827,7 @@ function requestVoucherConsulting(){
 
 /* === NAV & RENDER === */
 function nav(p){if(S.page===p&&!S.currentAnalysis&&!S.currentProject)return;S.page=p;S.currentAnalysis=null;S.currentProject=null;S.analysisStep=0;S.analysisData=null;_clearAFormClass();S.docType=null;S._docPrefill=null;S._pjTab=null;S._pjBuyerDrawer=null;if(S._aiTimer){clearInterval(S._aiTimer);S._aiTimer=null;S._aiStartTime=null;}closeMob();_cleanupSubs();S._navScrollReset=true;S._navHashChanging=true;location.hash=p;setTimeout(function(){S._navHashChanging=false;},0);render();var pc=document.querySelector('.page-content');if(pc)pc.scrollTop=0;
-try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:p,role:S.user?S.user.role:null,session_id:window._pvSid,portal:'whistle'}).then(function(){});}catch(e){console.error('[whistle]',e);}}
+try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:p,role:S.user?S.user.role:null,session_id:window._pvSid,portal:'whistle',referrer:document.referrer||null,user_agent:navigator.userAgent,language:navigator.language||null}).then(function(){});}catch(e){console.error('[whistle]',e);}}
 function closeModal(id){UI.hideModal(id);setTimeout(function(){document.querySelectorAll('[id="'+id+'"]').forEach(function(e){e.remove();});},300);}
 document.addEventListener('keydown',function(e){if(e.key==='Escape'){var m=document.querySelector('.modal-overlay.show');if(m&&m.id)closeModal(m.id);}});
 
@@ -24047,13 +24079,13 @@ function renderSidebar(){
     {id:'sec',label:T('nav_analysis_sec')},
     {id:'analysis',icon:'🔬',label:T('nav_ai_analysis')},
     {id:'products',icon:'📦',label:T('nav_products')},
+    {id:'sec',label:T('nav_project_sec')},
+    {id:'projects',icon:'🚀',label:T('nav_projects')},
     {id:'sec',label:T('nav_tools_sec')},
     {id:'docgen',icon:'📄',label:T('nav_docgen')},
     {id:'costsim',icon:'🧮',label:T('nav_costsim')},
     {id:'comms',icon:'💬',label:T('nav_comms')},
-    {id:'ordershipping',icon:'📋',label:T('nav_ordershipping')},
-    {id:'sec',label:T('nav_project_sec')},
-    {id:'projects',icon:'🚀',label:T('nav_projects')}
+    {id:'ordershipping',icon:'📋',label:T('nav_ordershipping')}
   ].concat([
     {id:'sec',label:T('nav_biz_sec')},
     {id:'bizhub',icon:'💼',label:T('nav_bizhub')},

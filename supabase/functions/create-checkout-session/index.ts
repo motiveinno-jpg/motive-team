@@ -18,7 +18,60 @@ function getCorsHeaders(req?: Request) {
 }
 
 const ONE_ANALYSIS_AMOUNT_CENTS = 990;
-const ALLOWED_CURRENCIES = ["usd", "eur", "gbp", "jpy", "krw", "cny"];
+const ALLOWED_CURRENCIES = ["usd", "eur", "gbp", "jpy", "krw", "cny", "sgd", "aud", "cad", "hkd", "inr", "brl", "mxn"];
+
+// Country → currency mapping (2026-04-05)
+const COUNTRY_TO_CURRENCY: Record<string, string> = {
+  KR: "krw",
+  JP: "jpy",
+  CN: "cny", HK: "hkd", TW: "usd", MO: "usd",
+  GB: "gbp", IE: "eur",
+  DE: "eur", FR: "eur", IT: "eur", ES: "eur", NL: "eur", BE: "eur", AT: "eur", PT: "eur", FI: "eur", GR: "eur", LU: "eur",
+  SG: "sgd", AU: "aud", NZ: "aud", CA: "cad", IN: "inr",
+  BR: "brl", MX: "mxn",
+  // all others → USD
+};
+function resolveCurrency(country: string | null | undefined, override: string | null | undefined): string {
+  if (override && ALLOWED_CURRENCIES.includes(String(override).toLowerCase())) return String(override).toLowerCase();
+  if (country && COUNTRY_TO_CURRENCY[String(country).toUpperCase()]) return COUNTRY_TO_CURRENCY[String(country).toUpperCase()];
+  return "usd";
+}
+
+// One analysis pricing per currency (cents for decimal, whole units for zero-decimal)
+const ONE_ANALYSIS_PRICING: Record<string, number> = {
+  usd: 990,
+  eur: 990,
+  gbp: 790,
+  jpy: 1500,   // zero-decimal: 1500 yen
+  krw: 13900,  // zero-decimal: 13900 won
+  cny: 7000,
+  sgd: 1390,
+  aud: 1490,
+  cad: 1390,
+  hkd: 7800,
+  inr: 79900,  // 799 INR
+  brl: 4990,
+  mxn: 19900,  // 199 MXN
+};
+
+// Subscription plans per currency (monthly base price in cents/units)
+const SUBSCRIPTION_PRICING: Record<string, Record<string, number>> = {
+  usd: { starter: 9900, pro: 19900, enterprise: 44900 },
+  eur: { starter: 9900, pro: 18900, enterprise: 42900 },
+  gbp: { starter: 7900, pro: 15900, enterprise: 35900 },
+  jpy: { starter: 14900, pro: 29900, enterprise: 67900 },
+  krw: { starter: 139000, pro: 279000, enterprise: 629000 },
+  cny: { starter: 69900, pro: 139900, enterprise: 319900 },
+  sgd: { starter: 13900, pro: 27900, enterprise: 62900 },
+  aud: { starter: 14900, pro: 29900, enterprise: 67900 },
+  cad: { starter: 13900, pro: 27900, enterprise: 62900 },
+  hkd: { starter: 77900, pro: 155900, enterprise: 349900 },
+  inr: { starter: 799900, pro: 1599900, enterprise: 3599900 },
+  brl: { starter: 49900, pro: 99900, enterprise: 224900 },
+  mxn: { starter: 199900, pro: 399900, enterprise: 899900 },
+};
+
+const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
 
 const RATE_LIMITS = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_MAX = 10;
@@ -122,7 +175,7 @@ serve(async (req) => {
 
     const { data: profile, error: profileErr } = await sbAdmin
       .from("users")
-      .select("stripe_customer_id, email, company_name")
+      .select("stripe_customer_id, email, company_name, country")
       .eq("id", user.id)
       .single();
 
@@ -186,7 +239,6 @@ serve(async (req) => {
         return jsonResponse({ error: "Unsupported currency" }, 400);
       }
 
-      const ZERO_DECIMAL_CURRENCIES = ["jpy", "krw", "vnd", "clp", "pyg", "rwf", "ugx", "xof", "xaf"];
       const unitAmountCents = ZERO_DECIMAL_CURRENCIES.includes(verifiedCurrency)
         ? Math.round(verifiedAmountDollars)
         : Math.round(verifiedAmountDollars * 100);
@@ -210,23 +262,26 @@ serve(async (req) => {
         metadata: { deal_id, user_id: user.id, type: "escrow" },
       };
     } else if (type === "one_analysis") {
+      const oneCurrency = resolveCurrency(profile?.country, body.currency);
+      const oneAmount = ONE_ANALYSIS_PRICING[oneCurrency] || ONE_ANALYSIS_AMOUNT_CENTS;
       sessionConfig = {
         customer: customerId,
         mode: "payment",
         line_items: [{
           price_data: {
-            currency: "usd",
+            currency: oneCurrency,
             product_data: { name: "Whistle AI — Export Analysis", description: "One-time market analysis report" },
-            unit_amount: ONE_ANALYSIS_AMOUNT_CENTS,
+            unit_amount: oneAmount,
           },
           quantity: 1,
         }],
         success_url: success_url || "https://whistle-ai.com/app#analysis",
         cancel_url: cancel_url || "https://whistle-ai.com/app#analysis",
-        metadata: { user_id: user.id, type: "one_analysis" },
+        metadata: { user_id: user.id, type: "one_analysis", currency: oneCurrency },
       };
     } else if (price_id || plan) {
-      const PLAN_PRICES: Record<string, number> = { starter: 9900, pro: 19900, enterprise: 44900 };
+      const subCurrency = resolveCurrency(profile?.country, body.currency);
+      const PLAN_PRICES = SUBSCRIPTION_PRICING[subCurrency] || SUBSCRIPTION_PRICING.usd;
       const BILLING_INTERVALS: Record<string, { interval: string; count: number; multiplier: number }> = {
         m: { interval: "month", count: 1, multiplier: 1 },
         s: { interval: "month", count: 6, multiplier: 6 },
@@ -253,7 +308,7 @@ serve(async (req) => {
       if (isTestMode || !price_id) {
         lineItem = {
           price_data: {
-            currency: "usd",
+            currency: subCurrency,
             product_data: {
               name: `Whistle AI — ${planNames[planKey] || planKey} Plan`,
               description: `${planNames[planKey] || planKey} subscription`,
@@ -274,9 +329,9 @@ serve(async (req) => {
         success_url: success_url || "https://whistle-ai.com/app#subscription",
         cancel_url: cancel_url || "https://whistle-ai.com/app#subscription",
         subscription_data: {
-          metadata: { user_id: user.id, plan: plan || "", billing_cycle: billing_cycle || "m" },
+          metadata: { user_id: user.id, plan: plan || "", billing_cycle: billing_cycle || "m", currency: subCurrency },
         },
-        metadata: { user_id: user.id, type: "subscription", plan: plan || "" },
+        metadata: { user_id: user.id, type: "subscription", plan: plan || "", currency: subCurrency },
       };
     } else {
       return jsonResponse({ error: "Invalid payment type" }, 400);
