@@ -213,7 +213,7 @@ type LabelPack = {
   sample_subj: (t: string) => string; sample_head: string;
 };
 
-const LP: Record<string, LabelPack> = {
+export const LP: Record<string, LabelPack> = {
   en: {
     amount: "Amount", type: "Type", date: "Date", plan: "Plan", status: "Status",
     tracking: "Tracking No", carrier: "Carrier", eta: "ETA", product: "Product", deal: "Deal",
@@ -580,7 +580,7 @@ function getLP(lang: string): LabelPack {
   return LP[lang] || LP.en;
 }
 
-function getTemplate(
+export function getTemplate(
   type: string,
   data: Record<string, string>,
   lang: string

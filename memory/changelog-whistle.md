@@ -1,5 +1,24 @@
 # Whistle AI Changelog
 
+## 2026-04-05: 런칭 안정화 — DB 보안/성능 감사 + i18n 오프라인 검증
+
+### DB 보안 감사 해소 (Supabase advisor)
+- `signature_requests` RLS 강화: `authenticated_all` 제거 → 4개 정책 (admin/sender/signer_select/signer_update) 분리, 서명자는 `signer_id = auth.uid()` 또는 `signer_email` 일치 시에만 접근
+- `outreach_templates` RLS 활성화 + admin-only 정책
+- 24개 함수 `search_path` 핀 고정 (`SET search_path = public, pg_catalog`) — search_path hijack 방어. 벡터 함수는 `+ extensions` 추가
+- `partner_applications` CHECK 제약 추가: company_name ≤200, contact_name ≤100, email ≤254, phone ≤40, website ≤500, message ≤4000, other_description ≤2000, status enum
+- 잔여 WARN 5건은 by-design (익명 텔레메트리 INSERT, extension_in_public 코스메틱, 리크 패스워드 보호는 대시보드 토글)
+
+### DB 성능 감사 해소
+- 중복 인덱스 제거: `marketing_events` 2쌍 (idx_..._campaign_id / idx_..._type)
+- Whistle 핫패스 FK 인덱스 114개 일괄 추가: deals/chat/documents/signature_requests/quotes/orders/payments/sanctions/subscriptions/partners 등. 알리바바/LeanOS 회계 테이블은 제외
+
+### 트랜잭션 이메일 오프라인 검증
+- `supabase/functions/send-transactional-email/test-i18n.ts` 신규: Deno 테스트 하네스로 12언어 × 12타입 = 144 조합 전수 검증
+- 검증 항목: subject/html 비어있지 않음, 'undefined' 미포함, 아랍어 `dir="rtl"` 래퍼, LP 필수 키(amount/type/date/plan/status/...) 존재
+- `index.ts`에 `export const LP` + `export function getTemplate` 추가 (테스트 임포트 용도)
+- 결과: 144/144 통과, 실제 이메일 발송 없이 전 템플릿 커버리지 100%
+
 ## 2026-04-05: 글로벌 블로커 추가 해소 — FAQ 12언어 + 주소 구조화 검증
 
 ### FAQ 12개 언어 확장 (whistle-landing.html)
