@@ -1,5 +1,5 @@
 /* Whistle AI Service Worker — Caching + Web Push */
-var CACHE_VERSION = 'whistle-v20260405-2210';
+var CACHE_VERSION = 'whistle-v20260405-2313';
 var STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/whistle-icon-192.png',

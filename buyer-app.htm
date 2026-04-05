@@ -5675,7 +5675,7 @@ function renderInlineSampleForm(deal){
   h+='<input type="number" id="smp-qty" min="1" value="1" placeholder="'+_t('Qty','수량')+'" style="padding:7px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:8px;color:var(--w);font-size:11px;outline:none">';
   h+='<select id="smp-method" style="padding:7px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:8px;color:var(--w);font-size:11px;outline:none"><option value="express">'+_t('Express','특급')+'</option><option value="standard">'+_t('Standard','일반')+'</option><option value="seller_choice">'+_t('Seller Choice','셀러 선택')+'</option></select>';
   h+='</div>';
-  h+='<input type="text" id="smp-addr" placeholder="'+_t('Shipping address','배송 주소')+'" style="width:100%;padding:7px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:8px;color:var(--w);font-size:11px;outline:none;margin-bottom:6px">';
+  h+='<div style="margin-bottom:6px">'+_buildAddressFields('smp')+'</div>';
   h+='<textarea id="smp-notes" rows="1" placeholder="'+_t('Notes (optional)','비고 (선택사항)')+'" style="width:100%;padding:7px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:8px;color:var(--w);font-size:11px;resize:none;outline:none;font-family:inherit;margin-bottom:6px"></textarea>';
   h+='<button class="btn btn-pri btn-sm" onclick="B.submitSampleReq(\''+(deal.matching&&deal.matching.id||'')+'\')" style="width:100%;border-radius:8px"'+(deal.matching&&deal.matching.id?'':' disabled')+'>&#x1F4E8; '+_t('Send Request','요청 보내기')+'</button>';
   h+='</div>';
@@ -6390,8 +6390,8 @@ function renderStageContent(deal,stageIdx){
       h+='<div style="display:grid;gap:8px">';
       h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Quantity','수량')+'</label>';
       h+='<input type="number" id="smp-qty" min="1" value="1" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
-      h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Shipping Address','배송 주소')+'</label>';
-      h+='<input type="text" id="smp-addr" placeholder="'+_t('Full shipping address with postal code','우편번호 포함 전체 배송 주소')+'" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none"></div>';
+      h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Shipping Address','배송 주소')+' *</label>';
+      h+=_buildAddressFields('smp')+'</div>';
       h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Preferred Shipping Method','선호 배송 방법')+'</label>';
       h+='<select id="smp-method" style="width:100%;padding:8px 10px;background:var(--w08);border:1px solid var(--bd);border-radius:var(--r-s);color:var(--w);font-size:12px;outline:none">';
       h+='<option value="express">'+_t('Express (DHL/FedEx/UPS)','특급 (DHL/FedEx/UPS)')+'</option>';
@@ -6663,16 +6663,18 @@ function submitSampleReq(matchingId){
   var deal=S.deals.find(function(d){return d.matching&&d.matching.id===matchingId;});
   if(!deal)return;
   var qty=parseInt(document.getElementById('smp-qty').value)||1;
-  var addr=document.getElementById('smp-addr').value.trim();
+  var addrResult=_validateAddress('smp');
+  if(addrResult.error){toast(addrResult.error,'err');return;}
+  var addr=_formatAddress(addrResult.address);
   var method=document.getElementById('smp-method').value;
   var notes=document.getElementById('smp-notes').value.trim();
-  if(!addr){toast(_t('Please enter a shipping address','배송 주소를 입력해 주세요'),'err');return;}
   sb.from('samples').insert({
     user_id:deal.sellerId,
     buyer_id:deal.buyerLinkId,
     status:'requested',
     quantity:qty,
     shipping_method:method,
+    shipping_address:addrResult.address,
     notes:(addr?_t('Ship to:','배송지:')+' '+addr:'')+(notes?'\n'+notes:'')
   }).then(function(r){
     if(r.error){toast(_t('Failed:','실패:')+' '+r.error.message,'err');return;}
@@ -6931,8 +6933,8 @@ function renderSampleStandaloneModal(){
   h+='<div style="display:grid;gap:10px">';
   h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Quantity','수량')+'</label>';
   h+='<input type="number" id="ssa-qty" min="1" value="1" class="form-input"></div>';
-  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Shipping Address','배송 주소')+'</label>';
-  h+='<input type="text" id="ssa-addr" class="form-input" placeholder="'+_t('Full address with postal code','우편번호 포함 전체 주소')+'"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Shipping Address','배송 주소')+' *</label>';
+  h+=_buildAddressFields('ssa')+'</div>';
   h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Shipping Method','배송 방법')+'</label>';
   h+='<select id="ssa-method" class="form-input"><option value="express">'+_t('Express (DHL/FedEx/UPS)','특급 (DHL/FedEx/UPS)')+'</option><option value="standard">'+_t('Standard Post','일반 우편')+'</option><option value="economy">'+_t('Economy','이코노미')+'</option><option value="seller_choice">'+_t("Seller\'s Choice",'셀러 선택')+'</option></select></div>';
   h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Notes (optional)','비고 (선택)')+'</label>';
@@ -6948,10 +6950,11 @@ function renderSampleStandaloneModal(){
 function submitStandaloneSample(){
   var d=S.modalData||{};
   var qty=parseInt(document.getElementById('ssa-qty').value)||1;
-  var addr=(document.getElementById('ssa-addr').value||'').trim();
+  var addrResult=_validateAddress('ssa');
+  if(addrResult.error){toast(addrResult.error,'err');return;}
+  var addr=_formatAddress(addrResult.address);
   var method=document.getElementById('ssa-method').value;
   var notes=(document.getElementById('ssa-notes').value||'').trim();
-  if(!addr){toast(_t('Please enter a shipping address','배송 주소를 입력해 주세요'),'err');return;}
 
   var sellerId=d.sellerId;
   var buyerLink=S.buyerLinks.find(function(b){return b.registered_by===sellerId;});
@@ -6965,6 +6968,7 @@ function submitStandaloneSample(){
       status:'requested',
       quantity:qty,
       shipping_method:method,
+      shipping_address:addrResult.address,
       notes:(addr?_t('Ship to:','배송지:')+' '+addr:'')+(notes?'\n'+notes:'')
     }).then(function(r){
       if(r.error){toast(_t('Failed to send request','요청 전송 실패'),'err');return;}
@@ -9150,6 +9154,63 @@ function formatDate(d){if(!d)return'';var dt=new Date(d);return dt.toLocaleDateS
 function _countryFlag(code){if(!code||code.length!==2)return'&#x1F30D;';var c=code.toUpperCase();return String.fromCodePoint(0x1F1E6+c.charCodeAt(0)-65)+String.fromCodePoint(0x1F1E6+c.charCodeAt(1)-65);}
 function _relDate(d){if(!d)return'';var ms=Date.now()-new Date(d).getTime();var days=Math.floor(ms/86400000);if(days<1)return'Today';if(days<7)return days+'d ago';if(days<30)return Math.floor(days/7)+'w ago';return Math.floor(days/30)+'mo ago';}
 function timeAgo(d){if(!d)return'';var s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return'now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';if(s<604800)return Math.floor(s/86400)+'d';return formatDate(d);}
+
+/* === STRUCTURED ADDRESS (shipping) === */
+/* Postal code patterns per country (ISO-2). Fallback = min 3 alphanumeric chars. */
+var _POSTAL_PATTERNS={
+  US:/^\d{5}(-\d{4})?$/,CA:/^[A-Z]\d[A-Z][ -]?\d[A-Z]\d$/i,GB:/^[A-Z]{1,2}\d[A-Z\d]?[ ]?\d[A-Z]{2}$/i,
+  DE:/^\d{5}$/,FR:/^\d{5}$/,IT:/^\d{5}$/,ES:/^\d{5}$/,NL:/^\d{4}\s?[A-Z]{2}$/i,BE:/^\d{4}$/,AT:/^\d{4}$/,
+  JP:/^\d{3}-?\d{4}$/,KR:/^\d{5}$/,CN:/^\d{6}$/,TW:/^\d{3}(\d{2})?$/,HK:/^$|^.{0,10}$/,SG:/^\d{6}$/,
+  AU:/^\d{4}$/,NZ:/^\d{4}$/,IN:/^\d{6}$/,BR:/^\d{5}-?\d{3}$/,MX:/^\d{5}$/,RU:/^\d{6}$/,TR:/^\d{5}$/,
+  MY:/^\d{5}$/,TH:/^\d{5}$/,VN:/^\d{5,6}$/,ID:/^\d{5}$/,PH:/^\d{4}$/,AE:/^$|^.{0,10}$/,SA:/^\d{5}(-\d{4})?$/,
+  ZA:/^\d{4}$/,IL:/^\d{5}(\d{2})?$/
+};
+var _COUNTRY_OPTIONS_FULL=[
+  ['US','United States'],['CA','Canada'],['MX','Mexico'],['BR','Brazil'],
+  ['GB','United Kingdom'],['DE','Germany'],['FR','France'],['IT','Italy'],['ES','Spain'],['NL','Netherlands'],['BE','Belgium'],['AT','Austria'],['CH','Switzerland'],['SE','Sweden'],['NO','Norway'],['DK','Denmark'],['FI','Finland'],['IE','Ireland'],['PT','Portugal'],['GR','Greece'],['PL','Poland'],['CZ','Czech Republic'],
+  ['JP','Japan'],['KR','South Korea'],['CN','China'],['TW','Taiwan'],['HK','Hong Kong'],['SG','Singapore'],['MY','Malaysia'],['TH','Thailand'],['VN','Vietnam'],['ID','Indonesia'],['PH','Philippines'],['IN','India'],['PK','Pakistan'],['BD','Bangladesh'],
+  ['AU','Australia'],['NZ','New Zealand'],
+  ['AE','United Arab Emirates'],['SA','Saudi Arabia'],['IL','Israel'],['TR','Turkey'],['EG','Egypt'],['ZA','South Africa'],['KE','Kenya'],['NG','Nigeria'],['MA','Morocco'],
+  ['AR','Argentina'],['CL','Chile'],['CO','Colombia'],['PE','Peru']
+];
+function _buildAddressFields(prefix){
+  var opts='<option value="">'+_t('Select country','국가 선택')+'</option>';
+  for(var i=0;i<_COUNTRY_OPTIONS_FULL.length;i++){
+    var c=_COUNTRY_OPTIONS_FULL[i];
+    opts+='<option value="'+c[0]+'">'+esc(c[1])+'</option>';
+  }
+  var h='<div style="display:grid;gap:8px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Country','국가')+' *</label>';
+  h+='<select id="'+prefix+'-country" class="form-input">'+opts+'</select></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Address Line 1','주소 1')+' *</label>';
+  h+='<input type="text" id="'+prefix+'-line1" class="form-input" placeholder="'+_t('Street address, building, etc.','도로명, 건물 등')+'"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Address Line 2','주소 2')+'</label>';
+  h+='<input type="text" id="'+prefix+'-line2" class="form-input" placeholder="'+_t('Apt, suite, unit (optional)','호수, 동 (선택)')+'"></div>';
+  h+='<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('City','도시')+' *</label>';
+  h+='<input type="text" id="'+prefix+'-city" class="form-input"></div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('Postal Code','우편번호')+' *</label>';
+  h+='<input type="text" id="'+prefix+'-postal" class="form-input"></div>';
+  h+='</div>';
+  h+='<div><label style="font-size:11px;color:var(--w40);display:block;margin-bottom:3px">'+_t('State / Province','주/도')+'</label>';
+  h+='<input type="text" id="'+prefix+'-state" class="form-input" placeholder="'+_t('Optional for some countries','일부 국가에서만 필수')+'"></div>';
+  h+='</div>';
+  return h;
+}
+function _validateAddress(prefix){
+  var g=function(id){var el=document.getElementById(prefix+'-'+id);return el?(el.value||'').trim():'';};
+  var country=g('country'),line1=g('line1'),line2=g('line2'),city=g('city'),postal=g('postal'),state=g('state');
+  if(!country){return{error:_t('Please select a country','국가를 선택해 주세요')};}
+  if(!line1||line1.length<3){return{error:_t('Please enter a valid street address','유효한 주소를 입력해 주세요')};}
+  if(!city||city.length<2){return{error:_t('Please enter a city','도시를 입력해 주세요')};}
+  if(!postal){return{error:_t('Please enter a postal code','우편번호를 입력해 주세요')};}
+  var pat=_POSTAL_PATTERNS[country];
+  if(pat&&!pat.test(postal)){return{error:_t('Postal code format is invalid for the selected country','선택한 국가의 우편번호 형식이 올바르지 않습니다')};}
+  if(!pat&&postal.length<3){return{error:_t('Please enter a valid postal code','유효한 우편번호를 입력해 주세요')};}
+  return{address:{country:country,line1:line1,line2:line2,city:city,postal:postal,state:state}};
+}
+function _formatAddress(a){if(!a)return'';var parts=[a.line1,a.line2,a.city,a.state,a.postal,a.country];return parts.filter(function(p){return p&&p.length;}).join(', ');}
+
 function nav(page){S._prevPage=S.page;S.page=page;S._inqFilter=null;S.notifOpen=false;if(page==='orders'||page==='ordership'||page==='shipments')S._orderNotifCount=0;if(page!=='deals'&&page!=='pipeline'){if(S._dealChatCh){try{S._dealChatCh.unsubscribe();}catch(e){}sb.removeChannel(S._dealChatCh);S._dealChatCh=null;}S.currentDeal=null;}if(page!=='messages'&&S._chatChannel){try{S._chatChannel.unsubscribe();}catch(e){}sb.removeChannel(S._chatChannel);S._chatChannel=null;}if(page!=='product-detail')S._productDetailPage=null;if(page!=='maker-profile'){S._viewMakerId=null;S._makerProfile=null;S._makerProducts=[];S._makerUser=null;S._makerLoading=false;S._makerSaved=false;}if(history.pushState)history.pushState(null,null,'#'+page);else if(history.replaceState)history.replaceState(null,null,'#'+page);closeMob();render();window.scrollTo(0,0);
 try{if(!window._pvSid)window._pvSid=Math.random().toString(36).slice(2);sb.from('page_views').insert({user_id:S.user?S.user.id:null,page:page,role:S.user?S.user.role:'buyer',session_id:window._pvSid,portal:'buyer',referrer:document.referrer||null,user_agent:navigator.userAgent,language:navigator.language||null}).then(function(){});}catch(e){}}
 

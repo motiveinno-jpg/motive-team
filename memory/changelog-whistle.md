@@ -1,5 +1,23 @@
 # Whistle AI Changelog
 
+## 2026-04-05: 글로벌 블로커 추가 해소 — FAQ 12언어 + 주소 구조화 검증
+
+### FAQ 12개 언어 확장 (whistle-landing.html)
+- `LM(map)` 헬퍼 + `_detectLang12()` — navigator.language 기반 자동 감지
+- 12개 언어 지원: en/ko/ja/zh/es/de/fr/vi/id/th/ar/pt (한/영만 있던 FAQ 확장)
+- 7개 Q&A: AI 정확도, 바우처, SaaS/알리바바 분리, 수출경험, 수수료, 결제통화, 제재국
+- "Frequently Asked Questions" 헤딩도 12언어 지원
+- 랜딩 나머지 copy는 ko/en 유지 (FAQ만 핀포인트 12언어)
+
+### 주소 구조화 검증 (buyer-app.html)
+- `_buildAddressFields(prefix)` 빌더 + `_validateAddress(prefix)` + `_formatAddress()` 헬퍼
+- 필드: 국가(ISO-2 드롭다운 51개) + Line1/2 + 도시 + 우편번호 + 주/도
+- 우편번호 정규식: US/CA/GB/DE/FR/JP/KR/CN/AU/IN/BR/MX/TH/VN 등 35개 국가
+- 교체 위치 3곳: 거래 사이드바 샘플 요청(5682), 거래 풀뷰 샘플 요청(6397), 독립 샘플 모달(6938)
+- 기존 `smp-addr` / `ssa-addr` 단일 텍스트 → 구조화 폼
+- DB 마이그레이션: `samples.shipping_address jsonb` 컬럼 추가 (20260405_samples_shipping_address_jsonb)
+- Supabase에 `mcp__apply_migration`으로 적용 완료
+
 ## 2026-04-05: 글로벌 블로커 5개 해소 (OFAC + 이메일12언어 + 다중통화 + E.164 + 알리바바숨김)
 
 ### Blocker 2: 트랜잭션 이메일 12언어 완성 (send-transactional-email v26+)
