@@ -20,6 +20,7 @@ PAIRS=(
   "privacy-policy-en"
   "refund-policy"
   "refund-policy-en"
+  "domestic-analysis"
 )
 
 CHANGED=0
